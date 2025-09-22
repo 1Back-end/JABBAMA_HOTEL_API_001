@@ -1,8 +1,18 @@
 <?php
+use App\Http\Controllers\Admin\UserController;
 
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/user', function (Request $request) {
-    return $request->user();
-})->middleware('auth:sanctum');
+
+Route::middleware(['activity'])->group(function () {
+
+    require __DIR__ . '/auth.php';
+    require __DIR__ . '/authorization.php';
+    require __DIR__ . '/admin.php';
+
+    Route::middleware(['auth:sanctum', 'user.change_password', 'check.permission'])->group(function () {
+
+
+
+    });
+});

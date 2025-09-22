@@ -14,7 +14,6 @@ Route::middleware([])->prefix('administration')->group(function () {
     Route::group(['prefix' => 'activity', 'namespace' => 'jeremykenedy\LaravelLogger\App\Http\Controllers', 'middleware' => ['auth.system']], function () {
 
         Route::get('/', 'LaravelLoggerController@showAccessLog')->name('activity');
-        // Dashboards
         Route::get('/cleared', ['uses' => 'LaravelLoggerController@showClearedActivityLog'])->name('cleared');
 
         // Drill Downs

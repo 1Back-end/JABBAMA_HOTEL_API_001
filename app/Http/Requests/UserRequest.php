@@ -25,7 +25,6 @@ class UserRequest extends FormRequest
             'password' => [$requiredPassword],
             'email' => ['required', 'email', 'max:254', $uniqueEmail],
             'login' => ['required', $uniqueLogin],
-            'centres' => ['array', 'required'],
             'roles' => ['array'],
             'roles.*' => ['int', 'required', 'exists:roles,id'],
         ];

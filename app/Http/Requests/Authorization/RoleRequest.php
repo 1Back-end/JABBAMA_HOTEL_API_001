@@ -18,7 +18,6 @@ class RoleRequest extends FormRequest
         return [
             'name' => ['required', $uniqueRule],
             'description' => ['required'],
-            'confidential' => ['boolean'],
             'accueil_url' => ['nullable'],
             'permissions' => ['array']
         ];

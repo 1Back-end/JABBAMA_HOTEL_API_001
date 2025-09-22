@@ -14,6 +14,10 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
+
+/**
+ * @permission_category Gestion des utilisateurs
+ */
 class UserController extends Controller
 {
     /**
@@ -36,7 +40,6 @@ class UserController extends Controller
                 });
             })
             ->with([
-                'client:id,nomcomplet_client',
                 'roles:id,name',
                 'createdBy:id,nom_utilisateur',
                 'updatedBy:id,nom_utilisateur',
@@ -127,10 +130,6 @@ class UserController extends Controller
             }
 
             $user->update($data);
-
-            // Associée au centre
-            $user->centres()->detach();
-
 
             $user->roles()->detach();
             // Associée aux roles
