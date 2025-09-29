@@ -12,6 +12,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Symfony\Component\HttpFoundation\Response;
 
 
@@ -70,33 +71,53 @@ class UserController extends Controller
     {
         DB::beginTransaction();
         try {
-            $user = User::create(array_merge($request->validated(), ['password' => Hash::make($request->password), 'default' => true]));
+            // Conserver le mot de passe en clair pour l'envoi par email
+            $plainPassword = $request->password;
 
-            $user->notify(new DefaultUserCreated($user->login, $request->password));
+            // Créer l'utilisateur avec le mot de passe hashé
+            $user = User::create(array_merge(
+                $request->validated(),
+                ['password' => Hash::make($plainPassword), 'default' => true]
+            ));
 
+            // Envoyer les identifiants par email
+            Mail::send('emails.user_credentials', [
+                'login'    => $user->login,
+                'password' => $plainPassword,
+            ], function ($message) use ($user) {
+                $message->to($user->email)
+                    ->subject('Vos identifiants de connexion');
+            });
 
-            // Associée aux roles
+            // Notifier l'utilisateur (optionnel)
+            $user->notify(new DefaultUserCreated($user->login, $plainPassword));
+
+            // Associer les rôles
             foreach ($request->roles as $role) {
                 $user->roles()->attach($role, [
                     'created_by' => auth()->id(),
                     'updated_by' => auth()->id()
                 ]);
             }
+
+            DB::commit();
+
+            return response()->json([
+                'message' => __("L'utilisateur a été créé avec succès !")
+            ], Response::HTTP_CREATED);
+
         } catch (\Exception $th) {
             DB::rollBack();
             Log::error($th->getMessage());
 
             return response()->json([
-                'error' => $th->getMessage(),
+                'status'  => 'error',
+                'message' => "Une erreur est survenue lors de la création de l'utilisateur.",
+                'error'   => $th->getMessage(),
             ], 500);
         }
-        DB::commit();
-
-
-        return response()->json([
-            'message' => __("L'utilisateur a été crée avec success !")
-        ], Response::HTTP_CREATED);
     }
+
 
     /**
      * @param User $user

@@ -47,6 +47,15 @@ return [
             'report' => false,
         ],
 
+        'exportsupplier' => [
+            'driver' => 'local',
+            'root' => storage_path('app/export-supplier'),
+            'url' => env('APP_URL') . '/export-supplier',
+            'visibility' => 'public',
+            'throw' => false,
+            'report' => false,
+        ],
+
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),
