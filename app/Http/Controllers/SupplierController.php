@@ -7,6 +7,7 @@ use App\Exports\SuppliersExport;
 use App\Models\DeletionCode;
 use App\Models\Supplier;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
@@ -79,7 +80,7 @@ class SupplierController extends Controller
                 'address'        => 'nullable|string|max:500',
                 'cni_number'     => 'nullable|string|unique:suppliers,cni_number',
                 'description'    => 'nullable|string',
-                'company_name'   => 'nullable|string|max:255',
+                'company_name'   => 'required|string|max:255',
                 'company_email'  => 'nullable|email|unique:suppliers,company_email',
                 'company_phone'  => 'nullable|string|unique:suppliers,company_phone',
                 'is_active'      => 'nullable|boolean',
@@ -139,7 +140,7 @@ class SupplierController extends Controller
                 'address'        => 'nullable|string|max:500',
                 'cni_number'     => 'nullable|string|unique:suppliers,cni_number,' . $supplier->uuid . ',uuid',
                 'description'    => 'nullable|string',
-                'company_name'   => 'nullable|string|max:255',
+                'company_name'   => 'required|string|max:255',
                 'company_email'  => 'nullable|email|unique:suppliers,company_email,' . $supplier->uuid . ',uuid',
                 'company_phone'  => 'nullable|string|unique:suppliers,company_phone,' . $supplier->uuid . ',uuid',
                 'is_active'      => 'nullable|boolean',
@@ -288,28 +289,18 @@ class SupplierController extends Controller
         $auth = auth()->user();
 
         $request->validate([
-            'code' => 'required|integer',
+            'password' => 'required|string'
         ]);
 
-        $deletionCode = DeletionCode::where('user_id', $auth->id)
-            ->where('target_uuid', $uuid)
-            ->where('is_used', false)
-            ->where('expires_at', '>=', now())
-            ->where('code', $request->code)
-            ->first();
-
-        if (!$deletionCode) {
+        if (!Hash::check($request->password, $auth->password)) {
             return response()->json([
-                'status' => 'error',
-                'message' => 'Code invalide ou expiré.'
+                'status'  => 'error',
+                'message' => 'Mot de passe incorrect.'
             ], 422);
         }
 
-        
-        $deletionCode->update(['is_used' => true]);
-
-        // Supprimer le fournisseur (ou autre cible)
         $supplier = Supplier::findOrFail($uuid);
+
         $supplier->delete();
 
         return response()->json([
@@ -317,35 +308,6 @@ class SupplierController extends Controller
             'message' => 'Fournisseur supprimé avec succès.'
         ]);
     }
-
-
-
-    /**
-     * Display a listing of the resource.
-     * @permission SupplierController::export_suppliers
-     * @permission_desc Exporter les fournisseurs au format Excel
-     */
-    public function export_suppliers()
-    {
-        try {
-            $filename = 'suppliers-' . now()->format('dmY_His') . '.xlsx';
-
-            Excel::store(new SuppliersExport(), $filename, 'exportsupplier');
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Export effectué avec succès.',
-                'url' => Storage::disk('exportsupplier')->url($filename)
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Une erreur est survenue lors de l\'export.',
-                'error' => $e->getMessage()
-            ], 404);
-        }
-    }
-
 
 
 

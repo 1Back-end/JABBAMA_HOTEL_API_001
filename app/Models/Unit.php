@@ -7,44 +7,44 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
-class Supplier extends Model
+class Unit extends Model
 {
-    use HasFactory, SoftDeletes;
+    use SoftDeletes,HasFactory;
 
-    protected $table = 'suppliers';
+    protected $table = 'units';
 
     protected $primaryKey = 'uuid';
     public $incrementing = false;
     protected $keyType = 'string';
 
     protected $fillable = [
-        'ref',
-        'first_name',
-        'last_name',
-        'email',
-        'phone_number',
-        'phone_number_2',
-        'address',
-        'cni_number',
+        'uuid',
+        'code',
+        'name',
+        'abbreviation',
         'description',
         'is_active',
-        'company_name',
-        'company_email',
-        'company_phone',
         'created_by',
         'updated_by',
     ];
+
+    protected $casts = [
+        'is_active' => 'boolean',
+    ];
+
 
     protected static function boot()
     {
         parent::boot();
 
-        // Générer uuid et ref avant l’insertion
-        static::creating(function ($supplier) {
-            $supplier->uuid = (string) Str::uuid();
-            $supplier->ref = self::generateRef();
+        // Générer uuid et code avant l’insertion
+        static::creating(function ($unit) {
+            $unit->uuid = (string) Str::uuid();
+            $unit->code = self::generateCode();
         });
     }
+
+
 
     public function creator()
     {
@@ -55,16 +55,16 @@ class Supplier extends Model
     {
         return $this->belongsTo(User::class, 'updated_by');
     }
-
-    public static function generateRef(): string
+    public static function generateCode(): string
     {
         $last = self::withTrashed()->orderBy('created_at', 'desc')->first();
-        if ($last && preg_match('/\d+$/', $last->ref, $matches)) {
+        if ($last && preg_match('/\d+$/', $last->code, $matches)) {
             $number = (int)$matches[0] + 1;
         } else {
             $number = 1;
         }
 
-        return 'FOUR-' . date('Ymd') . str_pad($number, 4, '0', STR_PAD_LEFT);
+        return 'UN-' . str_pad($number, 4, '0', STR_PAD_LEFT);
     }
+    //
 }
