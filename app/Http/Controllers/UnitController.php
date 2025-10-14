@@ -19,9 +19,12 @@ class UnitController extends Controller
         $perPage = $request->input('limit', 25);
         $page = $request->input('page', 1);
 
-        $query = Unit::with(['creator','updater']);
+        $query = Unit::with(['creator', 'updater'])
+            ->when($request->has('is_active'), function ($query) use ($request) {
+                $query->where('is_active', filter_var($request->input('is_active'), FILTER_VALIDATE_BOOLEAN));
+            });
 
-        if($search = trim($request->input('search'))){
+        if ($search = trim($request->input('search'))) {
             $query->where(function ($q) use ($search) {
                 $q->where('code', 'like', "%{$search}%")
                     ->orWhere('name', 'like', "%{$search}%")
@@ -29,9 +32,9 @@ class UnitController extends Controller
                     ->orWhere('description', 'like', "%{$search}%");
             });
         }
+
         $units = $query->latest()->paginate($perPage, ['*'], 'page', $page);
 
-        // Réponse JSON
         return response()->json([
             'data'         => $units->items(),
             'current_page' => $units->currentPage(),
@@ -39,6 +42,7 @@ class UnitController extends Controller
             'total'        => $units->total(),
         ]);
     }
+
 
     /**
      * Display a listing of the resource.
@@ -148,7 +152,7 @@ class UnitController extends Controller
             $unit = Unit::findOrFail($uuid);
 
             // Vérifier si l'unité est utilisée dans des produits
-            $isUsed = Product::where('unit_measure_uuid', $uuid)->exists();
+            $isUsed = Product::where('unit_uuid', $uuid)->exists();
             if ($isUsed) {
                 return response()->json([
                     'status' => 'error',

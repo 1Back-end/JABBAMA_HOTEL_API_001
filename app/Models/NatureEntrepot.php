@@ -7,11 +7,11 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
-class Category extends Model
+class NatureEntrepot extends Model
 {
     use HasFactory, SoftDeletes;
 
-    protected $table = 'categories';
+    protected $table = 'nature_entrepots';
     protected $primaryKey = 'uuid';
     public $incrementing = false;
     protected $keyType = 'string';
@@ -26,30 +26,29 @@ class Category extends Model
         'updated_by',
     ];
 
+    protected $casts = [
+        'is_active' => 'boolean',
+    ];
 
     protected static function boot()
     {
         parent::boot();
 
-        // Générer uuid et code avant l’insertion
-        static::creating(function ($unit) {
-            $unit->uuid = (string) Str::uuid();
-            $unit->code = self::generateCode();
+        static::creating(function ($nature) {
+            $prefix = 'NAT-ENT-';
+            $timestamp = now()->format('ymdHi');
+
+            $random = strtoupper(Str::random(7));
+            $nature->code = $prefix . $timestamp . $random;
+            $nature->uuid = (string) Str::uuid();
         });
     }
 
-    public static function generateCode(): string
-    {
-        $last = self::withTrashed()->orderBy('created_at', 'desc')->first();
-        if ($last && preg_match('/\d+$/', $last->code, $matches)) {
-            $number = (int)$matches[0] + 1;
-        } else {
-            $number = 1;
-        }
 
-        return 'CAT-' . str_pad($number, 4, '0', STR_PAD_LEFT);
-    }
 
+    /**
+     * Relations avec les utilisateurs
+     */
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
@@ -59,9 +58,4 @@ class Category extends Model
     {
         return $this->belongsTo(User::class, 'updated_by');
     }
-    public function subCategories()
-    {
-        return $this->hasMany(SubCategory::class, 'category_uuid', 'uuid');
-    }
-    //
 }

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Category;
+use App\Models\SubCategory;
 use App\Models\Unit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -19,7 +20,10 @@ class CategoryProductsController extends Controller
         $perPage = $request->input('limit', 25);
         $page = $request->input('page', 1);
 
-        $query = Category::with(['creator','updater']);
+        $query = Category::with(['creator','updater','subCategories'])
+            ->when($request->has('is_active'), function ($query) use ($request) {
+                $query->where('is_active', filter_var($request->input('is_active'), FILTER_VALIDATE_BOOLEAN));
+            });
 
         if($search = trim($request->input('search'))){
             $query->where(function ($q) use ($search) {
@@ -211,4 +215,18 @@ class CategoryProductsController extends Controller
             "message" => "Statut modifié avec succès"
         ]);
     }
+    public function get_by_category($category_uuid)
+    {
+        // Récupère toutes les sous-catégories actives de la catégorie
+        $subCategories = SubCategory::where('category_uuid', $category_uuid)
+            ->where('is_active', 1)
+            ->get(['uuid', 'name']);
+
+        return response()->json([
+            'success' => $subCategories->count() > 0,
+            'data' => $subCategories,
+        ]);
+    }
+
+
 }

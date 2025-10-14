@@ -28,7 +28,10 @@ class SupplierController extends Controller
         $page = $request->input('page', 1);
 
         // Query de base avec relations
-        $query = Supplier::with(['creator', 'updater']);
+        $query = Supplier::with(['creator', 'updater'])
+            ->when($request->has('is_active'), function ($query) use ($request) {
+                $query->where('is_active', filter_var($request->input('is_active'), FILTER_VALIDATE_BOOLEAN));
+            });
 
         // Recherche
         if ($search = trim($request->input('search'))) {

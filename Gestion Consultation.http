@@ -1,4 +1,8 @@
 
-GET http://localhost:9000/api/suppliers/export_suppliers
+#GET http://localhost:9000/api/suppliers/export_suppliers
+
+#GET http://127.0.0.1:9000/api/subcategories/by_category/ba74feb0-74ad-45d6-a500-a2c2d1d40f71
+#GET http://127.0.0.1:9000/api/products
+GET http://127.0.0.1:9000/api/orders
 
 

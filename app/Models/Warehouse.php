@@ -16,7 +16,16 @@ class Warehouse extends Model
     protected $keyType = 'string';
 
     protected $fillable = [
-        'ref','name','nature','stock_type','address','is_active','created_by','updated_by'
+        'ref',
+        'name',
+        'nature_uuid',   // remplacé 'nature'
+        'stock_type',
+        'manager_id', // <--- ajouter ici
+        'address',
+        'is_active',
+        'created_by',
+        'updated_by',
+        'manager_id',    // nouveau champ
     ];
 
     protected static function boot()
@@ -42,11 +51,30 @@ class Warehouse extends Model
         return 'ENT-' . date('Ymd') . str_pad($number, 4, '0', STR_PAD_LEFT);
     }
 
+    /** Relations **/
+
+    // Utilisateur qui a créé
     public function creator() {
-        return $this->belongsTo(User::class,'created_by');
+        return $this->belongsTo(User::class, 'created_by');
     }
 
+    // Utilisateur qui a modifié
     public function updater() {
-        return $this->belongsTo(User::class,'updated_by');
+        return $this->belongsTo(User::class, 'updated_by');
+    }
+
+    // Manager de l'entrepôt
+    public function manager() {
+        return $this->belongsTo(User::class, 'manager_id');
+    }
+
+    // Natures associées (via pivot)
+    public function natures() {
+        return $this->belongsToMany(
+            NatureEntrepot::class,
+            'nature_warehouse',
+            'warehouse_uuid',
+            'nature_uuid'
+        )->withPivot(['is_active','created_by','updated_by'])->withTimestamps()->using(NatureWarehouse::class);
     }
 }

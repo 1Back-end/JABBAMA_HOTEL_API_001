@@ -58,6 +58,7 @@ class Supplier extends Model
 
     public static function generateRef(): string
     {
+
         $last = self::withTrashed()->orderBy('created_at', 'desc')->first();
         if ($last && preg_match('/\d+$/', $last->ref, $matches)) {
             $number = (int)$matches[0] + 1;
@@ -65,6 +66,6 @@ class Supplier extends Model
             $number = 1;
         }
 
-        return 'FOUR-' . date('Ymd') . str_pad($number, 4, '0', STR_PAD_LEFT);
+        return 'FOUR-'  . date('Ymd') . str_pad($number, 4, '0', STR_PAD_LEFT);
     }
 }

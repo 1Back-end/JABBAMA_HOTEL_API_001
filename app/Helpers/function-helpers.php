@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Medias;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -20,10 +21,10 @@ if (! function_exists('upload_media')) {
      * @param string $disk
      * @param string $path
      * @param string|null $filename
-     * @param Media|null $update
+     * @param Medias|null $update
      * @return void
      */
-    function upload_media(Model $model, UploadedFile $file, string $name, string $disk, string $path, string $filename = null, Media $update = null): void
+    function upload_media(Model $model, UploadedFile $file, string $name, string $disk, string $path, string $filename = null, Medias $update = null): void
     {
         $mimetype = $file->getClientMimeType();
         $extension = $file->getClientOriginalExtension();

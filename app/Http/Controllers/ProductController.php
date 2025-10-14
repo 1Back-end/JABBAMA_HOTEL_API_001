@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Product;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 class ProductController extends Controller
@@ -18,7 +19,7 @@ class ProductController extends Controller
         $perPage = $request->input('limit', 25);
         $page = $request->input('page', 1);
 
-        $query = Product::with(['creator', 'updater', 'category', 'unitMeasure']);
+        $query = Product::with(['creator', 'updater', 'category', 'unitMeasure','subCategories','points','medias']);
 
         if ($request->filled('category_uuid')) $query->where('category_uuid', $request->category_uuid);
         if ($request->filled('unit_uuid')) $query->where('unit_uuid', $request->unit_uuid);
@@ -73,8 +74,9 @@ class ProductController extends Controller
     {
         $auth = auth()->user();
 
-        try {
+        DB::beginTransaction(); // Démarre la transaction
 
+        try {
             $validated = $request->validate([
                 'name' => 'required|string|max:255|unique:produits,name',
                 'description' => 'nullable|string',
@@ -84,6 +86,12 @@ class ProductController extends Controller
                 'sale_price' => 'required|numeric|min:0',
                 'stock_quantity' => 'required|integer|min:0',
                 'minimum_stock' => 'required|integer|min:0',
+                'sub_categories' => 'nullable|array',
+                'sub_categories.*' => 'exists:sub_categories,uuid',
+                'points' => 'nullable|array',
+                'points.*.uuid' => 'required|exists:warehouses,uuid',
+                'points.*.quantity' => 'required|integer|min:0',
+                'image_file' => 'nullable|file|image|max:2048', // max 2MB
             ], [
                 'name.required' => 'Le nom du produit est obligatoire.',
                 'name.unique' => 'Ce nom de produit existe déjà.',
@@ -93,20 +101,68 @@ class ProductController extends Controller
                 'minimum_stock.required' => 'Le stock minimum est obligatoire.',
                 'category_uuid.exists' => 'La catégorie sélectionnée n\'existe pas.',
                 'unit_uuid.exists' => 'L\'unité de mesure sélectionnée n\'existe pas.',
+                'sub_categories.*.exists' => 'Une sous-catégorie sélectionnée est invalide.',
+                'points.*.uuid.exists' => 'Un point de dépôt sélectionné est invalide.',
+                'points.*.quantity.required' => 'La quantité pour chaque point est obligatoire.',
             ]);
 
-            // Définir l'auteur de la création
             $validated['created_by'] = $auth->id;
 
+            // Création du produit
             $product = Product::create($validated);
+
+            // Association des sous-catégories
+            if (!empty($validated['sub_categories'])) {
+                $pivotData = [];
+                foreach ($validated['sub_categories'] as $sub_uuid) {
+                    $pivotData[$sub_uuid] = [
+                        'is_active' => true,
+                        'created_by' => $auth->id,
+                        'updated_by' => $auth->id,
+                    ];
+                }
+                $product->subCategories()->sync($pivotData);
+            }
+
+            // Association des points de dépôt
+            if (!empty($validated['points'])) {
+                $pivotData = [];
+                foreach ($validated['points'] as $point) {
+                    $pivotData[$point['uuid']] = [
+                        'quantity' => $point['quantity'],
+                        'created_by' => $auth->id,
+                        'updated_by' => $auth->id,
+                    ];
+                }
+                $product->points()->sync($pivotData);
+            }
+
+            // Upload de l'image
+            if ($request->hasFile('image_file')) {
+                $file = $request->file('image_file');
+                $filename = time() . '_' . $file->getClientOriginalName(); // pour éviter les doublons
+                $path = $file->store('products', 'public');
+
+                $product->medias()->create([
+                    'name' => $filename,
+                    'disk' => 'public',
+                    'path' => $path,
+                    'filename' => $filename,
+                    'mimetype' => $file->getClientMimeType(),
+                    'extension' => $file->getClientOriginalExtension(),
+                ]);
+            }
+
+            DB::commit();
 
             return response()->json([
                 'success' => true,
                 'message' => "Le produit '{$product->name}' a été créé avec succès !",
-                'product' => $product
+                'product' => $product->load(['subCategories', 'points'])
             ], 201);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollback(); // Annule la transaction en cas d'erreur de validation
             return response()->json([
                 'success' => false,
                 'message' => 'Erreur de validation. Veuillez vérifier les champs saisis.',
@@ -114,6 +170,7 @@ class ProductController extends Controller
             ], 422);
 
         } catch (\Exception $e) {
+            DB::rollback(); // Annule la transaction en cas d'erreur
             return response()->json([
                 'success' => false,
                 'message' => 'Impossible de créer le produit pour le moment. Veuillez réessayer plus tard.',
@@ -121,6 +178,8 @@ class ProductController extends Controller
             ], 500);
         }
     }
+
+
 
     /**
      * Display a listing of the resource.
@@ -184,7 +243,7 @@ class ProductController extends Controller
     public function show($uuid)
     {
         try {
-            $product = Product::with(['category', 'unitMeasure', 'creator', 'updater'])
+            $product = Product::with(['category', 'unitMeasure', 'creator', 'updater','subCategories','points'])
                 ->findOrFail($uuid);
 
             return response()->json([
@@ -214,64 +273,115 @@ class ProductController extends Controller
      * @permission ProductController::update
      * @permission_desc Modification des produits
      */
-    public function update(Request $request, $uuid)
+    public function update_products(Request $request, $uuid)
     {
         $auth = auth()->user();
+        DB::beginTransaction();
 
         try {
             $product = Product::findOrFail($uuid);
 
+            // Validation des champs obligatoires
             $validated = $request->validate([
                 'name' => 'required|string|max:255|unique:produits,name,' . $product->uuid . ',uuid',
                 'description' => 'nullable|string',
-                'category_uuid' => 'nullable|exists:categories,uuid',
-                'unit_uuid' => 'nullable|exists:units,uuid',
+                'category_uuid' => 'required|exists:categories,uuid',
+                'unit_uuid' => 'required|exists:units,uuid',
                 'purchase_price' => 'required|numeric|min:0',
                 'sale_price' => 'required|numeric|min:0',
                 'stock_quantity' => 'required|integer|min:0',
                 'minimum_stock' => 'required|integer|min:0',
+                'sub_categories' => 'nullable|array',
+                'sub_categories.*' => 'exists:sub_categories,uuid',
+                'points' => 'nullable|array',
+                'points.*.uuid' => 'required|exists:warehouses,uuid',
+                'points.*.quantity' => 'required|integer|min:0',
+                'image_file' => 'nullable|file|image|max:2048',
             ], [
                 'name.required' => 'Le nom du produit est obligatoire.',
                 'name.unique' => 'Ce nom de produit existe déjà.',
-                'purchase_price.required' => 'Le prix d\'achat est obligatoire.',
+                'category_uuid.required' => 'La catégorie est obligatoire.',
+                'unit_uuid.required' => 'L’unité de mesure est obligatoire.',
+                'purchase_price.required' => 'Le prix d’achat est obligatoire.',
                 'sale_price.required' => 'Le prix de vente est obligatoire.',
                 'stock_quantity.required' => 'La quantité en stock est obligatoire.',
                 'minimum_stock.required' => 'Le stock minimum est obligatoire.',
-                'category_uuid.exists' => 'La catégorie sélectionnée n\'existe pas.',
-                'unit_uuid.exists' => 'L\'unité de mesure sélectionnée n\'existe pas.',
+                'points.*.uuid.required' => 'Le point de dépôt est obligatoire.',
+                'points.*.quantity.required' => 'La quantité pour chaque point est obligatoire.',
             ]);
 
             $validated['updated_by'] = $auth->id;
 
+            // Mise à jour du produit
             $product->update($validated);
+
+            // Gestion des sous-catégories
+            if (isset($validated['sub_categories'])) {
+                $pivotData = [];
+                foreach ($validated['sub_categories'] as $sub_uuid) {
+                    $pivotData[$sub_uuid] = [
+                        'updated_by' => $auth->id,
+                    ];
+                }
+                $product->subCategories()->sync($pivotData);
+            }
+
+            // Gestion des points de dépôt
+            if (isset($validated['points'])) {
+                $pivotData = [];
+                foreach ($validated['points'] as $point) {
+                    $pivotData[$point['uuid']] = [
+                        'quantity' => $point['quantity'],
+                        'updated_by' => $auth->id,
+                    ];
+                }
+                $product->points()->sync($pivotData);
+            }
+
+            // Upload image si présent
+            if ($request->hasFile('image_file')) {
+                $file = $request->file('image_file');
+                $filename = $file->getClientOriginalName();
+                $path = $file->store('products', 'public');
+
+                $product->medias()->create([
+                    'name' => $filename,
+                    'disk' => 'public',
+                    'path' => $path,
+                    'filename' => $filename,
+                    'mimetype' => $file->getMimeType(),
+                    'extension' => $file->getClientOriginalExtension(),
+                ]);
+            }
+
+            DB::commit();
 
             return response()->json([
                 'success' => true,
                 'message' => "Le produit '{$product->name}' a été mis à jour avec succès !",
-                'product' => $product
+                'product' => $product->load(['subCategories', 'points', 'medias'])
             ], 200);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollback();
             return response()->json([
                 'success' => false,
                 'message' => 'Erreur de validation. Veuillez vérifier les champs saisis.',
                 'errors' => $e->errors()
             ], 422);
 
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Produit introuvable.',
-            ], 404);
-
         } catch (\Exception $e) {
+            DB::rollback();
             return response()->json([
                 'success' => false,
-                'message' => 'Impossible de mettre à jour le produit pour le moment. Veuillez réessayer plus tard.',
+                'message' => 'Impossible de mettre à jour le produit pour le moment.',
                 'error' => $e->getMessage()
             ], 500);
         }
     }
+
+
+
 
 
     /**

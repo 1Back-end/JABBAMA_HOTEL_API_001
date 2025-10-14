@@ -18,7 +18,10 @@ class WarehouseController extends Controller
         $perPage = $request->input('limit', 25);
         $page = $request->input('page', 1);
 
-        $query = Warehouse::with(['creator','updater']);
+        $query = Warehouse::with(['creator','updater','natures','manager'])
+            ->when($request->has('is_active'), function ($query) use ($request) {
+                $query->where('is_active', filter_var($request->input('is_active'), FILTER_VALIDATE_BOOLEAN));
+            });
 
         if($search = trim($request->input('search'))){
             $query->where(function ($q) use ($search) {
@@ -51,30 +54,45 @@ class WarehouseController extends Controller
     {
         $auth = auth()->user();
 
+        // Validation principale
         $validated = $request->validate([
-            'name'        => 'required|string|max:255|unique:warehouses,name',
-            'nature'      => 'required|string|max:255',
-            'stock_type'  => 'required|string|max:255',
-            'address'    => 'nullable|string|max:255',
-            'description' => 'nullable|string|max:255',
+            'name'         => 'required|string|max:255|unique:warehouses,name',
+            'stock_type'   => 'required|string|max:255',
+            'address'      => 'nullable|string|max:255',
+            'manager_id'   => 'required|exists:users,id',
+            'natures'      => 'required|array|min:1',           // tableau d'UUID de natures
+            'natures.*'    => 'required|exists:nature_entrepots,uuid',
+            'description'  => 'nullable|string|max:255',
         ], [
             'name.required'       => "Le nom de l'entrepôt est obligatoire.",
             'name.unique'         => "Un entrepôt avec ce nom existe déjà.",
-            'nature.required'     => "La nature de l'entrepôt est obligatoire.",
             'stock_type.required' => "Le type de stock disponible est obligatoire.",
+            'natures.required'    => "Veuillez sélectionner au moins une nature pour l'entrepôt.",
+            'natures.*.exists'    => "Une des natures sélectionnées est invalide.",
+            'manager_id.required' => "Le manager est obligatoire.",
         ]);
 
-        // Ajout du créateur
+        // Ajout de l'auteur
         $validated['created_by'] = $auth->id;
 
+        // Création de l'entrepôt
         $warehouse = Warehouse::create($validated);
+
+        // Association des natures via pivot
+        $natures = collect($validated['natures'])->mapWithKeys(function($nature_uuid) use ($auth) {
+            return [$nature_uuid => [
+                'created_by' => $auth->id,
+            ]];
+        });
+        $warehouse->natures()->sync($natures);
 
         return response()->json([
             'success' => true,
             'message' => "L'entrepôt a été créé avec succès.",
-            'data'    => $warehouse
-        ]);
+            'data'    => $warehouse->load('natures', 'manager')
+        ], 201);
     }
+
 
     /**
      * Display a listing of the resource.
@@ -92,6 +110,7 @@ class WarehouseController extends Controller
         ]);
     }
 
+
     /**
      * Display a listing of the resource.
      * @permission WarehouseController::update
@@ -103,30 +122,45 @@ class WarehouseController extends Controller
 
         $warehouse = Warehouse::findOrFail($uuid);
 
+        // Validation
         $validated = $request->validate([
             'name'        => 'required|string|max:255|unique:warehouses,name,' . $warehouse->uuid . ',uuid',
-            'nature'      => 'required|string|max:255',  // ex: principal, secondaire
-            'stock_type'  => 'required|string|max:255',  // ex: matières premières, produits finis
-            'address'    => 'nullable|string|max:255',
+            'stock_type'  => 'required|string|max:255',
+            'address'     => 'nullable|string|max:255',
+            'manager_id'  => 'required|exists:users,id',
+            'natures'     => 'required|array|min:1',          // tableau d'UUID de natures
+            'natures.*'   => 'required|exists:nature_entrepots,uuid',
             'description' => 'nullable|string|max:255',
             'is_active'   => 'sometimes|boolean'
         ], [
             'name.required'       => "Le nom de l'entrepôt est obligatoire.",
             'name.unique'         => "Un autre entrepôt avec ce nom existe déjà.",
-            'nature.required'     => "La nature de l'entrepôt est obligatoire.",
             'stock_type.required' => "Le type de stock disponible est obligatoire.",
+            'natures.required'    => "Veuillez sélectionner au moins une nature pour l'entrepôt.",
+            'natures.*.exists'    => "Une des natures sélectionnées est invalide.",
+            'manager_id.required' => "Le manager est obligatoire.",
         ]);
 
         $validated['updated_by'] = $auth->id;
 
+        // Mise à jour de l'entrepôt
         $warehouse->update($validated);
+
+        // Mise à jour des natures via pivot
+        $natures = collect($validated['natures'])->mapWithKeys(function($nature_uuid) use ($auth) {
+            return [$nature_uuid => [
+                'updated_by' => $auth->id,
+            ]];
+        });
+        $warehouse->natures()->sync($natures);
 
         return response()->json([
             'success' => true,
             'message' => "L'entrepôt a été mis à jour avec succès.",
-            'data'    => $warehouse
+            'data'    => $warehouse->load('natures', 'manager')
         ]);
     }
+
 
 
     /**
@@ -151,7 +185,6 @@ class WarehouseController extends Controller
 
         $warehouse = Warehouse::findOrFail($uuid);
 
-        // Supprime l'entrepôt
         $warehouse->delete();
 
         return response()->json([
