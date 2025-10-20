@@ -40,10 +40,16 @@ class UserController extends Controller
                     $query->whereIn('id', $request->input('permissions'));
                 });
             })
+            ->when($request->input('search'), function (Builder $query) use ($request) {
+                $query->whereLike('login', '%' . $request->input('search') . '%')
+                    ->orWhereLike('email', '%' . $request->input('search') . '%')
+                    ->orWhereLike('nom_utilisateur', '%' . $request->input('search') . '%')
+                    ->orWhereLike('prenom', '%' . $request->input('search') . '%');
+            })
             ->with([
                 'roles:id,name',
-                'createdBy:id,nom_utilisateur',
-                'updatedBy:id,nom_utilisateur',
+                'createdBy',
+                'updatedBy',
                 'permissions:id,name',
             ])
             ->whereNot('login', 'SYSTEM')

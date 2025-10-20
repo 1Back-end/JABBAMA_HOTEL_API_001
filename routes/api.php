@@ -46,6 +46,9 @@ Route::middleware(['activity'])->group(function () {
         Route::apiResource('orders', PurchaseOrderController::class);
         Route::patch('orders/{uuid}/status', [PurchaseOrderController::class, 'update_status']);
         Route::post('orders/{uuid}/update_orders', [PurchaseOrderController::class, 'update_orders']);
+        Route::patch('orders/{uuid}/cancel_orders', [PurchaseOrderController::class, 'cancel_orders']);
+        Route::post('orders/{uuid}/rejected_orders', [PurchaseOrderController::class, 'rejected_orders']);
+        Route::post('orders/{uuid}/send_orders', [PurchaseOrderController::class, 'send_orders']);
 
 
 

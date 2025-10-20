@@ -116,4 +116,10 @@ class User extends Authenticatable
 
         return $relation->wherePivot($teamsKey, getPermissionsTeamId());
     }
+
+    public function hasRoleName($roleName)
+    {
+        return $this->roles()->pluck('name')->contains($roleName);
+    }
+
 }

@@ -24,26 +24,35 @@ class PermissionController extends Controller
     {
         $perPage = $request->get("per_page");
         $page = $request->get("page");
+        $search = $request->get("search");
 
+        // Base query
+        $query = Permission::with([
+            'roles:id,name',
+            'createdBy:id,nom_utilisateur',
+            'updatedBy:id,nom_utilisateur',
+            'menu:id,libelle',
+        ]);
+
+        if($search = trim($request->input('search'))){
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('guard_name', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%");
+            });
+        }
+        // Si la pagination est demandée
         if ($perPage && $page) {
-            $permissions = Permission::with([
-                'roles:id,name',
-                'createdBy:id,nom_utilisateur',
-                'updatedBy:id,nom_utilisateur',
-                'menu:id,libelle',
-            ])->paginate(perPage: $perPage, page: $page);
+            $permissions = $query->paginate(perPage: $perPage, page: $page);
         } else {
-            $permissions = Permission::with([
-                'roles:id,name',
-                'createdBy:id,nom_utilisateur',
-                'updatedBy:id,nom_utilisateur',
-            ])->get();
+            $permissions = $query->orderBy('name', 'asc')->latest()->get();
         }
 
         return response()->json([
             'permissions' => $permissions,
         ]);
     }
+
 
     /**
      * @param PermissionRequest $request

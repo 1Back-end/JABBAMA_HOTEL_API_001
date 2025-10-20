@@ -89,7 +89,7 @@ class UnitController extends Controller
 
         // Validation des données avec unicité sur le name sauf pour l'élément actuel
         $validated = $request->validate([
-            'name'         => 'required|string|max:255|unique:units,name,' . $unit->uuid . ',uuid',
+            'name'         => 'required|string|max:150|unique:units,name,' . $unit->uuid . ',uuid',
             'abbreviation' => 'required|string|max:255',
             'description'  => 'nullable|string|max:255',
         ], [

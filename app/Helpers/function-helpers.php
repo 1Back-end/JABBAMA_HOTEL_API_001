@@ -67,7 +67,7 @@ if (! function_exists('delete_media')) {
      * @param Media|null $media
      * @return void
      */
-    function delete_media(string $disk, string $path, ?Media $media = null): void
+    function delete_media(string $disk, string $path, ?Medias $media = null): void
     {
         Storage::disk($disk)->delete($path);
         $media?->delete();

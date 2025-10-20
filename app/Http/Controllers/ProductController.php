@@ -82,16 +82,16 @@ class ProductController extends Controller
                 'description' => 'nullable|string',
                 'category_uuid' => 'nullable|exists:categories,uuid',
                 'unit_uuid' => 'nullable|exists:units,uuid',
-                'purchase_price' => 'required|numeric|min:0',
-                'sale_price' => 'required|numeric|min:0',
-                'stock_quantity' => 'required|integer|min:0',
-                'minimum_stock' => 'required|integer|min:0',
+                'purchase_price' => 'nullable|numeric|min:0',
+                'sale_price' => 'nullable|numeric|min:0',
+                'stock_quantity' => 'nullable|integer|min:0',
+                'minimum_stock' => 'nullable|integer|min:0',
                 'sub_categories' => 'nullable|array',
                 'sub_categories.*' => 'exists:sub_categories,uuid',
                 'points' => 'nullable|array',
                 'points.*.uuid' => 'required|exists:warehouses,uuid',
-                'points.*.quantity' => 'required|integer|min:0',
-                'image_file' => 'nullable|file|image|max:2048', // max 2MB
+                'points.*.quantity' => 'nullable|integer|min:0',
+                'image_file' => 'nullable', 'file', 'max:2048', 'mimes:jpg,jpeg,png,svg'
             ], [
                 'name.required' => 'Le nom du produit est obligatoire.',
                 'name.unique' => 'Ce nom de produit existe déjà.',
@@ -104,6 +104,8 @@ class ProductController extends Controller
                 'sub_categories.*.exists' => 'Une sous-catégorie sélectionnée est invalide.',
                 'points.*.uuid.exists' => 'Un point de dépôt sélectionné est invalide.',
                 'points.*.quantity.required' => 'La quantité pour chaque point est obligatoire.',
+                'image_file.max' => 'La taille maximale de l\'image du produit doit être de 2Mo',
+                'image_fil.mimes' => 'L\'image du produit doit prendre en compte uniquement ce type de fichier: jpg, jpeg et png'
             ]);
 
             $validated['created_by'] = $auth->id;
@@ -178,8 +180,6 @@ class ProductController extends Controller
             ], 500);
         }
     }
-
-
 
     /**
      * Display a listing of the resource.
@@ -287,16 +287,16 @@ class ProductController extends Controller
                 'description' => 'nullable|string',
                 'category_uuid' => 'required|exists:categories,uuid',
                 'unit_uuid' => 'required|exists:units,uuid',
-                'purchase_price' => 'required|numeric|min:0',
-                'sale_price' => 'required|numeric|min:0',
-                'stock_quantity' => 'required|integer|min:0',
+                'purchase_price' => 'nullable|numeric|min:0',
+                'sale_price' => 'nullable|numeric|min:0',
+                'stock_quantity' => 'nullable|integer|min:0',
                 'minimum_stock' => 'required|integer|min:0',
                 'sub_categories' => 'nullable|array',
                 'sub_categories.*' => 'exists:sub_categories,uuid',
                 'points' => 'nullable|array',
                 'points.*.uuid' => 'required|exists:warehouses,uuid',
                 'points.*.quantity' => 'required|integer|min:0',
-                'image_file' => 'nullable|file|image|max:2048',
+                'image_file' => 'nullable', 'file', 'max:2048', 'mimes:jpg,jpeg,png,svg'
             ], [
                 'name.required' => 'Le nom du produit est obligatoire.',
                 'name.unique' => 'Ce nom de produit existe déjà.',
@@ -308,6 +308,8 @@ class ProductController extends Controller
                 'minimum_stock.required' => 'Le stock minimum est obligatoire.',
                 'points.*.uuid.required' => 'Le point de dépôt est obligatoire.',
                 'points.*.quantity.required' => 'La quantité pour chaque point est obligatoire.',
+                'image_file.max' => 'La taille maximale de l\'image du produit doit être de 2Mo',
+                'image_fil.mimes' => 'L\'image du produit doit prendre en compte uniquement ce type de fichier: jpg, jpeg et png'
             ]);
 
             $validated['updated_by'] = $auth->id;

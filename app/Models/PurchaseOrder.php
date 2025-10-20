@@ -32,16 +32,14 @@ class PurchaseOrder extends Model
         'approved_by',
         'approved_at',
         'closed_at',
-        'documents'
     ];
 
-    protected $appends = ['documents_purchase_orders'];
 
     public static function boot()
     {
         parent::boot();
         static::creating(function ($model) {
-            $prefix = 'ORDER-';
+            $prefix = 'CMD-';
             $timestamp = now()->format('ymdHi');
 
             $random = strtoupper(Str::random(7));
@@ -50,7 +48,7 @@ class PurchaseOrder extends Model
         });
     }
 
-    // 🔗 Relations
+
     public function items()
     {
         return $this->hasMany(PurchaseOrderItem::class, 'purchase_order_uuid', 'uuid');
@@ -89,10 +87,7 @@ class PurchaseOrder extends Model
     {
         return $this->morphMany(Medias::class, 'mediable');
     }
-    public function getDocumentsPurchaseOrdersAttribute()
-    {
-        return $this->medias()->get()->map(fn($media) => Storage::disk($media->disk)->url($media->path))->toArray();
-    }
+
 
 
 }
