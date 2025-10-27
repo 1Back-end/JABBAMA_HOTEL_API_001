@@ -20,6 +20,8 @@ Route::middleware(['activity'])->group(function () {
 
     Route::middleware(['auth:sanctum', 'user.change_password', 'check.permission'])->group(function () {
 
+        Route::get("/get_users_where_role_is_gestionnaire_stock",[UserController::class,'get_users_where_role_is_gestionnaire_stock']);
+
         Route::apiResource("suppliers", SupplierController::class);
         Route::patch('suppliers/{uuid}/is_active', [SupplierController::class, 'update_status']);
         Route::post('suppliers/send_user_code_otp', [SupplierController::class, 'send_user_code_otp']);
@@ -32,9 +34,11 @@ Route::middleware(['activity'])->group(function () {
 
         Route::apiResource('warehouses', WarehouseController::class);
         Route::patch('warehouses/{uuid}/is_active', [WarehouseController::class, 'update_status']);
+        Route::get('get_all_warehouses_by_users', [WarehouseController::class, 'get_all_warehouses_by_users']);
         Route::apiResource('products', ProductController::class);
         Route::patch('products/{uuid}/is_active', [ProductController::class, 'update_status']);
         Route::post('products/{uuid}/update_products', [ProductController::class, 'update_products']);
+        Route::get('warehouses/{uuid}/products', [WarehouseController::class, 'get_products_by_warehouse']);
 
         Route::apiResource('subcategories', SubCategoryController::class);
         Route::patch('subcategories/{uuid}/is_active', [SubCategoryController::class, 'update_status']);
@@ -49,6 +53,7 @@ Route::middleware(['activity'])->group(function () {
         Route::patch('orders/{uuid}/cancel_orders', [PurchaseOrderController::class, 'cancel_orders']);
         Route::post('orders/{uuid}/rejected_orders', [PurchaseOrderController::class, 'rejected_orders']);
         Route::post('orders/{uuid}/send_orders', [PurchaseOrderController::class, 'send_orders']);
+        Route::patch('orders/{uuid}/validate_orders', [PurchaseOrderController::class, 'validate_orders']);
 
 
 

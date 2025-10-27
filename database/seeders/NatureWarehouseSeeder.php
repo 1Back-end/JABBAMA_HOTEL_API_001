@@ -2,10 +2,8 @@
 
 namespace Database\Seeders;
 
-use App\Models\NatureEntrepot;
-use App\Models\NatureWarehouse;
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
+use App\Models\NatureEntrepot;
 
 class NatureWarehouseSeeder extends Seeder
 {
@@ -14,9 +12,48 @@ class NatureWarehouseSeeder extends Seeder
      */
     public function run(): void
     {
-//        NatureEntrepot::firstOrCreate([
-//
-//        ])
-        //
+        $userId = 2; // ID de l'utilisateur créateur / modificateur
+
+        $natureEntrepots = [
+            [
+                'abbreviation' => 'PC',
+                'name' => 'Point de consommation',
+                'description' => null,
+                'is_active' => 1,
+                'created_by' => $userId,
+                'updated_by' => $userId,
+            ],
+            [
+                'abbreviation' => 'PS',
+                'name' => 'Point de Stockage',
+                'description' => null,
+                'is_active' => 1,
+                'created_by' => $userId,
+                'updated_by' => $userId,
+            ],
+            [
+                'abbreviation' => 'PT',
+                'name' => 'Point de transformation',
+                'description' => null,
+                'is_active' => 1,
+                'created_by' => $userId,
+                'updated_by' => $userId,
+            ],
+            [
+                'abbreviation' => 'PD',
+                'name' => 'Point de distribution',
+                'description' => null,
+                'is_active' => 1,
+                'created_by' => $userId,
+                'updated_by' => $userId,
+            ],
+        ];
+
+        foreach ($natureEntrepots as $entrepot) {
+            NatureEntrepot::updateOrCreate(
+                ['name' => $entrepot['name']],
+                $entrepot
+            );
+        }
     }
 }

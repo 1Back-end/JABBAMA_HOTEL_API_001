@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Product;
+use App\Models\Warehouse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -382,10 +383,6 @@ class ProductController extends Controller
         }
     }
 
-
-
-
-
     /**
      * Display a listing of the resource.
      * @permission ProductController::destroy
@@ -417,4 +414,7 @@ class ProductController extends Controller
         ]);
         //
     }
+
+
+
 }

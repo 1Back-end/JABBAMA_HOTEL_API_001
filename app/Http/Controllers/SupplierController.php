@@ -83,9 +83,9 @@ class SupplierController extends Controller
                 'address'        => 'nullable|string|max:500',
                 'cni_number'     => 'nullable|string|unique:suppliers,cni_number',
                 'description'    => 'nullable|string',
-                'company_name'   => 'required|string|max:255',
+                'company_name'   => 'required|string|max:255|unique:suppliers,company_name',
                 'company_email'  => 'nullable|email|unique:suppliers,company_email',
-                'company_phone'  => 'nullable|string|unique:suppliers,company_phone',
+                'company_phone'  => 'required|string|unique:suppliers,company_phone',
                 'is_active'      => 'nullable|boolean',
             ], [
                 'first_name.required'   => 'Le prénom est obligatoire.',
@@ -93,9 +93,10 @@ class SupplierController extends Controller
                 'email.email'           => 'L\'email doit être valide.',
                 'phone_number.unique'   => 'Ce numéro de téléphone est déjà utilisé.',
                 'email.unique'          => 'Cet email est déjà utilisé.',
-                'company_email.unique'  => 'Cet email d\'entreprise est déjà utilisé.',
+                'company_email.unique'  => 'L\'email de la société est déjà utilisé.',
                 'cni_number.unique'     => 'Ce numéro de CNI est déjà utilisé.',
-                'company_phone.unique'  => 'Ce numéro de téléphone d\'entreprise est déjà utilisé.',
+                'company_phone.unique'  => 'Le numéro de téléphone de la société est déjà utilisé.',
+                'company_name.unique' => 'Le nom de la société est déjà utilisé.'
             ]);
 
             // Ajouter l'auteur
@@ -143,7 +144,7 @@ class SupplierController extends Controller
                 'address'        => 'nullable|string|max:500',
                 'cni_number'     => 'nullable|string|unique:suppliers,cni_number,' . $supplier->uuid . ',uuid',
                 'description'    => 'nullable|string',
-                'company_name'   => 'required|string|max:255',
+                'company_name'   => 'required|string|max:255|unique:suppliers,company_name,' . $supplier->uuid . ',uuid',
                 'company_email'  => 'nullable|email|unique:suppliers,company_email,' . $supplier->uuid . ',uuid',
                 'company_phone'  => 'nullable|string|unique:suppliers,company_phone,' . $supplier->uuid . ',uuid',
                 'is_active'      => 'nullable|boolean',
@@ -153,9 +154,10 @@ class SupplierController extends Controller
                 'email.email'           => 'L\'email doit être valide.',
                 'phone_number.unique'   => 'Ce numéro de téléphone est déjà utilisé.',
                 'email.unique'          => 'Cet email est déjà utilisé.',
-                'company_email.unique'  => 'Cet email d\'entreprise est déjà utilisé.',
+                'company_email.unique'  => 'L\'email de la société est déjà utilisé.',
                 'cni_number.unique'     => 'Ce numéro de CNI est déjà utilisé.',
-                'company_phone.unique'  => 'Ce numéro de téléphone d\'entreprise est déjà utilisé.',
+                'company_phone.unique'  => 'Le numéro de téléphone de la société est déjà utilisé.',
+                'company_name.unique' => 'Le nom de la société est déjà utilisé.'
             ]);
 
             // Ajouter l'updateur
@@ -304,13 +306,23 @@ class SupplierController extends Controller
 
         $supplier = Supplier::findOrFail($uuid);
 
-        $supplier->delete();
+        // Vérifier si des commandes sont liées
+        if ($supplier->orders()->exists()) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Impossible de supprimer ce fournisseur : des commandes lui sont associées.'
+            ], 422);
+        }
+
+        // Supprimer le fournisseur avec forceDelete
+        $supplier->forceDelete();
 
         return response()->json([
             'success' => true,
             'message' => 'Fournisseur supprimé avec succès.'
         ]);
     }
+
 
 
 

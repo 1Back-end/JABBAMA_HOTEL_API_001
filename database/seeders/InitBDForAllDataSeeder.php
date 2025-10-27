@@ -2,91 +2,110 @@
 
 namespace Database\Seeders;
 
-use App\Models\Permission;
 use App\Models\User;
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Artisan;
 use Spatie\Permission\Models\Role;
 
 class InitBDForAllDataSeeder extends Seeder
 {
-    /**
-     * Run the database seeds.
-     */
     public function run(): void
     {
-        // SYSTEM user
-        $userSYSTEM = User::firstOrCreate(
+        $defaultPassword = '1234567';
+
+        // 1️⃣ SYSTEM user
+        $userSYSTEM = User::updateOrCreate(
             ['login' => 'SYSTEM'],
             [
                 'nom_utilisateur' => 'SYSTEM',
-                'email' => 'system@system.sytem',
-                'password' => \Hash::make('SYSTEM@2025'),
+                'email' => 'system@system.system',
+                'password' => \Hash::make($defaultPassword),
                 'password_expiated_at' => now()->addDay(),
             ]
         );
 
+        // 2️⃣ Extraire les permissions
         Artisan::call('permissions:extract');
 
-        // Rôles principaux
+        // 3️⃣ Rôles principaux avec guard 'web'
         $roleSuperAdmin = Role::firstOrCreate(
-            ['name' => 'Super Admin'],
-            ['description' => 'Super utilisateur', 'created_by' => $userSYSTEM->id, 'updated_by' => $userSYSTEM->id]
+            ['name' => 'SUPER_ADMIN', 'guard_name' => 'web'],
+            [
+                'description' => 'Super utilisateur',
+                'created_by' => $userSYSTEM->id,
+                'updated_by' => $userSYSTEM->id
+            ]
         );
 
         $roleAdmin = Role::firstOrCreate(
-            ['name' => 'Admin'],
-            ['description' => 'Administrateur', 'created_by' => $userSYSTEM->id, 'updated_by' => $userSYSTEM->id]
+            ['name' => 'ADMIN', 'guard_name' => 'web'],
+            [
+                'description' => 'Administrateur',
+                'created_by' => $userSYSTEM->id,
+                'updated_by' => $userSYSTEM->id
+            ]
         );
 
-        // SUPER ADMIN USER
-        $superUser = User::firstOrCreate(
+        // 4️⃣ SUPER ADMIN USER
+        $superUser = User::updateOrCreate(
             ['login' => 'admin'],
             [
                 'nom_utilisateur' => 'SUPER USER',
                 'email' => 'admin@admin.admin',
-                'password' => \Hash::make('SUPERADMIN2145@2025'),
+                'password' => \Hash::make($defaultPassword),
                 'password_expiated_at' => now()->addDay(),
             ]
         );
 
-        $roleSuperAdmin->users()->syncWithoutDetaching([
-            $superUser->id => ['created_by' => $userSYSTEM->id, 'updated_by' => $userSYSTEM->id]
+        // 5️⃣ Assigner rôle Super Admin avec pivot
+        $superUser->roles()->syncWithoutDetaching([
+            $roleSuperAdmin->id => [
+                'created_by' => $userSYSTEM->id,
+                'updated_by' => $userSYSTEM->id
+            ]
         ]);
 
-        // Création d'autres rôles
-        $otherRoles = ['Manager', 'Reception', 'Comptable', 'RH', 'Technicien'];
-        $users = [];
+        // 6️⃣ Autres rôles et utilisateurs
+        $otherRoles = [
+            'MANAGER', 'RECEPTION', 'COMPTABLE', 'RH', 'TECHNICIEN',
+            'GESTIONNAIRE_STOCK', 'CUISINIER', 'ECONOME', 'AGENT_BAR', 'GOUVERNANTE'
+        ];
 
         foreach ($otherRoles as $roleName) {
             $role = Role::firstOrCreate(
-                ['name' => $roleName],
-                ['description' => $roleName . ' role', 'created_by' => $userSYSTEM->id, 'updated_by' => $userSYSTEM->id]
+                ['name' => $roleName, 'guard_name' => 'web'],
+                [
+                    'description' => $roleName . ' ROLE',
+                    'created_by' => $userSYSTEM->id,
+                    'updated_by' => $userSYSTEM->id
+                ]
             );
 
-            // Création d'un utilisateur pour chaque rôle
-            $user = User::firstOrCreate(
+            $user = User::updateOrCreate(
                 ['login' => strtolower($roleName)],
                 [
-                    'nom_utilisateur' => $roleName . ' User',
+                    'nom_utilisateur' => $roleName . ' USER',
                     'email' => strtolower($roleName) . '@example.com',
-                    'password' => \Hash::make('Password@123'),
+                    'password' => \Hash::make($defaultPassword),
                     'password_expiated_at' => now()->addDay(),
                 ]
             );
 
-            $role->users()->syncWithoutDetaching([
-                $user->id => ['created_by' => $userSYSTEM->id, 'updated_by' => $userSYSTEM->id]
+            // Assigner rôle avec pivot created_by / updated_by
+            $user->roles()->syncWithoutDetaching([
+                $role->id => [
+                    'created_by' => $userSYSTEM->id,
+                    'updated_by' => $userSYSTEM->id
+                ]
             ]);
-
-            $users[] = $user;
         }
 
-        // Optionnel : afficher les utilisateurs créés
-        info('Utilisateurs créés : ' . implode(', ', array_map(fn($u) => $u->login, array_merge([$superUser], $users))));
+        // 7️⃣ Réinitialiser le mot de passe de tous les utilisateurs existants
+        User::query()->update([
+            'password' => \Hash::make($defaultPassword),
+            'password_expiated_at' => now()->addDay(),
+        ]);
+
+        info('Seeder exécuté : mots de passe réinitialisés et utilisateurs/rôles mis à jour.');
     }
-
-
-    //
 }

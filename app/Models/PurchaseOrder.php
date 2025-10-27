@@ -32,6 +32,8 @@ class PurchaseOrder extends Model
         'approved_by',
         'approved_at',
         'closed_at',
+        'transfered_by',
+        'transfered_at',
     ];
 
 

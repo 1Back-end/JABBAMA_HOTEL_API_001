@@ -18,14 +18,11 @@ class Warehouse extends Model
     protected $fillable = [
         'ref',
         'name',
-        'nature_uuid',   // remplacé 'nature'
         'stock_type',
-        'manager_id', // <--- ajouter ici
         'address',
         'is_active',
         'created_by',
         'updated_by',
-        'manager_id',    // nouveau champ
     ];
 
     protected static function boot()
@@ -53,28 +50,57 @@ class Warehouse extends Model
 
     /** Relations **/
 
-    // Utilisateur qui a créé
+    // Créateur
     public function creator() {
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    // Utilisateur qui a modifié
+    // Dernière modification
     public function updater() {
         return $this->belongsTo(User::class, 'updated_by');
     }
 
-    // Manager de l'entrepôt
-    public function manager() {
-        return $this->belongsTo(User::class, 'manager_id');
+    // Managers associés (plusieurs managers possible)
+    public function managers()
+    {
+        return $this->belongsToMany(
+            User::class,
+            'warehouse_managers', // table pivot séparée pour managers
+            'warehouse_uuid',     // clé étrangère vers Warehouse
+            'user_id'             // clé étrangère vers User
+        )
+            ->withPivot(['created_by', 'updated_by'])
+            ->withTimestamps()
+            ->using(WarehouseManager::class);
     }
 
-    // Natures associées (via pivot)
-    public function natures() {
+    // Natures associées (plusieurs natures possible)
+    public function natures()
+    {
         return $this->belongsToMany(
             NatureEntrepot::class,
-            'nature_warehouse',
-            'warehouse_uuid',
-            'nature_uuid'
-        )->withPivot(['is_active','created_by','updated_by'])->withTimestamps()->using(NatureWarehouse::class);
+            'nature_warehouse',   // table pivot pour natures
+            'warehouse_uuid',     // clé étrangère vers Warehouse
+            'nature_uuid'         // clé étrangère vers NatureEntrepot
+        )
+            ->withPivot(['is_active', 'created_by', 'updated_by'])
+            ->withTimestamps()
+            ->using(NatureWarehouse::class);
+    }
+    public function orders()
+    {
+        return $this->hasMany(PurchaseOrder::class, 'warehouse_from', 'uuid');
+    }
+    public function products()
+    {
+        return $this->belongsToMany(
+            Product::class,
+            'produit_point', // table pivot entre produits et entrepôts
+            'point_uuid',    // clé étrangère vers Warehouse dans pivot
+            'produit_uuid'   // clé étrangère vers Product dans pivot
+        )
+            ->withPivot('uuid', 'quantity', 'is_active')
+            ->withTimestamps()
+            ->using(ProductPoint::class); // pivot personnalisé
     }
 }

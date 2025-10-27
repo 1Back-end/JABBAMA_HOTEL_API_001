@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Symfony\Component\HttpFoundation\Response;
@@ -12,30 +11,26 @@ class ChangeDefaultPasswordController extends Controller
     public function __invoke(Request $request)
     {
         $request->validate([
-            'login' => ['required'],
-            'new_password' => ['required']
+            'new_password' => ['required', 'min:6'], // règles pour le nouveau mot de passe
         ]);
 
-        $user = auth()->user();
+        $user = auth()->user(); // l'utilisateur est déjà connecté avec son login et mot de passe par défaut
 
-        if (User::whereNot('id', $user->id)->whereLogin($request->login)->exists()) {
-            return \response()->json([
-                'message' => __("Ce login est déjà existant"),
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
-        }
-
-        if (Hash::check($request->new_password, $user->password) || $user->login === $request->login) {
+        // Vérifier que le nouveau mot de passe est différent de l'ancien
+        if (Hash::check($request->new_password, $user->password)) {
             return response()->json([
-                'message' => 'Le nouveau mot de passe et le login doivent être différent de ceux existants.'
+                'message' => 'Le nouveau mot de passe doit être différent de l’ancien.'
             ], Response::HTTP_CONFLICT);
         }
 
+        // Mettre à jour le mot de passe et indiquer que ce n'est plus le mot de passe par défaut
         $user->update([
             'password' => Hash::make($request->new_password),
             'default' => false,
-            'login' => $request->login
         ]);
 
-        return response()->json(['message' => 'Le mot de passe a été changé avec succès !']);
+        return response()->json([
+            'message' => 'Votre mot de passe a été changé avec succès ! Vous pouvez maintenant vous connecter normalement.'
+        ]);
     }
 }

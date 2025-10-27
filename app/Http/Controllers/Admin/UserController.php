@@ -30,40 +30,107 @@ class UserController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $users = User::when($request->input('roles'), function (Builder $query) use ($request) {
-            $query->whereHas('roles', function (Builder $query) use ($request) {
-                $query->whereIn('id', $request->input('roles'));
-            });
-        })
-            ->when($request->input('permissions'), function (Builder $query) use ($request) {
-                $query->whereHas('permissions', function (Builder $query) use ($request) {
-                    $query->whereIn('id', $request->input('permissions'));
+        $users = User::query()
+            // Filtre par rôles si fourni
+            ->when($request->input('roles'), function ($query) use ($request) {
+                $query->whereHas('roles', function ($q) use ($request) {
+                    $q->whereIn('id', $request->input('roles'));
                 });
             })
-            ->when($request->input('search'), function (Builder $query) use ($request) {
-                $query->whereLike('login', '%' . $request->input('search') . '%')
-                    ->orWhereLike('email', '%' . $request->input('search') . '%')
-                    ->orWhereLike('nom_utilisateur', '%' . $request->input('search') . '%')
-                    ->orWhereLike('prenom', '%' . $request->input('search') . '%');
+            // Filtre par permissions si fourni
+            ->when($request->input('permissions'), function ($query) use ($request) {
+                $query->whereHas('permissions', function ($q) use ($request) {
+                    $q->whereIn('id', $request->input('permissions'));
+                });
             })
+            // Filtre par recherche texte
+            ->when($request->input('search'), function ($query) use ($request) {
+                $search = $request->input('search');
+                $query->where(function ($q) use ($search) {
+                    $q->where('login', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%")
+                        ->orWhere('nom_utilisateur', 'like', "%{$search}%")
+                        ->orWhere('prenom', 'like', "%{$search}%");
+                });
+            })
+            // Filtre par statut si fourni (boolean)
+            ->when($request->has('status'), function ($query) use ($request) {
+                $query->where('status', $request->boolean('status'));
+            })
+            // Exclure SYSTEM
+            ->whereNot('login', ['SYSTEM', 'admin'])
             ->with([
                 'roles:id,name',
+                'permissions:id,name',
                 'createdBy',
                 'updatedBy',
-                'permissions:id,name',
             ])
-            ->whereNot('login', 'SYSTEM')
             ->latest()
             ->paginate(
                 perPage: $request->input('per_page', 25),
                 page: $request->input('page', 1)
             );
 
+        return response()->json([
+            'users' => $users,
+        ]);
+    }
+
+
+    /**
+     * @param Request $request
+     * @return JsonResponse
+     *
+     * @permission UserController::get_users_where_role_is_gestionnaire_stock
+     * @permission_desc Afficher la liste des utilisateurs avec pour role GESTIONNAIRE DE STOCK
+     */
+    public function get_users_where_role_is_gestionnaire_stock(Request $request): JsonResponse
+    {
+        $users = User::query()
+            // Filtre uniquement les utilisateurs ayant le rôle GESTIONNAIRE STOCK
+            ->whereHas('roles', function ($q) {
+                $q->where('name', 'GESTIONNAIRE_STOCK');
+            })
+            // Filtre par permissions si fourni
+            ->when($request->input('permissions'), function ($query) use ($request) {
+                $query->whereHas('permissions', function ($q) use ($request) {
+                    $q->whereIn('id', $request->input('permissions'));
+                });
+            })
+            // Filtre par recherche texte
+            ->when($request->input('search'), function ($query) use ($request) {
+                $search = $request->input('search');
+                $query->where(function ($q) use ($search) {
+                    $q->where('login', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%")
+                        ->orWhere('nom_utilisateur', 'like', "%{$search}%")
+                        ->orWhere('prenom', 'like', "%{$search}%");
+                });
+            })
+            // Filtre par statut si fourni (boolean)
+            ->when($request->has('status'), function ($query) use ($request) {
+                $query->where('status', $request->boolean('status'));
+            })
+            // Exclure SYSTEM et admin
+            ->whereNot('login', ['SYSTEM', 'admin'])
+            ->with([
+                'roles:id,name',
+                'permissions:id,name',
+                'createdBy',
+                'updatedBy',
+            ])
+            ->latest()
+            ->paginate(
+                perPage: $request->input('per_page', 25),
+                page: $request->input('page', 1)
+            );
 
         return response()->json([
             'users' => $users,
         ]);
     }
+
+
 
     /**
      * @param UserRequest $request
@@ -77,26 +144,17 @@ class UserController extends Controller
     {
         DB::beginTransaction();
         try {
-            // Conserver le mot de passe en clair pour l'envoi par email
-            $plainPassword = $request->password;
+            // Mot de passe par défaut
+            $defaultPassword = '1234567';
 
-            // Créer l'utilisateur avec le mot de passe hashé
+            // Créer l'utilisateur avec le mot de passe hashé et default = true
             $user = User::create(array_merge(
                 $request->validated(),
-                ['password' => Hash::make($plainPassword), 'default' => true]
+                [
+                    'password' => Hash::make($defaultPassword),
+                    'default'  => true
+                ]
             ));
-
-            // Envoyer les identifiants par email
-            Mail::send('emails.user_credentials', [
-                'login'    => $user->login,
-                'password' => $plainPassword,
-            ], function ($message) use ($user) {
-                $message->to($user->email)
-                    ->subject('Vos identifiants de connexion');
-            });
-
-            // Notifier l'utilisateur (optionnel)
-            $user->notify(new DefaultUserCreated($user->login, $plainPassword));
 
             // Associer les rôles
             foreach ($request->roles as $role) {
@@ -109,7 +167,9 @@ class UserController extends Controller
             DB::commit();
 
             return response()->json([
-                'message' => __("L'utilisateur a été créé avec succès !")
+                'message' => __("L'utilisateur a été créé avec succès !"),
+                'login'   => $user->login,
+                'password'=> $defaultPassword // optionnel, pour retour front si nécessaire
             ], Response::HTTP_CREATED);
 
         } catch (\Exception $th) {
@@ -123,6 +183,7 @@ class UserController extends Controller
             ], 500);
         }
     }
+
 
 
     /**

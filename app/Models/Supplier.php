@@ -68,4 +68,11 @@ class Supplier extends Model
 
         return 'FOUR-'  . date('Ymd') . str_pad($number, 4, '0', STR_PAD_LEFT);
     }
+
+
+    public function orders()
+    {
+        return $this->hasMany(PurchaseOrder::class, 'supplier_uuid', 'uuid');
+    }
+
 }

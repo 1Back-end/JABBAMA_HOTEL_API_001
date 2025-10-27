@@ -18,28 +18,46 @@ class PurchaseOrderController extends Controller
      */
     public function index(Request $request)
     {
+        $auth = auth()->user();
         $perPage = $request->input('limit', 25);
         $page = $request->input('page', 1);
 
         $query = PurchaseOrder::with([
-            'items.product', // 🔹 inclure le produit dans les items
+            'items.product',
             'supplier',
-            'warehouseTo.manager',
-            'warehouse_from.manager',
+            'warehouseTo.managers',
+            'warehouse_from.managers',
             'creator',
             'updater',
             'approver'
         ]);
-        if ($request->filled('type')) $query->where('type', $request->type);
-        if ($request->filled('status')) $query->where('status', $request->status);
 
-        if ($request->filled('start_date') && $request->filled('end_date')) {
-            $query->whereBetween('created_at', [
-                $request->start_date,
-                $request->end_date
-            ]);
+        // 🔹 Filtrage par type et statut
+        if ($request->filled('type')) {
+            $query->where('type', $request->type);
         }
 
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+
+        // 🔹 Filtrage par période
+        if ($request->filled('start_date') && $request->filled('end_date')) {
+            $query->whereBetween('created_at', [$request->start_date, $request->end_date]);
+        }
+
+        // 🔹 Gestion des accès selon les rôles
+        if ($auth->hasRole('GESTIONNAIRE_STOCK')) {
+            // 👉 Le gestionnaire de stock voit uniquement les bons transférés par lui
+            $query->where('transfered_by', $auth->id);
+
+        } elseif (!$auth->hasRole('SUPER_ADMIN')) {
+            // 👉 Tous les autres utilisateurs (sauf Super Admin)
+            $query->where('created_by', $auth->id);
+        }
+        // 👉 Le SUPER_ADMIN voit tout (aucune restriction)
+
+        // 🔹 Recherche globale
         if ($search = trim($request->input('search'))) {
             $query->where(function ($q) use ($search) {
                 $q->where('reference', 'like', "%{$search}%")
@@ -50,7 +68,7 @@ class PurchaseOrderController extends Controller
                     ->orWhere('warehouse_to', 'like', "%{$search}%")
                     ->orWhere('supplier_uuid', 'like', "%{$search}%")
 
-                    // 🔹 Recherche dans le fournisseur
+                    // 🔹 Fournisseur
                     ->orWhereHas('supplier', function ($qs) use ($search) {
                         $qs->where('first_name', 'like', "%{$search}%")
                             ->orWhere('last_name', 'like', "%{$search}%")
@@ -60,7 +78,7 @@ class PurchaseOrderController extends Controller
                             ->orWhere('address', 'like', "%{$search}%");
                     })
 
-                    // 🔹 Recherche dans les entrepôts
+                    // 🔹 Entrepôts
                     ->orWhereHas('warehouseTo', function ($qw) use ($search) {
                         $qw->where('ref', 'like', "%{$search}%")
                             ->orWhere('name', 'like', "%{$search}%")
@@ -74,13 +92,13 @@ class PurchaseOrderController extends Controller
                             ->orWhere('address', 'like', "%{$search}%");
                     })
 
-                    // 🔹 Recherche dans les créateurs
+                    // 🔹 Créateur
                     ->orWhereHas('creator', function ($qc) use ($search) {
                         $qc->where('nom_utilisateur', 'like', "%{$search}%")
                             ->orWhere('email', 'like', "%{$search}%");
                     })
 
-                    // 🔹 Recherche dans les produits liés à la commande
+                    // 🔹 Produits
                     ->orWhereHas('items.product', function ($qp) use ($search) {
                         $qp->where('name', 'like', "%{$search}%")
                             ->orWhere('code', 'like', "%{$search}%")
@@ -89,6 +107,7 @@ class PurchaseOrderController extends Controller
             });
         }
 
+        // 🔹 Pagination
         $data = $query->latest()->paginate($perPage, ['*'], 'page', $page);
 
         return response()->json([
@@ -98,8 +117,6 @@ class PurchaseOrderController extends Controller
             'total'        => $data->total(),
         ]);
     }
-
-
 
 
     /**
@@ -134,29 +151,29 @@ class PurchaseOrderController extends Controller
 
             // Commande externe
             if ($request->type === 'external') {
-                if (!$auth->hasRoleName('Econome')) {
+                if (!$auth->hasRoleName('ECONOME')) {
                     return response()->json([
                         'message' => 'Seul le responsable de stock (Econome) peut créer une commande externe.'
                     ], 403);
                 }
 
                 $supplierUuid = $request->supplier_uuid;
-                $warehouseTo = Warehouse::where('manager_id', $auth->id)->first();
+
+                // Récupérer le premier entrepôt que le manager gère
+                $warehouseTo = $auth->warehouses()->first();
                 $warehouseToUuid = $warehouseTo ? $warehouseTo->uuid : null;
-                $warehouseToName = $warehouseTo ? $warehouseTo->name : null;
 
             } else { // Commande interne
                 $warehouseFrom = Warehouse::where('uuid', $request->warehouse_from)->first();
                 if (!$warehouseFrom) {
-                    return response()->json(
-                        [
-                        'message' => 'Entrepôt source introuvable.'
-                    ], 404);
+                    return response()->json(['message' => 'Entrepôt source introuvable.'], 404);
                 }
 
-                if ($warehouseFrom->manager_id !== $auth->id) {
+                // Vérifier que l'utilisateur est manager de l'entrepôt
+                $isManager = $warehouseFrom->managers()->where('user_id', $auth->id)->exists();
+                if (!$isManager) {
                     return response()->json([
-                        'message' => 'Vous ne pouvez créer une commande interne que depuis votre entrepôt.'
+                        'message' => 'Vous ne pouvez créer une commande interne que depuis un entrepôt que vous gérez.'
                     ], 403);
                 }
 
@@ -181,13 +198,11 @@ class PurchaseOrderController extends Controller
                 'added_by' => $auth->id,
             ]);
 
-            // Ajout des produits pour toutes les commandes
+            // Ajout des produits
             foreach ($request->items as $item) {
-                // Récupérer le produit pour le nom
                 $product = Product::find($item['product_uuid']);
                 $productName = $product ? $product->name : $item['product_uuid'];
 
-                // Pour les commandes internes, vérifier la disponibilité dans l'entrepôt
                 if ($request->type === 'internal') {
                     $available = Product::where('uuid', $item['product_uuid'])
                         ->whereHas('points', function ($q) use ($warehouseFrom) {
@@ -233,7 +248,6 @@ class PurchaseOrderController extends Controller
     }
 
 
-
     /**
      * Display a listing of the resource.
      * @permission PurchaseOrderController::show
@@ -245,8 +259,8 @@ class PurchaseOrderController extends Controller
             $purchaseOrder = PurchaseOrder::with([
                 'items.product',
                 'supplier',
-                'warehouseTo.manager',
-                'warehouse_from.manager',
+                'warehouseTo.managers',
+                'warehouse_from.managers',
                 'creator',
                 'updater',
                 'approver'
@@ -286,12 +300,6 @@ class PurchaseOrderController extends Controller
         $auth = auth()->user();
 
         try {
-            // Récupérer la commande
-            $order = PurchaseOrder::where('uuid', $uuid)->first();
-            if (!$order) {
-                return response()->json(['message' => 'Commande introuvable.'], 404);
-            }
-
             // Validation des données
             $request->validate([
                 'type' => 'required|in:external,internal',
@@ -302,27 +310,36 @@ class PurchaseOrderController extends Controller
                 'items' => 'required|array|min:1',
                 'items.*.product_uuid' => 'required|exists:produits,uuid',
                 'items.*.quantity' => 'required|numeric|min:0.001',
-            ], [
-                'supplier_uuid.required_if' => 'Vous devez sélectionner un fournisseur pour une commande externe.',
-                'warehouse_from.required_if' => 'Vous devez sélectionner l’entrepôt source pour une commande interne.',
-                'items.required' => 'Vous devez ajouter au moins un produit à la commande.',
             ]);
 
+            // Récupération de la commande
+            $order = PurchaseOrder::where('uuid', $uuid)->first();
+            if (!$order) {
+                return response()->json(['message' => 'Commande introuvable.'], 404);
+            }
+
+            // Vérifier si l'utilisateur est autorisé à modifier
+            if ($order->created_by !== $auth->id && !$auth->hasRoleName('Admin')) {
+                return response()->json([
+                    'message' => 'Vous n’êtes pas autorisé à modifier cette commande.'
+                ], 403);
+            }
+
+            // Variables
             $warehouseFromUuid = null;
             $warehouseToUuid = null;
             $supplierUuid = null;
 
             // Commande externe
             if ($request->type === 'external') {
-                if (!$auth->hasRoleName('Econome')) {
+                if (!$auth->hasRoleName('ECONOME')) {
                     return response()->json([
                         'message' => 'Seul le responsable de stock (Econome) peut modifier une commande externe.'
                     ], 403);
                 }
 
                 $supplierUuid = $request->supplier_uuid;
-
-                $warehouseTo = Warehouse::where('manager_id', $auth->id)->first();
+                $warehouseTo = $auth->warehouses()->first();
                 $warehouseToUuid = $warehouseTo ? $warehouseTo->uuid : null;
 
             } else { // Commande interne
@@ -331,9 +348,11 @@ class PurchaseOrderController extends Controller
                     return response()->json(['message' => 'Entrepôt source introuvable.'], 404);
                 }
 
-                if ($warehouseFrom->manager_id !== $auth->id) {
+                // Vérifier que l'utilisateur gère l'entrepôt
+                $isManager = $warehouseFrom->managers()->where('user_id', $auth->id)->exists();
+                if (!$isManager) {
                     return response()->json([
-                        'message' => 'Vous ne pouvez modifier une commande interne que depuis votre entrepôt.'
+                        'message' => 'Vous ne pouvez modifier une commande interne que depuis un entrepôt que vous gérez.'
                     ], 403);
                 }
 
@@ -354,17 +373,16 @@ class PurchaseOrderController extends Controller
                 'warehouse_to' => $warehouseToUuid,
                 'notes' => $request->notes,
                 'updated_by' => $auth->id,
+                'status' => 'draft'
             ]);
 
-            // Supprimer les anciens articles et recréer les nouveaux (pour tous les types)
+            // Suppression des anciens items et ajout des nouveaux
             $order->items()->delete();
 
             foreach ($request->items as $item) {
-                // Récupérer le produit pour le nom
                 $product = Product::find($item['product_uuid']);
                 $productName = $product ? $product->name : $item['product_uuid'];
 
-                // Pour les commandes internes, vérifier la disponibilité dans l'entrepôt
                 if ($request->type === 'internal') {
                     $available = Product::where('uuid', $item['product_uuid'])
                         ->whereHas('points', function ($q) use ($warehouseFrom) {
@@ -373,7 +391,7 @@ class PurchaseOrderController extends Controller
 
                     if (!$available) {
                         return response()->json([
-                            'message' => "Le produit {$productName} n'est pas disponible dans l'entrepôt source."
+                            'message' => "Le produit {$productName} n'est pas disponible dans l'entrepôt."
                         ], 403);
                     }
                 }
@@ -386,13 +404,9 @@ class PurchaseOrderController extends Controller
                 ]);
             }
 
-            $message = $request->type === 'external'
-                ? "Commande externe mise à jour avec succès."
-                : "Commande interne mise à jour avec succès.";
-
             return response()->json([
-                'message' => $message,
-                'order' => $order->load(['items'])
+                'message' => 'Commande mise à jour avec succès.',
+                'order' => $order->load('items'),
             ], 200);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -408,6 +422,7 @@ class PurchaseOrderController extends Controller
             ], 500);
         }
     }
+
 
 
 
@@ -470,7 +485,6 @@ class PurchaseOrderController extends Controller
      * @permission PurchaseOrderController::cancel_orders
      * @permission_desc Annuler une commande
      */
-
     public function cancel_orders(Request $request, string $uuid){
         $validated = $request->validate([
             'status' => 'required|in:cancel',
@@ -489,6 +503,32 @@ class PurchaseOrderController extends Controller
             'order' => $order
         ]);
     }
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission PurchaseOrderController::validate_orders
+     * @permission_desc Valider une commande
+     */
+    public function validate_orders(Request $request, string $uuid){
+        $validated = $request->validate([
+            'status' => 'required|in:validated',
+        ], [
+            'status.required' => "Le statut est obligatoire.",
+            'status.in' => "Le statut fourni est invalide.",
+        ]);
+        $order = PurchaseOrder::findOrFail($uuid);
+        $order->update([
+            'status' => 'validated',
+            'updated_by' => auth()->id(),
+        ]);
+
+        return response()->json([
+            'message' => "La commande a été validée avec succès.",
+            'order' => $order
+        ]);
+    }
+
 
 
     /**
@@ -547,21 +587,23 @@ class PurchaseOrderController extends Controller
         $recipient = User::findOrFail($validated['user_id']);
 
         try {
-            // Envoi de l'e-mail au destinataire
-            Mail::send('emails.order', ['reference' => $order->reference], function ($message) use ($recipient, $order, $auth) {
-                $message->to($recipient->email)
-                    ->subject('Transmission de la commande ' . $order->reference)
-                    ->from($auth->email, $auth->nom_utilisateur ?? 'Système Commandes Jabbama Hotel');
-            });
+//            // Envoi de l'e-mail au destinataire
+//            Mail::send('emails.order', ['reference' => $order->reference], function ($message) use ($recipient, $order, $auth) {
+//                $message->to($recipient->email)
+//                    ->subject('Transmission de la commande ' . $order->reference)
+//                    ->from($auth->email, $auth->nom_utilisateur ?? 'Système Commandes Jabbama Hotel');
+//            });
 
             // ✅ Mise à jour du statut de la commande
             $order->update([
-                'status' => 'transferred',
+                'status' => 'open',
                 'updated_by' => $auth->id,
+                'transfered_by' => $recipient->id,
+                'transfered_at' => now(),
             ]);
 
             return response()->json([
-                'message' => "Commande transférée avec succès à {$recipient->nom_utilisateur} et e-mail envoyé.",
+                'message' => "Commande transférée avec succès à {$recipient->nom_utilisateur}.",
                 'order' => $order
             ], 200);
 

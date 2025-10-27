@@ -160,7 +160,7 @@ class UnitController extends Controller
                 ], 409); // 409 Conflict
             }
 
-            $unit->delete();
+            $unit->forceDelete();
 
             return response()->json([
                 'success' => true,

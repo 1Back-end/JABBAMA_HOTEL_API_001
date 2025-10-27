@@ -20,7 +20,7 @@ use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable
 {
-    use HasFactory, HasRoles, SoftDeletes, HasApiTokens, Notifiable, UpdatingUser;
+    use HasFactory, HasRoles, SoftDeletes, HasApiTokens, Notifiable;
 
     protected $fillable = [
         'created_by',
@@ -121,5 +121,13 @@ class User extends Authenticatable
     {
         return $this->roles()->pluck('name')->contains($roleName);
     }
+    public function warehouses()
+    {
+        return $this->belongsToMany(Warehouse::class, 'warehouse_managers', 'user_id', 'warehouse_uuid')
+            ->withTimestamps()
+            ->withPivot(['uuid'])
+            ->using(WarehouseManager::class);
+    }
+
 
 }
