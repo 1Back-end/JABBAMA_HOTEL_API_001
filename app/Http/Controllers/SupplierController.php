@@ -14,6 +14,11 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Maatwebsite\Excel\Facades\Excel;
 
+
+/**
+ * @permission_category Gestion des fournisseurs
+ */
+
 class SupplierController extends Controller
 {
     /**
@@ -73,8 +78,8 @@ class SupplierController extends Controller
         $auth = auth()->user();
 
         try {
-            // Validation des données
-            $validator = $request->validate([
+            // ✅ Validation des données
+            $validated = $request->validate([
                 'first_name'     => 'required|string|max:255',
                 'last_name'      => 'nullable|string|max:255',
                 'email'          => 'nullable|email|unique:suppliers,email',
@@ -88,30 +93,42 @@ class SupplierController extends Controller
                 'company_phone'  => 'required|string|unique:suppliers,company_phone',
                 'is_active'      => 'nullable|boolean',
             ], [
-                'first_name.required'   => 'Le prénom est obligatoire.',
-                'phone_number.required' => 'Le numéro de téléphone principal est obligatoire.',
-                'email.email'           => 'L\'email doit être valide.',
-                'phone_number.unique'   => 'Ce numéro de téléphone est déjà utilisé.',
-                'email.unique'          => 'Cet email est déjà utilisé.',
-                'company_email.unique'  => 'L\'email de la société est déjà utilisé.',
-                'cni_number.unique'     => 'Ce numéro de CNI est déjà utilisé.',
-                'company_phone.unique'  => 'Le numéro de téléphone de la société est déjà utilisé.',
-                'company_name.unique' => 'Le nom de la société est déjà utilisé.'
+                'first_name.required'    => 'Le prénom est obligatoire.',
+                'phone_number.required'  => 'Le numéro de téléphone principal est obligatoire.',
+                'email.email'            => 'L\'adresse email du contact doit être valide.',
+                'email.unique'           => 'Cet email est déjà utilisé.',
+                'phone_number.unique'    => 'Ce numéro de téléphone est déjà utilisé.',
+                'phone_number_2.unique'  => 'Le second numéro de téléphone est déjà utilisé.',
+                'cni_number.unique'      => 'Ce numéro de CNI est déjà utilisé.',
+                'company_name.required'  => 'Le nom de la société est obligatoire.',
+                'company_name.unique'    => 'Le nom de la société est déjà utilisé.',
+                'company_email.email'    => 'L\'adresse email de la société doit être valide.',
+                'company_email.unique'   => 'L\'email de la société est déjà utilisé.',
+                'company_phone.required' => 'Le numéro de téléphone de la société est obligatoire.',
+                'company_phone.unique'   => 'Le numéro de téléphone de la société est déjà utilisé.',
             ]);
 
-            // Ajouter l'auteur
-            $validator['created_by'] = $auth->id;
+            // ✅ Ajouter l'auteur
+            $validated['created_by'] = $auth->id;
 
-            // Créer le fournisseur
-            $supplier = Supplier::create($validator);
+            // ✅ Créer le fournisseur
+            $supplier = Supplier::create($validated);
 
             return response()->json([
                 'success' => true,
                 'data'    => $supplier,
                 'message' => 'Fournisseur créé avec succès.'
-            ]);
+            ], 201);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            // ✅ Gestion propre des erreurs de validation
+            return response()->json([
+                'status' => 'validation_error',
+                'errors' => $e->errors(),
+            ], 422);
 
         } catch (\Exception $e) {
+            // ✅ Gestion des autres exceptions
             return response()->json([
                 'status'  => 'error',
                 'message' => 'Une erreur est survenue lors de la création du fournisseur.',
@@ -131,11 +148,12 @@ class SupplierController extends Controller
     {
         $auth = auth()->user();
 
-        // Récupérer le fournisseur
+        // ✅ Vérifie que le fournisseur existe
         $supplier = Supplier::findOrFail($uuid);
 
         try {
-            $validator = $request->validate([
+            // ✅ Validation des données
+            $validated = $request->validate([
                 'first_name'     => 'required|string|max:255',
                 'last_name'      => 'nullable|string|max:255',
                 'email'          => 'nullable|email|unique:suppliers,email,' . $supplier->uuid . ',uuid',
@@ -146,33 +164,45 @@ class SupplierController extends Controller
                 'description'    => 'nullable|string',
                 'company_name'   => 'required|string|max:255|unique:suppliers,company_name,' . $supplier->uuid . ',uuid',
                 'company_email'  => 'nullable|email|unique:suppliers,company_email,' . $supplier->uuid . ',uuid',
-                'company_phone'  => 'nullable|string|unique:suppliers,company_phone,' . $supplier->uuid . ',uuid',
+                'company_phone'  => 'required|string|unique:suppliers,company_phone,' . $supplier->uuid . ',uuid',
                 'is_active'      => 'nullable|boolean',
             ], [
-                'first_name.required'   => 'Le prénom est obligatoire.',
-                'phone_number.required' => 'Le numéro de téléphone principal est obligatoire.',
-                'email.email'           => 'L\'email doit être valide.',
-                'phone_number.unique'   => 'Ce numéro de téléphone est déjà utilisé.',
-                'email.unique'          => 'Cet email est déjà utilisé.',
-                'company_email.unique'  => 'L\'email de la société est déjà utilisé.',
-                'cni_number.unique'     => 'Ce numéro de CNI est déjà utilisé.',
-                'company_phone.unique'  => 'Le numéro de téléphone de la société est déjà utilisé.',
-                'company_name.unique' => 'Le nom de la société est déjà utilisé.'
+                'first_name.required'    => 'Le prénom est obligatoire.',
+                'phone_number.required'  => 'Le numéro de téléphone principal est obligatoire.',
+                'email.email'            => 'L\'adresse email du contact doit être valide.',
+                'email.unique'           => 'Cet email est déjà utilisé.',
+                'phone_number.unique'    => 'Ce numéro de téléphone est déjà utilisé.',
+                'phone_number_2.unique'  => 'Le second numéro de téléphone est déjà utilisé.',
+                'cni_number.unique'      => 'Ce numéro de CNI est déjà utilisé.',
+                'company_name.required'  => 'Le nom de la société est obligatoire.',
+                'company_name.unique'    => 'Le nom de la société est déjà utilisé.',
+                'company_email.email'    => 'L\'adresse email de la société doit être valide.',
+                'company_email.unique'   => 'L\'email de la société est déjà utilisé.',
+                'company_phone.required' => 'Le numéro de téléphone de la société est obligatoire.',
+                'company_phone.unique'   => 'Le numéro de téléphone de la société est déjà utilisé.',
             ]);
 
-            // Ajouter l'updateur
-            $validator['updated_by'] = $auth->id;
+            // ✅ Ajoute l'utilisateur ayant fait la mise à jour
+            $validated['updated_by'] = $auth->id;
 
-            // Mise à jour
-            $supplier->update($validator);
+            // ✅ Mise à jour du fournisseur
+            $supplier->update($validated);
 
             return response()->json([
                 'success' => true,
-                'data'    => $supplier,
+                'data'    => $supplier->fresh(),
                 'message' => 'Fournisseur mis à jour avec succès.'
-            ]);
+            ], 200);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            // ✅ Erreurs de validation Laravel
+            return response()->json([
+                'status' => 'validation_error',
+                'errors' => $e->errors(),
+            ], 422);
 
         } catch (\Exception $e) {
+            // ✅ Autres exceptions
             return response()->json([
                 'status'  => 'error',
                 'message' => 'Une erreur est survenue lors de la mise à jour du fournisseur.',
@@ -180,6 +210,7 @@ class SupplierController extends Controller
             ], 500);
         }
     }
+
 
     /**
      * Display a listing of the resource.

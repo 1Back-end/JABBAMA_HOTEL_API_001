@@ -5,7 +5,9 @@ namespace App\Http\Controllers;
 use App\Models\NatureEntrepot;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-
+/**
+ * @permission_category Gestion des entrepots
+ */
 class NatureEntrepotController extends Controller
 {
     /**

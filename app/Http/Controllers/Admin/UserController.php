@@ -82,7 +82,7 @@ class UserController extends Controller
      * @return JsonResponse
      *
      * @permission UserController::get_users_where_role_is_gestionnaire_stock
-     * @permission_desc Afficher la liste des utilisateurs avec pour role GESTIONNAIRE DE STOCK
+     * @permission_desc Afficher la liste des GESTIONNAIRES DE STOCKS
      */
     public function get_users_where_role_is_gestionnaire_stock(Request $request): JsonResponse
     {

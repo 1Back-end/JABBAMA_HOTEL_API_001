@@ -1,0 +1,112 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+
+class Supply extends Model
+{
+    use HasFactory, SoftDeletes;
+
+    protected $table = 'supplies';
+    protected $primaryKey = 'uuid';
+    public $incrementing = false;
+    protected $keyType = 'string';
+
+    protected $fillable = [
+        'uuid',
+        'purchase_order_uuid',
+        'warehouse_uuid',
+        'supplier_uuid',
+        'reference',
+        'supply_date',
+        'status',
+        'notes',
+        'scanned_documents',
+        'created_by',
+        'updated_by',
+        'validated_by',
+        'partially_validated_by',
+        'partial_validation_reason',
+        'rejected_by',
+        'rejection_reason'
+    ];
+
+    protected $casts = [
+        'scanned_documents' => 'array',
+        'supply_date' => 'date',
+    ];
+
+    protected $appends = ['scanned_documents_purchase_orders'];
+    public static function boot()
+    {
+        parent::boot();
+        static::creating(function ($model) {
+            $prefix = 'APP-';
+            $timestamp = now()->format('ymdHi');
+
+            $random = strtoupper(Str::random(7));
+            $model->reference = $prefix . $timestamp . $random;
+            $model->uuid = (string) Str::uuid();
+        });
+    }
+
+    // 🔗 Relations
+    public function purchaseOrder()
+    {
+        return $this->belongsTo(PurchaseOrder::class, 'purchase_order_uuid', 'uuid');
+    }
+
+    public function warehouse()
+    {
+        return $this->belongsTo(Warehouse::class, 'warehouse_uuid', 'uuid');
+    }
+
+    public function supplier()
+    {
+        return $this->belongsTo(Supplier::class, 'supplier_uuid', 'uuid');
+    }
+
+    public function items()
+    {
+        return $this->hasMany(SupplyItem::class, 'supply_uuid', 'uuid');
+    }
+
+    public function creator()
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function updater()
+    {
+        return $this->belongsTo(User::class, 'updated_by');
+    }
+
+    public function validator()
+    {
+        return $this->belongsTo(User::class, 'validated_by');
+    }
+    public function medias(): MorphMany
+    {
+        return $this->morphMany(Medias::class, 'mediable');
+    }
+    public function getScannedDocumentsPurchaseOrdersAttribute()
+    {
+        return $this->medias()
+            ->get()
+            ->map(function ($media) {
+                return [
+                    'name' => $media->name,
+                    'extension' => $media->extension,
+                    'path' => $media->path,
+                    'url' => Storage::disk($media->disk)->url($media->path),
+                ];
+            });
+    }
+
+}

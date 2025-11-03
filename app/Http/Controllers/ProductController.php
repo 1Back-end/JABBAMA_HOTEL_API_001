@@ -8,12 +8,16 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
+/**
+ * @permission_category Gestion des articles
+ */
+
 class ProductController extends Controller
 {
     /**
      * Display a listing of the resource.
      * @permission ProductController::index
-     * @permission_desc Afficher la liste des produits
+     * @permission_desc Afficher la liste des articles
      */
     public function index(Request $request)
     {
@@ -69,7 +73,7 @@ class ProductController extends Controller
     /**
      * Display a listing of the resource.
      * @permission ProductController::store
-     * @permission_desc Création des produits
+     * @permission_desc Création des articles
      */
     public function store(Request $request)
     {
@@ -185,7 +189,7 @@ class ProductController extends Controller
     /**
      * Display a listing of the resource.
      * @permission ProductController::update_status
-     * @permission_desc Activation/Désactivation des produits
+     * @permission_desc Activation/Désactivation des articles
      */
     public function update_status(Request $request, $uuid)
     {
@@ -239,7 +243,7 @@ class ProductController extends Controller
     /**
      * Display a listing of the resource.
      * @permission ProductController::show
-     * @permission_desc Afficher les détails des produits
+     * @permission_desc Afficher les détails des articles
      */
     public function show($uuid)
     {
@@ -272,7 +276,7 @@ class ProductController extends Controller
     /**
      * Display a listing of the resource.
      * @permission ProductController::update
-     * @permission_desc Modification des produits
+     * @permission_desc Modification des articles
      */
     public function update_products(Request $request, $uuid)
     {
@@ -386,7 +390,7 @@ class ProductController extends Controller
     /**
      * Display a listing of the resource.
      * @permission ProductController::destroy
-     * @permission_desc Suppression des produits
+     * @permission_desc Suppression des articles
      */
     public function destroy(Request $request, string $uuid)
     {

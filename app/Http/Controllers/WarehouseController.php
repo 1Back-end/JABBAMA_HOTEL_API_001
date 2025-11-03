@@ -7,7 +7,9 @@ use App\Models\WarehouseManager;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
-
+/**
+ * @permission_category Gestion des entrepôts
+ */
 class WarehouseController extends Controller
 {
     /**
@@ -29,10 +31,8 @@ class WarehouseController extends Controller
             $query->where(function ($q) use ($search) {
                 $q->where('ref', 'like', "%{$search}%")
                     ->orWhere('name', 'like', "%{$search}%")
-                    ->orWhere('nature', 'like', "%{$search}%")
                     ->orWhere('stock_type', 'like', "%{$search}%")
-                    ->orWhere('address', 'like', "%{$search}%")
-                    ->orWhere('description', 'like', "%{$search}%");
+                    ->orWhere('address', 'like', "%{$search}%");
             });
         }
         $warehouse = $query->latest()->paginate($perPage, ['*'], 'page', $page);

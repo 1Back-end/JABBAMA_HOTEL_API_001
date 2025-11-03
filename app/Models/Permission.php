@@ -50,4 +50,9 @@ class Permission extends \Spatie\Permission\Models\Permission
     {
         return $this->belongsTo(Menu::class, 'menu_id');
     }
+    public function category()
+    {
+        return $this->belongsTo(PermissionCategory::class, 'category_id');
+    }
+
 }

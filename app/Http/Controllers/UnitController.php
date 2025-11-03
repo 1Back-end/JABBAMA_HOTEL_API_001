@@ -7,12 +7,15 @@ use App\Models\Unit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 
+/**
+ * @permission_category Gestion des unités d'articles
+ */
 class UnitController extends Controller
 {
     /**
      * Display a listing of the resource.
      * @permission UnitController::index
-     * @permission_desc Afficher la liste des unités de produits
+     * @permission_desc Afficher la liste des unités d'articles
      */
     public function index(Request $request)
     {
@@ -47,74 +50,80 @@ class UnitController extends Controller
     /**
      * Display a listing of the resource.
      * @permission UnitController::store
-     * @permission_desc Création des unités de produits
+     * @permission_desc Création des unités d'articles
      */
     public function store(Request $request)
     {
         $auth = auth()->user();
 
+        // ✅ Validation avec unicité sur le nom et l’abréviation
         $validated = $request->validate([
             'name'         => 'required|string|max:255|unique:units,name',
-            'abbreviation' => 'required|string|max:255',
+            'abbreviation' => 'required|string|max:255|unique:units,abbreviation',
             'description'  => 'nullable|string|max:255',
         ], [
-            'name.required'    => 'Le nom est obligatoire.',
-            'name.unique'      => 'Cette unité existe déjà.',
-            'abbreviation.required' => "L'abréviation est obligatoire.",
+            'name.required'          => 'Le nom est obligatoire.',
+            'name.unique'            => 'Cette unité existe déjà.',
+            'abbreviation.required'  => "L'abréviation est obligatoire.",
+            'abbreviation.unique'    => "Cette abréviation existe déjà.",
         ]);
 
+        // ✅ Ajouter l’auteur de la création
         $validated['created_by'] = $auth->id;
 
+        // ✅ Création de l’unité
         $unit = Unit::create($validated);
 
         return response()->json([
             'success' => true,
-            'message' => 'Création effectuée avec succès',
+            'message' => 'Création effectuée avec succès.',
             'data'    => $unit
-        ]);
+        ], 201);
     }
 
     /**
      * Display a listing of the resource.
      * @permission UnitController::update
-     * @permission_desc Modification des unités de produits
+     * @permission_desc Modification des unités d'articles
      */
 
     public function update(Request $request, string $uuid)
     {
         $auth = auth()->user();
 
-        // Récupérer l'unité à mettre à jour
+        // ✅ Récupérer l'unité à modifier
         $unit = Unit::findOrFail($uuid);
 
-        // Validation des données avec unicité sur le name sauf pour l'élément actuel
+        // ✅ Validation avec unicité sur name et abbreviation (sauf pour l'élément actuel)
         $validated = $request->validate([
             'name'         => 'required|string|max:150|unique:units,name,' . $unit->uuid . ',uuid',
-            'abbreviation' => 'required|string|max:255',
+            'abbreviation' => 'required|string|max:255|unique:units,abbreviation,' . $unit->uuid . ',uuid',
             'description'  => 'nullable|string|max:255',
         ], [
-            'name.required'    => 'Le nom est obligatoire.',
-            'name.unique'      => 'Cette unité existe déjà.',
-            'abbreviation.required' => "L'abréviation est obligatoire.",
+            'name.required'          => 'Le nom est obligatoire.',
+            'name.unique'            => 'Cette unité existe déjà.',
+            'abbreviation.required'  => "L'abréviation est obligatoire.",
+            'abbreviation.unique'    => "Cette abréviation est déjà utilisée.",
         ]);
 
-        // Ajouter l'utilisateur qui met à jour
+        // ✅ Ajouter l'utilisateur qui met à jour
         $validated['updated_by'] = $auth->id;
 
-        // Mise à jour
+        // ✅ Mise à jour
         $unit->update($validated);
 
         return response()->json([
             'success' => true,
-            'message' => "Mise à jour effectuée avec succès",
-            'data'    => $unit
-        ]);
+            'message' => 'Mise à jour effectuée avec succès.',
+            'data'    => $unit->fresh()
+        ], 200);
     }
+
 
     /**
      * Display a listing of the resource.
      * @permission UnitController::show
-     * @permission_desc Afficher les détails des unités de produits
+     * @permission_desc Afficher les détails des unités d'articles
      */
     public function show(string $uuid)
     {
@@ -130,7 +139,7 @@ class UnitController extends Controller
     /**
      * Display a listing of the resource.
      * @permission UnitController::destroy
-     * @permission_desc Suppression des unités de produits
+     * @permission_desc Suppression des unités d'articles
      */
     public function destroy(Request $request, string $uuid)
     {
@@ -187,7 +196,7 @@ class UnitController extends Controller
     /**
      * Display a listing of the resource.
      * @permission UnitController::update_status
-     * @permission_desc Activer/Désactiver des unités de produits
+     * @permission_desc Activer/Désactiver des unités d'articles
      */
     public function update_status(Request $request, $uuid){
         $auth = auth()->user();

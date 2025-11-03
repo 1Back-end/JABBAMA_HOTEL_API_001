@@ -4,15 +4,19 @@ namespace App\Http\Controllers;
 
 use App\Models\Product;
 use App\Models\ProductSubCategory;
+use App\Models\PurchaseOrder;
 use App\Models\SubCategory;
 use Illuminate\Http\Request;
 
+/**
+ * @permission_category Gestion des sous catégories d'articles
+ */
 class SubCategoryController extends Controller
 {
     /**
      * Display a listing of the resource.
      * @permission SubCategoryController::index
-     * @permission_desc Afficher la liste des sous-catégories de produits
+     * @permission_desc Afficher la liste des sous-catégories d'articles
      */
     public function index(Request $request)
     {
@@ -46,7 +50,7 @@ class SubCategoryController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SubCategoryController::store
-     * @permission_desc Création des sous-catégories de produits
+     * @permission_desc Création des sous-catégories d'articles
      */
     public function store(Request $request)
     {
@@ -87,7 +91,7 @@ class SubCategoryController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SubCategoryController::show
-     * @permission_desc Afficher les détails des sous-catégories de produits
+     * @permission_desc Afficher les détails des sous-catégories d'articles
      */
     public function show(string $uuid)
     {
@@ -111,7 +115,7 @@ class SubCategoryController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SubCategoryController::update_status
-     * @permission_desc Activation/Désactivation des sous-catégories de produits
+     * @permission_desc Activation/Désactivation des sous-catégories d'articles
      */
     public function update_status(Request $request, string $uuid)
     {
@@ -146,7 +150,7 @@ class SubCategoryController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SubCategoryController::update
-     * @permission_desc Mise à jour des sous-catégories de produits
+     * @permission_desc Mise à jour des sous-catégories d'articles
      */
     public function update(Request $request, $uuid)
     {
@@ -190,7 +194,7 @@ class SubCategoryController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SubCategoryController::updateStatus
-     * @permission_desc Suppression des sous-catégories de produits
+     * @permission_desc Suppression des sous-catégories d'articles
      */
     public function destroy(Request $request, string $uuid)
     {
@@ -234,5 +238,7 @@ class SubCategoryController extends Controller
             'message' => "Sous-catégorie '{$subcategory->name}' supprimée avec succès."
         ]);
     }
+
+
 
 }

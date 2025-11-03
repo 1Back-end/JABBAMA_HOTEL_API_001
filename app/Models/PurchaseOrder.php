@@ -34,7 +34,10 @@ class PurchaseOrder extends Model
         'closed_at',
         'transfered_by',
         'transfered_at',
+        'motif_rejet'
     ];
+
+
 
 
     public static function boot()

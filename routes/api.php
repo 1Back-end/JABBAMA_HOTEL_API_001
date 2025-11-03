@@ -2,6 +2,7 @@
 use App\Http\Controllers\Admin\UserController;
 
 use App\Http\Controllers\SupplierController;
+use App\Http\Controllers\SupplyController;
 use App\Http\Controllers\UnitController;
 use App\Http\Controllers\CategoryProductsController;
 use App\Http\Controllers\WarehouseController;
@@ -54,9 +55,13 @@ Route::middleware(['activity'])->group(function () {
         Route::post('orders/{uuid}/rejected_orders', [PurchaseOrderController::class, 'rejected_orders']);
         Route::post('orders/{uuid}/send_orders', [PurchaseOrderController::class, 'send_orders']);
         Route::patch('orders/{uuid}/validate_orders', [PurchaseOrderController::class, 'validate_orders']);
+        Route::patch('orders/{uuid}/rejected_orders_by_admin', [PurchaseOrderController::class, 'rejected_orders_by_admin']);
 
-
-
+        Route::apiResource('supply_orders', SupplyController::class);
+        Route::post('update_supplies/{uuid}/update_supplies', [SupplyController::class, 'update_supplies']);
+        Route::patch('supply_orders/{uuid}/partially_validated_supplies', [SupplyController::class, 'partially_validated_supplies']);
+        Route::patch('supply_orders/{uuid}/rejected_supplies', [SupplyController::class, 'rejected_supplies']);
+        Route::patch('supply_orders/{uuid}/validate_supply', [SupplyController::class, 'validate_supply']);
 
 
     });

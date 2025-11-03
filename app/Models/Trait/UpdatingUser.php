@@ -11,8 +11,10 @@ trait UpdatingUser
     public static function bootUpdatingUser(): void
     {
         static::updating(function ($model) {
-            $authId = auth()->user()->id;
-            $model->updated_by = $authId;
+            $authUser = auth()->user();
+            if ($authUser) {
+                $model->updated_by = $authUser->id;
+            }
         });
 
         static::creating(function ($model) {

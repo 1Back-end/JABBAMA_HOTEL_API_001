@@ -24,6 +24,7 @@ class Category extends Model
         'is_active',
         'created_by',
         'updated_by',
+        'parent_uuid'
     ];
 
 
@@ -62,6 +63,15 @@ class Category extends Model
     public function subCategories()
     {
         return $this->hasMany(SubCategory::class, 'category_uuid', 'uuid');
+    }
+    public function parent()
+    {
+        return $this->belongsTo(Category::class, 'parent_uuid');
+    }
+
+    public function children()
+    {
+        return $this->hasMany(Category::class, 'parent_uuid');
     }
     //
 }

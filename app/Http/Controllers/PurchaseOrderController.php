@@ -9,6 +9,10 @@ use App\Models\Warehouse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
 
+
+/**
+ * @permission_category Gestion des commandes
+ */
 class PurchaseOrderController extends Controller
 {
     /**
@@ -24,7 +28,6 @@ class PurchaseOrderController extends Controller
 
         $query = PurchaseOrder::with([
             'items.product',
-            'supplier',
             'warehouseTo.managers',
             'warehouse_from.managers',
             'creator',
@@ -67,16 +70,6 @@ class PurchaseOrderController extends Controller
                     ->orWhere('warehouse_from', 'like', "%{$search}%")
                     ->orWhere('warehouse_to', 'like', "%{$search}%")
                     ->orWhere('supplier_uuid', 'like', "%{$search}%")
-
-                    // 🔹 Fournisseur
-                    ->orWhereHas('supplier', function ($qs) use ($search) {
-                        $qs->where('first_name', 'like', "%{$search}%")
-                            ->orWhere('last_name', 'like', "%{$search}%")
-                            ->orWhere('company_name', 'like', "%{$search}%")
-                            ->orWhere('email', 'like', "%{$search}%")
-                            ->orWhere('phone_number', 'like', "%{$search}%")
-                            ->orWhere('address', 'like', "%{$search}%");
-                    })
 
                     // 🔹 Entrepôts
                     ->orWhereHas('warehouseTo', function ($qw) use ($search) {
@@ -151,7 +144,7 @@ class PurchaseOrderController extends Controller
 
             // Commande externe
             if ($request->type === 'external') {
-                if (!$auth->hasRoleName('ECONOME')) {
+                if (! $auth->hasRoleName('ECONOME') && ! $auth->hasRoleName('SUPER_ADMIN')) {
                     return response()->json([
                         'message' => 'Seul le responsable de stock (Econome) peut créer une commande externe.'
                     ], 403);
@@ -424,9 +417,6 @@ class PurchaseOrderController extends Controller
     }
 
 
-
-
-
     /**
      * Display a listing of the resource.
      * @permission PurchaseOrderController::destroy
@@ -530,7 +520,6 @@ class PurchaseOrderController extends Controller
     }
 
 
-
     /**
      * Display a listing of the resource.
      * @permission PurchaseOrderController::rejected_orders
@@ -540,10 +529,10 @@ class PurchaseOrderController extends Controller
     {
         // Validation
         $validated = $request->validate([
-            'notes' => 'required|string', // la raison du rejet
+            'motif_rejet' => 'required|string', // la raison du rejet
         ], [
-            'notes.required' => "La raison du rejet est obligatoire.",
-            'notes.string' => "La raison doit être une chaîne de caractères.",
+            'motif_rejet.required' => "La raison du rejet est obligatoire.",
+            'motif_rejet.string' => "La raison doit être une chaîne de caractères.",
         ]);
 
         // Récupérer la commande
@@ -552,7 +541,7 @@ class PurchaseOrderController extends Controller
         // Mise à jour de la commande avec statut et notes
         $order->update([
             'status' => 'rejected',
-            'notes' => $validated['notes'],
+            'motif_rejet' => $validated['motif_rejet'],
             'updated_by' => auth()->id(),
         ]);
 
@@ -561,8 +550,6 @@ class PurchaseOrderController extends Controller
             'order' => $order
         ]);
     }
-
-
 
 
     /**
@@ -613,6 +600,38 @@ class PurchaseOrderController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission PurchaseOrderController::rejected_orders_by_admin
+     * @permission_desc Rejet d’une commande en livraison par le Super Admin
+     */
+    public function rejected_orders_by_admin(Request $request, string $uuid)
+    {
+        // Validation
+        $validated = $request->validate([
+            'motif_rejet' => 'required|string', // la raison du rejet
+        ], [
+            'motif_rejet.required' => "La raison du rejet est obligatoire.",
+            'motif_rejet.string' => "La raison doit être une chaîne de caractères.",
+        ]);
+
+        // Récupérer la commande
+        $order = PurchaseOrder::findOrFail($uuid);
+
+        // Mise à jour de la commande avec statut et notes
+        $order->update([
+            'status' => 'rejected',
+            'motif_rejet' => $validated['motif_rejet'],
+            'updated_by' => auth()->id(),
+        ]);
+
+        return response()->json([
+            'message' => "La commande a été rejetée avec succès.",
+            'order' => $order
+        ]);
     }
 
 }

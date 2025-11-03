@@ -2,10 +2,11 @@
 
 namespace App\Console\Commands;
 
-use App\Models\Menu;
 use App\Models\Permission;
+use App\Models\PermissionCategory;
 use App\Models\Role;
 use App\Models\User;
+use App\Models\Menu;
 use Illuminate\Console\Command;
 use ReflectionClass;
 use ReflectionMethod;
@@ -13,114 +14,128 @@ use ReflectionMethod;
 class ExtractPermissions extends Command
 {
     protected $signature = 'permissions:extract';
-    protected $description = 'Extract @permission and @permission_desc from all controllers';
+    protected $description = 'Synchronise les permissions avec les annotations des contrôleurs et les catégorise par menu.';
 
     public function handle(): void
     {
         $controllersPath = app_path('Http/Controllers');
         $permissions = [];
 
-        $userSYSTEM = User::whereLogin('SYSTEM')->first();
+        $userSYSTEM = User::where('login', 'SYSTEM')->first();
+        $role = Role::find(1);
 
+        // Extraire les permissions des contrôleurs
         foreach ($this->getControllers($controllersPath) as $controller) {
             $this->extractPermissionsFromController($controller, $permissions);
         }
 
-        $this->info("Controllers and processed functions : ");
-        // Affichage des permissions extraites
+        $this->info("\n--- Synchronisation des permissions ---");
+
+        $allControllerPermissions = collect($permissions)
+            ->flatMap(fn($methods) => collect($methods)->pluck('permission'))
+            ->filter()
+            ->toArray();
+
+        // Création/Mise à jour des permissions
         foreach ($permissions as $controller => $methods) {
-            $this->info("Controller: $controller :");
-            foreach ($methods as $method => $perm) {
-
-                if (empty($perm['permission']) && empty($perm['permission_desc'])) {
-                    $this->info("-----No permission for this method: $method");
-                    continue;
-                }
-
-                if (Permission::where('name', $perm['permission'])->exists()) {
-                    $this->info("-----Permission exist for this method: $method");
-                    continue;
-                }
-
-                $role = Role::find(1);
-
-                $permission = Permission::create([
-                    'name' => $perm['permission'],
-                    'description' => $perm['permission_desc'],
-                    'system' => true,
+            $categoryName = $this->extractControllerCategory($controller) ?? 'Autres';
+            $category = PermissionCategory::firstOrCreate(
+                ['libelle' => $categoryName],
+                [
+                    'description' => $categoryName,
                     'created_by' => $userSYSTEM->id,
-                    'updated_by' => $userSYSTEM->id
-                ]);
+                    'updated_by' => $userSYSTEM->id,
+                ]
+            );
 
-                $this->info("-----Permission created for this method: $method");
+            foreach ($methods as $method => $perm) {
+                if (empty($perm['permission'])) continue;
 
-                if ($role) {
-                    $role->permissions()->syncWithPivotValues([$permission->id], [
+                $permission = Permission::updateOrCreate(
+                    ['name' => $perm['permission']],
+                    [
+                        'description' => $perm['permission_desc'] ?? '',
+                        'category_id' => $category->id,
+                        'system' => true,
+                        'active' => true,
                         'created_by' => $userSYSTEM->id,
                         'updated_by' => $userSYSTEM->id
-                    ], false);
-                    $this->info("-----Permission ajoutée au role : $role->name");
+                    ]
+                );
+
+                $this->info($permission->wasRecentlyCreated ? "✅ Créée : {$permission->name}" : "🔁 Mis à jour : {$permission->name}");
+
+                // Attribution au rôle par défaut
+                if ($role && !$role->permissions->contains($permission->id)) {
+                    $role->permissions()->attach($permission->id, [
+                        'created_by' => $userSYSTEM->id,
+                        'updated_by' => $userSYSTEM->id
+                    ]);
                 }
             }
         }
+
+        // Suppression des permissions obsolètes
+        $toDelete = Permission::whereNotIn('name', $allControllerPermissions)
+            ->where('system', true)
+            ->get();
+
+        foreach ($toDelete as $perm) {
+            $perm->delete();
+            $this->warn("🗑️ Supprimée : {$perm->name}");
+        }
+
+        $this->info("\n✅ Synchronisation terminée avec succès !");
     }
 
     private function getControllers($directory, $namespace = 'App\\Http\\Controllers'): array
     {
         $controllers = [];
-        $files = scandir($directory);
-
-        foreach ($files as $file) {
-            if ($file === '.' || $file === '..') {
-                continue;
-            }
-
+        foreach (scandir($directory) as $file) {
+            if (in_array($file, ['.', '..'])) continue;
             $fullPath = $directory . DIRECTORY_SEPARATOR . $file;
 
             if (is_dir($fullPath)) {
-                // Appel récursif pour les sous-dossiers
-                $subNamespace = $namespace . '\\' . $file;
-                $controllers = array_merge($controllers, $this->getControllers($fullPath, $subNamespace));
+                $controllers = array_merge($controllers, $this->getControllers($fullPath, $namespace . '\\' . $file));
             } elseif (pathinfo($file, PATHINFO_EXTENSION) === 'php') {
-                $className = $namespace . '\\' . pathinfo($file, PATHINFO_FILENAME);
-                $controllers[] = $className;
+                $controllers[] = $namespace . '\\' . pathinfo($file, PATHINFO_FILENAME);
             }
         }
-
         return $controllers;
     }
 
     private function extractPermissionsFromController($controller, &$permissions): void
     {
-        if (!class_exists($controller)) {
-            return;
-        }
+        if (!class_exists($controller)) return;
 
         $reflection = new ReflectionClass($controller);
-        $methods = $reflection->getMethods(ReflectionMethod::IS_PUBLIC);
-
-        foreach ($methods as $method) {
+        foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
             $docComment = $method->getDocComment();
-            if ($docComment) {
-                $permission = $this->extractTagValue($docComment, '@permission');
-                $permissionDesc = $this->extractTagValue($docComment, '@permission_desc');
+            if (!$docComment) continue;
 
-                if ($permission || $permissionDesc) {
-                    $permissions[$controller][$method->getName()] = [
-                        'permission' => $permission,
-                        'permission_desc' => $permissionDesc,
-                    ];
-                }
+            $permission = $this->extractTagValue($docComment, '@permission');
+            $permissionDesc = $this->extractTagValue($docComment, '@permission_desc');
+
+            if ($permission) {
+                $permissions[$controller][$method->getName()] = [
+                    'permission' => $permission,
+                    'permission_desc' => $permissionDesc ?? ''
+                ];
             }
         }
     }
 
+    private function extractControllerCategory($controller): ?string
+    {
+        $reflection = new ReflectionClass($controller);
+        $docComment = $reflection->getDocComment();
+        return $docComment ? $this->extractTagValue($docComment, '@permission_category') : null;
+    }
+
     private function extractTagValue($doc, $tag): ?string
     {
-        if (preg_match('/' . preg_quote($tag) . '\s+(.+)/', $doc, $matches)) {
-            return trim($matches[1]);
-        }
-
-        return null;
+        return preg_match('/' . preg_quote($tag) . '\s+(.+)/', $doc, $matches)
+            ? trim($matches[1])
+            : null;
     }
 }

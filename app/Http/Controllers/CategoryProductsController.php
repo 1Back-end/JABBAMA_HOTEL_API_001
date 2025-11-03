@@ -7,13 +7,15 @@ use App\Models\SubCategory;
 use App\Models\Unit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-
+/**
+ * @permission_category Gestion des catégories d'articles
+ */
 class CategoryProductsController extends Controller
 {
     /**
      * Display a listing of the resource.
      * @permission CategoryProductsController::index
-     * @permission_desc Afficher la liste des catégories de produits
+     * @permission_desc Afficher la liste des catégories d'articles
      */
     public function index(Request $request)
     {
@@ -47,26 +49,24 @@ class CategoryProductsController extends Controller
     /**
      * Display a listing of the resource.
      * @permission CategoryProductsController::store
-     * @permission_desc Création des catégories de produits
+     * @permission_desc Création des catégories d'articles
      */
     public function store(Request $request)
     {
         $auth = auth()->user();
 
-        // Validation des données
         $validated = $request->validate([
-            'name'         => 'required|string|max:150|unique:categories,name',
-            'abbreviation' => 'nullable|string|max:20',
-            'description'  => 'nullable|string|max:255',
-            'is_active'    => 'sometimes|boolean',
+            'abbreviation' => 'required|string|unique:categories,abbreviation',
+            'name'        => 'required|string|max:150|unique:categories,name',
+            'description' => 'nullable|string|max:255',
+            'parent_uuid' => 'nullable|exists:categories,uuid',
         ], [
-            'name.required'    => 'Le nom de la catégorie est obligatoire.',
-            'name.unique'      => 'Cette catégorie existe déjà.',
-            'name.max'         => 'Le nom de la catégorie ne peut pas dépasser 150 caractères.',
-            'abbreviation.max' => 'L’abréviation ne peut pas dépasser 20 caractères.',
-            'description.max'  => 'La description ne peut pas dépasser 255 caractères.',
+            'name.required' => 'Le nom de la catégorie est obligatoire.',
+            'name.unique'   => 'Cette catégorie existe déjà.',
+            'parent_uuid.exists' => 'La catégorie parent est invalide.',
+            'abbreviation.required' => 'L\'abbrévation est obligatoire.',
+            'abbrevation.unique' => 'L\'abbrévation existe déjà'
         ]);
-
 
         $validated['created_by'] = $auth->id;
 
@@ -74,7 +74,7 @@ class CategoryProductsController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'La catégorie de produit a été créée avec succès !',
+            'message' => 'Catégorie enregistrée avec succès !',
             'data'    => $category
         ], 201);
     }
@@ -83,7 +83,7 @@ class CategoryProductsController extends Controller
     /**
      * Display a listing of the resource.
      * @permission CategoryProductsController::show
-     * @permission_desc Afficher les détails des catégories de produits
+     * @permission_desc Afficher les détails des catégories d'articles
      */
     public function show(string $uuid)
     {
@@ -99,48 +99,42 @@ class CategoryProductsController extends Controller
     /**
      * Display a listing of the resource.
      * @permission CategoryProductsController::update
-     * @permission_desc Modification des catégories de produits
+     * @permission_desc Modification des catégories d'articles
      */
     public function update(Request $request, string $uuid)
     {
         $auth = auth()->user();
+        $category = Category::where('uuid', $uuid)->firstOrFail();
 
-        // Récupérer la catégorie à mettre à jour
-        $category = Category::findOrFail($uuid);
-
-        // Validation des données avec unicité du nom sauf pour cette catégorie
         $validated = $request->validate([
-            'name'         => 'required|string|max:150|unique:categories,name,' . $category->uuid . ',uuid',
-            'abbreviation' => 'nullable|string|max:20',
-            'description'  => 'nullable|string|max:255',
-            'is_active'    => 'sometimes|boolean',
+            'name'        => 'required|string|max:150|unique:categories,name,' . $category->uuid . ',uuid',
+            'description' => 'nullable|string|max:255',
+            'parent_uuid' => 'nullable|exists:categories,uuid|not_in:' . $category->uuid,
         ], [
-            'name.required'    => 'Le nom de la catégorie est obligatoire.',
-            'name.unique'      => 'Une autre catégorie avec ce nom existe déjà.',
-            'name.max'         => 'Le nom de la catégorie ne peut pas dépasser 150 caractères.',
-            'abbreviation.max' => 'L’abréviation ne peut pas dépasser 20 caractères.',
-            'description.max'  => 'La description ne peut pas dépasser 255 caractères.',
+            'name.required' => 'Le nom de la catégorie est obligatoire.',
+            'name.unique'   => 'Cette catégorie existe déjà.',
+            'parent_uuid.exists' => 'La catégorie parent est invalide.',
+            'parent_uuid.not_in' => 'Une catégorie ne peut pas être son propre parent.',
         ]);
 
-        // Ajouter l'utilisateur qui met à jour
         $validated['updated_by'] = $auth->id;
 
-        // Mise à jour
         $category->update($validated);
 
         return response()->json([
             'success' => true,
-            'message' => 'La catégorie de produit a été mise à jour avec succès !',
+            'message' => 'Catégorie mise à jour avec succès !',
             'data'    => $category
-        ]);
+        ], 200);
     }
+
 
 
 
     /**
      * Display a listing of the resource.
      * @permission CategoryProductsController::destroy
-     * @permission_desc Suppression des catégories de produits
+     * @permission_desc Suppression des catégories d'articles
      */
     public function destroy(Request $request, string $uuid)
     {
@@ -197,7 +191,7 @@ class CategoryProductsController extends Controller
     /**
      * Display a listing of the resource.
      * @permission CategoryProductsController::update_status
-     * @permission_desc Activation/Désactivation des catégories de produits
+     * @permission_desc Activation/Désactivation des catégories d'articles
      */
     public function update_status(Request $request, $uuid){
         $auth = auth()->user();
