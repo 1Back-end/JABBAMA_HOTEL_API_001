@@ -34,12 +34,13 @@ class Supply extends Model
         'partially_validated_by',
         'partial_validation_reason',
         'rejected_by',
-        'rejection_reason'
+        'rejection_reason',
+        'type'
     ];
 
     protected $casts = [
         'scanned_documents' => 'array',
-        'supply_date' => 'date',
+        'supply_date' => 'datetime',
     ];
 
     protected $appends = ['scanned_documents_purchase_orders'];
@@ -90,6 +91,14 @@ class Supply extends Model
     public function validator()
     {
         return $this->belongsTo(User::class, 'validated_by');
+    }
+    public function rejector()
+    {
+        return $this->belongsTo(User::class, 'rejected_by');
+    }
+    public function partially_validated()
+    {
+        return $this->belongsTo(User::class, 'partially_validated_by');
     }
     public function medias(): MorphMany
     {

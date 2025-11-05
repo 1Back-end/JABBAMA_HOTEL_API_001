@@ -16,7 +16,7 @@ class CheckPermission
         $requiredPermissions = $this->getMethodPermissions($controller, $method);
 
         if (!empty($requiredPermissions) && !$this->userHasPermission($requiredPermissions)) {
-            return response()->json(['message' => 'Unauthorized'], 403);
+            return response()->json(['message' => 'Vous avez accès à une ressource dont vous n\'etes pas autorisé'], 403);
         }
 
         return $next($request);

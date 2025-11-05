@@ -31,6 +31,7 @@ class AuthenticatedSessionController extends Controller
 
 
         $permissions = load_permissions($user);
+        $roles = $user->roles()->pluck('name');
 
         $access = $request->user()->createToken(
             name: config('app.name'),
@@ -45,7 +46,8 @@ class AuthenticatedSessionController extends Controller
             'expire_in' => $access->accessToken->expires_at,
             'new_user' => $user->default,
             'permissions' => $permissions,
-            'user' => $user
+            'user' => $user,
+            'roles' => $roles,
         ]);
     }
 

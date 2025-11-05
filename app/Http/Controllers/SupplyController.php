@@ -24,6 +24,7 @@ class SupplyController extends Controller
      */
     public function index(Request $request)
     {
+        $auth = auth()->user();
         $perPage = $request->input('limit', 25);
         $page = $request->input('page', 1);
 
@@ -43,6 +44,26 @@ class SupplyController extends Controller
         if ($request->filled('start_date') && $request->filled('end_date')) {
             $query->whereBetween('created_at', [$request->start_date, $request->end_date]);
         }
+
+        if ($auth->hasRole('SUPER_ADMIN')) {
+            // SUPER ADMIN voit tout → aucun filtre
+        } elseif ($auth->hasRole('GESTIONNAIRE_STOCK')) {
+
+            // ✅ GESTIONNAIRE_STOCK voit uniquement ce qu'il a approvisionné
+            $query->where('created_by', $auth->id);
+
+        } else {
+
+            //Tous les autres voient ce qu'ils ont approvisionné
+            // + ce dont la commande liée est créée par eux
+            $query->where(function ($q) use ($auth) {
+                $q->where('created_by', $auth->id)
+                    ->orWhereHas('purchaseOrder', function ($q2) use ($auth) {
+                        $q2->where('created_by', $auth->id);
+                    });
+            });
+        }
+
         if ($search = trim($request->input('search'))) {
             $query->where(function ($q) use ($search) {
                 $q->where('reference', 'like', "%{$search}%")
@@ -118,7 +139,6 @@ class SupplyController extends Controller
     public function store(Request $request)
     {
         $auth = auth()->user();
-
         // ✅ Validation
         try {
             $validated = $request->validate([
@@ -208,6 +228,11 @@ class SupplyController extends Controller
                 'updated_by' => $auth->id,
             ]);
 
+            $purchaseOrder->update([
+                'status' => 'in_discuss',
+                'updated_by' => auth()->id(),
+            ]);
+
             // ✅ Création des items & mise à jour des produits
             foreach ($validated['items'] as $item) {
                 // ➕ Enregistrement du prix d’achat dans supply_items
@@ -223,10 +248,6 @@ class SupplyController extends Controller
                 // 📦 Mise à jour du stock produit
                 Product::where('uuid', $item['product_uuid'])
                     ->increment('stock_quantity', $item['quantity_supplied']);
-
-                // 💰 Mise à jour du prix d’achat du produit
-//                Product::where('uuid', $item['product_uuid'])
-//                    ->update(['purchase_price' => $item['purchase_price']]);
             }
 
             // ✅ Upload des documents
@@ -612,6 +633,116 @@ class SupplyController extends Controller
             'supply' => $supply
         ]);
     }
+
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission SupplyController::open_supply
+     * @permission_desc Ouvrir des approvisionnements
+     */
+    public function open_supply(Request $request, string $uuid)
+    {
+        $supply = Supply::findOrFail($uuid);
+
+        // 🔄 Mise à jour du statut
+        $supply->update([
+            'status' => 'open',
+            'updated_by' => auth()->id(),
+        ]);
+
+        return response()->json([
+            'message' => "L'approvisionnement est maintenant ouvert.",
+            'supply' => $supply,
+        ]);
+    }
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission SupplyController::print_supplies
+     * @permission_desc Exporter les détails de l'approvisionnement en PDF
+     */
+    public function print_supplies(Request $request, string $uuid)
+    {
+        try {
+            // Charger l'approvisionnement avec les relations
+            $supply = Supply::with(['items.product', 'purchaseOrder.items'])->findOrFail($uuid);
+
+            $supply_uuid  = $supply->uuid;
+            $fileName     = 'details-approvisionnements-' . $supply_uuid . '-' . now()->format('YmdHis') . '.pdf';
+            $folderPath = 'storage/details-approvisionnements';
+            $filePath     = $folderPath . '/' . $fileName;
+
+            // Créer le dossier si nécessaire (recursive = true)
+            if (!is_dir($folderPath)) {
+                if (!mkdir($folderPath, 0755, true) && !is_dir($folderPath)) {
+                    throw new \RuntimeException(sprintf('Impossible de créer le répertoire "%s"', $folderPath));
+                }
+            }
+
+            // Générer le PDF via la fonction save_browser_shot_pdf
+            save_browser_shot_pdf(
+                view: 'pdfs.details-approvisionnements.details-approvisionnements',
+                data: ['supply' => $supply],
+                folderPath: $folderPath,
+                path: $filePath,
+                margins: [10, 10, 10, 10]
+            );
+
+            // Vérifier si le fichier a été généré
+            if (!file_exists($filePath)) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => "Le fichier PDF n'a pas été généré."
+                ], 500);
+            }
+
+            // Lire le PDF et encoder en base64 pour l'envoi
+            $pdfContent = file_get_contents($filePath);
+            $base64     = base64_encode($pdfContent);
+
+            return response()->json([
+                'status'   => 'success',
+                'message'  => 'Rapport généré avec succès.',
+                'data'     => $supply,
+                'base64'   => $base64,
+                'url'      => asset('storage/details-approvisionnements/' . $fileName),
+                'filename' => $fileName,
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Une erreur est survenue.',
+                'error'   => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Display a listing of the resource.
+     * @permission SupplyController::HaveRoleToSeeInternalSupply
+     * @permission_desc Afficher l'option des approvisionnements internes
+     */
+    public function HaveRoleToSeeInternalSupply(Request $request, string $uuid)
+    {
+        $auth = auth()->user();
+        $internal = $request->get("internal");
+    }
+
+    /**
+     * Display a listing of the resource.
+     * @permission SupplyController::HaveRoleToSeeExternalSupply
+     * @permission_desc Afficher l'option des approvisionnements externes
+     */
+    public function HaveRoleToSeeExternalSupply(Request $request, string $uuid)
+    {
+        $auth = auth()->user();
+        $external = $request->get("external");
+    }
+
+
 
 
 

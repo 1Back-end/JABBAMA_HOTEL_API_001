@@ -9,3 +9,5 @@ GET http://127.0.0.1:9000/api/orders
 php artisan db:seed --class=InitBDForAllDataSeeder
 php artisan db:seed --class=NatureWarehouseSeeder
 
+composer require spatie/browsershot
+npm install puppeteer --save

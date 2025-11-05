@@ -409,8 +409,17 @@ class ProductController extends Controller
 
         $product = Product::findOrFail($uuid);
 
+        $used = $product->purchaseOrderItems()->exists();
+
+        if ($used) {
+            return response()->json([
+                'status' => 'error',
+                'message' => "Impossible de supprimer ce produit car il est déjà utilisé dans des commandes."
+            ], 409);
+        }
+
         // Supprime l'entrepôt
-        $product->delete();
+        $product->forceDelete();
 
         return response()->json([
             'success' => true,

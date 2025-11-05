@@ -128,5 +128,11 @@ class Product extends Model
         return null;
     }
 
+    public function purchaseOrderItems()
+    {
+        return $this->hasMany(PurchaseOrderItem::class, 'product_uuid', 'uuid');
+    }
+
+
 
 }

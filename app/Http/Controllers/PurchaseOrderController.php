@@ -312,7 +312,7 @@ class PurchaseOrderController extends Controller
             }
 
             // Vérifier si l'utilisateur est autorisé à modifier
-            if ($order->created_by !== $auth->id && !$auth->hasRoleName('Admin')) {
+            if ($order->created_by !== $auth->id && !$auth->hasRoleName('SUPER_ADMIN')) {
                 return response()->json([
                     'message' => 'Vous n’êtes pas autorisé à modifier cette commande.'
                 ], 403);
@@ -325,7 +325,7 @@ class PurchaseOrderController extends Controller
 
             // Commande externe
             if ($request->type === 'external') {
-                if (!$auth->hasRoleName('ECONOME')) {
+                if (! $auth->hasRoleName('ECONOME') && ! $auth->hasRoleName('SUPER_ADMIN')) {
                     return response()->json([
                         'message' => 'Seul le responsable de stock (Econome) peut modifier une commande externe.'
                     ], 403);
@@ -632,6 +632,29 @@ class PurchaseOrderController extends Controller
             'message' => "La commande a été rejetée avec succès.",
             'order' => $order
         ]);
+    }
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission PurchaseOrderController::HaveRoleToSeeInternalOrder
+     * @permission_desc Afficher l'option des commandes internes
+     */
+    public function HaveRoleToSeeInternalOrder(Request $request, string $uuid)
+    {
+        $auth = auth()->user();
+        $internal = $request->get("internal");
+    }
+
+    /**
+     * Display a listing of the resource.
+     * @permission PurchaseOrderController::HaveRoleToSeeExternalOrder
+     * @permission_desc Afficher l'option des commandes externes
+     */
+    public function HaveRoleToSeeExternalOrder(Request $request, string $uuid)
+    {
+        $auth = auth()->user();
+        $external = $request->get("external");
     }
 
 }

@@ -7,8 +7,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
-use Spatie\Browsershot\Browsershot;
 use Spatie\Browsershot\Exceptions\CouldNotTakeBrowsershot;
+use Spatie\Browsershot\Browsershot;
+
 
 
 if (! function_exists('upload_media')) {
@@ -57,6 +58,50 @@ if (! function_exists('upload_media')) {
         ]);
     }
 }
+
+
+function save_browser_shot_pdf(string $view, array $data, string $folderPath, string $path, string $format = 'a4', string $direction = '', string $header = '', string $footer = '', array $margins = [0, 0, 0, 0]): void
+{
+    $bootstrapPath = public_path('assets/bootstrap/css/bootstrap.min.css');
+    $bootstrapContent = file_get_contents($bootstrapPath);
+    $data = array_merge($data, ['bootstrap' => $bootstrapContent]);
+
+    $folderPath = public_path($folderPath);
+    if (!File::exists($folderPath)) {
+        File::makeDirectory($folderPath, 0755, true);
+    }
+
+
+    $browserShot = Browsershot::html(view($view, $data)->render())
+        ->format($format)
+        ->margins($margins[0], $margins[1], $margins[2], $margins[3])
+        ->showBackground();
+
+
+    if (env('APP_ENV') == "production") {
+        $browserShot->setChromePath('C:\chrome-headless\chrome-headless-shell.exe');
+    }
+
+
+    if ($header) {
+        $browserShot->showBrowserHeaderAndFooter()
+            ->hideFooter()
+            ->headerHtml(view($header, $data)->render());
+    }
+
+    if ($footer) {
+        $browserShot->showBrowserHeaderAndFooter()
+            ->hideHeader()
+            ->footerHtml(view($footer, $data)->render());
+    }
+
+    if ($direction) {
+        $browserShot->landscape();
+    }
+
+    $browserShot->save($path);
+}
+
 
 if (! function_exists('delete_media')) {
     /**
@@ -115,4 +160,5 @@ if (! function_exists('load_permissions')) {
             ->flatten()
             ->toArray();
     }
+
 }
