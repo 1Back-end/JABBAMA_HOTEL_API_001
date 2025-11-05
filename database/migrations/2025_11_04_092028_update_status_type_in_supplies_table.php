@@ -6,31 +6,40 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::table('supplies', function (Blueprint $table) {
-            // Changer 'type' en string au lieu d'enum
-            $table->string('type')->default('internal')->after('reference')->change();
 
-            // Changer 'status' en string au lieu d'enum
+            // ✅ Ajouter la colonne "type" seulement si elle n’existe pas
+            if (!Schema::hasColumn('supplies', 'type')) {
+                $table->string('type')->default('internal')->after('reference');
+            }
+
+            // ✅ Modifier la colonne "status" en string (plus d'enum)
             $table->string('status')->default('draft')->change();
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::table('supplies', function (Blueprint $table) {
-            // Remettre les colonnes en enum si nécessaire
-            $table->enum('type', ['internal', 'external'])->default('internal')->change();
-            $table->enum('status', ['draft', 'open', 'pending', 'partially_delivered', 'delivered', 'not_delivered', 'rejected'])
-                ->default('draft')
-                ->change();
+
+            // 🔙 Supprimer la colonne "type" si elle existe
+            if (Schema::hasColumn('supplies', 'type')) {
+                $table->dropColumn('type');
+            }
+
+            // 🔙 Remettre status en enum
+            // ⚠️ Il faut s’assurer que les valeurs existantes correspondent
+            $table->enum('status', [
+                'draft',
+                'open',
+                'pending',
+                'partially_delivered',
+                'delivered',
+                'not_delivered',
+                'rejected'
+            ])->default('draft')->change();
         });
     }
 };
