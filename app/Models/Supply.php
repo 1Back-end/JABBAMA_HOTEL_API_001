@@ -117,5 +117,9 @@ class Supply extends Model
                 ];
             });
     }
+    public function suppliers()
+    {
+        return $this->hasMany(SupplySupplier::class, 'supply_uuid', 'uuid');
+    }
 
 }

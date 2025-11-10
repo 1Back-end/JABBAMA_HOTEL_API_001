@@ -3,10 +3,12 @@
 namespace App\Http\Controllers;
 
 
+use App\Exports\PurchaseOrdersExport;
 use App\Exports\SuppliersExport;
 use App\Models\DeletionCode;
 use App\Models\Supplier;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -351,6 +353,28 @@ class SupplierController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Fournisseur supprimé avec succès.'
+        ]);
+    }
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission SupplierController::export_suppliers
+     * @permission_desc Exportation des fournisseurs au format Excel
+     */
+    public function export_suppliers()
+    {
+        $fileName = 'suppliers-' . Carbon::now()->format('Y-m-d') . '.xlsx';
+
+        Excel::store(new SuppliersExport(), $fileName, 'exportsuppliers');
+        $base64     = base64_encode($fileName);
+
+
+        return response()->json([
+            "message" => "Exportation des données effectuée avec succès",
+            "filename" => $fileName,
+            "base64" => $base64,
+            "url" => Storage::disk('exportsuppliers')->url($fileName)
         ]);
     }
 

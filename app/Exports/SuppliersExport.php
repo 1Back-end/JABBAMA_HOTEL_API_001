@@ -20,17 +20,17 @@ class SuppliersExport implements FromCollection, WithHeadings
 
         return $suppliers->map(function ($supplier) {
             return [
-                'Uuid' => $supplier->uuid,
-                'Reférence' => $supplier->ref,
-                'Nom Complet' => $supplier->first_name . ' ' . $supplier->last_name,
-                'Email' => $supplier->email || 'NA',
+                'Uuid' => $supplier->uuid ?: '-',
+                'Reférence' => $supplier->ref ?: '-',
+                'Nom Complet' => $supplier->first_name . ' ' . $supplier->last_name ?: '-',
+                'Email' => $supplier->email ?: '-',
                 'Téléphone Principal' => $supplier->phone_number,
-                'Téléphone Secondaire' => $supplier->phone_number_2,
-                'Numéro CNI' => $supplier->cni_number,
-                'Adresse' => $supplier->address,
-                'Nom Société' => $supplier->company_name,
-                'Email société' => $supplier->company_email,
-                'Téléphone société' => $supplier->company_phone,
+                'Téléphone Secondaire' => $supplier->phone_number_2 ?: '-',
+                'Numéro CNI' => $supplier->cni_number ?: '-',
+                'Adresse' => $supplier->address ?: '-',
+                'Nom Société' => $supplier->company_name ?: '-',
+                'Email société' => $supplier->company_email ?: '-',
+                'Téléphone société' => $supplier->company_phone ?: '-',
                 'Date de création' => $supplier->created_at?->format('d/m/Y H:i:s'),
                 'Date de mise à jour' => $supplier->updated_at?->format('d/m/Y H:i:s'),
             ];

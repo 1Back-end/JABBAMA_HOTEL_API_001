@@ -92,6 +92,15 @@ class PurchaseOrder extends Model
     {
         return $this->morphMany(Medias::class, 'mediable');
     }
+    public function children()
+    {
+        return $this->hasMany(PurchaseOrder::class, 'purchase_orders_uuid');
+    }
+
+    public function parent()
+    {
+        return $this->belongsTo(PurchaseOrder::class, 'purchase_orders_uuid');
+    }
 
 
 

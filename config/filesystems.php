@@ -41,16 +41,33 @@ return [
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),
-            'url' => env('APP_URL').'/storage',
+            'url' => env('APP_URL') . '/storage',
             'visibility' => 'public',
             'throw' => false,
             'report' => false,
         ],
 
-        'exportsupplier' => [
+        'browser_shot' => [
             'driver' => 'local',
-            'root' => storage_path('app/export-supplier'),
-            'url' => env('APP_URL') . '/export-supplier',
+            'root' => storage_path('app/public'),
+            'url' => env('APP_URL'),
+            'visibility' => 'public',
+            'throw' => false,
+            'report' => false,
+        ],
+
+        'exportsuppliers' => [
+            'driver' => 'local',
+            'root' => storage_path('app/export-suppliers'),
+            'url' => env('APP_URL') . '/export-suppliers',
+            'visibility' => 'public',
+            'throw' => false,
+            'report' => false,
+        ],
+        'exportorders' => [
+            'driver' => 'local',
+            'root' => storage_path('app/export-orders'),
+            'url' => env('APP_URL') . '/export-orders',
             'visibility' => 'public',
             'throw' => false,
             'report' => false,

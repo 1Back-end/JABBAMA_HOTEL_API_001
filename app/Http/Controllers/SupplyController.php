@@ -7,6 +7,7 @@ use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 use App\Models\Supply;
 use App\Models\SupplyItem;
+use App\Models\SupplySupplier;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -25,6 +26,7 @@ class SupplyController extends Controller
     public function index(Request $request)
     {
         $auth = auth()->user();
+
         $perPage = $request->input('limit', 25);
         $page = $request->input('page', 1);
 
@@ -36,7 +38,8 @@ class SupplyController extends Controller
             'validator',
             'supplier',
             'warehouse',
-            'medias'
+            'medias',
+            'suppliers'
         ]);
         if ($request->filled('status')) {
             $query->where('status', $request->status);
@@ -139,6 +142,7 @@ class SupplyController extends Controller
     public function store(Request $request)
     {
         $auth = auth()->user();
+
         // ✅ Validation
         try {
             $validated = $request->validate([
@@ -147,27 +151,19 @@ class SupplyController extends Controller
                 'items' => 'required|array|min:1',
                 'items.*.product_uuid' => 'required|uuid',
                 'items.*.quantity_supplied' => 'required|numeric|min:1',
-                'items.*.purchase_price' => 'required|numeric|min:0',
+                'items.*.purchase_price' => 'nullable|numeric|min:0',
                 'items.*.notes' => 'nullable|string',
-                'scanned_documents' => 'required|array|min:1',
-                'scanned_documents.*' => 'required|file|mimes:pdf,jpg,jpeg,png|max:5120',
+                'scanned_documents' => 'nullable|array|min:1',
+                'scanned_documents.*' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
+                'supplier_uuid' => 'nullable|array', // Tableau de fournisseurs pour commandes externes
+                'supplier_uuid.*' => 'uuid',
             ], [
                 'purchase_order_uuid.required' => 'Veuillez sélectionner une commande.',
                 'purchase_order_uuid.exists' => 'La commande sélectionnée n’existe pas.',
-                'scanned_documents.required' => 'Veuillez ajouter au moins un document scanné.',
-                'scanned_documents.array' => 'Les documents doivent être envoyés sous forme de liste.',
-                'scanned_documents.min' => 'Veuillez ajouter au moins un document de l\'approvisionnement.',
-                'scanned_documents.*.file' => 'Chaque document doit être un fichier valide.',
-                'scanned_documents.*.mimes' => 'Les documents doivent être au format PDF, JPG, JPEG ou PNG.',
-                'scanned_documents.*.max' => 'Chaque document ne doit pas dépasser 5 Mo.',
-
                 'items.required' => 'Veuillez ajouter au moins un produit à approvisionner.',
                 'items.*.quantity_supplied.required' => 'Veuillez indiquer la quantité pour chaque produit.',
                 'items.*.quantity_supplied.numeric' => 'La quantité doit être un nombre.',
                 'items.*.quantity_supplied.min' => 'La quantité doit être au moins 1.',
-                'items.*.purchase_price.required' => 'Veuillez indiquer le prix d’achat pour chaque produit.',
-                'items.*.purchase_price.numeric' => 'Le prix d’achat doit être un nombre.',
-                'items.*.purchase_price.min' => 'Le prix d’achat doit être au moins 0.',
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json(['errors' => $e->errors()], 422);
@@ -179,9 +175,11 @@ class SupplyController extends Controller
             // ✅ Récupération de la commande
             $purchaseOrder = PurchaseOrder::where('uuid', $validated['purchase_order_uuid'])->firstOrFail();
             $warehouseUuid = $purchaseOrder->warehouse_uuid;
-            $supplierUuid = $purchaseOrder->supplier_uuid;
 
-            // ✅ Vérification des produits & quantités avant création
+            // Détermination du type d’approvisionnement
+            $supplyType = $purchaseOrder->type === 'internal' ? 'internal' : 'external';
+
+            // ✅ Vérification des produits & quantités
             foreach ($validated['items'] as $index => $item) {
                 $poItem = PurchaseOrderItem::where('purchase_order_uuid', $validated['purchase_order_uuid'])
                     ->where('product_uuid', $item['product_uuid'])
@@ -220,34 +218,52 @@ class SupplyController extends Controller
             $supply = Supply::create([
                 'purchase_order_uuid' => $validated['purchase_order_uuid'],
                 'warehouse_uuid' => $warehouseUuid,
-                'supplier_uuid' => $supplierUuid,
                 'supply_date' => now(),
                 'notes' => $validated['notes'] ?? null,
                 'status' => 'pending',
+                'type' => $supplyType,
                 'created_by' => $auth->id,
                 'updated_by' => $auth->id,
             ]);
 
             $purchaseOrder->update([
                 'status' => 'in_discuss',
-                'updated_by' => auth()->id(),
+                'updated_by' => $auth->id,
             ]);
 
-            // ✅ Création des items & mise à jour des produits
+            // ✅ Création des items & mise à jour du stock
             foreach ($validated['items'] as $item) {
-                // ➕ Enregistrement du prix d’achat dans supply_items
-                SupplyItem::create([
+                $dataItem = [
                     'supply_uuid' => $supply->uuid,
                     'product_uuid' => $item['product_uuid'],
                     'quantity_supplied' => $item['quantity_supplied'],
-                    'purchase_price' => $item['purchase_price'], // ✅ ajouté
                     'notes' => $item['notes'] ?? null,
                     'created_by' => $auth->id,
-                ]);
+                ];
 
-                // 📦 Mise à jour du stock produit
+                // Ajouter le prix seulement pour les approvisionnements externes
+                if ($supplyType === 'external') {
+                    $dataItem['purchase_price'] = $item['purchase_price'] ?? 0;
+                }
+
+                SupplyItem::create($dataItem);
+
                 Product::where('uuid', $item['product_uuid'])
                     ->increment('stock_quantity', $item['quantity_supplied']);
+            }
+
+            // ✅ Enregistrement des fournisseurs uniquement si type externe
+            if ($supplyType === 'external' && !empty($validated['supplier_uuid'])) {
+                foreach ($validated['supplier_uuid'] as $supplierUuid) {
+                    SupplySupplier::create([
+                        'supply_uuid' => $supply->uuid,
+                        'supplier_uuid' => $supplierUuid,
+                        'warehouse_uuid' => $warehouseUuid,
+                        'notes' => $validated['notes'] ?? null,
+                        'created_by' => $auth->id,
+                        'updated_by' => $auth->id,
+                    ]);
+                }
             }
 
             // ✅ Upload des documents
@@ -271,7 +287,7 @@ class SupplyController extends Controller
 
             return response()->json([
                 'message' => 'Approvisionnement créé avec succès !',
-                'data' => $supply->load(['items.product', 'warehouse', 'supplier', 'purchaseOrder', 'medias'])
+                'data' => $supply->load(['items.product', 'warehouse', 'purchaseOrder', 'medias', 'suppliers'])
             ], 201);
 
         } catch (\Exception $e) {
@@ -284,6 +300,8 @@ class SupplyController extends Controller
             ], 500);
         }
     }
+
+
 
 
 
@@ -302,7 +320,8 @@ class SupplyController extends Controller
                 'updater',
                 'validator',
                 'supplier',
-                'warehouse'
+                'warehouse',
+                'suppliers.supplier'
             ])
                 ->where('uuid', $uuid)
                 ->firstOrFail();

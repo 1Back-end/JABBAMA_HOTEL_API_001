@@ -26,6 +26,8 @@ Route::middleware(['activity'])->group(function () {
         Route::apiResource("suppliers", SupplierController::class);
         Route::patch('suppliers/{uuid}/is_active', [SupplierController::class, 'update_status']);
         Route::post('suppliers/send_user_code_otp', [SupplierController::class, 'send_user_code_otp']);
+        Route::get('/exports/suppliers', [SupplierController::class, 'export_suppliers']);
+
 
         Route::apiResource("units", UnitController::class);
         Route::patch('units/{uuid}/is_active', [UnitController::class, 'update_status']);
@@ -56,6 +58,7 @@ Route::middleware(['activity'])->group(function () {
         Route::post('orders/{uuid}/send_orders', [PurchaseOrderController::class, 'send_orders']);
         Route::patch('orders/{uuid}/validate_orders', [PurchaseOrderController::class, 'validate_orders']);
         Route::patch('orders/{uuid}/rejected_orders_by_admin', [PurchaseOrderController::class, 'rejected_orders_by_admin']);
+        Route::get('/orders/export_orders', [PurchaseOrderController::class, 'export_orders']);
 
         Route::apiResource('supply_orders', SupplyController::class);
         Route::post('update_supplies/{uuid}/update_supplies', [SupplyController::class, 'update_supplies']);

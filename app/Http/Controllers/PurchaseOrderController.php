@@ -2,12 +2,18 @@
 
 namespace App\Http\Controllers;
 
+use App\Exports\ConsultantsExport;
+use App\Exports\PurchaseOrdersExport;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
 use App\Models\User;
 use App\Models\Warehouse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
+use Maatwebsite\Excel\Facades\Excel;
 
 
 /**
@@ -656,5 +662,36 @@ class PurchaseOrderController extends Controller
         $auth = auth()->user();
         $external = $request->get("external");
     }
+
+    /**
+     * Display a listing of the resource.
+     * @permission PurchaseOrderController::export_orders
+     * @permission_desc Exporter les commandes au format Excel
+     */
+    public function export_orders()
+    {
+        $fileName = 'orders-' . Carbon::now()->format('Y-m-d') . '.xlsx';
+
+        Excel::store(new PurchaseOrdersExport(), $fileName, 'exportorders');
+
+        return response()->json([
+            "message" => "Exportation des données effectuée avec succès",
+            "filename" => $fileName,
+            "url" => Storage::disk('exportorders')->url($fileName)
+        ]);
+    }
+
+    /**
+     * Display a listing of the resource.
+     * @permission PurchaseOrderController::create_orders
+     * @permission_desc Récréer une commande à partir d'une existante
+     */
+
+    public function create_orders(Request $request, string $uuid){
+        $auth = auth()->user();
+
+
+    }
+
 
 }

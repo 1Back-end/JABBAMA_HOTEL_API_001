@@ -3,11 +3,5 @@
 
 #GET http://127.0.0.1:9000/api/subcategories/by_category/ba74feb0-74ad-45d6-a500-a2c2d1d40f71
 #GET http://127.0.0.1:9000/api/products
-GET http://127.0.0.1:9000/api/orders
-
-
-php artisan db:seed --class=InitBDForAllDataSeeder
-php artisan db:seed --class=NatureWarehouseSeeder
-
-composer require spatie/browsershot
-npm install puppeteer --save
+#GET http://127.0.0.1:9000/api/orders
+GET http://127.0.0.1:9000/api/orders/export_orders
