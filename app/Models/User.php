@@ -128,6 +128,10 @@ class User extends Authenticatable
             ->withPivot(['uuid'])
             ->using(WarehouseManager::class);
     }
+    public function warehouse()
+    {
+        return $this->belongsTo(Warehouse::class, 'warehouse_uuid', 'uuid');
+    }
 
 
 }

@@ -19,33 +19,45 @@ class WarehouseController extends Controller
      */
     public function index(Request $request)
     {
+        $auth = auth()->user();
         $perPage = $request->input('limit', 25);
         $page = $request->input('page', 1);
 
-        $query = Warehouse::with(['creator','updater','natures','managers'])
-            ->when($request->has('is_active'), function ($query) use ($request) {
-                $query->where('is_active', filter_var($request->input('is_active'), FILTER_VALIDATE_BOOLEAN));
-            });
+        $query = Warehouse::with(['creator', 'updater', 'natures', 'managers']);
 
-        if($search = trim($request->input('search'))){
+        // 🔥 Filtrer selon le rôle
+        if (!$auth->hasRole('SUPER_ADMIN')) {
+            $query->whereHas('managers', function ($q) use ($auth) {
+                $q->where('user_id', $auth->id);
+            });
+        }
+
+        // ✅ Filtre is_active
+        if ($request->has('is_active')) {
+            $query->where('is_active', filter_var($request->input('is_active'), FILTER_VALIDATE_BOOLEAN));
+        }
+
+        // ✅ Search
+        if ($search = trim($request->input('search'))) {
             $query->where(function ($q) use ($search) {
                 $q->where('ref', 'like', "%{$search}%")
                     ->orWhere('name', 'like', "%{$search}%")
                     ->orWhere('stock_type', 'like', "%{$search}%")
-                    ->orWhere('address', 'like', "%{$search}%");
+                    ->orWhere('address', 'like', "%{$search}%")
+                    ->orWhere('total_stock', 'total_stock', "%{$search}%");
             });
         }
-        $warehouse = $query->latest()->paginate($perPage, ['*'], 'page', $page);
 
-        // Réponse JSON
+        $warehouses = $query->latest()->paginate($perPage, ['*'], 'page', $page);
+
         return response()->json([
-            'data'         => $warehouse->items(),
-            'current_page' => $warehouse->currentPage(),
-            'last_page'    => $warehouse->lastPage(),
-            'total'        => $warehouse->total(),
+            'data'         => $warehouses->items(),
+            'current_page' => $warehouses->currentPage(),
+            'last_page'    => $warehouses->lastPage(),
+            'total'        => $warehouses->total(),
         ]);
-        //
     }
+
 
     /**
      * Display a listing of the resource.

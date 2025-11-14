@@ -58,20 +58,26 @@ return [
 
         'exportsuppliers' => [
             'driver' => 'local',
-            'root' => storage_path('app/export-suppliers'),
-            'url' => env('APP_URL') . '/export-suppliers',
+            'root' => storage_path('app/public/export-suppliers'),
+            'url'    => env('APP_URL') . '/storage/export-suppliers',
             'visibility' => 'public',
-            'throw' => false,
-            'report' => false,
         ],
+
         'exportorders' => [
             'driver' => 'local',
-            'root' => storage_path('app/export-orders'),
-            'url' => env('APP_URL') . '/export-orders',
+            'root' => storage_path('app/public/export-orders'),
+            'url'    => env('APP_URL') . '/storage/export-orders',
             'visibility' => 'public',
-            'throw' => false,
-            'report' => false,
         ],
+
+        'exportsupply' => [
+            'driver' => 'local',
+            'root'   => storage_path('app/public/export-supply'),
+            'url'    => env('APP_URL') . '/storage/export-supply',
+            'visibility' => 'public',
+        ],
+
+
 
         's3' => [
             'driver' => 's3',

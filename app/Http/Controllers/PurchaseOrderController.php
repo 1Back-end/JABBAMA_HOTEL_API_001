@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Exports\ConsultantsExport;
 use App\Exports\PurchaseOrdersExport;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
@@ -132,7 +131,6 @@ class PurchaseOrderController extends Controller
             $request->validate([
                 'type' => 'required|in:external,internal',
                 'supplier_uuid' => 'required_if:type,external|nullable|exists:suppliers,uuid',
-                'warehouse_from' => 'required_if:type,internal|nullable|exists:warehouses,uuid',
                 'warehouse_to' => 'nullable|exists:warehouses,uuid',
                 'notes' => 'nullable|string',
                 'items' => 'required|array|min:1',
@@ -190,7 +188,6 @@ class PurchaseOrderController extends Controller
                 'type' => $request->type,
                 'status' => 'draft',
                 'supplier_uuid' => $supplierUuid,
-                'warehouse_from' => $warehouseFromUuid,
                 'warehouse_to' => $warehouseToUuid,
                 'notes' => $request->notes,
                 'created_by' => $auth->id,
@@ -303,7 +300,6 @@ class PurchaseOrderController extends Controller
             $request->validate([
                 'type' => 'required|in:external,internal',
                 'supplier_uuid' => 'required_if:type,external|nullable|exists:suppliers,uuid',
-                'warehouse_from' => 'required_if:type,internal|nullable|exists:warehouses,uuid',
                 'warehouse_to' => 'nullable|exists:warehouses,uuid',
                 'notes' => 'nullable|string',
                 'items' => 'required|array|min:1',
@@ -317,21 +313,19 @@ class PurchaseOrderController extends Controller
                 return response()->json(['message' => 'Commande introuvable.'], 404);
             }
 
-            // Vérifier si l'utilisateur est autorisé à modifier
+            // Vérifier l'autorisation de modification
             if ($order->created_by !== $auth->id && !$auth->hasRoleName('SUPER_ADMIN')) {
                 return response()->json([
                     'message' => 'Vous n’êtes pas autorisé à modifier cette commande.'
                 ], 403);
             }
 
-            // Variables
-            $warehouseFromUuid = null;
-            $warehouseToUuid = null;
             $supplierUuid = null;
+            $warehouseToUuid = null;
 
             // Commande externe
             if ($request->type === 'external') {
-                if (! $auth->hasRoleName('ECONOME') && ! $auth->hasRoleName('SUPER_ADMIN')) {
+                if (!$auth->hasRoleName('ECONOME') && !$auth->hasRoleName('SUPER_ADMIN')) {
                     return response()->json([
                         'message' => 'Seul le responsable de stock (Econome) peut modifier une commande externe.'
                     ], 403);
@@ -342,25 +336,13 @@ class PurchaseOrderController extends Controller
                 $warehouseToUuid = $warehouseTo ? $warehouseTo->uuid : null;
 
             } else { // Commande interne
-                $warehouseFrom = Warehouse::where('uuid', $request->warehouse_from)->first();
-                if (!$warehouseFrom) {
-                    return response()->json(['message' => 'Entrepôt source introuvable.'], 404);
-                }
-
-                // Vérifier que l'utilisateur gère l'entrepôt
-                $isManager = $warehouseFrom->managers()->where('user_id', $auth->id)->exists();
-                if (!$isManager) {
-                    return response()->json([
-                        'message' => 'Vous ne pouvez modifier une commande interne que depuis un entrepôt que vous gérez.'
-                    ], 403);
-                }
-
-                $warehouseFromUuid = $warehouseFrom->uuid;
-                $warehouseToUuid = $request->warehouse_to ?? $warehouseFrom->uuid;
-
-                $warehouseToCheck = Warehouse::where('uuid', $warehouseToUuid)->first();
-                if (!$warehouseToCheck) {
-                    return response()->json(['message' => 'Entrepôt de destination introuvable.'], 404);
+                // Définir l'entrepôt de destination si fourni
+                $warehouseToUuid = $request->warehouse_to;
+                if ($warehouseToUuid) {
+                    $warehouseToCheck = Warehouse::where('uuid', $warehouseToUuid)->first();
+                    if (!$warehouseToCheck) {
+                        return response()->json(['message' => 'Entrepôt de destination introuvable.'], 404);
+                    }
                 }
             }
 
@@ -368,21 +350,20 @@ class PurchaseOrderController extends Controller
             $order->update([
                 'type' => $request->type,
                 'supplier_uuid' => $supplierUuid,
-                'warehouse_from' => $warehouseFromUuid,
                 'warehouse_to' => $warehouseToUuid,
                 'notes' => $request->notes,
                 'updated_by' => $auth->id,
                 'status' => 'draft'
             ]);
 
-            // Suppression des anciens items et ajout des nouveaux
+            // Supprimer les anciens items et ajouter les nouveaux
             $order->items()->delete();
 
             foreach ($request->items as $item) {
                 $product = Product::find($item['product_uuid']);
                 $productName = $product ? $product->name : $item['product_uuid'];
 
-                if ($request->type === 'internal') {
+                if ($request->type === 'internal' && isset($warehouseFrom)) {
                     $available = Product::where('uuid', $item['product_uuid'])
                         ->whereHas('points', function ($q) use ($warehouseFrom) {
                             $q->where('point_uuid', $warehouseFrom->uuid);
@@ -421,6 +402,7 @@ class PurchaseOrderController extends Controller
             ], 500);
         }
     }
+
 
 
     /**
@@ -517,6 +499,9 @@ class PurchaseOrderController extends Controller
         $order->update([
             'status' => 'validated',
             'updated_by' => auth()->id(),
+            'approved_by' => auth()->id(),
+            'approved_at' => now(),
+            'closed_at' => now()
         ]);
 
         return response()->json([
@@ -549,6 +534,7 @@ class PurchaseOrderController extends Controller
             'status' => 'rejected',
             'motif_rejet' => $validated['motif_rejet'],
             'updated_by' => auth()->id(),
+            'closed_at' => now()
         ]);
 
         return response()->json([
@@ -632,6 +618,7 @@ class PurchaseOrderController extends Controller
             'status' => 'rejected',
             'motif_rejet' => $validated['motif_rejet'],
             'updated_by' => auth()->id(),
+            'closed_at' => now()
         ]);
 
         return response()->json([
@@ -670,7 +657,7 @@ class PurchaseOrderController extends Controller
      */
     public function export_orders()
     {
-        $fileName = 'orders-' . Carbon::now()->format('Y-m-d') . '.xlsx';
+        $fileName = 'orders-' . Carbon::now()->format('Y-m-d_H-i-s') . '.xlsx';
 
         Excel::store(new PurchaseOrdersExport(), $fileName, 'exportorders');
 

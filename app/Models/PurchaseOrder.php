@@ -83,6 +83,11 @@ class PurchaseOrder extends Model
     {
         return $this->belongsTo(User::class, 'updated_by');
     }
+    public function transfered()
+    {
+        return $this->belongsTo(User::class, 'transfered_by');
+    }
+
 
     public function approver()
     {

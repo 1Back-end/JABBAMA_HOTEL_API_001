@@ -22,4 +22,5 @@ class ProductPoint extends Pivot
             }
         });
     }
+
 }

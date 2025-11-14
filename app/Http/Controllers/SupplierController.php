@@ -364,21 +364,16 @@ class SupplierController extends Controller
      */
     public function export_suppliers()
     {
-        $fileName = 'suppliers-' . Carbon::now()->format('Y-m-d') . '.xlsx';
+        $fileName = 'suppliers-' . Carbon::now()->format('Y-m-d_H-i-s') . '.xlsx';
 
         Excel::store(new SuppliersExport(), $fileName, 'exportsuppliers');
-        $base64     = base64_encode($fileName);
-
 
         return response()->json([
             "message" => "Exportation des données effectuée avec succès",
             "filename" => $fileName,
-            "base64" => $base64,
             "url" => Storage::disk('exportsuppliers')->url($fileName)
         ]);
     }
-
-
 
 
 
