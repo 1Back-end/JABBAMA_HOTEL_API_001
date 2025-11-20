@@ -35,7 +35,9 @@ class Supply extends Model
         'partial_validation_reason',
         'rejected_by',
         'rejection_reason',
-        'type'
+        'type',
+        'reason_cancel',
+        'cancelled_by'
     ];
 
     protected $casts = [
@@ -92,6 +94,9 @@ class Supply extends Model
     {
         return $this->belongsTo(User::class, 'validated_by');
     }
+    public function cancelled(){
+        return $this->belongsTo(User::class, 'cancelled_by');
+    }
     public function rejector()
     {
         return $this->belongsTo(User::class, 'rejected_by');
@@ -121,5 +126,10 @@ class Supply extends Model
     {
         return $this->hasMany(SupplySupplier::class, 'supply_uuid', 'uuid');
     }
+    public function invoices()
+    {
+        return $this->hasMany(SupplyInvoice::class, 'supply_uuid', 'uuid');
+    }
+
 
 }

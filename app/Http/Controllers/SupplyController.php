@@ -9,6 +9,7 @@ use App\Models\ProductPoint;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 use App\Models\Supply;
+use App\Models\SupplyInvoice;
 use App\Models\SupplyItem;
 use App\Models\SupplySupplier;
 use App\Models\User;
@@ -47,7 +48,8 @@ class SupplyController extends Controller
             'supplier',
             'warehouse',
             'medias',
-            'suppliers'
+            'suppliers',
+            'cancelled'
         ]);
         if ($request->filled('status')) {
             $query->where('status', $request->status);
@@ -151,77 +153,76 @@ class SupplyController extends Controller
     {
         $auth = auth()->user();
 
-        // ✅ Validation
-        try {
-            $validated = $request->validate([
-                'purchase_order_uuid' => 'required|exists:purchase_orders,uuid',
-                'notes' => 'nullable|string',
-                'items' => 'required|array|min:1',
-                'items.*.product_uuid' => 'required|uuid',
-                'items.*.quantity_supplied' => 'required|numeric|min:1',
-                'items.*.purchase_price' => 'nullable|numeric|min:0',
-                'items.*.notes' => 'nullable|string',
-                'scanned_documents' => 'nullable|array|min:1',
-                'scanned_documents.*' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
-                'supplier_uuid' => 'nullable|array',
-                'supplier_uuid.*' => 'uuid',
-                'partial_validation_reason' => 'nullable|string'
-            ]);
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return response()->json(['errors' => $e->errors()], 422);
-        }
-
+        $validated = $request->validate([
+            'purchase_order_uuid' => 'required|exists:purchase_orders,uuid',
+            'notes' => 'nullable|string',
+            'items' => 'required|array|min:1',
+            'items.*.product_uuid' => 'required|uuid',
+            'items.*.quantity_supplied' => 'required|numeric|min:1',
+            'items.*.purchase_price' => 'nullable|numeric|min:0', // prix total
+            'items.*.notes' => 'nullable|string',
+            'scanned_documents' => 'nullable|array|min:1',
+            'scanned_documents.*' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
+            'supplier_uuid' => 'nullable|array',
+            'supplier_uuid.*' => 'uuid',
+            'partial_validation_reason' => 'nullable|string',
+            'invoices' => 'nullable|array',
+            'invoices.*.invoice_number' => 'nullable|string',
+            'invoices.*.total_price' => 'nullable|numeric|min:0',
+        ], [
+            'purchase_order_uuid.required' => "La commande d'achat est obligatoire.",
+            'purchase_order_uuid.exists' => "La commande d'achat sélectionnée n'existe pas.",
+            'items.required' => "Vous devez ajouter au moins un produit à l'approvisionnement.",
+            'items.*.product_uuid.required' => "Chaque produit doit être sélectionné.",
+            'items.*.quantity_supplied.required' => "La quantité approvisionnée est obligatoire.",
+            'items.*.quantity_supplied.numeric' => "La quantité approvisionnée doit être un nombre.",
+            'items.*.quantity_supplied.min' => "La quantité approvisionnée doit être au moins 1.",
+            'items.*.purchase_price.numeric' => "Le prix total doit être un nombre.",
+            'items.*.purchase_price.min' => "Le prix total ne peut pas être négatif.",
+            'scanned_documents.*.mimes' => "Chaque document doit être au format PDF, JPG, JPEG ou PNG.",
+            'scanned_documents.*.max' => "Chaque document ne doit pas dépasser 5 Mo.",
+            'supplier_uuid.*.uuid' => "Chaque fournisseur sélectionné est invalide.",
+            'invoices.*.invoice_number.string' => "Le numéro de facture doit être une chaîne de caractères.",
+            'invoices.*.total_price.numeric' => "Le prix total de la facture doit être un nombre.",
+            'invoices.*.total_price.min' => "Le prix total de la facture ne peut pas être négatif.",
+        ]);
         try {
             DB::beginTransaction();
 
             $purchaseOrder = PurchaseOrder::where('uuid', $validated['purchase_order_uuid'])->firstOrFail();
             $warehouseUuid = $purchaseOrder->warehouse_uuid;
-
             $supplyType = $purchaseOrder->type === 'internal' ? 'internal' : 'external';
+            $partialItems = [];
 
-            $partialItems = []; // <-- on stocke les produits partiels
-
-            // ✅ Vérification des produits & quantités
-            foreach ($validated['items'] as $index => $item) {
+            // ✅ Vérification des produits & calcul unit price
+            foreach ($validated['items'] as $index => &$item) {
                 $poItem = PurchaseOrderItem::where('purchase_order_uuid', $validated['purchase_order_uuid'])
                     ->where('product_uuid', $item['product_uuid'])
-                    ->first();
-
-                if (!$poItem) {
-                    return response()->json([
-                        'errors' => [
-                            'items' => [
-                                $index => [
-                                    'product_uuid' => ["Le produit sélectionné n'est pas dans la commande d'achat."]
-                                ]
-                            ]
-                        ]
-                    ], 422);
-                }
+                    ->firstOrFail();
 
                 if ((float)$item['quantity_supplied'] > (float)$poItem->quantity) {
                     $qtyOrdered = rtrim(rtrim($poItem->quantity, '0'), '.');
-
                     return response()->json([
                         'errors' => [
                             'items' => [
                                 $index => [
-                                    'quantity_supplied' => [
-                                        "La quantité approvisionnée ({$item['quantity_supplied']}) ne peut pas dépasser la quantité commandée ({$qtyOrdered})."
-                                    ]
+                                    'quantity_supplied' => ["La quantité approvisionnée ({$item['quantity_supplied']}) ne peut pas dépasser la quantité commandée ({$qtyOrdered})."]
                                 ]
                             ]
                         ]
                     ], 422);
                 }
 
-                // Vérifier si partiel
                 if ((float)$item['quantity_supplied'] < (float)$poItem->quantity) {
                     $partialItems[] = $poItem->product->name;
                 }
+
+                // Calcul du prix unitaire
+                $item['unit_price'] = isset($item['purchase_price']) && $item['quantity_supplied'] > 0
+                    ? round($item['purchase_price'] / $item['quantity_supplied'], 2)
+                    : 0;
             }
 
-            // ✅ Déterminer statut
             $isFullySupplied = empty($partialItems);
 
             $supply = Supply::create([
@@ -229,7 +230,7 @@ class SupplyController extends Controller
                 'warehouse_uuid' => $warehouseUuid,
                 'supply_date' => now(),
                 'notes' => $validated['notes'] ?? null,
-                'status' => $isFullySupplied ? 'in_discuss' : 'partially_validated',
+                'status' => $isFullySupplied ? 'draft' : 'partially_validated',
                 'partially_validated_by' => $isFullySupplied ? null : $auth->id,
                 'partial_validation_reason' => $isFullySupplied ? null : ($validated['partial_validation_reason'] ?? 'Certains produits n’ont pas été approvisionnés complètement. '  . implode(', ', $partialItems)),
                 'type' => $supplyType,
@@ -237,30 +238,38 @@ class SupplyController extends Controller
                 'updated_by' => $auth->id,
             ]);
 
-            // Mise à jour statut PO
             $purchaseOrder->update([
                 'status' => 'in_discuss',
                 'updated_by' => $auth->id,
             ]);
 
-            // ✅ Création des items & mise à jour stock
+            // ✅ Création des items avec prix total et unitaire
             foreach ($validated['items'] as $item) {
-                $dataItem = [
+                SupplyItem::create([
                     'supply_uuid' => $supply->uuid,
                     'product_uuid' => $item['product_uuid'],
                     'quantity_supplied' => $item['quantity_supplied'],
+                    'purchase_price' => $item['purchase_price'] ?? null,
+                    'unit_price' => $item['unit_price'],
                     'notes' => $item['notes'] ?? null,
                     'created_by' => $auth->id,
-                ];
-
-                if ($supplyType === 'external') {
-                    $dataItem['purchase_price'] = $item['purchase_price'] ?? 0;
-                }
-
-                SupplyItem::create($dataItem);
+                ]);
             }
 
-            // ✅ Sauvegarde fournisseurs si externe
+            if (!empty($validated['invoices'])) {
+                foreach ($validated['invoices'] as $invoice) {
+                    SupplyInvoice::create([
+                        'supply_uuid' => $supply->uuid,
+                        'invoice_number' => $invoice['invoice_number'] ?? null,
+                        'total_price' => $invoice['total_price'] ?? 0,
+                        'created_by' => $auth->id,
+                        'updated_by' => $auth->id,
+                    ]);
+                }
+            }
+
+
+            // ✅ Fournisseurs si externe
             if ($supplyType === 'external' && !empty($validated['supplier_uuid'])) {
                 foreach ($validated['supplier_uuid'] as $supplierUuid) {
                     SupplySupplier::create([
@@ -279,7 +288,6 @@ class SupplyController extends Controller
                 foreach ($request->file('scanned_documents') as $file) {
                     $filename = time() . '_' . $file->getClientOriginalName();
                     $path = $file->store('documents_approvisionnements', 'public');
-
                     $supply->medias()->create([
                         'name' => $filename,
                         'disk' => 'public',
@@ -297,19 +305,20 @@ class SupplyController extends Controller
                 'message' => $isFullySupplied
                     ? 'Approvisionnement validé avec succès !'
                     : 'Approvisionnement partiellement validé. Produits non totalement approvisionnés : ' . implode(', ', $partialItems),
-                'data' => $supply->load(['items.product', 'warehouse', 'purchaseOrder', 'medias', 'suppliers'])
+                'data' => $supply->load(['items.product', 'warehouse', 'purchaseOrder', 'medias', 'suppliers', 'invoices'])
             ], 201);
 
         } catch (\Exception $e) {
             DB::rollBack();
             \Log::error('Erreur création approvisionnement : ' . $e->getMessage());
-
+            \Log::info('Invoices créées', $validated['invoices']);
             return response()->json([
                 'error' => 'Une erreur est survenue lors de la création de l’approvisionnement.',
                 'details' => $e->getMessage()
             ], 500);
         }
     }
+
 
 
     /**
@@ -330,7 +339,11 @@ class SupplyController extends Controller
                 'validator',
                 'supplier',
                 'warehouse',
-                'suppliers.supplier'
+                'rejector',
+                'suppliers.supplier',
+                'partially_validated',
+                'medias',
+                'cancelled'
             ])
                 ->where('uuid', $uuid)
                 ->firstOrFail();
@@ -435,7 +448,7 @@ class SupplyController extends Controller
             // ✅ Mise à jour de l’approvisionnement
             $supply->update([
                 'notes' => $validated['notes'] ?? null,
-                'status' => $isFullySupplied ? 'in_discuss' : 'partially_validated',
+                'status' => $isFullySupplied ? 'open' : 'partially_validated',
                 'partially_validated_by' => $isFullySupplied ? null : $auth->id,
                 'partial_validation_reason' => $isFullySupplied ? null : ($validated['partial_validation_reason'] ?? 'Certains produits non totalement approvisionnés : ' . implode(', ', $partialItems)),
                 'updated_by' => $auth->id,
@@ -840,6 +853,34 @@ class SupplyController extends Controller
         ]);
     }
 
+    /**
+     * Display a listing of the resource.
+     * @permission SupplyController::cancel_supply
+     * @permission_desc Annuler un approvisionnement
+     */
+    public function cancel_supply(Request $request, string $uuid)
+    {
+        $supply = Supply::findOrFail($uuid);
+
+        // Validation
+        $validated = $request->validate([
+            'reason_cancel' => 'required|string|max:255',
+        ], [
+            'reason_cancel.required' => 'Le motif d\'annulation est obligatoire.',
+        ]);
+
+        $supply->update([
+            'status'        => 'cancelled',
+            'reason_cancel' => $validated['reason_cancel'],
+            'cancelled_by'  => auth()->id(),
+        ]);
+
+        return response()->json([
+            'message' => 'Approvisionnement annulé avec succès.',
+            'data' => $supply
+        ]);
+    }
+
 
     /**
      * Display a listing of the resource.
@@ -857,7 +898,10 @@ class SupplyController extends Controller
                 'purchaseOrder.warehouse_from',
                 'creator',
                 'updater',
+                'partially_validated',
+                'rejector',
                 'validator',
+                'medias',
                 'supplier',
                 'warehouse',
                 'suppliers.supplier'
@@ -1017,6 +1061,8 @@ class SupplyController extends Controller
             "url" => Storage::disk('exportsupply')->url($fileName)
         ]);
     }
+
+
 
 
 

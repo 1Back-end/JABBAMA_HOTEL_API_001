@@ -67,6 +67,7 @@ Route::middleware(['activity'])->group(function () {
         Route::patch('supply_orders/{uuid}/validate_supply', [SupplyController::class, 'validate_supply']);
         Route::patch('supply_orders/{uuid}/open_supply', [SupplyController::class, 'open_supply']);
         Route::get('supply_orders/{uuid}/print_supplies', [SupplyController::class, 'print_supplies']);
+        Route::patch('supply_orders/{uuid}/cancel_supply', [SupplyController::class, 'cancel_supply']);
         Route::get("/exports/supply", [SupplyController::class, 'export_supply']);
 
 

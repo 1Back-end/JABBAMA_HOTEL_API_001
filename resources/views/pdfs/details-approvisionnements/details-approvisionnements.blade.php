@@ -48,7 +48,7 @@
         BON DE COMMANDE N° {{ $supply->purchaseOrder->reference }}
     </div>
 
-    <div class="mt-1 fw-bold">
+    <div class="mt-1 fw-bold text-uppercase">
         Approvisionnement :
         @if($supply->purchaseOrder->type === 'external')
             externe
@@ -134,6 +134,9 @@
         @case('partially_validated')
             <span class="badge bg-info px-3 py-2 rounded-pill">Validé partiellement</span>
             @break
+        @case('draft')
+            <span class="badge bg-secondary px-3 py-2 rounded-pill">En brouillon</span>
+            @break
     @endswitch
 
     @if($supply->rejection_reason)
@@ -158,7 +161,7 @@
         <h6 class="fw-bold text-uppercase">Fournisseur(s)</h6>
         <ul class="list-group">
             @forelse($supply->suppliers as $supplierLink)
-                <li class="list-group-item">
+                <li class="list-group-item border-0 rounded-0">
                     {{ $supplierLink->supplier->company_name ?? '---' }}
                     — {{ $supplierLink->supplier->first_name }} {{ $supplierLink->supplier->last_name }}
                     <br>
@@ -167,28 +170,50 @@
                     </small>
                 </li>
             @empty
-                <li class="list-group-item text-muted">Aucun fournisseur enregistré.</li>
+                <li class="list-group-item text-muted border-0 rounded-0">Aucun fournisseur enregistré.</li>
             @endforelse
         </ul>
-
-    @else
-
-        <h6 class="fw-bold text-uppercase">Entrepôt(s)</h6>
-        <ul class="list-group">
-            @if($supply->purchaseOrder->warehouse_from)
-                <li class="list-group-item">
-                    <strong>De :</strong> {{ $supply->purchaseOrder->warehouse_from->name }}
-                </li>
-            @endif
-            @if($supply->purchaseOrder->warehouseTo)
-                <li class="list-group-item">
-                    <strong>Vers :</strong> {{ $supply->purchaseOrder->warehouseTo->name }}
-                </li>
-            @endif
-        </ul>
-
     @endif
 </div>
+
+
+<div class="mt-3">
+    @if($supply->creator)
+        <p class="mt-2 fw-bold">
+            Crée par : {{ $supply->creator->nom_utilisateur }}
+        </p>
+
+    @endif
+
+    @if($supply->updater)
+            <p class="mt-2 fw-bold">
+                Mise à jour par : {{ $supply->updater->nom_utilisateur}}
+            </p>
+        @endif
+
+        @if($supply->validator)
+            <p class="mt-2 fw-bold">
+                Validé par : {{ $supply->validator->nom_utilisateur}}
+            </p>
+        @endif
+
+        @if($supply->rejector)
+            <p class="mt-2 fw-bold">
+                Rejetté par : {{ $supply->rejector->nom_utilisateur}}
+            </p>
+        @endif
+
+        @if($supply->partially_validated)
+            <p class="mt-2 fw-bold">
+                Validé partiellement par : {{ $supply->partially_validated->nom_utilisateur }}
+            </p>
+        @endif
+
+
+
+</div>
+
+
 
 
 
