@@ -59,6 +59,8 @@ Route::middleware(['activity'])->group(function () {
         Route::patch('orders/{uuid}/validate_orders', [PurchaseOrderController::class, 'validate_orders']);
         Route::patch('orders/{uuid}/rejected_orders_by_admin', [PurchaseOrderController::class, 'rejected_orders_by_admin']);
         Route::get('/exports/orders', [PurchaseOrderController::class, 'export_orders']);
+        Route::post('orders/{uuid}/create_parents_orders', [PurchaseOrderController::class, 'create_parents_orders']);
+        Route::put('orders/{uuid}/update_parents_orders', [PurchaseOrderController::class, 'update_parents_orders']);
 
         Route::apiResource('supply_orders', SupplyController::class);
         Route::post('update_supplies/{uuid}/update_supplies', [SupplyController::class, 'update_supplies']);
@@ -68,6 +70,7 @@ Route::middleware(['activity'])->group(function () {
         Route::patch('supply_orders/{uuid}/open_supply', [SupplyController::class, 'open_supply']);
         Route::get('supply_orders/{uuid}/print_supplies', [SupplyController::class, 'print_supplies']);
         Route::patch('supply_orders/{uuid}/cancel_supply', [SupplyController::class, 'cancel_supply']);
+        Route::patch('supply_orders/{uuid}/transfer_supply', [SupplyController::class, 'transfer_supply']);
         Route::get("/exports/supply", [SupplyController::class, 'export_supply']);
 
 

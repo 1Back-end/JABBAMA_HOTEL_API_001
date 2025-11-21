@@ -74,5 +74,10 @@ class Supplier extends Model
     {
         return $this->hasMany(PurchaseOrder::class, 'supplier_uuid', 'uuid');
     }
+    public function suppliers()
+    {
+        return $this->hasMany(SupplySupplier::class, 'supply_uuid', 'uuid')->with('supplier');
+    }
+
 
 }

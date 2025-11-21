@@ -48,7 +48,6 @@ class SupplyController extends Controller
             'supplier',
             'warehouse',
             'medias',
-            'suppliers',
             'cancelled'
         ]);
         if ($request->filled('status')) {
@@ -153,78 +152,103 @@ class SupplyController extends Controller
     {
         $auth = auth()->user();
 
+        $purchaseOrder = PurchaseOrder::where('uuid', $request->purchase_order_uuid)->firstOrFail();
+        $supplyType = $purchaseOrder->type === 'internal' ? 'internal' : 'external';
+        $warehouseUuid = $purchaseOrder->warehouse_uuid;
+
         $validated = $request->validate([
             'purchase_order_uuid' => 'required|exists:purchase_orders,uuid',
             'notes' => 'nullable|string',
+
             'items' => 'required|array|min:1',
             'items.*.product_uuid' => 'required|uuid',
             'items.*.quantity_supplied' => 'required|numeric|min:1',
-            'items.*.purchase_price' => 'nullable|numeric|min:0', // prix total
+            'items.*.purchase_price' => $supplyType === 'external' ? 'required|numeric|min:0' : 'nullable|numeric|min:0',
             'items.*.notes' => 'nullable|string',
+            'items.*.supplier_uuid' => $supplyType === 'external' ? 'required|uuid' : 'nullable|uuid',
+
             'scanned_documents' => 'nullable|array|min:1',
             'scanned_documents.*' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
-            'supplier_uuid' => 'nullable|array',
-            'supplier_uuid.*' => 'uuid',
+
             'partial_validation_reason' => 'nullable|string',
-            'invoices' => 'nullable|array',
-            'invoices.*.invoice_number' => 'nullable|string',
-            'invoices.*.total_price' => 'nullable|numeric|min:0',
         ], [
-            'purchase_order_uuid.required' => "La commande d'achat est obligatoire.",
-            'purchase_order_uuid.exists' => "La commande d'achat sélectionnée n'existe pas.",
-            'items.required' => "Vous devez ajouter au moins un produit à l'approvisionnement.",
-            'items.*.product_uuid.required' => "Chaque produit doit être sélectionné.",
-            'items.*.quantity_supplied.required' => "La quantité approvisionnée est obligatoire.",
-            'items.*.quantity_supplied.numeric' => "La quantité approvisionnée doit être un nombre.",
-            'items.*.quantity_supplied.min' => "La quantité approvisionnée doit être au moins 1.",
-            'items.*.purchase_price.numeric' => "Le prix total doit être un nombre.",
-            'items.*.purchase_price.min' => "Le prix total ne peut pas être négatif.",
-            'scanned_documents.*.mimes' => "Chaque document doit être au format PDF, JPG, JPEG ou PNG.",
-            'scanned_documents.*.max' => "Chaque document ne doit pas dépasser 5 Mo.",
-            'supplier_uuid.*.uuid' => "Chaque fournisseur sélectionné est invalide.",
-            'invoices.*.invoice_number.string' => "Le numéro de facture doit être une chaîne de caractères.",
-            'invoices.*.total_price.numeric' => "Le prix total de la facture doit être un nombre.",
-            'invoices.*.total_price.min' => "Le prix total de la facture ne peut pas être négatif.",
+
+            // purchase order
+            'purchase_order_uuid.required' => 'La commande est obligatoire.',
+            'purchase_order_uuid.exists'   => 'Commande introuvable.',
+
+            // items
+            'items.required' => 'Vous devez ajouter au moins un produit.',
+            'items.array'    => 'Format des produits invalide.',
+            'items.min'      => 'Vous devez ajouter au moins un produit.',
+
+            'items.*.product_uuid.required' => 'Le produit est obligatoire.',
+            'items.*.product_uuid.uuid'     => 'Produit invalide.',
+
+            'items.*.quantity_supplied.required' => 'La quantité est obligatoire.',
+            'items.*.quantity_supplied.numeric'  => 'La quantité doit être un nombre.',
+            'items.*.quantity_supplied.min'      => 'La quantité doit être au minimum 1.',
+
+            'items.*.purchase_price.required' => 'Le prix total est obligatoire pour une commande externe.',
+            'items.*.purchase_price.numeric' => 'Le prix total doit être un nombre.',
+            'items.*.purchase_price.min'     => 'Le prix total doit être positif.',
+
+            'items.*.supplier_uuid.required' => 'Le fournisseur est obligatoire pour une commande externe.',
+            'items.*.supplier_uuid.uuid'     => 'Fournisseur invalide.',
+
+            // documents
+            'scanned_documents.array'  => 'Format des documents invalide.',
+            'scanned_documents.min'    => 'Ajoutez au moins un document.',
+            'scanned_documents.*.file' => 'Fichier invalide.',
+            'scanned_documents.*.mimes' => 'Seuls PDF, JPG, JPEG et PNG sont acceptés.',
+            'scanned_documents.*.max'   => 'Chaque fichier ne doit pas dépasser 5 Mo.',
+
+            // partial reason
+            'partial_validation_reason.string' => 'Le motif doit être un texte.',
         ]);
+
         try {
             DB::beginTransaction();
-
-            $purchaseOrder = PurchaseOrder::where('uuid', $validated['purchase_order_uuid'])->firstOrFail();
-            $warehouseUuid = $purchaseOrder->warehouse_uuid;
-            $supplyType = $purchaseOrder->type === 'internal' ? 'internal' : 'external';
             $partialItems = [];
 
-            // ✅ Vérification des produits & calcul unit price
-            foreach ($validated['items'] as $index => &$item) {
+            // ================================
+            //   Vérification quantités
+            // ================================
+            foreach ($validated['items'] as $index => $item) {
                 $poItem = PurchaseOrderItem::where('purchase_order_uuid', $validated['purchase_order_uuid'])
                     ->where('product_uuid', $item['product_uuid'])
                     ->firstOrFail();
 
-                if ((float)$item['quantity_supplied'] > (float)$poItem->quantity) {
+                if ($item['quantity_supplied'] > $poItem->quantity) {
                     $qtyOrdered = rtrim(rtrim($poItem->quantity, '0'), '.');
+
                     return response()->json([
                         'errors' => [
                             'items' => [
                                 $index => [
-                                    'quantity_supplied' => ["La quantité approvisionnée ({$item['quantity_supplied']}) ne peut pas dépasser la quantité commandée ({$qtyOrdered})."]
+                                    'quantity_supplied' => [
+                                        "La quantité approvisionnée ({$item['quantity_supplied']}) ne peut pas dépasser la quantité commandée ({$qtyOrdered})."
+                                    ]
                                 ]
                             ]
                         ]
                     ], 422);
                 }
 
-                if ((float)$item['quantity_supplied'] < (float)$poItem->quantity) {
+                if ($item['quantity_supplied'] < $poItem->quantity) {
                     $partialItems[] = $poItem->product->name;
                 }
 
-                // Calcul du prix unitaire
-                $item['unit_price'] = isset($item['purchase_price']) && $item['quantity_supplied'] > 0
-                    ? round($item['purchase_price'] / $item['quantity_supplied'], 2)
-                    : 0;
             }
 
             $isFullySupplied = empty($partialItems);
+            $totalPrice = $item['purchase_price'] ?? 0;
+            $supplierForItem = $item['supplier_uuid'] ?? null;
+            $unitPrice = $item['quantity_supplied'] > 0 ? $totalPrice / $item['quantity_supplied'] : 0;
 
+            // ================================
+            //       Création Supply
+            // ================================
             $supply = Supply::create([
                 'purchase_order_uuid' => $validated['purchase_order_uuid'],
                 'warehouse_uuid' => $warehouseUuid,
@@ -232,10 +256,13 @@ class SupplyController extends Controller
                 'notes' => $validated['notes'] ?? null,
                 'status' => $isFullySupplied ? 'draft' : 'partially_validated',
                 'partially_validated_by' => $isFullySupplied ? null : $auth->id,
-                'partial_validation_reason' => $isFullySupplied ? null : ($validated['partial_validation_reason'] ?? 'Certains produits n’ont pas été approvisionnés complètement. '  . implode(', ', $partialItems)),
+                'partial_validation_reason' => $isFullySupplied ? null :
+                    ($validated['partial_validation_reason'] ??
+                        'Certains produits n’ont pas été approvisionnés complètement : ' . implode(', ', $partialItems)),
                 'type' => $supplyType,
                 'created_by' => $auth->id,
                 'updated_by' => $auth->id,
+                'unit_price' => $unitPrice,
             ]);
 
             $purchaseOrder->update([
@@ -243,51 +270,30 @@ class SupplyController extends Controller
                 'updated_by' => $auth->id,
             ]);
 
-            // ✅ Création des items avec prix total et unitaire
+            // ================================
+            //     Création SupplyItems
+            // ================================
             foreach ($validated['items'] as $item) {
                 SupplyItem::create([
                     'supply_uuid' => $supply->uuid,
                     'product_uuid' => $item['product_uuid'],
                     'quantity_supplied' => $item['quantity_supplied'],
-                    'purchase_price' => $item['purchase_price'] ?? null,
-                    'unit_price' => $item['unit_price'],
+                    'purchase_price' => $totalPrice,
+                    'supplier_uuid'    => $item['supplier_uuid'] ?? null, // 🔹 Fournisseur spécifique à l'item
                     'notes' => $item['notes'] ?? null,
                     'created_by' => $auth->id,
+                    'unit_price' => $unitPrice
                 ]);
             }
 
-            if (!empty($validated['invoices'])) {
-                foreach ($validated['invoices'] as $invoice) {
-                    SupplyInvoice::create([
-                        'supply_uuid' => $supply->uuid,
-                        'invoice_number' => $invoice['invoice_number'] ?? null,
-                        'total_price' => $invoice['total_price'] ?? 0,
-                        'created_by' => $auth->id,
-                        'updated_by' => $auth->id,
-                    ]);
-                }
-            }
-
-
-            // ✅ Fournisseurs si externe
-            if ($supplyType === 'external' && !empty($validated['supplier_uuid'])) {
-                foreach ($validated['supplier_uuid'] as $supplierUuid) {
-                    SupplySupplier::create([
-                        'supply_uuid' => $supply->uuid,
-                        'supplier_uuid' => $supplierUuid,
-                        'warehouse_uuid' => $warehouseUuid,
-                        'notes' => $validated['notes'] ?? null,
-                        'created_by' => $auth->id,
-                        'updated_by' => $auth->id,
-                    ]);
-                }
-            }
-
-            // ✅ Upload documents
+            // ================================
+            //   Upload documents
+            // ================================
             if ($request->hasFile('scanned_documents')) {
                 foreach ($request->file('scanned_documents') as $file) {
                     $filename = time() . '_' . $file->getClientOriginalName();
                     $path = $file->store('documents_approvisionnements', 'public');
+
                     $supply->medias()->create([
                         'name' => $filename,
                         'disk' => 'public',
@@ -304,22 +310,18 @@ class SupplyController extends Controller
             return response()->json([
                 'message' => $isFullySupplied
                     ? 'Approvisionnement validé avec succès !'
-                    : 'Approvisionnement partiellement validé. Produits non totalement approvisionnés : ' . implode(', ', $partialItems),
-                'data' => $supply->load(['items.product', 'warehouse', 'purchaseOrder', 'medias', 'suppliers', 'invoices'])
+                    : 'Approvisionnement partiellement validé.',
             ], 201);
 
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Erreur création approvisionnement : ' . $e->getMessage());
-            \Log::info('Invoices créées', $validated['invoices']);
+            \Log::error('Erreur creation approvisionnement : ' . $e->getMessage());
             return response()->json([
-                'error' => 'Une erreur est survenue lors de la création de l’approvisionnement.',
+                'error' => 'Erreur lors de la création de l’approvisionnement.',
                 'details' => $e->getMessage()
             ], 500);
         }
     }
-
-
 
     /**
      * Display a listing of the resource.
@@ -331,19 +333,18 @@ class SupplyController extends Controller
         try {
             $supply = Supply::with([
                 'items.product',
+                'items.supplier',       // fournisseurs des items
                 'purchaseOrder.items',
                 'purchaseOrder.warehouseTo',
                 'purchaseOrder.warehouse_from',
                 'creator',
                 'updater',
                 'validator',
-                'supplier',
                 'warehouse',
                 'rejector',
-                'suppliers.supplier',
                 'partially_validated',
                 'medias',
-                'cancelled'
+                'cancelled',
             ])
                 ->where('uuid', $uuid)
                 ->firstOrFail();
@@ -371,66 +372,49 @@ class SupplyController extends Controller
 
     /**
      * Display a listing of the resource.
-     * @permission SupplyController::update
+     * @permission SupplyController::update_supplies
      * @permission_desc Modification des approvisionnements
      */
-    public function update_supplies(Request $request, $uuid)
+    public function update_supplies(Request $request, string $uuid)
     {
         $auth = auth()->user();
 
-        try {
-            $validated = $request->validate([
-                'notes' => 'nullable|string',
-                'items' => 'required|array|min:1',
-                'items.*.product_uuid' => 'required|uuid',
-                'items.*.quantity_supplied' => 'required|numeric|min:1',
-                'items.*.purchase_price' => 'nullable|numeric|min:0',
-                'items.*.notes' => 'nullable|string',
-                'scanned_documents' => 'nullable|array|min:1',
-                'scanned_documents.*' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
-                'supplier_uuid' => 'nullable|array',
-                'supplier_uuid.*' => 'uuid',
-                'partial_validation_reason' => 'nullable|string'
-            ]);
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return response()->json(['errors' => $e->errors()], 422);
-        }
+        $supply = Supply::with('items')->where('uuid', $uuid)->firstOrFail();
+        $purchaseOrder = $supply->purchaseOrder;
+        $supplyType = $purchaseOrder->type === 'internal' ? 'internal' : 'external';
+        $warehouseUuid = $purchaseOrder->warehouse_uuid;
+
+        $validated = $request->validate([
+            'notes' => 'nullable|string',
+            'items' => 'required|array|min:1',
+            'items.*.product_uuid' => 'required|uuid',
+            'items.*.quantity_supplied' => 'required|numeric|min:1',
+            'items.*.purchase_price' => $supplyType === 'external' ? 'required|numeric|min:0' : 'nullable|numeric|min:0',
+            'items.*.notes' => 'nullable|string',
+            'items.*.supplier_uuid' => $supplyType === 'external' ? 'required|uuid' : 'nullable|uuid',
+            'scanned_documents' => 'nullable|array|min:1',
+            'scanned_documents.*' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
+            'partial_validation_reason' => 'nullable|string',
+        ]);
 
         try {
             DB::beginTransaction();
-
-            $supply = Supply::where('uuid', $uuid)->firstOrFail();
-            $purchaseOrder = $supply->purchaseOrder;
-            $warehouseUuid = $supply->warehouse_uuid;
-            $supplyType = $purchaseOrder->type === 'internal' ? 'internal' : 'external';
-
             $partialItems = [];
 
-            // ✅ Validation des produits
+            // Vérification quantités
             foreach ($validated['items'] as $index => $item) {
                 $poItem = PurchaseOrderItem::where('purchase_order_uuid', $purchaseOrder->uuid)
                     ->where('product_uuid', $item['product_uuid'])
-                    ->first();
+                    ->firstOrFail();
 
-                if (!$poItem) {
-                    return response()->json([
-                        'errors' => [
-                            'items' => [
-                                $index => [
-                                    'product_uuid' => ["Le produit sélectionné n'est pas dans la commande d'achat."]
-                                ]
-                            ]
-                        ]
-                    ], 422);
-                }
-
-                if ((float)$item['quantity_supplied'] > (float)$poItem->quantity) {
+                if ($item['quantity_supplied'] > $poItem->quantity) {
+                    $qtyOrdered = rtrim(rtrim($poItem->quantity, '0'), '.');
                     return response()->json([
                         'errors' => [
                             'items' => [
                                 $index => [
                                     'quantity_supplied' => [
-                                        "La quantité approvisionnée ({$item['quantity_supplied']}) dépasse la quantité commandée ({$poItem->quantity})."
+                                        "La quantité approvisionnée ({$item['quantity_supplied']}) ne peut pas dépasser la quantité commandée ({$qtyOrdered})."
                                     ]
                                 ]
                             ]
@@ -438,68 +422,44 @@ class SupplyController extends Controller
                     ], 422);
                 }
 
-                if ((float)$item['quantity_supplied'] < (float)$poItem->quantity) {
+                if ($item['quantity_supplied'] < $poItem->quantity) {
                     $partialItems[] = $poItem->product->name;
                 }
             }
 
             $isFullySupplied = empty($partialItems);
 
-            // ✅ Mise à jour de l’approvisionnement
+            // Mettre à jour l'approvisionnement
+            $totalPrice = $validated['items'][0]['purchase_price'] ?? 0;
+            $unitPrice = $validated['items'][0]['quantity_supplied'] > 0 ? $totalPrice / $validated['items'][0]['quantity_supplied'] : 0;
+
             $supply->update([
-                'notes' => $validated['notes'] ?? null,
-                'status' => $isFullySupplied ? 'open' : 'partially_validated',
+                'notes' => $validated['notes'] ?? $supply->notes,
+                'status' => $isFullySupplied ? 'draft' : 'partially_validated',
                 'partially_validated_by' => $isFullySupplied ? null : $auth->id,
-                'partial_validation_reason' => $isFullySupplied ? null : ($validated['partial_validation_reason'] ?? 'Certains produits non totalement approvisionnés : ' . implode(', ', $partialItems)),
+                'partial_validation_reason' => $isFullySupplied ? null :
+                    ($validated['partial_validation_reason'] ??
+                        'Certains produits n’ont pas été approvisionnés complètement : ' . implode(', ', $partialItems)),
+                'unit_price' => $unitPrice,
                 'updated_by' => $auth->id,
             ]);
 
-            // ✅ Réinitialiser les anciens items
-            foreach ($supply->items as $oldItem) {
-                Product::where('uuid', $oldItem->product_uuid)
-                    ->decrement('stock_quantity', $oldItem->quantity_supplied);
-            }
+            // Supprimer les anciens items et recréer les nouveaux
             $supply->items()->delete();
-
-            // ✅ Enregistrer les nouveaux items
             foreach ($validated['items'] as $item) {
-                $dataItem = [
+                SupplyItem::create([
                     'supply_uuid' => $supply->uuid,
                     'product_uuid' => $item['product_uuid'],
                     'quantity_supplied' => $item['quantity_supplied'],
+                    'purchase_price' => $item['purchase_price'] ?? 0,
+                    'supplier_uuid' => $item['supplier_uuid'] ?? null,
                     'notes' => $item['notes'] ?? null,
-                    'created_by' => $auth->id,
-                ];
-
-                if ($supplyType === 'external') {
-                    $dataItem['purchase_price'] = $item['purchase_price'] ?? 0;
-                }
-
-                SupplyItem::create($dataItem);
-
-                Product::where('uuid', $item['product_uuid'])
-                    ->increment('stock_quantity', $item['quantity_supplied']);
+                    'unit_price' => $item['quantity_supplied'] > 0 ? ($item['purchase_price'] / $item['quantity_supplied']) : 0,
+                    'created_by' => $auth->id
+                ]);
             }
 
-            // ✅ Mise à jour des fournisseurs
-            if ($supplyType === 'external') {
-                $supply->suppliers()->delete();
-
-                if (!empty($validated['supplier_uuid'])) {
-                    foreach ($validated['supplier_uuid'] as $supplierUuid) {
-                        SupplySupplier::create([
-                            'supply_uuid' => $supply->uuid,
-                            'supplier_uuid' => $supplierUuid,
-                            'warehouse_uuid' => $warehouseUuid,
-                            'notes' => $validated['notes'] ?? null,
-                            'created_by' => $auth->id,
-                            'updated_by' => $auth->id,
-                        ]);
-                    }
-                }
-            }
-
-            // ✅ Upload de nouveaux documents
+            // Upload documents
             if ($request->hasFile('scanned_documents')) {
                 foreach ($request->file('scanned_documents') as $file) {
                     $filename = time() . '_' . $file->getClientOriginalName();
@@ -521,20 +481,20 @@ class SupplyController extends Controller
             return response()->json([
                 'message' => $isFullySupplied
                     ? 'Approvisionnement mis à jour avec succès !'
-                    : 'Approvisionnement partiellement validé après mise à jour. Produits non totalement approvisionnés : ' . implode(', ', $partialItems),
-                'data' => $supply->load(['items.product', 'warehouse', 'purchaseOrder', 'medias', 'suppliers'])
+                    : 'Approvisionnement partiellement mis à jour.',
+                'data' => $supply->load(['items', 'supplySuppliers.supplier', 'medias'])
             ], 200);
 
         } catch (\Exception $e) {
             DB::rollBack();
             \Log::error('Erreur mise à jour approvisionnement : ' . $e->getMessage());
-
             return response()->json([
-                'error' => 'Une erreur est survenue lors de la mise à jour de l’approvisionnement.',
+                'error' => 'Erreur lors de la mise à jour de l’approvisionnement.',
                 'details' => $e->getMessage()
             ], 500);
         }
     }
+
 
 
 
@@ -614,212 +574,126 @@ class SupplyController extends Controller
     {
         $auth = auth()->user();
 
+        // Vérifier le mot de passe
         $validated = $request->validate([
-            'rejection_reason' => 'required|string|max:255',
+            'rejection_reason' => 'required|string', // la raison du rejet
+        ], [
+            'rejection_reason.required' => "La raison du rejet est obligatoire.",
+            'rejection_reason.string' => "La raison doit être une chaîne de caractères.",
         ]);
 
         try {
             DB::beginTransaction();
 
-            $supply = Supply::with(['purchaseOrder', 'items.product'])->findOrFail($uuid);
+            // Récupérer l'approvisionnement avec ses items et produits
+            $supply = Supply::with('items.product', 'purchaseOrder')->findOrFail($uuid);
             $purchaseOrder = $supply->purchaseOrder;
-            $authId = $auth->id;
 
             if (!$purchaseOrder) {
-                return response()->json(['error' => "Commande d’achat introuvable."], 404);
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Commande introuvable.'
+                ], 404);
             }
 
-            $warehouseFrom = Warehouse::find($purchaseOrder->warehouse_from);
-            $warehouseTo   = Warehouse::find($purchaseOrder->warehouse_to_uuid);
+            // 🔹 Approvisionnement externe
+            if ($supply->type === 'external') {
+                $warehouse = Warehouse::where('is_primary', true)->firstOrFail();
+                $totalAdded = 0;
 
-            // 🔹 Restorer les quantités si approvisionnement déjà validé
-            if ($supply->status === 'validated') {
                 foreach ($supply->items as $item) {
                     $product = $item->product;
-
-                    // Remettre dans l'entrepôt source
-                    $product->increment('stock_quantity', $item->quantity_supplied);
-
-                    // Déduire de l'entrepôt destination si interne
-                    if ($purchaseOrder->type === 'internal' && $warehouseTo) {
-                        // On considère que la destination a déjà été incrémentée
-                        // donc on ne touche pas aux products ici sauf si tu stockes quantité par entrepôt
-                    }
+                    $product->decrement('stock_quantity', $item->quantity_supplied); // augmenter le stock du produit
+                    $totalAdded += $item->quantity_supplied; // garder le total approvisionné
                 }
 
-                // Mise à jour total_stock des entrepôts
-                if ($warehouseFrom) {
-                    $warehouseFrom->update(['total_stock' => $warehouseFrom->products()->sum('stock_quantity')]);
-                }
-                if ($warehouseTo) {
-                    $warehouseTo->update(['total_stock' => $warehouseTo->products()->sum('stock_quantity')]);
-                }
-            }
+                // Ajouter seulement la quantité approvisionnée au stock total de l'entrepôt
+                $warehouse->decrement('total_stock', $totalAdded);
 
-            // 🔹 Mettre à jour le statut du supply
-            $supply->update([
-                'status' => 'rejected',
-                'rejected_by' => $authId,
-                'rejection_reason' => $validated['rejection_reason'] ?? null,
-                'updated_by' => $authId,
-            ]);
+                $supply->update([
+                    'status' => 'rejected',
+                    'validated_by' => $auth->id,
+                    'updated_by' => $auth->id,
+                    'rejection_reason' => $validated['rejection_reason'],
+                    'rejected_by' => $auth->id,
+                ]);
 
-            $purchaseOrder->update([
-                'status' => 'open', // ou 'rejected' selon ta logique
-                'updated_by' => $authId,
-            ]);
-
-            DB::commit();
-
-            return response()->json([
-                'message' => "Approvisionnement rejeté et stocks restaurés.",
-                'supply' => $supply->load(['items.product', 'purchaseOrder'])
-            ]);
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            \Log::error('Erreur rejet approvisionnement : ' . $e->getMessage());
-
-            return response()->json([
-                'error' => "Une erreur est survenue lors du rejet.",
-                'details' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-
-
-    /**
-     * Display a listing of the resource.
-     * @permission SupplyController::validate_supply
-     * @permission_desc Validation complète des approvisionnements
-     */
-    public function validate_supply(Request $request, string $uuid)
-    {
-        $auth = auth()->user();
-
-        $validated = $request->validate([
-            'status' => 'required|in:validated',
-        ]);
-
-        try {
-            DB::beginTransaction();
-
-            // Récupérer l'approvisionnement avec ses relations
-            $supply = Supply::with(['purchaseOrder', 'items.product'])->findOrFail($uuid);
-            $purchaseOrder = $supply->purchaseOrder;
-            $authId = $auth->id;
-
-            if (!$purchaseOrder) {
-                return response()->json(['error' => "Commande d’achat introuvable."], 404);
-            }
-
-            // 🔹 Déterminer les entrepôts
-            $warehouseFrom = Warehouse::find($purchaseOrder->warehouse_from);
-            $warehouseTo   = Warehouse::find($purchaseOrder->warehouse_to_uuid);
-
-            // Mettre à jour la commande pour enregistrer l'entrepôt source
-            if ($warehouseFrom) {
                 $purchaseOrder->update([
-                    'warehouse_from' => $warehouseFrom->uuid,
+                    'status' => 'in_discuss',
+                    'closed_at' => now(),
+                    'updated_by' => $auth->id
+                ]);
+
+                DB::commit();
+
+                return response()->json([
+                    'message' => "Opération éffectuée avec succès.",
+                    'total_added' => $totalAdded,
+                    'warehouse_total_stock' => $warehouse->total_stock,
+                    'supply' => $supply->load('items.product')
                 ]);
             }
 
             // 🔹 Approvisionnement interne
-            if ($purchaseOrder->type === 'internal') {
+            if ($supply->type === 'internal') {
+                $warehouseFrom = Warehouse::findOrFail($purchaseOrder->warehouse_from);
+                $warehouseTo = Warehouse::where('is_primary', true)->firstOrFail();
 
-                // Vérification stock dans l'entrepôt source
+                $totalAdded = 0;
+
+                $totalAdded = 0;
+
                 foreach ($supply->items as $item) {
                     $product = $item->product;
-
-                    // Le produit doit être dans l'entrepôt source
-                    if ($product->warehouse_uuid !== $warehouseFrom?->uuid) {
-                        DB::rollBack();
-                        return response()->json([
-                            'error' => "Le produit {$product->name} n'est pas dans l'entrepôt source."
-                        ], 422);
-                    }
 
                     if ($product->stock_quantity < $item->quantity_supplied) {
                         DB::rollBack();
                         return response()->json([
-                            'error' => "Quantité insuffisante pour le produit {$product->name}.",
-                            'disponible' => $product->stock_quantity,
-                            'requise'    => $item->quantity_supplied
+                            'status' => 'error',
+                            'message' => "Quantité insuffisante pour {$product->name}.",
                         ], 422);
                     }
 
-                    // Déduction du stock dans l'entrepôt source
+                    // Décrémenter le stock du produit
                     $product->decrement('stock_quantity', $item->quantity_supplied);
-
-                    // Ajout au stock de l'entrepôt destination si défini
-                    if ($warehouseTo) {
-                        // Copier le produit dans l'entrepôt destination si nécessaire
-                        $destProduct = Product::firstOrCreate(
-                            ['uuid' => $product->uuid, 'warehouse_uuid' => $warehouseTo->uuid],
-                            [
-                                'ref' => $product->ref,
-                                'name' => $product->name,
-                                'stock_quantity' => 0,
-                            ]
-                        );
-                        $destProduct->increment('stock_quantity', $item->quantity_supplied);
-                    }
+                    $totalAdded += $item->quantity_supplied;
                 }
 
-                // 🔹 Mise à jour total_stock des entrepôts
-                if ($warehouseFrom) {
-                    $warehouseFrom->update([
-                        'total_stock' => Product::where('warehouse_uuid', $warehouseFrom->uuid)->sum('stock_quantity')
-                    ]);
-                }
-                if ($warehouseTo) {
-                    $warehouseTo->update([
-                        'total_stock' => Product::where('warehouse_uuid', $warehouseTo->uuid)->sum('stock_quantity')
-                    ]);
-                }
+                // Décrémenter le total_stock de l'entrepôt source
+                $warehouseFrom->decrement('total_stock', $totalAdded);
+
+                // Ajouter exactement la quantité déplacée au stock de destination
+                $warehouseTo->increment('total_stock', $totalAdded);
+
+                // Mettre à jour la commande et le supply
+                $purchaseOrder->update([
+                    'status' => 'in_discuss',
+                    'closed_at' => now(),
+                    'updated_by' => $auth->id,
+                ]);
+
+                $supply->update([
+                    'status' => 'rejected',
+                    'validated_by' => $auth->id,
+                    'updated_by' => $auth->id,
+                    'rejection_reason' => $validated['rejection_reason'],
+                    'rejected_by' => $auth->id,
+                ]);
+
+                DB::commit();
+
+                return response()->json([
+                    'message' => "Opération éffectué avec succès.",
+                    'warehouse_from_total_stock' => $warehouseFrom->total_stock,
+                    'warehouse_to_total_stock' => $warehouseTo->total_stock,
+                    'supply' => $supply->load('items.product', 'purchaseOrder')
+                ]);
             }
-            // 🔹 Approvisionnement externe
-            else {
-                foreach ($supply->items as $item) {
-                    $product = $item->product;
-                    $product->increment('stock_quantity', $item->quantity_supplied);
-
-                    // Associer le produit à l'entrepôt si défini
-                    if ($warehouseTo && $product->warehouse_uuid !== $warehouseTo->uuid) {
-                        $product->update(['warehouse_uuid' => $warehouseTo->uuid]);
-                    }
-                }
-
-                // Mise à jour total_stock pour l'entrepôt
-                if ($warehouseTo) {
-                    $warehouseTo->update([
-                        'total_stock' => Product::where('warehouse_uuid', $warehouseTo->uuid)->sum('stock_quantity')
-                    ]);
-                }
-            }
-
-            // Mettre à jour les statuts
-            $supply->update([
-                'status' => 'validated',
-                'validated_by' => $authId,
-                'updated_by' => $authId,
-            ]);
-
-            $purchaseOrder->update([
-                'status' => 'closed',
-                'closed_at' => now(),
-                'updated_by' => $authId,
-            ]);
-
-            DB::commit();
 
             return response()->json([
-                'message' => $purchaseOrder->type === 'internal'
-                    ? "Approvisionnement interne validé : transfert entre entrepôts et stocks mis à jour."
-                    : "Approvisionnement externe validé : stock mis à jour.",
-                'supply' => $supply->load(['items.product', 'purchaseOrder'])
-            ]);
+                'status' => 'error',
+                'message' => "Type d'approvisionnement inconnu."
+            ], 422);
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -831,6 +705,142 @@ class SupplyController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Display a listing of the resource.
+     * @permission SupplyController::validate_supply
+     * @permission_desc Validation complète des approvisionnements
+     */
+    public function validate_supply(Request $request, string $uuid)
+    {
+        $auth = auth()->user();
+
+        // Vérifier le mot de passe
+        $request->validate(['password' => 'required|string']);
+        if (!Hash::check($request->password, $auth->password)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Mot de passe incorrect.'
+            ], 422);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            // Récupérer l'approvisionnement avec ses items et produits
+            $supply = Supply::with('items.product', 'purchaseOrder')->findOrFail($uuid);
+            $purchaseOrder = $supply->purchaseOrder;
+
+            if (!$purchaseOrder) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Commande introuvable.'
+                ], 404);
+            }
+
+            // 🔹 Approvisionnement externe
+            if ($supply->type === 'external') {
+                $warehouse = Warehouse::where('is_primary', true)->firstOrFail();
+                $totalAdded = 0;
+
+                foreach ($supply->items as $item) {
+                    $product = $item->product;
+                    $product->increment('stock_quantity', $item->quantity_supplied); // augmenter le stock du produit
+                    $totalAdded += $item->quantity_supplied; // garder le total approvisionné
+                }
+
+                // Ajouter seulement la quantité approvisionnée au stock total de l'entrepôt
+                $warehouse->increment('total_stock', $totalAdded);
+
+                $supply->update([
+                    'status' => 'validated',
+                    'validated_by' => $auth->id,
+                    'updated_by' => $auth->id,
+                ]);
+
+                $purchaseOrder->update([
+                    'status' => 'closed',
+                    'closed_at' => now(),
+                    'updated_by' => $auth->id,
+                ]);
+
+                DB::commit();
+
+                return response()->json([
+                    'message' => "Approvisionnement externe validé : stock des produits et total de l'entrepôt principal mis à jour.",
+                    'total_added' => $totalAdded,
+                    'warehouse_total_stock' => $warehouse->total_stock,
+                    'supply' => $supply->load('items.product')
+                ]);
+            }
+
+            // 🔹 Approvisionnement interne
+            if ($supply->type === 'internal') {
+                $warehouseFrom = Warehouse::findOrFail($purchaseOrder->warehouse_from);
+                $warehouseTo = Warehouse::where('is_primary', true)->firstOrFail();
+
+                $totalAdded = 0;
+
+                foreach ($supply->items as $item) {
+                    $product = $item->product;
+
+                    if ($product->stock_quantity < $item->quantity_supplied) {
+                        DB::rollBack();
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => "Quantité insuffisante pour {$product->name}.",
+                        ], 422);
+                    }
+
+                    $product->decrement('stock_quantity', $item->quantity_supplied);
+                    $totalAdded += $item->quantity_supplied;
+                }
+
+                $warehouseFrom->increment('total_stock', $totalAdded);
+
+                $warehouseTo->decrement('total_stock', $totalAdded);
+
+                // Mettre à jour la commande et le supply
+                $purchaseOrder->update([
+                    'status' => 'closed',
+                    'closed_at' => now(),
+                    'updated_by' => $auth->id,
+                ]);
+
+                $supply->update([
+                    'status' => 'validated',
+                    'validated_by' => $auth->id,
+                    'updated_by' => $auth->id,
+                ]);
+
+            DB::commit();
+
+            return response()->json([
+                    'message' => "Approvisionnement interne validé : stock du supply déduit du warehouse source et ajouté à l'entrepôt principal.",
+                    'warehouse_from_total_stock' => $warehouseFrom->total_stock,
+                    'warehouse_to_total_stock' => $warehouseTo->total_stock,
+                    'supply' => $supply->load('items.product', 'purchaseOrder')
+                ]);
+            }
+
+            return response()->json([
+                'status' => 'error',
+                'message' => "Type d'approvisionnement inconnu."
+            ], 422);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Erreur validation approvisionnement : ' . $e->getMessage());
+
+            return response()->json([
+                'error' => "Une erreur est survenue lors de la validation.",
+                'details' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+
+
 
     /**
      * Display a listing of the resource.
@@ -968,81 +978,127 @@ class SupplyController extends Controller
     {
         $auth = auth()->user();
 
-        // Seul le SUPER_ADMIN peut rejeter
-        if (!$auth->hasRoleName('SUPER_ADMIN')) {
-            return response()->json([
-                'error' => "Vous n’êtes pas autorisé à rejeter cet approvisionnement."
-            ], 403);
-        }
+        // Vérifier le mot de passe
+        $validated = $request->validate([
+            'rejection_reason' => 'required|string', // la raison du rejet
+        ], [
+            'rejection_reason.required' => "La raison du rejet est obligatoire.",
+            'rejection_reason.string' => "La raison doit être une chaîne de caractères.",
+        ]);
 
         try {
             DB::beginTransaction();
 
-            $supply = Supply::with(['purchaseOrder', 'items.product'])->findOrFail($uuid);
+            $supply = Supply::with('items.product', 'purchaseOrder')->findOrFail($uuid);
             $purchaseOrder = $supply->purchaseOrder;
-            $authId = $auth->id;
 
             if (!$purchaseOrder) {
-                return response()->json(['error' => "Commande d’achat introuvable."], 404);
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Commande introuvable.'
+                ], 404);
             }
 
-            $warehouseFrom = Warehouse::find($purchaseOrder->warehouse_from);
-            $warehouseTo   = Warehouse::find($purchaseOrder->warehouse_to_uuid);
+            // Déjà traité ?
+            if (in_array($supply->status, ['validated', 'rejected'])) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => "Impossible : approvisionnement déjà traité."
+                ], 422);
+            }
 
-            // 🔹 Restorer les quantités si approvisionnement déjà validé
-            if ($supply->status === 'validated') {
+            $totalRemoved = 0; // total des quantités à retirer
+
+            // 🔹 EXTERNE => décrémenter partout
+            if ($supply->type === 'external') {
+
+                $warehouse = Warehouse::where('is_primary', true)->firstOrFail();
+
                 foreach ($supply->items as $item) {
                     $product = $item->product;
 
-                    // Remettre dans l'entrepôt source
-                    $product->increment('stock_quantity', $item->quantity_supplied);
-
-                    // Déduire de l'entrepôt destination si interne
-                    if ($purchaseOrder->type === 'internal' && $warehouseTo) {
-                        // On considère que la destination a déjà été incrémentée
-                        // donc on ne touche pas aux products ici sauf si tu stockes quantité par entrepôt
+                    // Décrémenter produits
+                    if ($product->stock_quantity < $item->quantity_supplied) {
+                        DB::rollBack();
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => "Quantité insuffisante pour {$product->name} pour annuler."
+                        ], 422);
                     }
+
+                    $product->decrement('stock_quantity', $item->quantity_supplied);
+                    $totalRemoved += $item->quantity_supplied;
                 }
 
-                // Mise à jour total_stock des entrepôts
-                if ($warehouseFrom) {
-                    $warehouseFrom->update(['total_stock' => $warehouseFrom->products()->sum('stock_quantity')]);
-                }
-                if ($warehouseTo) {
-                    $warehouseTo->update(['total_stock' => $warehouseTo->products()->sum('stock_quantity')]);
-                }
+                // Décrémenter le stock total de l'entrepôt principal
+                $warehouse->decrement('total_stock', $totalRemoved);
             }
 
-            // 🔹 Mettre à jour le statut du supply
+            // 🔹 INTERNE => décrémenter partout
+            if ($supply->type === 'internal') {
+
+                $warehouseFrom = Warehouse::findOrFail($purchaseOrder->warehouse_from);
+                $warehouseTo   = Warehouse::where('is_primary', true)->firstOrFail();
+
+                foreach ($supply->items as $item) {
+                    $product = $item->product;
+
+                    if ($product->stock_quantity < $item->quantity_supplied) {
+                        DB::rollBack();
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => "Quantité insuffisante pour {$product->name} pour annuler."
+                        ], 422);
+                    }
+
+                    // Décrémenter produits
+                    $product->decrement('stock_quantity', $item->quantity_supplied);
+
+                    $totalRemoved += $item->quantity_supplied;
+                }
+
+                // Décrémenter l'entrepôt destination
+                $warehouseTo->decrement('total_stock', $totalRemoved);
+
+                // Décrémenter aussi l'entrepôt source
+                $warehouseFrom->decrement('total_stock', $totalRemoved);
+            }
+
+            // Mettre statut à rejeté
             $supply->update([
                 'status' => 'rejected',
-                'rejected_by' => $auth->id,
+                'validated_by' => $auth->id,
                 'updated_by' => $auth->id,
+                'rejection_reason' => $validated['rejection_reason'],
+                'rejected_by' => $auth->id,
             ]);
 
             $purchaseOrder->update([
-                'status' => 'in_discuss',
+                'status' => 'cancelled',
+                'closed_at' => now(),
                 'updated_by' => $auth->id,
             ]);
-
 
             DB::commit();
 
             return response()->json([
-                'message' => "Approvisionnement rejeté et stocks restaurés.",
-                'supply' => $supply->load(['items.product', 'purchaseOrder'])
+                'status' => 'success',
+                'message' => "Approvisionnement rejeté et quantités décrémentées partout.",
+                'total_removed' => $totalRemoved,
+                'supply' => $supply->load('items.product')
             ]);
 
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Erreur rejet approvisionnement : ' . $e->getMessage());
+            \Log::error("Erreur rejet approvisionnement : " . $e->getMessage());
 
             return response()->json([
-                'error' => "Une erreur est survenue lors du rejet.",
+                'error' => 'Erreur lors du rejet.',
                 'details' => $e->getMessage()
             ], 500);
         }
     }
+
     /**
      * Display a listing of the resource.
      * @permission SupplyController::export_supply
@@ -1061,6 +1117,56 @@ class SupplyController extends Controller
             "url" => Storage::disk('exportsupply')->url($fileName)
         ]);
     }
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission SupplyController::transfer_supply
+     * @permission_desc Transférer les approvisionnements
+     */
+    public function transfer_supply(Request $request, string $uuid)
+    {
+        $auth = auth()->user();
+
+        $request->validate([
+            'password' => 'required|string'
+        ]);
+
+        if (!Hash::check($request->password, $auth->password)) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Mot de passe incorrect.'
+            ], 422);
+        }
+
+        $supply = Supply::with('purchaseOrder')->findOrFail($uuid);
+        $purchaseOrder = $supply->purchaseOrder;
+
+        if ($supply->created_by !== $auth->id) {
+            return response()->json([
+                'error' => 'Vous n’êtes pas autorisé à transférer cet approvisionnement.'
+            ], 403);
+        }
+
+        if (!$purchaseOrder || !$purchaseOrder->created_by) {
+            return response()->json([
+                'error' => 'Impossible de transférer : commande associée introuvable ou sans créateur.'
+            ], 400);
+        }
+
+        $supply->update([
+            'transferred_at' => now(),
+            'transferred_by' => $auth->id,
+            'receiver_by' => $purchaseOrder->created_by,
+            'status' => 'transferred',
+        ]);
+
+        return response()->json([
+            'message' => 'Approvisionnement transféré avec succès.',
+            'data' => $supply
+        ]);
+    }
+
 
 
 

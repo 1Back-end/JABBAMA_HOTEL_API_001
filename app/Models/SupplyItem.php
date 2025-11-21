@@ -24,7 +24,9 @@ class SupplyItem extends Model
         'notes',
         'created_by',
         'updated_by',
-        'purchase_price'
+        'purchase_price',
+        'unit_price',
+        'supplier_uuid'
     ];
 
     public static function boot()
@@ -39,6 +41,11 @@ class SupplyItem extends Model
     public function supply()
     {
         return $this->belongsTo(Supply::class, 'supply_uuid', 'uuid');
+    }
+    public function supplier()
+    {
+        return $this->belongsTo(Supplier::class, 'supplier_uuid', 'uuid');
+
     }
 
     public function product()

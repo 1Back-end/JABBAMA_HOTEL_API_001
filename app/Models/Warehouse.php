@@ -23,7 +23,8 @@ class Warehouse extends Model
         'is_active',
         'created_by',
         'updated_by',
-        'total_stock'
+        'total_stock',
+        'is_primary'
     ];
 
     protected static function boot()

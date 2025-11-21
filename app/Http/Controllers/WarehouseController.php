@@ -68,32 +68,54 @@ class WarehouseController extends Controller
     {
         $auth = auth()->user();
 
-        // ✅ Validation des données
+        // 🔥 Validation
         $validated = $request->validate([
             'name'        => 'required|string|max:255|unique:warehouses,name',
             'stock_type'  => 'required|string|max:255',
             'address'     => 'nullable|string|max:255',
             'description' => 'nullable|string|max:255',
+            'is_primary'  => 'required|boolean',
             'managers'    => 'required|array|min:1',
             'managers.*'  => 'required|exists:users,id',
             'natures'     => 'required|array|min:1',
             'natures.*'   => 'required|exists:nature_entrepots,uuid',
-        ], [
-            'name.required'       => "Le nom de l'entrepôt est obligatoire.",
-            'name.unique'         => "Un entrepôt avec ce nom existe déjà.",
-            'stock_type.required' => "Le type de stock est obligatoire.",
-            'managers.required'   => "Veuillez sélectionner au moins un manager.",
-            'managers.*.exists'   => "Un des managers sélectionnés est invalide.",
-            'natures.required'    => "Veuillez sélectionner au moins une nature.",
-            'natures.*.exists'    => "Une des natures sélectionnées est invalide.",
         ]);
 
+        /**
+         * ────────────────────────────────────────────────
+         * 🔥 RÈGLE 1 : entrepôt principal = 1 seul manager
+         * ────────────────────────────────────────────────
+         */
+        if ($validated['is_primary'] && count($validated['managers']) !== 1) {
+            return response()->json([
+                'success' => false,
+                'message' => "Un entrepôt principal doit avoir exactement un seul manager.",
+            ], 422);
+        }
+
+        /**
+         * ────────────────────────────────────────────────
+         * 🔥 RÈGLE 2 : il ne doit exister qu'un seul entrepôt principal
+         * ────────────────────────────────────────────────
+         */
+        if ($validated['is_primary']) {
+            $existsPrimary = Warehouse::where('is_primary', true)->exists();
+
+            if ($existsPrimary) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Il existe déjà un entrepôt principal.",
+                ], 422);
+            }
+        }
+
+        // Ajout created_by
         $validated['created_by'] = $auth->id;
 
-        // ✅ Création de l'entrepôt
+        // 🔥 Création de l'entrepôt
         $warehouse = Warehouse::create($validated);
 
-        // ✅ Association des natures (pivot avec métadonnées)
+        // 🔥 Association des natures
         $natures = collect($validated['natures'])->mapWithKeys(fn($uuid) => [
             $uuid => [
                 'is_active'  => true,
@@ -101,29 +123,23 @@ class WarehouseController extends Controller
                 'updated_by' => $auth->id,
             ],
         ]);
-
         $warehouse->natures()->sync($natures);
 
-        // ✅ Association des managers (pivot avec métadonnées)
+        // 🔥 Association des managers
         $managers = collect($validated['managers'])->mapWithKeys(fn($managerId) => [
             $managerId => [
                 'created_by' => $auth->id,
                 'updated_by' => $auth->id,
             ],
         ]);
-
         $warehouse->managers()->sync($managers);
 
-        // ✅ Réponse JSON
         return response()->json([
             'success' => true,
             'message' => "L'entrepôt a été créé avec succès.",
             'data'    => $warehouse->load(['creator', 'updater', 'natures', 'managers']),
         ], 201);
     }
-
-
-
 
 
     /**
@@ -133,7 +149,14 @@ class WarehouseController extends Controller
      */
     public function show(string $uuid)
     {
-        $warehouse = Warehouse::findOrFail($uuid);
+        $warehouse = Warehouse::with([
+            'managers',
+            'natures',
+            'creator',
+            'updater',
+        ])
+            ->where('uuid', $uuid)
+            ->firstOrFail();
 
         return response()->json([
             'success' => true,
@@ -148,66 +171,92 @@ class WarehouseController extends Controller
      * @permission WarehouseController::update
      * @permission_desc Modification des entrepôts
      */
-    public function update(Request $request, string $uuid)
+    public function update(Request $request, $uuid)
     {
         $auth = auth()->user();
-
-        // ✅ Récupération de l'entrepôt
         $warehouse = Warehouse::where('uuid', $uuid)->firstOrFail();
 
-        // ✅ Validation des données
+        // 🔹 Validation
         $validated = $request->validate([
-            'name' => 'required|string|max:255|unique:warehouses,name,' . $warehouse->uuid . ',uuid',
+            'name'        => 'required|string|max:255|unique:warehouses,name,' . $warehouse->uuid . ',uuid',
             'stock_type'  => 'required|string|max:255',
             'address'     => 'nullable|string|max:255',
             'description' => 'nullable|string|max:255',
+            'is_primary'  => 'required|boolean',
             'managers'    => 'required|array|min:1',
             'managers.*'  => 'required|exists:users,id',
             'natures'     => 'required|array|min:1',
             'natures.*'   => 'required|exists:nature_entrepots,uuid',
-        ], [
-            'name.required'       => "Le nom de l'entrepôt est obligatoire.",
-            'name.unique'         => "Un entrepôt avec ce nom existe déjà.",
-            'stock_type.required' => "Le type de stock est obligatoire.",
-            'managers.required'   => "Veuillez sélectionner au moins un manager.",
-            'managers.*.exists'   => "Un des managers sélectionnés est invalide.",
-            'natures.required'    => "Veuillez sélectionner au moins une nature.",
-            'natures.*.exists'    => "Une des natures sélectionnées est invalide.",
         ]);
 
-        // ✅ Mise à jour des informations principales
-        $warehouse->update([
-            'name'        => $validated['name'],
-            'stock_type'  => $validated['stock_type'],
-            'address'     => $validated['address'] ?? null,
-            'description' => $validated['description'] ?? null,
-            'updated_by'  => $auth->id,
-        ]);
+        // 🔹 Règle entrepôt principal = 1 seul manager
+        if ($validated['is_primary'] && count($validated['managers']) !== 1) {
+            return response()->json([
+                'success' => false,
+                'message' => "Un entrepôt principal doit avoir exactement un seul manager.",
+            ], 422);
+        }
 
-        // ✅ Mise à jour des natures (pivot)
+        // 🔹 Vérification qu’il n’y a qu’un seul entrepôt principal
+        if ($validated['is_primary']) {
+            $alreadyPrimary = Warehouse::where('uuid', '!=', $warehouse->uuid)
+                ->where('is_primary', true)
+                ->exists();
+
+            if ($alreadyPrimary) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Un seul entrepôt principal est autorisé. Un autre est déjà défini comme principal.",
+                ], 422);
+            }
+        }
+
+        // 🔹 Mise à jour de l'entrepôt
+        $validated['updated_by'] = $auth->id;
+        $warehouse->update($validated);
+
+        // 🔹 Suppression définitive des anciens pivots natures
+        \Illuminate\Support\Facades\DB::table('nature_warehouse')
+            ->where('warehouse_uuid', $warehouse->uuid)
+            ->delete();
+
+        // 🔹 Suppression définitive des anciens pivots managers
+        \Illuminate\Support\Facades\DB::table('warehouse_managers')
+            ->where('warehouse_uuid', $warehouse->uuid)
+            ->delete();
+
+        // 🔹 Préparer les nouvelles natures
         $natures = collect($validated['natures'])->mapWithKeys(fn($uuid) => [
             $uuid => [
                 'is_active'  => true,
+                'created_by' => $auth->id,
                 'updated_by' => $auth->id,
             ],
         ]);
-        $warehouse->natures()->sync($natures);
 
-        // ✅ Mise à jour des managers (pivot)
-        $managers = collect($validated['managers'])->mapWithKeys(fn($uuid) => [
-            $uuid => [
+        // 🔹 Préparer les nouveaux managers
+        $managers = collect($validated['managers'])->mapWithKeys(fn($managerId) => [
+            $managerId => [
+                'created_by' => $auth->id,
                 'updated_by' => $auth->id,
             ],
         ]);
+
+        // 🔹 Synchronisation
+        $warehouse->natures()->sync($natures);
         $warehouse->managers()->sync($managers);
 
-        // ✅ Réponse JSON
+        // 🔹 Réponse finale
         return response()->json([
             'success' => true,
             'message' => "L'entrepôt a été mis à jour avec succès.",
             'data'    => $warehouse->load(['creator', 'updater', 'natures', 'managers']),
         ]);
     }
+
+
+
+
 
     /**
      * Display a listing of the resource.

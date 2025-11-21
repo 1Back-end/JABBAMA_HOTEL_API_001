@@ -34,7 +34,10 @@ class PurchaseOrder extends Model
         'closed_at',
         'transfered_by',
         'transfered_at',
-        'motif_rejet'
+        'motif_rejet',
+        'unit_price',
+        'parent_uuid',
+        'is_parent'
     ];
 
 
@@ -58,6 +61,7 @@ class PurchaseOrder extends Model
     {
         return $this->hasMany(PurchaseOrderItem::class, 'purchase_order_uuid', 'uuid');
     }
+
 
     public function supplier()
     {
@@ -99,12 +103,12 @@ class PurchaseOrder extends Model
     }
     public function children()
     {
-        return $this->hasMany(PurchaseOrder::class, 'purchase_orders_uuid');
+        return $this->hasMany(PurchaseOrder::class, 'parent_uuid', 'uuid');
     }
 
     public function parent()
     {
-        return $this->belongsTo(PurchaseOrder::class, 'purchase_orders_uuid');
+        return $this->belongsTo(PurchaseOrder::class, 'parent_uuid', 'uuid');
     }
 
 

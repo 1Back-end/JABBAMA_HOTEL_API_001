@@ -40,5 +40,9 @@ class PurchaseOrderItem extends Model
     {
         return $this->belongsTo(Product::class, 'product_uuid', 'uuid');
     }
+    public function order()
+    {
+        return $this->belongsTo(PurchaseOrder::class, 'purchase_order_uuid', 'uuid');
+    }
 }
 ?>

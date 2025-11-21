@@ -5,15 +5,16 @@ namespace App\Http\Controllers;
 use App\Exports\PurchaseOrdersExport;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
+use App\Models\PurchaseOrderItem;
 use App\Models\User;
 use App\Models\Warehouse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
-
 
 /**
  * @permission_category Gestion des commandes
@@ -37,7 +38,9 @@ class PurchaseOrderController extends Controller
             'warehouse_from.managers',
             'creator',
             'updater',
-            'approver'
+            'approver',
+            'children',
+            'parent'
         ]);
 
         // 🔹 Filtrage par type et statut
@@ -127,46 +130,32 @@ class PurchaseOrderController extends Controller
         $auth = auth()->user();
 
         try {
-            // Validation des données
+            // 🔹 Validation des données
             $request->validate([
                 'type' => 'required|in:external,internal',
-                'supplier_uuid' => 'required_if:type,external|nullable|exists:suppliers,uuid',
-                'warehouse_to' => 'nullable|exists:warehouses,uuid',
+                'supplier_uuid' => 'nullable|exists:suppliers,uuid',
+                'warehouse_from' => 'nullable|exists:warehouses,uuid',
                 'notes' => 'nullable|string',
                 'items' => 'required|array|min:1',
                 'items.*.product_uuid' => 'required|exists:produits,uuid',
                 'items.*.quantity' => 'required|numeric|min:0.001',
             ], [
-                'supplier_uuid.required_if' => 'Vous devez sélectionner un fournisseur pour une commande externe.',
-                'warehouse_from.required_if' => 'Vous devez sélectionner l’entrepôt source pour une commande interne.',
                 'items.required' => 'Vous devez ajouter au moins un produit à la commande.',
             ]);
 
+            // 🔹 Préparation des variables
+            $supplierUuid = $request->type === 'external' ? $request->supplier_uuid : null;
             $warehouseFromUuid = null;
             $warehouseToUuid = null;
-            $supplierUuid = null;
 
-            // Commande externe
-            if ($request->type === 'external') {
-                if (! $auth->hasRoleName('ECONOME') && ! $auth->hasRoleName('SUPER_ADMIN')) {
-                    return response()->json([
-                        'message' => 'Seul le responsable de stock (Econome) peut créer une commande externe.'
-                    ], 403);
-                }
-
-                $supplierUuid = $request->supplier_uuid;
-
-                // Récupérer le premier entrepôt que le manager gère
-                $warehouseTo = $auth->warehouses()->first();
-                $warehouseToUuid = $warehouseTo ? $warehouseTo->uuid : null;
-
-            } else { // Commande interne
-                $warehouseFrom = Warehouse::where('uuid', $request->warehouse_from)->first();
+            if ($request->type === 'internal') {
+                // Entrepôt source
+                $warehouseFrom = Warehouse::find($request->warehouse_from);
                 if (!$warehouseFrom) {
                     return response()->json(['message' => 'Entrepôt source introuvable.'], 404);
                 }
 
-                // Vérifier que l'utilisateur est manager de l'entrepôt
+                // Vérifier que l'utilisateur est manager
                 $isManager = $warehouseFrom->managers()->where('user_id', $auth->id)->exists();
                 if (!$isManager) {
                     return response()->json([
@@ -174,27 +163,27 @@ class PurchaseOrderController extends Controller
                     ], 403);
                 }
 
-                $warehouseFromUuid = $warehouseFrom->uuid;
-                $warehouseToUuid = $request->warehouse_to ?? $warehouseFrom->uuid;
+                // Entrepôt destination = entrepôt principal
+                $warehouseTo = Warehouse::where('is_primary', true)->firstOrFail();
 
-                $warehouseToCheck = Warehouse::where('uuid', $warehouseToUuid)->first();
-                if (!$warehouseToCheck) {
-                    return response()->json(['message' => 'Entrepôt de destination introuvable.'], 404);
-                }
+                $warehouseFromUuid = $warehouseFrom->uuid;
+                $warehouseToUuid = $warehouseTo->uuid;
             }
 
-            // Création de la commande
+            // 🔹 Création de la commande
             $order = PurchaseOrder::create([
                 'type' => $request->type,
                 'status' => 'draft',
                 'supplier_uuid' => $supplierUuid,
+                'warehouse_from' => $warehouseFromUuid,
                 'warehouse_to' => $warehouseToUuid,
                 'notes' => $request->notes,
                 'created_by' => $auth->id,
+                'updated_by' => $auth->id,
                 'added_by' => $auth->id,
             ]);
 
-            // Ajout des produits
+            // 🔹 Ajout des produits
             foreach ($request->items as $item) {
                 $product = Product::find($item['product_uuid']);
                 $productName = $product ? $product->name : $item['product_uuid'];
@@ -221,7 +210,7 @@ class PurchaseOrderController extends Controller
             }
 
             $message = $request->type === 'external'
-                ? "Commande externe créée avec succès (en attente de validation du Manager)."
+                ? "Commande externe créée avec succès."
                 : "Commande interne créée avec succès entre les entrepôts.";
 
             return response()->json([
@@ -296,74 +285,75 @@ class PurchaseOrderController extends Controller
         $auth = auth()->user();
 
         try {
-            // Validation des données
-            $request->validate([
-                'type' => 'required|in:external,internal',
-                'supplier_uuid' => 'required_if:type,external|nullable|exists:suppliers,uuid',
-                'warehouse_to' => 'nullable|exists:warehouses,uuid',
-                'notes' => 'nullable|string',
-                'items' => 'required|array|min:1',
-                'items.*.product_uuid' => 'required|exists:produits,uuid',
-                'items.*.quantity' => 'required|numeric|min:0.001',
-            ]);
-
-            // Récupération de la commande
+            // Récupérer la commande
             $order = PurchaseOrder::where('uuid', $uuid)->first();
             if (!$order) {
                 return response()->json(['message' => 'Commande introuvable.'], 404);
             }
 
-            // Vérifier l'autorisation de modification
-            if ($order->created_by !== $auth->id && !$auth->hasRoleName('SUPER_ADMIN')) {
-                return response()->json([
-                    'message' => 'Vous n’êtes pas autorisé à modifier cette commande.'
-                ], 403);
-            }
+            // Validation des données
+            $request->validate([
+                'type' => 'required|in:external,internal',
+                'supplier_uuid' => 'required_if:type,external|nullable|exists:suppliers,uuid',
+                'warehouse_from' => 'required_if:type,internal|nullable|exists:warehouses,uuid',
+                'warehouse_to' => 'nullable|exists:warehouses,uuid',
+                'notes' => 'nullable|string',
+                'items' => 'required|array|min:1',
+                'items.*.product_uuid' => 'required|exists:produits,uuid',
+                'items.*.quantity' => 'required|numeric|min:0.001',
+            ], [
+                'supplier_uuid.required_if' => 'Vous devez sélectionner un fournisseur pour une commande externe.',
+                'warehouse_from.required_if' => 'Vous devez sélectionner l’entrepôt source pour une commande interne.',
+                'items.required' => 'Vous devez ajouter au moins un produit à la commande.',
+            ]);
 
-            $supplierUuid = null;
+            $supplierUuid = $request->type === 'external' ? $request->supplier_uuid : null;
+            $warehouseFromUuid = null;
             $warehouseToUuid = null;
 
             // Commande externe
-            if ($request->type === 'external') {
-                if (!$auth->hasRoleName('ECONOME') && !$auth->hasRoleName('SUPER_ADMIN')) {
+            if ($request->type === 'internal') {
+                // Entrepôt source
+                $warehouseFrom = Warehouse::find($request->warehouse_from);
+                if (!$warehouseFrom) {
+                    return response()->json(['message' => 'Entrepôt source introuvable.'], 404);
+                }
+
+                // Vérifier que l'utilisateur est manager
+                $isManager = $warehouseFrom->managers()->where('user_id', $auth->id)->exists();
+                if (!$isManager) {
                     return response()->json([
-                        'message' => 'Seul le responsable de stock (Econome) peut modifier une commande externe.'
+                        'message' => 'Vous ne pouvez créer une commande interne que depuis un entrepôt que vous gérez.'
                     ], 403);
                 }
 
-                $supplierUuid = $request->supplier_uuid;
-                $warehouseTo = $auth->warehouses()->first();
-                $warehouseToUuid = $warehouseTo ? $warehouseTo->uuid : null;
+                // Entrepôt destination = entrepôt principal
+                $warehouseTo = Warehouse::where('is_primary', true)->firstOrFail();
 
-            } else { // Commande interne
-                // Définir l'entrepôt de destination si fourni
-                $warehouseToUuid = $request->warehouse_to;
-                if ($warehouseToUuid) {
-                    $warehouseToCheck = Warehouse::where('uuid', $warehouseToUuid)->first();
-                    if (!$warehouseToCheck) {
-                        return response()->json(['message' => 'Entrepôt de destination introuvable.'], 404);
-                    }
-                }
+                $warehouseFromUuid = $warehouseFrom->uuid;
+                $warehouseToUuid = $warehouseTo->uuid;
             }
 
             // Mise à jour de la commande
             $order->update([
                 'type' => $request->type,
                 'supplier_uuid' => $supplierUuid,
+                'warehouse_from' => $warehouseFromUuid,
                 'warehouse_to' => $warehouseToUuid,
                 'notes' => $request->notes,
                 'updated_by' => $auth->id,
-                'status' => 'draft'
             ]);
 
-            // Supprimer les anciens items et ajouter les nouveaux
+            // Supprimer les anciens articles et recréer les nouveaux (pour tous les types)
             $order->items()->delete();
 
             foreach ($request->items as $item) {
+                // Récupérer le produit pour le nom
                 $product = Product::find($item['product_uuid']);
                 $productName = $product ? $product->name : $item['product_uuid'];
 
-                if ($request->type === 'internal' && isset($warehouseFrom)) {
+                // Pour les commandes internes, vérifier la disponibilité dans l'entrepôt
+                if ($request->type === 'internal') {
                     $available = Product::where('uuid', $item['product_uuid'])
                         ->whereHas('points', function ($q) use ($warehouseFrom) {
                             $q->where('point_uuid', $warehouseFrom->uuid);
@@ -371,7 +361,7 @@ class PurchaseOrderController extends Controller
 
                     if (!$available) {
                         return response()->json([
-                            'message' => "Le produit {$productName} n'est pas disponible dans l'entrepôt."
+                            'message' => "Le produit {$productName} n'est pas disponible dans l'entrepôt source."
                         ], 403);
                     }
                 }
@@ -384,9 +374,13 @@ class PurchaseOrderController extends Controller
                 ]);
             }
 
+            $message = $request->type === 'external'
+                ? "Commande externe mise à jour avec succès."
+                : "Commande interne mise à jour avec succès.";
+
             return response()->json([
-                'message' => 'Commande mise à jour avec succès.',
-                'order' => $order->load('items'),
+                'message' => $message,
+                'order' => $order->load(['items'])
             ], 200);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -402,7 +396,6 @@ class PurchaseOrderController extends Controller
             ], 500);
         }
     }
-
 
 
     /**
@@ -679,6 +672,251 @@ class PurchaseOrderController extends Controller
 
 
     }
+
+    /**
+     * Display a listing of the resource.
+     * @permission PurchaseOrderController::create_parents_orders
+     * @permission_desc Création d’une commande enfant à partir d’une commande parent
+     */
+
+    public function create_parents_orders(Request $request, string $uuid)
+    {
+        $auth = auth()->user();
+
+        // Récupération du parent
+        $parentOrder = PurchaseOrder::where('uuid', $uuid)->firstOrFail();
+
+        try {
+            DB::beginTransaction();
+
+            // 🔹 Validation des données
+            $request->validate([
+                'type' => 'required|in:external,internal',
+                'supplier_uuid' => 'nullable|exists:suppliers,uuid',
+                'warehouse_from' => 'nullable|exists:warehouses,uuid',
+                'notes' => 'nullable|string',
+                'items' => 'required|array|min:1',
+                'items.*.product_uuid' => 'required|exists:produits,uuid',
+                'items.*.quantity' => 'required|numeric|min:0.001',
+            ], [
+                'items.required' => 'Vous devez ajouter au moins un produit à la commande.',
+            ]);
+
+            // 🔹 Préparer entrepôts et fournisseur
+            $supplierUuid = $request->type === 'external' ? $request->supplier_uuid : null;
+            $warehouseFromUuid = null;
+            $warehouseToUuid = null;
+
+            if ($request->type === 'internal') {
+                $warehouseFrom = Warehouse::findOrFail($request->warehouse_from);
+
+                // Vérifier que l'utilisateur est manager de l'entrepôt
+                $isManager = $warehouseFrom->managers()->where('user_id', $auth->id)->exists();
+                if (!$isManager) {
+                    return response()->json([
+                        'message' => 'Vous ne pouvez créer une commande interne que depuis un entrepôt que vous gérez.'
+                    ], 403);
+                }
+
+                $warehouseTo = Warehouse::where('is_primary', true)->firstOrFail();
+                $warehouseFromUuid = $warehouseFrom->uuid;
+                $warehouseToUuid = $warehouseTo->uuid;
+            }
+
+            // 🔹 Création du bon de commande enfant
+            $childOrder = PurchaseOrder::create([
+                'parent_uuid' => $parentOrder->uuid,
+                'type' => $request->type,
+                'status' => 'draft',
+                'supplier_uuid' => $supplierUuid,
+                'warehouse_from' => $warehouseFromUuid,
+                'warehouse_to' => $warehouseToUuid,
+                'notes' => $request->notes,
+                'created_by' => $auth->id,
+                'updated_by' => $auth->id,
+                'added_by' => $auth->id,
+                'is_parent' => true
+            ]);
+
+            // 🔹 Ajout des produits
+            foreach ($request->items as $item) {
+                $product = Product::find($item['product_uuid']);
+                $productName = $product ? $product->name : $item['product_uuid'];
+
+                if ($request->type === 'internal') {
+                    $available = Product::where('uuid', $item['product_uuid'])
+                        ->whereHas('points', function ($q) use ($warehouseFrom) {
+                            $q->where('point_uuid', $warehouseFrom->uuid);
+                        })->exists();
+
+                    if (!$available) {
+                        return response()->json([
+                            'message' => "Le produit {$productName} n'est pas disponible dans l'entrepôt."
+                        ], 403);
+                    }
+                }
+
+                $childOrder->items()->create([
+                    'product_uuid' => $item['product_uuid'],
+                    'quantity' => $item['quantity'],
+                    'created_by' => $auth->id,
+                    'added_by' => $auth->id,
+                ]);
+            }
+
+            DB::commit();
+
+            $message = $request->type === 'external'
+                ? "Commande externe enfant créée avec succès."
+                : "Commande interne enfant créée avec succès entre les entrepôts.";
+
+            return response()->json([
+                'message' => $message,
+                'order' => $childOrder->load(['items'])
+            ], 201);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message' => 'Erreur de validation.',
+                'errors' => $e->errors()
+            ], 422);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'message' => 'Une erreur est survenue lors de la création de la commande.',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Display a listing of the resource.
+     * @permission PurchaseOrderController::update_parents_orders
+     * @permission_desc Modification d’une commande enfant à partir d’une commande parent
+     */
+    public function update_parents_orders(Request $request, $uuid)
+    {
+        $auth = auth()->user();
+
+        try {
+            // Récupérer la commande
+            $order = PurchaseOrder::where('uuid', $uuid)->first();
+            if (!$order) {
+                return response()->json(['message' => 'Commande introuvable.'], 404);
+            }
+
+            // Validation des données
+            $request->validate([
+                'type' => 'required|in:external,internal',
+                'supplier_uuid' => 'required_if:type,external|nullable|exists:suppliers,uuid',
+                'warehouse_from' => 'required_if:type,internal|nullable|exists:warehouses,uuid',
+                'warehouse_to' => 'nullable|exists:warehouses,uuid',
+                'notes' => 'nullable|string',
+                'items' => 'required|array|min:1',
+                'items.*.product_uuid' => 'required|exists:produits,uuid',
+                'items.*.quantity' => 'required|numeric|min:0.001',
+            ], [
+                'supplier_uuid.required_if' => 'Vous devez sélectionner un fournisseur pour une commande externe.',
+                'warehouse_from.required_if' => 'Vous devez sélectionner l’entrepôt source pour une commande interne.',
+                'items.required' => 'Vous devez ajouter au moins un produit à la commande.',
+            ]);
+
+            $supplierUuid = $request->type === 'external' ? $request->supplier_uuid : null;
+            $warehouseFromUuid = null;
+            $warehouseToUuid = null;
+
+            // Commande externe
+            if ($request->type === 'internal') {
+                // Entrepôt source
+                $warehouseFrom = Warehouse::find($request->warehouse_from);
+                if (!$warehouseFrom) {
+                    return response()->json(['message' => 'Entrepôt source introuvable.'], 404);
+                }
+
+                // Vérifier que l'utilisateur est manager
+                $isManager = $warehouseFrom->managers()->where('user_id', $auth->id)->exists();
+                if (!$isManager) {
+                    return response()->json([
+                        'message' => 'Vous ne pouvez créer une commande interne que depuis un entrepôt que vous gérez.'
+                    ], 403);
+                }
+
+                // Entrepôt destination = entrepôt principal
+                $warehouseTo = Warehouse::where('is_primary', true)->firstOrFail();
+
+                $warehouseFromUuid = $warehouseFrom->uuid;
+                $warehouseToUuid = $warehouseTo->uuid;
+            }
+
+            // Mise à jour de la commande
+            $order->update([
+                'type' => $request->type,
+                'supplier_uuid' => $supplierUuid,
+                'warehouse_from' => $warehouseFromUuid,
+                'warehouse_to' => $warehouseToUuid,
+                'notes' => $request->notes,
+                'updated_by' => $auth->id,
+                'parent_uuid' => $order->uuid,
+                'is_parent' => true
+            ]);
+
+            // Supprimer les anciens articles et recréer les nouveaux (pour tous les types)
+            $order->items()->delete();
+
+            foreach ($request->items as $item) {
+                // Récupérer le produit pour le nom
+                $product = Product::find($item['product_uuid']);
+                $productName = $product ? $product->name : $item['product_uuid'];
+
+                // Pour les commandes internes, vérifier la disponibilité dans l'entrepôt
+                if ($request->type === 'internal') {
+                    $available = Product::where('uuid', $item['product_uuid'])
+                        ->whereHas('points', function ($q) use ($warehouseFrom) {
+                            $q->where('point_uuid', $warehouseFrom->uuid);
+                        })->exists();
+
+                    if (!$available) {
+                        return response()->json([
+                            'message' => "Le produit {$productName} n'est pas disponible dans l'entrepôt source."
+                        ], 403);
+                    }
+                }
+
+                $order->items()->create([
+                    'product_uuid' => $item['product_uuid'],
+                    'quantity' => $item['quantity'],
+                    'created_by' => $auth->id,
+                    'added_by' => $auth->id,
+                ]);
+            }
+
+            $message = $request->type === 'external'
+                ? "Commande externe mise à jour avec succès."
+                : "Commande interne mise à jour avec succès.";
+
+            return response()->json([
+                'message' => $message,
+                'order' => $order->load(['items'])
+            ], 200);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message' => 'Erreur de validation.',
+                'errors' => $e->errors()
+            ], 422);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Une erreur est survenue lors de la mise à jour de la commande.',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+
+
+
 
 
 

@@ -2,13 +2,14 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\Pivot;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
 class WarehouseManager extends Pivot
 {
-    use SoftDeletes;
+    use HasFactory, SoftDeletes;
 
     protected $table = 'warehouse_managers';
 

@@ -37,7 +37,12 @@ class Supply extends Model
         'rejection_reason',
         'type',
         'reason_cancel',
-        'cancelled_by'
+        'cancelled_by',
+        'unit_price',
+        'transferred_at',
+        'transferred_by',
+        'receiver_by',
+        'unit_price'
     ];
 
     protected $casts = [
@@ -74,7 +79,12 @@ class Supply extends Model
     {
         return $this->belongsTo(Supplier::class, 'supplier_uuid', 'uuid');
     }
+    public function supply()
+    {
+        return $this->hasMany(Supply::class, 'supply_uuid', 'uuid');
+    }
 
+    // 🔗 Relation vers les items de l'approvisionnement
     public function items()
     {
         return $this->hasMany(SupplyItem::class, 'supply_uuid', 'uuid');
@@ -122,14 +132,31 @@ class Supply extends Model
                 ];
             });
     }
-    public function suppliers()
-    {
-        return $this->hasMany(SupplySupplier::class, 'supply_uuid', 'uuid');
-    }
+
     public function invoices()
     {
         return $this->hasMany(SupplyInvoice::class, 'supply_uuid', 'uuid');
     }
+    public function transferredBy()
+    {
+        return $this->belongsTo(User::class, 'transferred_by');
+    }
+
+    public function receiver()
+    {
+        return $this->belongsTo(User::class, 'receiver_by');
+    }
+    public function supplySuppliers()
+    {
+        return $this->hasMany(SupplySupplier::class, 'supply_uuid', 'uuid');
+
+    }
+
+
+
+
+
+
 
 
 }
