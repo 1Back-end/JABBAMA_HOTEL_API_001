@@ -364,4 +364,42 @@ class WarehouseController extends Controller
     }
 
 
+    public function get_managers_by_warehouse(string $uuid, Request $request)
+    {
+        $search = $request->query('search', '');
+        $is_active = $request->query('is_active', null); // 1 / 0 / null
+
+        // Vérifier si l'entrepôt existe
+        $warehouse = Warehouse::where('uuid', $uuid)->firstOrFail();
+
+        // Récupérer les managers via la relation belongsToMany
+        $query = $warehouse->managers();
+
+        // Filtre recherche nom + email
+        if (!empty($search)) {
+            $query->where(function ($q) use ($search) {
+                $q->where('login', 'LIKE', "%$search%")
+                    ->orWhere('email', 'LIKE', "%$search%")
+                    ->orWhere('email', 'LIKE', "%$search%")
+                    ->orWhere('prenom', 'LIKE', "%$search%")
+                    ->orWhere('nom_utilisateur', 'LIKE', "%$search%");
+            });
+        }
+
+        // Filtre actif / inactif
+        if (!is_null($is_active)) {
+            $query->where('is_active', filter_var($is_active, FILTER_VALIDATE_BOOLEAN));
+        }
+
+        $managers = $query->get();
+
+        return response()->json([
+            'status' => 'success',
+            'warehouse' => $warehouse->name,
+            'managers' => $managers
+        ]);
+    }
+
+
+
 }

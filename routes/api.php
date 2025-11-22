@@ -42,6 +42,7 @@ Route::middleware(['activity'])->group(function () {
         Route::patch('products/{uuid}/is_active', [ProductController::class, 'update_status']);
         Route::post('products/{uuid}/update_products', [ProductController::class, 'update_products']);
         Route::get('warehouses/{uuid}/products', [WarehouseController::class, 'get_products_by_warehouse']);
+        Route::get('warehouses/{uuid}/get_managers_by_warehouse', [WarehouseController::class, 'get_managers_by_warehouse']);
 
         Route::apiResource('subcategories', SubCategoryController::class);
         Route::patch('subcategories/{uuid}/is_active', [SubCategoryController::class, 'update_status']);
@@ -72,6 +73,9 @@ Route::middleware(['activity'])->group(function () {
         Route::patch('supply_orders/{uuid}/cancel_supply', [SupplyController::class, 'cancel_supply']);
         Route::patch('supply_orders/{uuid}/transfer_supply', [SupplyController::class, 'transfer_supply']);
         Route::get("/exports/supply", [SupplyController::class, 'export_supply']);
+
+
+        Route::apiResource('passations', \App\Http\Controllers\PassationController::class);
 
 
 
