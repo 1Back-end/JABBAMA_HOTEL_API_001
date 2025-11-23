@@ -76,6 +76,8 @@ Route::middleware(['activity'])->group(function () {
 
 
         Route::apiResource('passations', \App\Http\Controllers\PassationController::class);
+        Route::patch('passations/{uuid}/cancel_passations', [\App\Http\Controllers\PassationController::class, 'cancel_passations']);
+        Route::patch('passations/{uuid}/validate_passations', [\App\Http\Controllers\PassationController::class, 'validate_passations']);
 
 
 

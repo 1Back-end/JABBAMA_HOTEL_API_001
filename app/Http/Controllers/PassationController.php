@@ -3,8 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Models\Passation;
+use App\Models\PassationItem;
+use App\Models\PurchaseOrder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Mockery\Generator\StringManipulation\Pass\Pass;
 
 /**
  * @permission_category Gestion des passations de stocks entre agents
@@ -14,7 +17,7 @@ class PassationController extends Controller
 
     /**
      * Display a listing of the resource.
-     * @permission PassationController::store
+     * @permission PassationController::index
      * @permission_desc Afficher la liste des passations de stocks entre agents
      */
     public function index(Request $request)
@@ -29,7 +32,10 @@ class PassationController extends Controller
             'agentTo',
             'warehouse',
             'creator',
-            'updater'
+            'updater',
+            'validator',
+            'rejector',
+            'cancellor'
         ]);
 
         if ($request->filled('status')) {
@@ -92,7 +98,7 @@ class PassationController extends Controller
 
     /**
      * Display a listing of the resource.
-     * @permission PassationController::index
+     * @permission PassationController::store
      * @permission_desc Effectuer une passation de stocks entre agents
      */
     public function store(Request $request)
@@ -114,22 +120,16 @@ class PassationController extends Controller
             'items.*.quantity_sent.min' => 'La quantité minimale est 0,001.',
         ]);
 
-        // Ajout automatique de l’initiateur
-        $validated['agent_from_id'] = $auth->id;
-        $validated['created_by'] = $auth->id;
-        $validated['status'] = 'pending';
-        $validated['agent_to_id'] = $validated['agent_to_id'] ?? null;
-
         DB::beginTransaction();
 
         try {
             // Création de la passation
             $passation = Passation::create([
-                'agent_from_id' => $validated['agent_from_id'],
+                'agent_from_id' => $auth->id,
                 'agent_to_id' => $validated['agent_to_id'],
                 'warehouse_uuid' => $validated['warehouse_uuid'],
                 'status' => 'pending',
-                'created_by' => $validated['created_by'],
+                'created_by' => $auth->id,
             ]);
 
             // Ajout des articles envoyés
@@ -137,7 +137,7 @@ class PassationController extends Controller
                 $passation->items()->create([
                     'product_uuid' => $item['product_uuid'],
                     'quantity_sent' => $item['quantity_sent'],
-                    'quantity_counted' => null,
+                    'created_by' => $auth->id,
                 ]);
             }
 
@@ -167,75 +167,70 @@ class PassationController extends Controller
      * @permission PassationController::update
      * @permission_desc Modifier une passation de stocks entre agents
      */
-    public function update(Request $request, Passation $passation)
+    public function update(Request $request, $uuid)
     {
         $auth = auth()->user();
+        $passation = Passation::where('uuid',$uuid)->first();
+        if(!$passation){
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Passation de stocks entre agents introuvable.',
+            ]);
+        }
 
         // Validation
         $validated = $request->validate([
+            'agent_to_id' => 'nullable|exists:users,id',
+            'warehouse_uuid' => 'required|exists:warehouses,uuid',
+
             'items' => 'required|array|min:1',
-            'items.*.id' => 'required|exists:passation_items,id',
-            'items.*.quantity_counted' => 'required|numeric|min:0',
+            'items.*.product_uuid' => 'required|exists:produits,uuid',
+            'items.*.quantity_sent' => 'required|numeric|min:0.001',
         ], [
-            'items.required' => 'Vous devez fournir les articles pour la validation.',
-            'items.*.quantity_counted.required' => 'La quantité comptée est obligatoire.',
-            'items.*.quantity_counted.min' => 'La quantité comptée doit être positive.',
+            'warehouse_uuid.required' => 'L’entrepôt est obligatoire.',
+            'items.required' => 'Vous devez ajouter au moins un article.',
+            'items.*.product_uuid.exists' => 'Un produit est invalide.',
+            'items.*.quantity_sent.min' => 'La quantité minimale est 0,001.',
         ]);
 
         DB::beginTransaction();
 
         try {
-            $hasDifference = false;
+            // Création de la passation
+            $passation->update([
+                'agent_from_id' => $auth->id,
+                'agent_to_id' => $validated['agent_to_id'],
+                'warehouse_uuid' => $validated['warehouse_uuid'],
+                'status' => 'pending',
+                'updated_by' => auth()->id(),
+            ]);
 
-            // Mise à jour des items
-            foreach ($validated['items'] as $itemData) {
-
-                $item = $passation->items()->find($itemData['id']);
-
-                if (!$item) {
-                    continue;
-                }
-
-                // Vérifier s'il existe un écart
-                if ($itemData['quantity_counted'] != $item->quantity_sent) {
-                    $hasDifference = true;
-                }
-
-                // Mise à jour des quantités comptées
-                $item->update([
-                    'quantity_counted' => $itemData['quantity_counted']
+            $passation->items()->delete();
+            // Ajout des articles envoyés
+            foreach ($validated['items'] as $item) {
+                $passation->items()->create([
+                    'product_uuid' => $item['product_uuid'],
+                    'quantity_sent' => $item['quantity_sent'],
+                    'updated_by' => auth()->id(),
                 ]);
             }
-
-            // Déterminer le statut final
-            $newStatus = $hasDifference ? 'partially_validated' : 'validated';
-
-            // Mise à jour principale
-            $passation->update([
-                'status' => $newStatus,
-                'validated_by' => $auth->id,
-                'validated_at' => now(),
-            ]);
 
             DB::commit();
 
             return response()->json([
                 'status' => 'success',
-                'message' => $newStatus === 'validated'
-                    ? 'Passation validée sans écart.'
-                    : 'Passation validée avec écarts.',
-                'passation' => $passation->load('items.product', 'agentFrom', 'agentTo', 'warehouse')
-            ]);
+                'message' => 'Passation mise à jour avec succès.',
+                'passation' => $passation->load('items.product', 'agentFrom', 'agentTo', 'warehouse'),
+            ], 201);
 
         } catch (\Exception $e) {
             DB::rollBack();
-
-            \Log::error('Erreur validation passation : '.$e->getMessage());
+            \Log::error('Erreur création passation : ' . $e->getMessage());
 
             return response()->json([
                 'status' => 'error',
-                'message' => 'Une erreur est survenue lors de la validation.',
-                'details' => $e->getMessage()
+                'message' => 'Une erreur est survenue lors de la création de la passation.',
+                'details' => $e->getMessage(),
             ], 500);
         }
     }
@@ -255,7 +250,9 @@ class PassationController extends Controller
             'warehouse',
             'creator',
             'updater'
-        ])->where('uuid', $uuid)->first();
+        ])
+            ->where('uuid', $uuid)
+            ->firstOrFail();
 
         if (!$passation) {
             return response()->json([
@@ -269,6 +266,112 @@ class PassationController extends Controller
             'data' => $passation,
         ]);
     }
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission PassationController::cancel_passations
+     * @permission_desc Annulation d'une passation de stocks entre agents
+     */
+    public function cancel_passations(Request $request, string $uuid){
+        $auth = auth()->user();
+        $validated = $request->validate([
+            'status' => 'required|in:cancel',
+        ], [
+            'status.required' => "Le statut est obligatoire.",
+            'status.in' => "Le statut fourni est invalide.",
+        ]);
+        $passation = Passation::findOrFail($uuid);
+        $passation->update([
+            'status' => 'cancel',
+            'updated_by' => auth()->id(),
+            'cancelled_by' => auth()->id(),
+            'reason_cancelled' => 'La passation de stocks a été annulée avec succès.',
+            'cancelled_at' => now(),
+        ]);
+
+        return response()->json([
+            'message' => "La passation de stocks a été annulée avec succès.",
+            'passation' => $passation
+        ]);
+    }
+
+    /**
+     * Display a listing of the resource.
+     * @permission PassationController::validate_passations
+     * @permission_desc Validation d'une passation de stocks entre agents
+     */
+    public function validate_passations(Request $request, string $uuid)
+    {
+        $auth = auth()->user();
+
+        // 🔹 Validation des données reçues
+        $validated = $request->validate([
+            'items' => 'required|array|min:1',
+            'items.*.uuid' => 'required|exists:passation_items,uuid',
+            'items.*.quantity_counted' => 'required|numeric|min:0',
+        ], [
+            'items.required' => 'Les articles sont obligatoires.',
+            'items.*.quantity_counted.required' => 'La quantité comptée est obligatoire.',
+            'items.*.quantity_counted.min' => 'La quantité comptée doit être >= 0.',
+        ]);
+
+        // 🔹 Récupération de la passation
+        $passation = Passation::with('items')->where('uuid', $uuid)->firstOrFail();
+
+        DB::beginTransaction();
+
+        try {
+            foreach ($validated['items'] as $item) {
+
+                $passationItem = PassationItem::where('uuid', $item['uuid'])->first();
+
+                if (!$passationItem) continue;
+
+                $quantitySent = floatval($passationItem->quantity_sent);
+                $quantityCounted = floatval($item['quantity_counted']);
+
+                // Calcul de la différence
+                $difference = $quantitySent - $quantityCounted;
+
+                // 🔹 Mise à jour de l’item
+                $passationItem->update([
+                    'quantity_counted' => $quantityCounted,
+                    'difference' => $difference,
+                    'updated_by' => $auth->id
+                ]);
+            }
+
+            // 🔹 Mise à jour du statut
+            $passation->update([
+                'status' => 'in_discuss',
+                'updated_by' => $auth->id,
+                'validated_at' => now(),
+                'reason_validated' => "Passation validée avec succès.",
+                'validated_by' => auth()->id(),
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Passation validée avec succès.',
+                'passation' => $passation->load('items.product', 'agentFrom', 'agentTo', 'warehouse')
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            \Log::error('Erreur validation passation : ' . $e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Erreur lors de la validation de la passation.',
+                'details' => $e->getMessage()
+            ], 500);
+        }
+    }
+
 
 
 

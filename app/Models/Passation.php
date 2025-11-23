@@ -23,7 +23,21 @@ class Passation extends Model
         'agent_from_id',
         'agent_to_id',
         'warehouse_uuid',
-        'status'
+        'status',
+        'validated_by',
+        'rejected_by',
+        'cancelled_by',
+        'reason_rejected',
+        'reason_validated',
+        'reason_cancelled',
+        'rejected_at',
+        'cancelled_at',
+        'validated_at'
+    ];
+    protected $casts = [
+        'rejected_at' => 'datetime',
+        'cancelled_at' => 'datetime',
+        'validated_at' => 'datetime',
     ];
 
     // Générer automatiquement un UUID lors de la création
@@ -32,6 +46,20 @@ class Passation extends Model
         static::creating(function ($model) {
             $model->uuid = (string) Str::uuid();
         });
+    }
+
+    public function validator()
+    {
+        return $this->belongsTo(User::class, 'validated_by');
+    }
+    public function rejector()
+    {
+        return $this->belongsTo(User::class, 'rejected_by');
+    }
+    public function cancellor()
+    {
+        return $this->belongsTo(User::class, 'cancelled_by');
+
     }
 
     // Relations

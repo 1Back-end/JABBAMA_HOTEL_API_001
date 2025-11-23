@@ -410,49 +410,6 @@ class PurchaseOrderController extends Controller
 
     /**
      * Display a listing of the resource.
-     * @permission PurchaseOrderController::update_status
-     * @permission_desc Changer le statut des commandes
-     */
-    public function update_status(Request $request, $uuid)
-    {
-        $validated = $request->validate([
-            'status' => 'required|in:draft,open,closed,rejected,modified',
-        ]);
-
-        try {
-            $order = PurchaseOrder::where('uuid', $uuid)->firstOrFail();
-
-            $oldStatus = $order->status;
-            $order->status = $validated['status'];
-            $order->updated_by = auth()->id();
-
-            // Si la commande passe en "closed"
-            if ($validated['status'] === 'closed') {
-                $order->closed_at = now();
-            }
-
-            if ($validated['status'] === 'open') {
-                $order->closed_at = null;
-            }
-
-            $order->save();
-
-            return response()->json([
-                'status' => 'success',
-                'message' => "Statut mis à jour avec succès de '{$oldStatus}' à '{$order->status}'.",
-                'data' => $order
-            ], 200);
-        } catch (\Exception $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Erreur lors de la mise à jour du statut.',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Display a listing of the resource.
      * @permission PurchaseOrderController::cancel_orders
      * @permission_desc Annuler une commande
      */
