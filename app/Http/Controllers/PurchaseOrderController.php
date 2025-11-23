@@ -342,6 +342,7 @@ class PurchaseOrderController extends Controller
                 'warehouse_to' => $warehouseToUuid,
                 'notes' => $request->notes,
                 'updated_by' => $auth->id,
+                'status' => 'draft'
             ]);
 
             // Supprimer les anciens articles et recréer les nouveaux (pour tous les types)
