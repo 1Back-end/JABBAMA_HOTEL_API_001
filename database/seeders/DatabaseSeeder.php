@@ -17,6 +17,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             InitBDForAllDataSeeder::class,
             NatureWarehouseSeeder::class,
+            ProductSeeder::class,
 
         ]);
     }

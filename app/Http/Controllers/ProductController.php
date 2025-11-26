@@ -21,6 +21,7 @@ class ProductController extends Controller
      */
     public function index(Request $request)
     {
+        $auth = auth()->user();
         $perPage = $request->input('limit', 25);
         $page = $request->input('page', 1);
 
@@ -28,6 +29,7 @@ class ProductController extends Controller
 
         if ($request->filled('category_uuid')) $query->where('category_uuid', $request->category_uuid);
         if ($request->filled('unit_uuid')) $query->where('unit_uuid', $request->unit_uuid);
+
 
         if ($search = trim($request->input('search'))) {
             $query->where(function ($q) use ($search) {

@@ -71,72 +71,47 @@
 {{-- Header --}}
 <header class="text-center">
     <div class="fs-3 fw-bold text-uppercase">
-        FICHE D'APPROVISIONNEMENT N° {{ $supply->reference }}
+        FICHE DE PASSATIONS DE STOCKS
     </div>
 </header>
 
 <div class="mt-2 w-100" style="border-top: 1px double rgba(0,0,0,0.75); margin-bottom: 2px"></div>
 <div class="mb-2 w-100" style="border-top: 1px double rgba(0,0,0,0.75);"></div>
 
-<h1 class="fw-bold text-center text-uppercase text-decoration-underline mt-3">
-    Articles approvisionnés
-</h1>
 
 <p class="fst-italic text-end">
     Date d'impression : {{ now()->format('d/m/Y H:i') }}
 </p>
 
 <div class="d-flex justify-content-center mt-2">
-<table class="table table-bordered table-striped text-center border-black" style="font-size: 13px;">
-    <thead>
-    <tr>
-        <th>N°</th>
-        <th>Reference</th>
-        <th>Articles</th>
-        <th>Qté commandée</th>
-        <th>Qté approvisionnée</th>
-        @if($supply->purchaseOrder->type === 'external')
-            <th>Fournisseur</th>
-        @endif
-        @if($supply->purchaseOrder->type === 'external')
-            <th>Prix d'achat</th>
-        @endif
-
-    </tr>
-    </thead>
-
-    <tbody>
-    @foreach($supply->items as $index => $item)
+    <table class="table table-bordered table-striped text-center border-black" style="font-size: 13px;">
+        <thead>
         <tr>
-            <td>{{ $index + 1 }}</td>
-            <td>{{ $item->product->code ?? '---' }}</td>
-            <td>{{ $item->product->name ?? '---' }}</td>
-
-            <td>
-                {{ intval(optional($supply->purchaseOrder->items->firstWhere('product_uuid', $item->product_uuid))->quantity)
-                    ?? '---'
-                }}
-            </td>
-
-            <td>{{ intval($item->quantity_supplied ?? 0) ?: '---' }}</td>
-
-            @if($supply->purchaseOrder->type === 'external')
-                <td>{{ $item->supplier->company_name ?? '' }}</td>
-            @endif
-
-            @if($supply->purchaseOrder->type === 'external')
-                <td>{{ \App\Helpers\FormatPrice::format(intval($item->purchase_price)) }}</td>
-            @endif
-
+            <th>Entrepot</th>
+            <th>Agent Initiateur</th>
+            <th>Agent Recépteur</th>
+            <th>Qté transférée</th>
+            <th>Qté comptée</th>
+            <th>Ecart</th>
 
         </tr>
-    @endforeach
-    </tbody>
-</table>
+        </thead>
+
+        <tbody>
+        <tr>
+            <td>{{ $passations->warehouse->name ?? '---' }}</td>
+            <td>{{ $passations->agentFrom->nom_utilisateur ?? '---' }}</td>
+            <td>{{ $passations->agentTo->nom_utilisateur ?? '---' }}</td>
+            <td>{{ $passations->quantity_sent ?? 0 }}</td>
+            <td>{{ $passations->quantity_counted ?? 0 }}</td>
+            <td>{{ $passations->difference ?? 0 }}</td>
+        </tr>
+        </tbody>
+    </table>
 </div>
-    <div class="text-end mt-3" style="font-size: 13px;">
-        <p>Fait le {{ $supply->created_at->format('d/m/Y H:i') }}</p>
-    </div>
+<div class="text-end mt-3" style="font-size: 13px;">
+    <p>Fait le {{ $passations->created_at->format('d/m/Y H:i') }}</p>
+</div>
 
 
 </body>

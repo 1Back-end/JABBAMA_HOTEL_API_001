@@ -63,4 +63,30 @@ class AuthenticatedSessionController extends Controller
 
         return response()->noContent();
     }
+
+
+    public function refresh(Request $request)
+    {
+        $user = $request->user();
+
+        if (!$user->status) {
+            return response()->json([
+                "status" => "error",
+                "message" => "Votre compte est désactivé !"
+            ], 401);
+        }
+
+        $permissions = load_permissions($user);
+
+        // Recharge les rôles
+        $roles = $user->roles()->pluck('name');
+
+        return response()->json([
+            'status' => 'success',
+            'permissions' => $permissions,
+            'roles' => $roles,
+            'user' => $user,
+        ]);
+    }
+
 }

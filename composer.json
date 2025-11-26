@@ -14,7 +14,8 @@
         "maatwebsite/excel": "^3.1",
         "spatie/browsershot": "^5.0",
         "spatie/laravel-activitylog": "^4.10",
-        "spatie/laravel-permission": "^6.21"
+        "spatie/laravel-permission": "^6.21",
+        "ext-intl": "*"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",

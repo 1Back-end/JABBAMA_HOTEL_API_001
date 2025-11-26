@@ -64,6 +64,12 @@ function save_browser_shot_pdf(string $view, array $data, string $folderPath, st
 {
     $bootstrapPath = public_path('assets/bootstrap/css/bootstrap.min.css');
     $bootstrapContent = file_get_contents($bootstrapPath);
+    $bootstrapContent .= "
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+    body {
+        font-family: 'Poppins', sans-serif;
+    }
+    ";
     $data = array_merge($data, ['bootstrap' => $bootstrapContent]);
 
     $folderPath = public_path($folderPath);

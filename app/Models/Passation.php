@@ -32,7 +32,10 @@ class Passation extends Model
         'reason_cancelled',
         'rejected_at',
         'cancelled_at',
-        'validated_at'
+        'validated_at',
+        'quantity_sent',
+        'quantity_counted',
+        'difference',
     ];
     protected $casts = [
         'rejected_at' => 'datetime',

@@ -62,6 +62,7 @@ Route::middleware(['activity'])->group(function () {
         Route::get('/exports/orders', [PurchaseOrderController::class, 'export_orders']);
         Route::post('orders/{uuid}/create_parents_orders', [PurchaseOrderController::class, 'create_parents_orders']);
         Route::put('orders/{uuid}/update_parents_orders', [PurchaseOrderController::class, 'update_parents_orders']);
+        Route::get('orders/{uuid}/print_orders', [PurchaseOrderController::class, 'print_orders']);
 
         Route::apiResource('supply_orders', SupplyController::class);
         Route::post('update_supplies/{uuid}/update_supplies', [SupplyController::class, 'update_supplies']);
@@ -78,6 +79,8 @@ Route::middleware(['activity'])->group(function () {
         Route::apiResource('passations', \App\Http\Controllers\PassationController::class);
         Route::patch('passations/{uuid}/cancel_passations', [\App\Http\Controllers\PassationController::class, 'cancel_passations']);
         Route::patch('passations/{uuid}/validate_passations', [\App\Http\Controllers\PassationController::class, 'validate_passations']);
+        Route::patch('passations/{uuid}/reject_passations', [\App\Http\Controllers\PassationController::class, 'reject_passations']);
+        Route::get('passations/{uuid}/print_passations', [\App\Http\Controllers\PassationController::class, 'print_passations']);
 
 
 

@@ -37,7 +37,7 @@ class PurchaseOrder extends Model
         'motif_rejet',
         'unit_price',
         'parent_uuid',
-        'is_parent'
+        'is_parent',
     ];
 
 
@@ -47,7 +47,7 @@ class PurchaseOrder extends Model
     {
         parent::boot();
         static::creating(function ($model) {
-            $prefix = 'CMD-';
+            $prefix = 'CMD';
             $timestamp = now()->format('ymdHi');
 
             $random = strtoupper(Str::random(7));
@@ -72,20 +72,21 @@ class PurchaseOrder extends Model
     {
         return $this->belongsTo(Warehouse::class, 'warehouse_to', 'uuid');
     }
+
     public function warehouse_from()
     {
         return $this->belongsTo(Warehouse::class, 'warehouse_from', 'uuid');
-
     }
+
 
     public function creator()
     {
-        return $this->belongsTo(User::class, 'created_by');
+        return $this->belongsTo(User::class, 'created_by','id');
     }
 
     public function updater()
     {
-        return $this->belongsTo(User::class, 'updated_by');
+        return $this->belongsTo(User::class, 'updated_by','id');
     }
     public function transfered()
     {

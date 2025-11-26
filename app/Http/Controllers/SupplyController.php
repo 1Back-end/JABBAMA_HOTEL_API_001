@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Exports\SuppliersExport;
 use App\Exports\SuppliesExport;
+use App\Models\PdfDocument;
 use App\Models\Product;
 use App\Models\ProductPoint;
 use App\Models\PurchaseOrder;
@@ -160,7 +161,9 @@ class SupplyController extends Controller
             'purchase_order_uuid' => 'required|exists:purchase_orders,uuid',
             'notes' => 'nullable|string',
 
+
             'items' => 'required|array|min:1',
+            'items.*.sell_price' => 'nullable|numeric|min:0',
             'items.*.product_uuid' => 'required|uuid',
             'items.*.quantity_supplied' => 'required|numeric|min:1',
             'items.*.purchase_price' => $supplyType === 'external' ? 'required|numeric|min:0' : 'nullable|numeric|min:0',
@@ -254,7 +257,7 @@ class SupplyController extends Controller
                 'warehouse_uuid' => $warehouseUuid,
                 'supply_date' => now(),
                 'notes' => $validated['notes'] ?? null,
-                'status' => $isFullySupplied ? 'draft' : 'partially_validated',
+                'status' => $isFullySupplied ? 'draft' : 'draft',
                 'partially_validated_by' => $isFullySupplied ? null : $auth->id,
                 'partial_validation_reason' => $isFullySupplied ? null :
                     ($validated['partial_validation_reason'] ??
@@ -282,7 +285,8 @@ class SupplyController extends Controller
                     'supplier_uuid'    => $item['supplier_uuid'] ?? null, // 🔹 Fournisseur spécifique à l'item
                     'notes' => $item['notes'] ?? null,
                     'created_by' => $auth->id,
-                    'unit_price' => $unitPrice
+                    'unit_price' => $unitPrice,
+                    'sell_price' => $item['sell_price']
                 ]);
             }
 
@@ -388,6 +392,7 @@ class SupplyController extends Controller
             'notes' => 'nullable|string',
             'items' => 'required|array|min:1',
             'items.*.product_uuid' => 'required|uuid',
+            'items.*.sell_price' => 'nullable|numeric|min:0',
             'items.*.quantity_supplied' => 'required|numeric|min:1',
             'items.*.purchase_price' => $supplyType === 'external' ? 'required|numeric|min:0' : 'nullable|numeric|min:0',
             'items.*.notes' => 'nullable|string',
@@ -435,7 +440,7 @@ class SupplyController extends Controller
 
             $supply->update([
                 'notes' => $validated['notes'] ?? $supply->notes,
-                'status' => $isFullySupplied ? 'draft' : 'partially_validated',
+                'status' => $isFullySupplied ? 'draft' : 'draft',
                 'partially_validated_by' => $isFullySupplied ? null : $auth->id,
                 'partial_validation_reason' => $isFullySupplied ? null :
                     ($validated['partial_validation_reason'] ??
@@ -455,7 +460,8 @@ class SupplyController extends Controller
                     'supplier_uuid' => $item['supplier_uuid'] ?? null,
                     'notes' => $item['notes'] ?? null,
                     'unit_price' => $item['quantity_supplied'] > 0 ? ($item['purchase_price'] / $item['quantity_supplied']) : 0,
-                    'created_by' => $auth->id
+                    'created_by' => $auth->id,
+                    'sell_price' => $item['sell_price'] ?? 0,
                 ]);
             }
 
@@ -545,6 +551,10 @@ class SupplyController extends Controller
 
             // 🔹 Supprimer l'approvisionnement
             $supply->delete();
+
+            if ($supply->purchaseOrder) {
+                $supply->purchaseOrder->delete();
+            }
 
             DB::commit();
 
@@ -641,8 +651,6 @@ class SupplyController extends Controller
 
                 $totalAdded = 0;
 
-                $totalAdded = 0;
-
                 foreach ($supply->items as $item) {
                     $product = $item->product;
 
@@ -715,7 +723,7 @@ class SupplyController extends Controller
     {
         $auth = auth()->user();
 
-        // Vérifier le mot de passe
+        // Vérifier mot de passe
         $request->validate(['password' => 'required|string']);
         if (!Hash::check($request->password, $auth->password)) {
             return response()->json([
@@ -727,8 +735,8 @@ class SupplyController extends Controller
         try {
             DB::beginTransaction();
 
-            // Récupérer l'approvisionnement avec ses items et produits
-            $supply = Supply::with('items.product', 'purchaseOrder')->findOrFail($uuid);
+            // Charger approvisionnement + items + commande d'achat
+            $supply = Supply::with('items.product', 'purchaseOrder.items')->findOrFail($uuid);
             $purchaseOrder = $supply->purchaseOrder;
 
             if (!$purchaseOrder) {
@@ -738,106 +746,103 @@ class SupplyController extends Controller
                 ], 404);
             }
 
-            // 🔹 Approvisionnement externe
-            if ($supply->type === 'external') {
-                $warehouse = Warehouse::where('is_primary', true)->firstOrFail();
-                $totalAdded = 0;
+            $totalAdded = 0;
+            $partial = false; // 🔥 drapeau pour vérifier si approvisionnement partiel
 
-                foreach ($supply->items as $item) {
-                    $product = $item->product;
-                    $product->increment('stock_quantity', $item->quantity_supplied); // augmenter le stock du produit
-                    $totalAdded += $item->quantity_supplied; // garder le total approvisionné
+            foreach ($supply->items as $item) {
+
+                $poItem = $purchaseOrder->items->firstWhere('product_uuid', $item->product_uuid);
+
+                if (!$poItem) {
+                    DB::rollBack();
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => "Produit introuvable dans la commande pour {$item->product->name}."
+                    ], 422);
                 }
 
-                // Ajouter seulement la quantité approvisionnée au stock total de l'entrepôt
-                $warehouse->increment('total_stock', $totalAdded);
+                // Vérifier si quantité approvisionnée < quantité commandée
+                if ($item->quantity_supplied < $poItem->quantity) {
+                    $partial = true;
+                }
 
-                $supply->update([
-                    'status' => 'validated',
-                    'validated_by' => $auth->id,
-                    'updated_by' => $auth->id,
-                ]);
+                // --- TYPE EXTERNE ---
+                if ($supply->type === 'external') {
+                    $item->product->increment('stock_quantity', $item->quantity_supplied);
+                    $totalAdded += $item->quantity_supplied;
+                }
 
-                $purchaseOrder->update([
-                    'status' => 'closed',
-                    'closed_at' => now(),
-                    'updated_by' => $auth->id,
-                ]);
+                // --- TYPE INTERNE ---
+                if ($supply->type === 'internal') {
 
-                DB::commit();
+                    if ($item->product->stock_quantity < $item->quantity_supplied) {
+                        DB::rollBack();
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => "Quantité insuffisante pour {$item->product->name}."
+                        ], 422);
+                    }
 
-                return response()->json([
-                    'message' => "Approvisionnement externe validé : stock des produits et total de l'entrepôt principal mis à jour.",
-                    'total_added' => $totalAdded,
-                    'warehouse_total_stock' => $warehouse->total_stock,
-                    'supply' => $supply->load('items.product')
-                ]);
+                    // Déduire stock du magasin source
+                    $item->product->decrement('stock_quantity', $item->quantity_supplied);
+
+                    $totalAdded += $item->quantity_supplied;
+                }
             }
 
-            // 🔹 Approvisionnement interne
+            // --- GESTION DES ENTREPÔTS ---
+            if ($supply->type === 'external') {
+                $warehousePrimary = Warehouse::where('is_primary', true)->firstOrFail();
+                $warehousePrimary->increment('total_stock', $totalAdded);
+            }
+
             if ($supply->type === 'internal') {
                 $warehouseFrom = Warehouse::findOrFail($purchaseOrder->warehouse_from);
                 $warehouseTo = Warehouse::where('is_primary', true)->firstOrFail();
 
-                $totalAdded = 0;
-
-                foreach ($supply->items as $item) {
-                    $product = $item->product;
-
-                    if ($product->stock_quantity < $item->quantity_supplied) {
-                        DB::rollBack();
-                        return response()->json([
-                            'status' => 'error',
-                            'message' => "Quantité insuffisante pour {$product->name}.",
-                        ], 422);
-                    }
-
-                    $product->decrement('stock_quantity', $item->quantity_supplied);
-                    $totalAdded += $item->quantity_supplied;
-                }
-
                 $warehouseFrom->increment('total_stock', $totalAdded);
-
                 $warehouseTo->decrement('total_stock', $totalAdded);
+            }
 
-                // Mettre à jour la commande et le supply
-                $purchaseOrder->update([
-                    'status' => 'closed',
-                    'closed_at' => now(),
-                    'updated_by' => $auth->id,
-                ]);
+            // --- STATUTS FINAUX ---
+            $supplyStatus = $partial ? 'partially_validated' : 'validated';
+            $orderStatus  = $partial ? 'partially_closed' : 'closed';
 
-                $supply->update([
-                    'status' => 'validated',
-                    'validated_by' => $auth->id,
-                    'updated_by' => $auth->id,
-                ]);
+            $supply->update([
+                'status' => $supplyStatus,
+                'validated_by' => $auth->id,
+                'updated_by' => $auth->id,
+            ]);
+
+            $purchaseOrder->update([
+                'status' => $orderStatus,
+                'closed_at' => $partial ? null : now(),
+                'updated_by' => $auth->id,
+            ]);
 
             DB::commit();
 
             return response()->json([
-                    'message' => "Approvisionnement interne validé : stock du supply déduit du warehouse source et ajouté à l'entrepôt principal.",
-                    'warehouse_from_total_stock' => $warehouseFrom->total_stock,
-                    'warehouse_to_total_stock' => $warehouseTo->total_stock,
-                    'supply' => $supply->load('items.product', 'purchaseOrder')
-                ]);
-            }
-
-            return response()->json([
-                'status' => 'error',
-                'message' => "Type d'approvisionnement inconnu."
-            ], 422);
+                'message' => $partial
+                    ? "Approvisionnement partiellement validé."
+                    : "Approvisionnement entièrement validé.",
+                'supply_status' => $supplyStatus,
+                'order_status' => $orderStatus,
+                'total_added' => $totalAdded,
+                'supply' => $supply->load('items.product')
+            ]);
 
         } catch (\Exception $e) {
             DB::rollBack();
             \Log::error('Erreur validation approvisionnement : ' . $e->getMessage());
 
             return response()->json([
-                'error' => "Une erreur est survenue lors de la validation.",
+                'error' => "Erreur lors de la validation.",
                 'details' => $e->getMessage()
             ], 500);
         }
     }
+
 
 
 
@@ -899,10 +904,12 @@ class SupplyController extends Controller
      */
     public function print_supplies(Request $request, string $uuid)
     {
+        $auth = auth()->user();
         try {
             // Charger l'approvisionnement avec les relations
             $supply = Supply::with([
                 'items.product',
+                'items.supplier',
                 'purchaseOrder.items',
                 'purchaseOrder.warehouseTo',
                 'purchaseOrder.warehouse_from',
@@ -912,13 +919,12 @@ class SupplyController extends Controller
                 'rejector',
                 'validator',
                 'medias',
-                'supplier',
                 'warehouse',
-                'suppliers.supplier'
+
             ])->findOrFail($uuid);
 
             $supply_uuid  = $supply->uuid;
-            $fileName     = 'details-approvisionnements-' . $supply_uuid . '-' . now()->format('YmdHis') . '.pdf';
+            $fileName = strtoupper('DETAILS-SUPPLY-' . now()->format('YmdHis') . '.pdf');
             $folderPath = 'storage/details-approvisionnements';
             $filePath     = $folderPath . '/' . $fileName;
 
@@ -929,13 +935,15 @@ class SupplyController extends Controller
                 }
             }
 
+            $footer = 'pdfs.reports.factures.footer';
             // Générer le PDF via la fonction save_browser_shot_pdf
             save_browser_shot_pdf(
                 view: 'pdfs.details-approvisionnements.details-approvisionnements',
                 data: ['supply' => $supply],
                 folderPath: $folderPath,
                 path: $filePath,
-                margins: [10, 10, 10, 10]
+                margins: [10, 10, 10, 10],
+                footer: $footer
             );
 
             // Vérifier si le fichier a été généré
@@ -944,6 +952,32 @@ class SupplyController extends Controller
                     'status'  => 'error',
                     'message' => "Le fichier PDF n'a pas été généré."
                 ], 500);
+            }
+
+            $pdf = PdfDocument::where('order_uuid', $supply->uuid)
+                ->where('name', 'DETAILS-SUPPLY')
+                ->first();
+
+            // S'il existe → on met à jour le fichier
+            if ($pdf) {
+                $pdf->update([
+                    'path'       => $filePath,
+                    'filename'   => $fileName,
+                    'updated_by' => $auth->id,
+                ]);
+            }
+            // Sinon → on crée un nouvel enregistrement
+            else {
+                $pdf = PdfDocument::create([
+                    'name'       => 'DETAILS-SUPPLY',
+                    'order_uuid' => $supply->uuid,
+                    'disk'       => 'public',
+                    'path'       => $filePath,
+                    'filename'   => $fileName,
+                    'mimetype'   => 'application/pdf',
+                    'extension'  => 'pdf',
+                    'created_by' => auth()->id(),
+                ]);
             }
 
             // Lire le PDF et encoder en base64 pour l'envoi
@@ -957,6 +991,7 @@ class SupplyController extends Controller
                 'base64'   => $base64,
                 'url'      => asset('storage/details-approvisionnements/' . $fileName),
                 'filename' => $fileName,
+                'document' => $pdf,
             ], 200);
 
         } catch (\Exception $e) {

@@ -26,7 +26,8 @@ class SupplyItem extends Model
         'updated_by',
         'purchase_price',
         'unit_price',
-        'supplier_uuid'
+        'supplier_uuid',
+        'sell_price'
     ];
 
     public static function boot()

@@ -105,15 +105,22 @@ class Product extends Model
      *  =========================== */
     public static function generateCode(): string
     {
+        $datePart = now()->format('Ydm'); // Année, jour, mois → ex: 20252611
+        $prefix = 'PROD' . $datePart;
+
+        // Chercher le dernier code global (pas par jour)
         $last = self::withTrashed()->orderBy('created_at', 'desc')->first();
-        if ($last && preg_match('/\d+$/', $last->code, $matches)) {
-            $number = (int) $matches[0] + 1;
+
+        if ($last && preg_match('/(\d{6})$/', $last->code, $matches)) {
+            $number = (int) $matches[1] + 1;
         } else {
             $number = 1;
         }
 
-        return 'PROD-' . str_pad($number, 4, '0', STR_PAD_LEFT);
+        return $prefix . str_pad($number, 6, '0', STR_PAD_LEFT);
     }
+
+
     public function medias(): MorphMany
     {
         return $this->morphMany(Medias::class, 'mediable');

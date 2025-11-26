@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Exports\PurchaseOrdersExport;
+use App\Models\PdfDocument;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
@@ -11,6 +12,7 @@ use App\Models\Warehouse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
@@ -201,6 +203,7 @@ class PurchaseOrderController extends Controller
                     }
                 }
 
+
                 $order->items()->create([
                     'product_uuid' => $item['product_uuid'],
                     'quantity' => $item['quantity'],
@@ -246,6 +249,8 @@ class PurchaseOrderController extends Controller
                 'supplier',
                 'warehouseTo.managers',
                 'warehouse_from.managers',
+                'warehouseTo.natures',
+                'warehouse_from.natures',
                 'creator',
                 'updater',
                 'approver'
@@ -404,9 +409,60 @@ class PurchaseOrderController extends Controller
      * @permission PurchaseOrderController::destroy
      * @permission_desc Suppression des commandes
      */
-    public function destroy(string $id)
+    public function destroy(Request $request, string $uuid)
     {
-        //
+        $auth = auth()->user();
+
+        try {
+            // Vérifier le mot de passe
+            $request->validate([
+                'password' => 'required|string'
+            ]);
+
+            if (!Hash::check($request->password, $auth->password)) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Mot de passe incorrect.'
+                ], 422);
+            }
+
+            DB::beginTransaction();
+
+            // Récupérer la commande avec ses items
+            $order = PurchaseOrder::with('items')->where('uuid', $uuid)->firstOrFail();
+
+            // Vérifier si la commande a un approvisionnement
+            $hasSupply = \App\Models\Supply::where('purchase_order_uuid', $order->uuid)->exists();
+            if ($hasSupply) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => "Impossible de supprimer cette commande car elle a déjà un approvisionnement."
+                ], 400);
+            }
+
+            // Supprimer tous les items associés
+            $order->items()->delete();
+
+            // Supprimer la commande
+            $order->delete();
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => "La commande et ses items ont été supprimés avec succès."
+            ], 200);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Erreur suppression commande : ' . $e->getMessage());
+
+            return response()->json([
+                'status' => 'error',
+                'message' => "Impossible de supprimer la commande.",
+                'details' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -871,6 +927,113 @@ class PurchaseOrderController extends Controller
             ], 500);
         }
     }
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission PurchaseOrderController::print_orders
+     * @permission_desc Imprimer une commande au format PDF
+     */
+    public function print_orders(Request $request, string $uuid)
+    {
+        $auth = auth()->user();
+        try {
+            DB::beginTransaction();
+
+            $order = PurchaseOrder::with([
+                'items.product',
+                'creator',
+                'updater',
+                'approver',
+                'children',
+                'parent',
+                'supplier',
+                'warehouseTo',
+                'warehouse_from',
+            ])->findOrFail($uuid);
+
+            $fileName   = strtoupper('DETAILS-ORDERS-' . now()->format('YmdHis') . '.pdf');
+            $folderPath = 'storage/details-orders/' . $order->uuid;
+            $filePath   = $folderPath . '/' . $fileName;
+
+            // Créer le dossier si nécessaire
+            if (!is_dir($folderPath)) {
+                if (!mkdir($folderPath, 0755, true) && !is_dir($folderPath)) {
+                    throw new \RuntimeException("Impossible de créer le répertoire : {$folderPath}");
+                }
+            }
+
+            $data = ['order' => $order];
+
+            $footer = 'pdfs.reports.factures.footer';
+
+            save_browser_shot_pdf(
+                view: 'pdfs.details-orders.details-orders',
+                data: $data,
+                folderPath: $folderPath,
+                path: $filePath,
+                margins: [10, 10, 10, 10],
+                footer: $footer
+            );
+
+            DB::commit();
+
+            if (!file_exists($filePath)) {
+                return response()->json(['message' => "Le fichier PDF n'a pas été généré."], 500);
+            }
+
+            // Chercher si le document existe déjà
+            $pdf = PdfDocument::where('order_uuid', $order->uuid)
+                ->where('name', 'DETAILS-ORDERS')
+                ->first();
+
+            // S'il existe → on met à jour le fichier
+            if ($pdf) {
+                $pdf->update([
+                    'path'       => $filePath,
+                    'filename'   => $fileName,
+                    'updated_by' => $auth->id,
+                ]);
+            }
+            // Sinon → on crée un nouvel enregistrement
+            else {
+                $pdf = PdfDocument::create([
+                    'name'       => 'DETAILS-ORDERS',
+                    'order_uuid' => $order->uuid,
+                    'disk'       => 'public',
+                    'path'       => $filePath,
+                    'filename'   => $fileName,
+                    'mimetype'   => 'application/pdf',
+                    'extension'  => 'pdf',
+                    'created_by' => auth()->id(),
+                ]);
+            }
+
+
+            $pdfContent = file_get_contents($filePath);
+            $base64     = base64_encode($pdfContent);
+
+            return response()->json([
+                'data'     => $data,
+                'base64'   => $base64,
+                'url'      => $filePath,
+                'filename' => $fileName,
+                'document' => $pdf,
+            ], 200);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            \Log::error("Erreur génération PDF commande : " . $e->getMessage());
+
+            return response()->json([
+                'status'  => 'error',
+                'message' => "Erreur lors de la génération du fichier PDF.",
+                'details' => $e->getMessage()
+            ], 500);
+        }
+    }
+
 
 
 

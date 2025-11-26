@@ -42,7 +42,8 @@ class Supply extends Model
         'transferred_at',
         'transferred_by',
         'receiver_by',
-        'unit_price'
+        'unit_price',
+        'sell_price'
     ];
 
     protected $casts = [
@@ -55,7 +56,7 @@ class Supply extends Model
     {
         parent::boot();
         static::creating(function ($model) {
-            $prefix = 'APP-';
+            $prefix = 'APP';
             $timestamp = now()->format('ymdHi');
 
             $random = strtoupper(Str::random(7));
@@ -150,6 +151,10 @@ class Supply extends Model
     {
         return $this->hasMany(SupplySupplier::class, 'supply_uuid', 'uuid');
 
+    }
+    public function suppliers()
+    {
+        return $this->belongsToMany(Supplier::class, 'supplier_uuid', 'uuid');
     }
 
 
