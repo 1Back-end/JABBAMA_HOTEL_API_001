@@ -23,7 +23,8 @@ class PassationItem extends Model
         'quantity_counted',
         'difference',
         'created_by',
-        'updated_by'
+        'updated_by',
+        'status'
     ];
 
     // Générer automatiquement un UUID

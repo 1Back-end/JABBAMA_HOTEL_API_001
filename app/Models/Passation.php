@@ -95,4 +95,15 @@ class Passation extends Model
     {
         return $this->belongsTo(User::class, 'updated_by');
     }
+    public function managers()
+    {
+        return $this->belongsToMany(
+            User::class,
+            'passation_managers',
+            'passation_uuid',
+            'manager_id'
+        )->withPivot(['uuid', 'status'])
+            ->withTimestamps();
+    }
+
 }

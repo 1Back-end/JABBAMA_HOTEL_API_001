@@ -37,7 +37,8 @@ class PassationController extends Controller
             'updater',
             'validator',
             'rejector',
-            'cancellor'
+            'cancellor',
+            'managers'
         ]);
 
         if ($request->filled('status')) {
@@ -49,12 +50,15 @@ class PassationController extends Controller
             $query->whereBetween('created_at', [$request->start_date, $request->end_date]);
         }
 
-        // 🔹 Gestion des accès selon les rôles
         if (!$auth->hasRole('SUPER_ADMIN')) {
-            // 👉 Tous les autres utilisateurs (sauf Super Admin)
-            $query->where('created_by', $auth->id);
+            // Tous les autres utilisateurs voient seulement leurs propres créations ou les passations dont ils sont managers
+            $query->where(function($q) use ($auth) {
+                $q->where('created_by', $auth->id)
+                    ->orWhereHas('managers', function($q2) use ($auth) {
+                        $q2->where('manager_id', $auth->id);
+                    });
+            });
         }
-        // 👉 Le SUPER_ADMIN voit tout (aucune restriction)
 
         if ($search = trim($request->input('search'))) {
             $query->where(function ($q) use ($search) {
@@ -117,48 +121,81 @@ class PassationController extends Controller
 
         // Validation
         $validated = $request->validate([
-            'agent_to_id' => 'required|exists:users,id',
             'warehouse_uuid' => 'required|exists:warehouses,uuid',
-        ], [
-            'warehouse_uuid.required' => 'L’entrepôt est obligatoire.',
-            'agent_to_id.required' => 'Le manager recepteur est obligatoire.',
         ]);
 
-        $warehouse = Warehouse::where('uuid', $request->warehouse_uuid)->firstOrFail();
+        $warehouse = Warehouse::where('uuid', $validated['warehouse_uuid'])->firstOrFail();
+        $managers = $warehouse->managers;
 
+        if ($managers->isEmpty()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Aucun manager trouvé pour cet entrepôt.'
+            ], 404);
+        }
+
+        $products = $warehouse->products;
 
         DB::beginTransaction();
-
         try {
-            // Création de la passation
+
+            // 1️⃣ Créer une seule passation
             $passation = Passation::create([
                 'agent_from_id' => $auth->id,
-                'agent_to_id' => $validated['agent_to_id'],
-                'warehouse_uuid' => $validated['warehouse_uuid'],
+                'warehouse_uuid' => $warehouse->uuid,
                 'status' => 'pending',
                 'quantity_sent' => $warehouse->total_stock,
                 'created_by' => $auth->id,
             ]);
 
+            // 2️⃣ Ajouter les produits
+            foreach ($products as $product) {
+                PassationItem::create([
+                    'passation_uuid' => $passation->uuid,
+                    'product_uuid' => $product->uuid,
+                    'quantity_sent' => $product->stock_quantity,
+                    'quantity_counted' => 0,
+                    'difference' => 0,
+                    'created_by' => $auth->id,
+                    'status' => 'pending',
+                ]);
+            }
+
+            // 3️⃣ Lier tous les managers dans la table pivot
+            foreach ($managers as $manager) {
+                if($manager->id == $auth->id){
+                    continue;
+                }
+
+                DB::table('passation_managers')->insert([
+                    'uuid' => \Str::uuid(),
+                    'passation_uuid' => $passation->uuid,
+                    'manager_id' => $manager->id,
+                    'status' => 'pending',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+
             DB::commit();
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Passation initiée avec succès.',
-                'passation' => $passation->load('agentFrom', 'agentTo', 'warehouse'),
+                'message' => 'Passation créée et assignée à tous les managers.',
+                'passation' => $passation->load('items', 'managers', 'warehouse'),
             ], 201);
 
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Erreur création passation : ' . $e->getMessage());
-
             return response()->json([
                 'status' => 'error',
-                'message' => 'Une erreur est survenue lors de la création de la passation.',
+                'message' => 'Erreur lors de la création de la passation.',
                 'details' => $e->getMessage(),
             ], 500);
         }
     }
+
+
 
 
     /**
@@ -166,60 +203,107 @@ class PassationController extends Controller
      * @permission PassationController::update
      * @permission_desc Modifier une passation de stocks entre agents
      */
-    public function update(Request $request, $uuid)
-    {
-        $auth = auth()->user();
-        $passation = Passation::where('uuid',$uuid)->first();
-        if(!$passation){
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Passation de stocks entre agents introuvable.',
-            ]);
-        }
+        public function update(Request $request, $uuid)
+        {
+            $auth = auth()->user();
 
-        // Validation
-        $validated = $request->validate([
-            'agent_to_id' => 'required|exists:users,id',
-            'warehouse_uuid' => 'required|exists:warehouses,uuid',
-        ], [
-            'warehouse_uuid.required' => 'L’entrepôt est obligatoire.',
-            'agent_to_id.required' => 'Le manager recepteur est obligatoire.',
-        ]);
-
-        $warehouse = Warehouse::where('uuid', $request->warehouse_uuid)->firstOrFail();
-
-        DB::beginTransaction();
-
-        try {
-            // Création de la passation
-            $passation->update([
-                'agent_from_id' => $auth->id,
-                'agent_to_id' => $validated['agent_to_id'],
-                'warehouse_uuid' => $validated['warehouse_uuid'],
-                'status' => 'pending',
-                'quantity_sent' => $warehouse->total_stock,
-                'updated_by' => auth()->id(),
+            // Validation
+            $validated = $request->validate([
+                'warehouse_uuid' => 'required|exists:warehouses,uuid',
             ]);
 
-            DB::commit();
+            $passation = Passation::where('uuid', $uuid)->firstOrFail();
 
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Passation mise à jour avec succès.',
-                'passation' => $passation->load('agentFrom', 'agentTo', 'warehouse'),
-            ], 201);
+            $warehouse = Warehouse::where('uuid', $validated['warehouse_uuid'])->firstOrFail();
+            $managers = $warehouse->managers;
+            $products = $warehouse->products;
 
-        } catch (\Exception $e) {
-            DB::rollBack();
-            \Log::error('Erreur création passation : ' . $e->getMessage());
+            if ($managers->isEmpty()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Aucun manager trouvé pour cet entrepôt.'
+                ], 404);
+            }
 
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Une erreur est survenue lors de la création de la passation.',
-                'details' => $e->getMessage(),
-            ], 500);
+            DB::beginTransaction();
+
+            try {
+                /**
+                 * 1️⃣ Supprimer les anciens items
+                 */
+                PassationItem::where('passation_uuid', $passation->uuid)->delete();
+
+                /**
+                 * 2️⃣ Supprimer les anciens managers
+                 */
+                DB::table('passation_managers')
+                    ->where('passation_uuid', $passation->uuid)
+                    ->delete();
+
+                /**
+                 * 3️⃣ Mettre à jour la passation
+                 */
+                $passation->update([
+                    'warehouse_uuid' => $warehouse->uuid,
+                    'quantity_sent' => $warehouse->total_stock,
+                    'status' => 'pending',
+                    'updated_by' => $auth->id,
+                ]);
+
+                /**
+                 * 4️⃣ Recréer tous les nouveaux items
+                 */
+                foreach ($products as $product) {
+                    PassationItem::create([
+                        'passation_uuid' => $passation->uuid,
+                        'product_uuid' => $product->uuid,
+                        'quantity_sent' => $product->stock_quantity,
+                        'quantity_counted' => 0,
+                        'difference' => 0,
+                        'status' => 'pending',
+                        'created_by' => $auth->id,
+                    ]);
+                }
+
+                /**
+                 * 5️⃣ Réassigner les managers
+                 */
+                foreach ($managers as $manager) {
+
+                    // éviter d'ajouter le créateur si c’est aussi un manager
+                    if ($manager->id == $auth->id) {
+                        continue;
+                    }
+
+                    DB::table('passation_managers')->insert([
+                        'uuid' => \Str::uuid(),
+                        'passation_uuid' => $passation->uuid,
+                        'manager_id' => $manager->id,
+                        'status' => 'pending',
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
+
+                DB::commit();
+
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Passation mise à jour avec succès.',
+                    'passation' => $passation->load('items', 'managers', 'warehouse'),
+                ], 200);
+
+            } catch (\Exception $e) {
+
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Erreur lors de la mise à jour de la passation.',
+                    'details' => $e->getMessage(),
+                ], 500);
+            }
         }
-    }
+
 
     /**
      * Display a listing of the resource.
@@ -230,11 +314,14 @@ class PassationController extends Controller
     {
         // Récupérer la passation avec ses relations
         $passation = Passation::with([
+            'items',
+            'items.product',
             'agentFrom',
             'agentTo',
             'warehouse',
             'creator',
-            'updater'
+            'updater',
+            'managers',
         ])
             ->where('uuid', $uuid)
             ->firstOrFail();
@@ -248,7 +335,7 @@ class PassationController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'data' => $passation,
+            'passation' => $passation,
         ]);
     }
 
@@ -292,41 +379,55 @@ class PassationController extends Controller
 
         // 🔹 Validation des données
         $validated = $request->validate([
-            'quantity_counted' => 'required|integer|min:1',
-        ],[
-            'quantity_counted.required' => 'La quantité comptée est obligatoire.',
+            'items' => 'required|array|min:1',
+            'items.*.uuid' => 'required|exists:passation_items,uuid',
+            'items.*.quantity_counted' => 'required|integer|min:0',
+        ], [
+            'items.required' => 'Les items sont obligatoires.',
+            'items.*.quantity_counted.required' => 'La quantité comptée est obligatoire pour chaque item.',
         ]);
 
         DB::beginTransaction();
 
         try {
+            $passation = Passation::with('items.product')->where('uuid', $uuid)->firstOrFail();
 
-            // 🔹 Récupération de la passation
-            $passation = Passation::with('items')->where('uuid', $uuid)->firstOrFail();
+            foreach ($validated['items'] as $itemData) {
+                $item = $passation->items->where('uuid', $itemData['uuid'])->first();
+                if (!$item) continue;
 
-            $qte_sent = (float) $passation->quantity_sent;
-            $qte_counted = (float) $validated['quantity_counted'];
+                $qte_sent = (int) $item->quantity_sent;
+                $qte_counted = (int) $itemData['quantity_counted'];
 
-            // 🔹 Vérification logique
-            if ($qte_counted > $qte_sent) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => "La quantité comptée ne peut pas être supérieure à la quantité envoyée.",
-                ], 400);
+                if ($qte_counted > $qte_sent) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => "La quantité comptée pour l'article {$item->product?->name} ne peut pas être supérieure à la quantité envoyée.",
+                    ], 400);
+                }
+
+                $difference = $qte_sent - $qte_counted;
+
+                $status = $qte_counted === $qte_sent ? 'ok' : 'in_discuss';
+
+                $item->update([
+                    'quantity_counted' => $qte_counted,
+                    'difference' => $difference,
+                    'status' => $status,
+                    'updated_by' => $auth->id,
+                ]);
             }
 
-            // 🔹 Calcul de la différence
-            $difference = $qte_sent - $qte_counted;
+            // 🔹 Mettre à jour le statut global de la passation
+            $allOk = $passation->items->every(fn($i) => $i->status === 'ok');
+            $passationStatus = $allOk ? 'closed' : 'in_discuss';
 
-            // 🔹 Mise à jour de la passation
             $passation->update([
-                'status' => 'in_discuss',
-                'quantity_counted' => $qte_counted,
-                'difference' => $difference,
+                'status' => $passationStatus,
                 'validated_at' => now(),
                 'validated_by' => $auth->id,
                 'updated_by' => $auth->id,
-                'reason_validated' => "Passation validée avec succès.",
+                'reason_validated' => 'Validation par items.',
             ]);
 
             DB::commit();
@@ -334,13 +435,11 @@ class PassationController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'Passation validée avec succès.',
-                'passation' => $passation->load('agentFrom', 'agentTo', 'warehouse'),
+                'passation' => $passation->load('items.product', 'agentFrom', 'agentTo', 'warehouse'),
             ]);
 
         } catch (\Throwable $e) {
-
             DB::rollBack();
-
             return response()->json([
                 'status' => 'error',
                 'message' => 'Une erreur est survenue lors de la validation de la passation.',
@@ -348,6 +447,8 @@ class PassationController extends Controller
             ], 500);
         }
     }
+
+
 
 
 
@@ -521,6 +622,39 @@ class PassationController extends Controller
         }
 
 
+    }
+
+    /**
+     * Display a listing of the resource.
+     * @permission PassationController::validate_passations_by_admin
+     * @permission_desc Validation de passations de stocks par le SUPER ADMIN
+     */
+    public function validate_passations_by_admin(Request $request, string $uuid){
+        $auth = auth()->user();
+        $request->validate([
+            'password' => 'required|string'
+        ]);
+
+        // Vérification du mot de passe
+        if (!Hash::check($request->password, $auth->password)) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Mot de passe incorrect.'
+            ], 422);
+        }
+        $passation = Passation::findOrFail($uuid);
+        $passation->update([
+            'status' => 'validated',
+            'updated_by' => auth()->id(),
+            'approved_by' => auth()->id(),
+            'approved_at' => now(),
+            'closed_at' => now()
+        ]);
+
+        return response()->json([
+            'message' => "La passation a été validée avec succès.",
+            'passation' => $passation->load('agentFrom', 'agentTo', 'warehouse'),
+        ]);
     }
 
 

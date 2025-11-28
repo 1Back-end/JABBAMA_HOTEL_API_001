@@ -81,6 +81,7 @@ Route::middleware(['activity'])->group(function () {
         Route::patch('passations/{uuid}/validate_passations', [\App\Http\Controllers\PassationController::class, 'validate_passations']);
         Route::patch('passations/{uuid}/reject_passations', [\App\Http\Controllers\PassationController::class, 'reject_passations']);
         Route::get('passations/{uuid}/print_passations', [\App\Http\Controllers\PassationController::class, 'print_passations']);
+        Route::patch('passations/{uuid}/validate_passations_by_admin', [\App\Http\Controllers\PassationController::class, 'validate_passations_by_admin']);
 
 
 

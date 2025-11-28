@@ -237,7 +237,22 @@ class SupplyController extends Controller
                         ]
                     ], 422);
                 }
-
+                if ($purchaseOrder->type === 'internal') {
+                    if ($item['quantity_supplied'] > $poItem->product->stock_quantity) {
+                        $qtyStocks= rtrim(rtrim($poItem->product->stock_quantity, '0'), '.');
+                        return response()->json([
+                            'errors' => [
+                                'items' => [
+                                    $index => [
+                                        'quantity_supplied' => [
+                                            "La quantité approvisionnée ({$item['quantity_supplied']}) ne peut pas dépasser le stock disponible ({$qtyStocks})."
+                                        ]
+                                    ]
+                                ]
+                            ]
+                        ], 422);
+                    }
+                }
                 if ($item['quantity_supplied'] < $poItem->quantity) {
                     $partialItems[] = $poItem->product->name;
                 }
@@ -408,10 +423,12 @@ class SupplyController extends Controller
 
             // Vérification quantités
             foreach ($validated['items'] as $index => $item) {
+                // Récupérer l'item de la commande
                 $poItem = PurchaseOrderItem::where('purchase_order_uuid', $purchaseOrder->uuid)
                     ->where('product_uuid', $item['product_uuid'])
                     ->firstOrFail();
 
+                // Vérifier que la quantité approvisionnée ne dépasse pas la quantité commandée
                 if ($item['quantity_supplied'] > $poItem->quantity) {
                     $qtyOrdered = rtrim(rtrim($poItem->quantity, '0'), '.');
                     return response()->json([
@@ -427,8 +444,26 @@ class SupplyController extends Controller
                     ], 422);
                 }
 
+                if ($purchaseOrder->type === 'internal') {
+                    if ($item['quantity_supplied'] > $poItem->product->stock_quantity) {
+                        $qtyStocks= rtrim(rtrim($poItem->product->stock_quantity, '0'), '.');
+                        return response()->json([
+                            'errors' => [
+                                'items' => [
+                                    $index => [
+                                        'quantity_supplied' => [
+                                            "La quantité approvisionnée ({$item['quantity_supplied']}) ne peut pas dépasser le stock disponible ({$qtyStocks})."
+                                        ]
+                                    ]
+                                ]
+                            ]
+                        ], 422);
+                    }
+                }
+
+                // Vérifier approvisionnement partiel
                 if ($item['quantity_supplied'] < $poItem->quantity) {
-                    $partialItems[] = $poItem->product->name;
+                    $partialItems[] = $poItem->product->name ?? 'Produit inconnu';
                 }
             }
 
@@ -582,9 +617,9 @@ class SupplyController extends Controller
      */
     public function rejected_supplies(Request $request, string $uuid)
     {
-        $auth = auth()->user();
+        $supply = Supply::findOrFail($uuid);
 
-        // Vérifier le mot de passe
+        // Validation
         $validated = $request->validate([
             'rejection_reason' => 'required|string', // la raison du rejet
         ], [
@@ -592,126 +627,16 @@ class SupplyController extends Controller
             'rejection_reason.string' => "La raison doit être une chaîne de caractères.",
         ]);
 
-        try {
-            DB::beginTransaction();
+        $supply->update([
+            'status'        => 'rejected',
+            'rejection_reason' => $validated['rejection_reason'],
+            'rejected_by'  => auth()->id(),
+        ]);
 
-            // Récupérer l'approvisionnement avec ses items et produits
-            $supply = Supply::with('items.product', 'purchaseOrder')->findOrFail($uuid);
-            $purchaseOrder = $supply->purchaseOrder;
-
-            if (!$purchaseOrder) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Commande introuvable.'
-                ], 404);
-            }
-
-            // 🔹 Approvisionnement externe
-            if ($supply->type === 'external') {
-                $warehouse = Warehouse::where('is_primary', true)->firstOrFail();
-                $totalAdded = 0;
-
-                foreach ($supply->items as $item) {
-                    $product = $item->product;
-                    $product->decrement('stock_quantity', $item->quantity_supplied); // augmenter le stock du produit
-                    $totalAdded += $item->quantity_supplied; // garder le total approvisionné
-                }
-
-                // Ajouter seulement la quantité approvisionnée au stock total de l'entrepôt
-                $warehouse->decrement('total_stock', $totalAdded);
-
-                $supply->update([
-                    'status' => 'rejected',
-                    'validated_by' => $auth->id,
-                    'updated_by' => $auth->id,
-                    'rejection_reason' => $validated['rejection_reason'],
-                    'rejected_by' => $auth->id,
-                ]);
-
-                $purchaseOrder->update([
-                    'status' => 'in_discuss',
-                    'closed_at' => now(),
-                    'updated_by' => $auth->id
-                ]);
-
-                DB::commit();
-
-                return response()->json([
-                    'message' => "Opération éffectuée avec succès.",
-                    'total_added' => $totalAdded,
-                    'warehouse_total_stock' => $warehouse->total_stock,
-                    'supply' => $supply->load('items.product')
-                ]);
-            }
-
-            // 🔹 Approvisionnement interne
-            if ($supply->type === 'internal') {
-                $warehouseFrom = Warehouse::findOrFail($purchaseOrder->warehouse_from);
-                $warehouseTo = Warehouse::where('is_primary', true)->firstOrFail();
-
-                $totalAdded = 0;
-
-                foreach ($supply->items as $item) {
-                    $product = $item->product;
-
-                    if ($product->stock_quantity < $item->quantity_supplied) {
-                        DB::rollBack();
-                        return response()->json([
-                            'status' => 'error',
-                            'message' => "Quantité insuffisante pour {$product->name}.",
-                        ], 422);
-                    }
-
-                    // Décrémenter le stock du produit
-                    $product->decrement('stock_quantity', $item->quantity_supplied);
-                    $totalAdded += $item->quantity_supplied;
-                }
-
-                // Décrémenter le total_stock de l'entrepôt source
-                $warehouseFrom->decrement('total_stock', $totalAdded);
-
-                // Ajouter exactement la quantité déplacée au stock de destination
-                $warehouseTo->increment('total_stock', $totalAdded);
-
-                // Mettre à jour la commande et le supply
-                $purchaseOrder->update([
-                    'status' => 'in_discuss',
-                    'closed_at' => now(),
-                    'updated_by' => $auth->id,
-                ]);
-
-                $supply->update([
-                    'status' => 'rejected',
-                    'validated_by' => $auth->id,
-                    'updated_by' => $auth->id,
-                    'rejection_reason' => $validated['rejection_reason'],
-                    'rejected_by' => $auth->id,
-                ]);
-
-                DB::commit();
-
-                return response()->json([
-                    'message' => "Opération éffectué avec succès.",
-                    'warehouse_from_total_stock' => $warehouseFrom->total_stock,
-                    'warehouse_to_total_stock' => $warehouseTo->total_stock,
-                    'supply' => $supply->load('items.product', 'purchaseOrder')
-                ]);
-            }
-
-            return response()->json([
-                'status' => 'error',
-                'message' => "Type d'approvisionnement inconnu."
-            ], 422);
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            \Log::error('Erreur validation approvisionnement : ' . $e->getMessage());
-
-            return response()->json([
-                'error' => "Une erreur est survenue lors de la validation.",
-                'details' => $e->getMessage()
-            ], 500);
-        }
+        return response()->json([
+            'message' => 'Approvisionnement annulé avec succès.',
+            'data' => $supply
+        ]);
     }
 
     /**
@@ -842,10 +767,6 @@ class SupplyController extends Controller
             ], 500);
         }
     }
-
-
-
-
 
     /**
      * Display a listing of the resource.
@@ -1034,13 +955,6 @@ class SupplyController extends Controller
                 ], 404);
             }
 
-            // Déjà traité ?
-            if (in_array($supply->status, ['validated', 'rejected'])) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => "Impossible : approvisionnement déjà traité."
-                ], 422);
-            }
 
             $totalRemoved = 0; // total des quantités à retirer
 

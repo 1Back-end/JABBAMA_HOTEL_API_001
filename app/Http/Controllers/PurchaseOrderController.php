@@ -496,12 +496,19 @@ class PurchaseOrderController extends Controller
      * @permission_desc Valider une commande
      */
     public function validate_orders(Request $request, string $uuid){
-        $validated = $request->validate([
-            'status' => 'required|in:validated',
-        ], [
-            'status.required' => "Le statut est obligatoire.",
-            'status.in' => "Le statut fourni est invalide.",
+        $auth = auth()->user();
+        $request->validate([
+            'password' => 'required|string'
         ]);
+
+        // Vérification du mot de passe
+        if (!Hash::check($request->password, $auth->password)) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Mot de passe incorrect.'
+            ], 422);
+        }
+
         $order = PurchaseOrder::findOrFail($uuid);
         $order->update([
             'status' => 'validated',
