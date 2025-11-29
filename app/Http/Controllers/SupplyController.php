@@ -1023,7 +1023,7 @@ class SupplyController extends Controller
             ]);
 
             $purchaseOrder->update([
-                'status' => 'cancelled',
+                'status' => 'in_discuss',
                 'closed_at' => now(),
                 'updated_by' => $auth->id,
             ]);

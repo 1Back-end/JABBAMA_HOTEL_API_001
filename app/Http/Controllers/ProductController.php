@@ -30,6 +30,17 @@ class ProductController extends Controller
         if ($request->filled('category_uuid')) $query->where('category_uuid', $request->category_uuid);
         if ($request->filled('unit_uuid')) $query->where('unit_uuid', $request->unit_uuid);
 
+        if (!$auth->hasRole('SUPER_ADMIN')) {
+
+            $query->where(function ($q) use ($auth) {
+
+                // 👉 Produits exclusifs aux entrepôts dont le user est manager
+                $q->whereHas('points.managers', function ($q2) use ($auth) {
+                    $q2->where('user_id', $auth->id);
+                });
+
+            });
+        }
 
         if ($search = trim($request->input('search'))) {
             $query->where(function ($q) use ($search) {

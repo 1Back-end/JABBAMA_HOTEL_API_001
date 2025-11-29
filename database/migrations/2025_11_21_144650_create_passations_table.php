@@ -11,7 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('passations', function (Blueprint $table) {
+        Schema::create('passation_items', function (Blueprint $table) {
             $table->uuid('uuid')->primary();
             $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
             $table->foreignId('updated_by')->nullable()->constrained('users')->nullOnDelete();

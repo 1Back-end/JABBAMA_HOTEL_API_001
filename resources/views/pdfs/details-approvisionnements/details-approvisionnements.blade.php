@@ -92,7 +92,7 @@
     <tr>
         <th>N°</th>
         <th>Reference</th>
-        <th>Articles</th>
+        <th>Article</th>
         <th>Qté commandée</th>
         <th>Qté approvisionnée</th>
         @if($supply->purchaseOrder->type === 'external')

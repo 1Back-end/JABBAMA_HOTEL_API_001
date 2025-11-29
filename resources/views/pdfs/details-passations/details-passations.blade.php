@@ -79,6 +79,34 @@
 <div class="mb-2 w-100" style="border-top: 1px double rgba(0,0,0,0.75);"></div>
 
 
+<div class="d-flex justify-content-between mb-3" style="font-size: 13px; gap: 2rem;">
+    @if(!empty($passations->creator))
+        <div>
+            <div class="fs-6 fw-bold">Agent initiateur :</div>
+            <p class="m-0">
+                <strong>Nom complet :</strong> <span class="text-uppercase fw-bold fs-6">{{ $passations->creator->nom_utilisateur }}</span>
+            </p>
+            <p class="m-0">
+                <strong>Email :</strong> <span class="fw-bold fs-6">{{ $passations->creator->email }}</span>
+            </p>
+        </div>
+    @endif
+
+    @if(!empty($passations->validator))
+        <div>
+            <div class="fs-6 fw-bold">Agent valideur :</div>
+            <p class="m-0">
+                <strong>Nom complet :</strong> <span class="text-uppercase fw-bold fs-6">{{ $passations->validator->nom_utilisateur }}</span>
+            </p>
+            <p class="m-0">
+                <strong>Email :</strong> <span class="fw-bold fs-6">{{ $passations->validator->email }}</span>
+            </p>
+        </div>
+    @endif
+</div>
+
+
+
 <p class="fst-italic text-end">
     Date d'impression : {{ now()->format('d/m/Y H:i') }}
 </p>
@@ -87,25 +115,42 @@
     <table class="table table-bordered table-striped text-center border-black" style="font-size: 13px;">
         <thead>
         <tr>
-            <th>Entrepot</th>
-            <th>Agent Initiateur</th>
-            <th>Agent Recépteur</th>
+            <th>N°</th>
+            <th>Réference</th>
+            <th>Article</th>
             <th>Qté transférée</th>
             <th>Qté comptée</th>
             <th>Ecart</th>
+            <th>Statut</th>
+            <th>Validée par</th>
 
         </tr>
         </thead>
 
         <tbody>
+        @foreach($passations->items as $index => $item)
         <tr>
-            <td>{{ $passations->warehouse->name ?? '---' }}</td>
-            <td>{{ $passations->agentFrom->nom_utilisateur ?? '---' }}</td>
-            <td>{{ $passations->agentTo->nom_utilisateur ?? '---' }}</td>
-            <td>{{ $passations->quantity_sent ?? 0 }}</td>
-            <td>{{ $passations->quantity_counted ?? 0 }}</td>
-            <td>{{ $passations->difference ?? 0 }}</td>
+            <td>{{ $index + 1 }}</td>
+            <td>{{ $item->product->code ?? '---' }}</td>
+            <td>{{ $item->product->name ?? '---' }}</td>
+            <td>{{ $item->quantity_sent }}</td>
+            <td>{{ $item->quantity_counted }}</td>
+            <td>{{ $item->difference }}</td>
+            <td>
+                @if($item->status === 'ok')
+                    <span class="text-center fw-bold text-success">Ok</span>
+                @elseif($item->status === 'pending')
+                    <span class="text-center fw-bold text-warning">En attente</span>
+                @elseif($item->status === 'in_discuss')
+                    <span class="text-center fw-bold text-info">En discussion</span>
+                @else
+                    <span style="color: gray;">N/A</span>
+                @endif
+            </td>
+            <td>{{ $item->validated->nom_utilisateur }}</td>
+
         </tr>
+        @endforeach
         </tbody>
     </table>
 </div>

@@ -24,7 +24,9 @@ class PassationItem extends Model
         'difference',
         'created_by',
         'updated_by',
-        'status'
+        'status',
+        'validated_by',
+        'validated_at'
     ];
 
     // Générer automatiquement un UUID
@@ -54,5 +56,9 @@ class PassationItem extends Model
     public function updater()
     {
         return $this->belongsTo(User::class, 'updated_by');
+    }
+    public function validated()
+    {
+        return $this->belongsTo(User::class, 'validated_by');
     }
 }

@@ -322,6 +322,7 @@ class PassationController extends Controller
             'creator',
             'updater',
             'managers',
+            'items.validated'
         ])
             ->where('uuid', $uuid)
             ->firstOrFail();
@@ -415,6 +416,8 @@ class PassationController extends Controller
                     'difference' => $difference,
                     'status' => $status,
                     'updated_by' => $auth->id,
+                    'validated_at' => now(),
+                    'validated_by' => $auth->id,
                 ]);
             }
 

@@ -27,6 +27,10 @@ class Warehouse extends Model
         'is_primary'
     ];
 
+    protected $appends = ['total_stock'];
+
+
+
     protected static function boot()
     {
         parent::boot();
@@ -105,4 +109,14 @@ class Warehouse extends Model
             ->withTimestamps()
             ->using(ProductPoint::class); // pivot personnalisé
     }
+    public function getTotalStockAttribute()
+    {
+        return $this->products()
+            ->where('produits.is_active', true)
+            ->wherePivot('is_active', true)
+            ->sum('stock_quantity');
+    }
+
+
+
 }
