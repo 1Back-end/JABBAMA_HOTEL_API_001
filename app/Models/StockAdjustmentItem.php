@@ -4,46 +4,46 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Support\Str;
 
-class PurchaseOrderItem extends Model
+class StockAdjustmentItem extends Model
 {
-    use SoftDeletes;
+    use HasFactory, SoftDeletes;
 
-    protected $table = 'purchase_order_items';
+    protected $table = 'stock_adjustments_items';
+
     protected $primaryKey = 'uuid';
     public $incrementing = false;
     protected $keyType = 'string';
+
     protected $fillable = [
-        'purchase_order_uuid',
+        'uuid',
+        'stock_adjustment_uuid',
         'product_uuid',
         'quantity',
         'created_by',
         'updated_by',
-        'quantity_remaining'
     ];
 
-    public static function boot()
+    protected static function boot()
     {
         parent::boot();
+
         static::creating(function ($model) {
-            $model->uuid = (string) Str::uuid();
+            if (empty($model->uuid)) {
+                $model->uuid = (string) Str::uuid();
+            }
         });
     }
 
-    // 🔗 Relations
-    public function purchaseOrder()
+    public function adjustment()
     {
-        return $this->belongsTo(PurchaseOrder::class, 'purchase_order_uuid', 'uuid');
+        return $this->belongsTo(StockAdjustment::class, 'stock_adjustment_uuid', 'uuid');
     }
 
     public function product()
     {
         return $this->belongsTo(Product::class, 'product_uuid', 'uuid');
     }
-    public function order()
-    {
-        return $this->belongsTo(PurchaseOrder::class, 'purchase_order_uuid', 'uuid');
-    }
 }
-?>

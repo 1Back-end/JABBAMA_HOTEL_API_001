@@ -2,11 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Exports\InventoryExport;
+use App\Exports\PurchaseOrdersExport;
 use App\Models\Warehouse;
 use App\Models\WarehouseManager;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Maatwebsite\Excel\Facades\Excel;
+
 /**
  * @permission_category Gestion des entrepôts
  */
@@ -349,10 +355,13 @@ class WarehouseController extends Controller
 
         $warehouse = Warehouse::with(['products' => function($query) use ($search, $is_active) {
             if ($search) {
-                $query->where('name', 'like', "%{$search}%");
+                $query->where('produits.name', 'like', "%{$search}%");
             }
+
+            // IMPORTANT : préciser la table !
             if (!is_null($is_active)) {
-                $query->where('is_active', $is_active);
+                $query->where('produit_point.is_active', $is_active);
+                // ⚠️ ou alors `produits.is_active` selon ce que tu veux vraiment filtrer
             }
         }])->findOrFail($uuid);
 
@@ -362,6 +371,7 @@ class WarehouseController extends Controller
             'data'    => $warehouse->products,
         ]);
     }
+
 
 
     public function get_managers_by_warehouse(string $uuid, Request $request)
@@ -399,6 +409,25 @@ class WarehouseController extends Controller
             'managers' => $managers
         ]);
     }
+
+    public function export_inventory_by_warehouse(Request $request)
+    {
+        $request->validate([
+            'warehouse_uuid' => 'required|exists:warehouses,uuid',
+        ]);
+        $warehouseUuid = $request->input('warehouse_uuid');
+        $fileName = 'warehouses_inventory-' . Carbon::now()->format('Y-m-d_H-i-s') . '.xlsx';
+
+        Excel::store(new InventoryExport($warehouseUuid), $fileName, 'exportinventory');
+
+        return response()->json([
+            "message" => "Exportation des données effectuée avec succès",
+            "filename" => $fileName,
+            "url" => Storage::disk('exportinventory')->url($fileName)
+        ]);
+
+    }
+    
 
 
 

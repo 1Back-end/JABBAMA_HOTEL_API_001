@@ -112,9 +112,8 @@ class Warehouse extends Model
     public function getTotalStockAttribute()
     {
         return $this->products()
-            ->where('produits.is_active', true)
-            ->wherePivot('is_active', true)
-            ->sum('stock_quantity');
+            ->where('produit_point.is_active', true)
+            ->sum('produit_point.quantity');
     }
 
 

@@ -76,6 +76,12 @@ return [
             'url'    => env('APP_URL') . '/storage/export-supply',
             'visibility' => 'public',
         ],
+        'exportinventory' => [
+            'driver' => 'local',
+            'root'   => storage_path('app/public/export-inventory'),
+            'url'    => env('APP_URL') . '/storage/export-inventory',
+            'visibility' => 'public',
+        ],
 
 
 

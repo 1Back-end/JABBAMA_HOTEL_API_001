@@ -21,7 +21,7 @@ class PassationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PassationController::index
-     * @permission_desc Afficher la liste des passations de stocks entre agents
+     * @permission_desc Afficher la liste des passations de stocks
      */
     public function index(Request $request)
     {
@@ -113,7 +113,7 @@ class PassationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PassationController::store
-     * @permission_desc Effectuer une passation de stocks entre agents
+     * @permission_desc Création d'une passation de stocks
      */
     public function store(Request $request)
     {
@@ -198,11 +198,11 @@ class PassationController extends Controller
 
 
 
-    /**
-     * Display a listing of the resource.
-     * @permission PassationController::update
-     * @permission_desc Modifier une passation de stocks entre agents
-     */
+        /**
+         * Display a listing of the resource.
+         * @permission PassationController::update
+         * @permission_desc Modification d'une passation de stocks
+         */
         public function update(Request $request, $uuid)
         {
             $auth = auth()->user();
@@ -308,7 +308,7 @@ class PassationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PassationController::show
-     * @permission_desc Details d'une passation de stocks entre agents
+     * @permission_desc Afficher les détails d'une passation de stocks
      */
     public function show($uuid)
     {
@@ -344,7 +344,7 @@ class PassationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PassationController::cancel_passations
-     * @permission_desc Annulation d'une passation de stocks entre agents
+     * @permission_desc Annuler une passation de stocks
      */
     public function cancel_passations(Request $request, string $uuid){
         $auth = auth()->user();
@@ -372,7 +372,7 @@ class PassationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PassationController::validate_passations
-     * @permission_desc Validation d'une passation de stocks entre agents
+     * @permission_desc Valider une passation de stocks
      */
     public function validate_passations(Request $request, string $uuid)
     {
@@ -458,7 +458,7 @@ class PassationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PassationController::reject_passations
-     * @permission_desc Rejetion d'une passation de stocks entre agents
+     * @permission_desc Rejetter une passation de stocks
      */
     public function reject_passations(Request $request, string $uuid)
     {
@@ -494,7 +494,7 @@ class PassationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PassationController::destroy
-     * @permission_desc Suppression d'une passation de stocks entre agents
+     * @permission_desc Supprimer une passation de stocks
      */
     public function destroy(Request $request, string $uuid)
     {
@@ -630,7 +630,7 @@ class PassationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PassationController::validate_passations_by_admin
-     * @permission_desc Validation de passations de stocks par le SUPER ADMIN
+     * @permission_desc Valider une passation de stocks par le SUPER ADMIN
      */
     public function validate_passations_by_admin(Request $request, string $uuid){
         $auth = auth()->user();

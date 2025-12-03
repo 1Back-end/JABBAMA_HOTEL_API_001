@@ -237,15 +237,22 @@ class SupplyController extends Controller
                         ]
                     ], 422);
                 }
+
+                $warehousePrimary = Warehouse::where('is_primary', true)->firstOrFail();
+                $warehouseUuid = $warehousePrimary->uuid;
+
+                $pointStock = ProductPoint::where('produit_uuid', $item['product_uuid'])
+                    ->where('point_uuid', $warehouseUuid)
+                    ->value('quantity') ?? 0;
                 if ($purchaseOrder->type === 'internal') {
-                    if ($item['quantity_supplied'] > $poItem->product->stock_quantity) {
-                        $qtyStocks= rtrim(rtrim($poItem->product->stock_quantity, '0'), '.');
+                    if ($item['quantity_supplied'] > $pointStock) {
+                        $qtyStocks = rtrim(rtrim($pointStock, '0'), '.');
                         return response()->json([
                             'errors' => [
                                 'items' => [
                                     $index => [
                                         'quantity_supplied' => [
-                                            "La quantité approvisionnée ({$item['quantity_supplied']}) ne peut pas dépasser le stock disponible ({$qtyStocks})."
+                                            "La quantité approvisionnée ({$item['quantity_supplied']}) ne peut pas dépasser le stock disponible."
                                         ]
                                     ]
                                 ]
@@ -444,15 +451,21 @@ class SupplyController extends Controller
                     ], 422);
                 }
 
+                $warehousePrimary = Warehouse::where('is_primary', true)->firstOrFail();
+                $warehouseUuid = $warehousePrimary->uuid;
+
+                $pointStock = ProductPoint::where('produit_uuid', $item['product_uuid'])
+                    ->where('point_uuid', $warehouseUuid)
+                    ->value('quantity') ?? 0;
                 if ($purchaseOrder->type === 'internal') {
-                    if ($item['quantity_supplied'] > $poItem->product->stock_quantity) {
-                        $qtyStocks= rtrim(rtrim($poItem->product->stock_quantity, '0'), '.');
+                    if ($item['quantity_supplied'] > $pointStock) {
+                        $qtyStocks = rtrim(rtrim($pointStock, '0'), '.');
                         return response()->json([
                             'errors' => [
                                 'items' => [
                                     $index => [
                                         'quantity_supplied' => [
-                                            "La quantité approvisionnée ({$item['quantity_supplied']}) ne peut pas dépasser le stock disponible ({$qtyStocks})."
+                                            "La quantité approvisionnée ({$item['quantity_supplied']}) ne peut pas dépasser le stock disponible."
                                         ]
                                     ]
                                 ]
@@ -693,43 +706,70 @@ class SupplyController extends Controller
 
                 // --- TYPE EXTERNE ---
                 if ($supply->type === 'external') {
-                    $item->product->increment('stock_quantity', $item->quantity_supplied);
+                    // Récupérer l'entrepôt principal
+                    $warehousePrimary = Warehouse::where('is_primary', true)->firstOrFail();
+
+                    // Récupérer uniquement le ProductPoint correspondant à l'entrepôt principal
+                    $productPoint = ProductPoint::where('produit_uuid', $item->product_uuid)
+                        ->where('point_uuid', $warehousePrimary->uuid)
+                        ->first();
+
+                    if ($productPoint) {
+                        $productPoint->increment('quantity', $item->quantity_supplied);
+                    }
+
                     $totalAdded += $item->quantity_supplied;
+
+                    $remaining = max($poItem->quantity - $item->quantity_supplied, 0);
+
+                    // 🔥 Mise à jour uniquement sur cet élément de commande
+                    $poItem->update([
+                        'quantity_remaining' => $remaining,
+                        'updated_by' => $auth->id
+                    ]);
+
                 }
 
-                // --- TYPE INTERNE ---
                 if ($supply->type === 'internal') {
 
-                    if ($item->product->stock_quantity < $item->quantity_supplied) {
+                    // Entrepôt source de la commande
+                    $warehouseFrom = Warehouse::findOrFail($purchaseOrder->warehouse_from);
+                    $warehouseTo = Warehouse::where('is_primary', true)->firstOrFail();
+
+                    // Vérifier stock dans l'entrepôt source
+                    $productPointFrom = ProductPoint::where('produit_uuid', $item->product_uuid)
+                        ->where('point_uuid', $warehouseTo->uuid)
+                        ->first();
+
+                    if (!$productPointFrom || $productPointFrom->quantity < $item->quantity_supplied) {
                         DB::rollBack();
                         return response()->json([
                             'status' => 'error',
-                            'message' => "Quantité insuffisante pour {$item->product->name}."
+                            'message' => "Stock insuffisant dans l'entrepôt source pour {$item->product->name}."
                         ], 422);
                     }
 
-                    // Déduire stock du magasin source
-                    $item->product->decrement('stock_quantity', $item->quantity_supplied);
+                    // Déduire du stock de l'entrepôt source
+                    $productPointFrom->decrement('quantity', $item->quantity_supplied);
+
+                    // Ajouter dans l'entrepôt principal
+                    $productPointTo = ProductPoint::where('produit_uuid', $item->product_uuid)
+                        ->where('point_uuid', $warehouseFrom->uuid)
+                        ->first();
+
+                    if ($productPointTo) {
+                        $productPointTo->increment('quantity', $item->quantity_supplied);
+                    }
 
                     $totalAdded += $item->quantity_supplied;
+                    $remaining = max($poItem->quantity - $item->quantity_supplied, 0);
+
+                    $poItem->update([
+                        'quantity_remaining' => $remaining,
+                        'updated_by' => $auth->id
+                    ]);
                 }
             }
-
-            // --- GESTION DES ENTREPÔTS ---
-            if ($supply->type === 'external') {
-                $warehousePrimary = Warehouse::where('is_primary', true)->firstOrFail();
-                $warehousePrimary->increment('total_stock', $totalAdded);
-            }
-
-            if ($supply->type === 'internal') {
-                $warehouseFrom = Warehouse::findOrFail($purchaseOrder->warehouse_from);
-                $warehouseTo = Warehouse::where('is_primary', true)->firstOrFail();
-
-                $warehouseFrom->increment('total_stock', $totalAdded);
-                $warehouseTo->decrement('total_stock', $totalAdded);
-            }
-
-            // --- STATUTS FINAUX ---
             $supplyStatus = $partial ? 'partially_validated' : 'validated';
             $orderStatus  = $partial ? 'partially_closed' : 'closed';
 
@@ -744,6 +784,7 @@ class SupplyController extends Controller
                 'closed_at' => $partial ? null : now(),
                 'updated_by' => $auth->id,
             ]);
+
 
             DB::commit();
 
@@ -797,6 +838,7 @@ class SupplyController extends Controller
     public function cancel_supply(Request $request, string $uuid)
     {
         $supply = Supply::findOrFail($uuid);
+        $purchaseOrder = $supply->purchaseOrder;
 
         // Validation
         $validated = $request->validate([
@@ -809,6 +851,11 @@ class SupplyController extends Controller
             'status'        => 'cancelled',
             'reason_cancel' => $validated['reason_cancel'],
             'cancelled_by'  => auth()->id(),
+        ]);
+
+        $purchaseOrder->update([
+            'status' => 'cancel',
+            'updated_by' => auth()->id(),
         ]);
 
         return response()->json([

@@ -470,12 +470,18 @@ class PurchaseOrderController extends Controller
      * @permission_desc Annuler une commande
      */
     public function cancel_orders(Request $request, string $uuid){
-        $validated = $request->validate([
-            'status' => 'required|in:cancel',
-        ], [
-            'status.required' => "Le statut est obligatoire.",
-            'status.in' => "Le statut fourni est invalide.",
+        $auth = auth()->user();
+        $request->validate([
+            'password' => 'required|string'
         ]);
+
+        // Vérification du mot de passe
+        if (!Hash::check($request->password, $auth->password)) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Mot de passe incorrect.'
+            ], 422);
+        }
         $order = PurchaseOrder::findOrFail($uuid);
         $order->update([
             'status' => 'cancel',
@@ -829,7 +835,7 @@ class PurchaseOrderController extends Controller
             // Validation des données
             $request->validate([
                 'type' => 'required|in:external,internal',
-                'supplier_uuid' => 'required_if:type,external|nullable|exists:suppliers,uuid',
+                'supplier_uuid' => 'nullable|exists:suppliers,uuid',
                 'warehouse_from' => 'required_if:type,internal|nullable|exists:warehouses,uuid',
                 'warehouse_to' => 'nullable|exists:warehouses,uuid',
                 'notes' => 'nullable|string',
@@ -837,7 +843,6 @@ class PurchaseOrderController extends Controller
                 'items.*.product_uuid' => 'required|exists:produits,uuid',
                 'items.*.quantity' => 'required|numeric|min:0.001',
             ], [
-                'supplier_uuid.required_if' => 'Vous devez sélectionner un fournisseur pour une commande externe.',
                 'warehouse_from.required_if' => 'Vous devez sélectionner l’entrepôt source pour une commande interne.',
                 'items.required' => 'Vous devez ajouter au moins un produit à la commande.',
             ]);

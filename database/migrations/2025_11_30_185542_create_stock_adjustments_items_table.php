@@ -11,24 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('stock_adjustments', function (Blueprint $table) {
+        Schema::create('stock_adjustments_items', function (Blueprint $table) {
             $table->uuid('uuid')->primary();
-            $table->string('reference')->unique();
-
-            $table->uuid('warehouse_uuid')->nullable()->constrained('warehouses')->nullOnDelete();
-
-            $table->string('notes');
-            $table->text('comment')->nullable();
-            $table->integer('action')->default(1);
-
+            $table->uuid('product_uuid')->constrained('produits')->nullOnDelete();
+            $table->integer('quantity')->default(1);
             $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
-
             $table->foreignId('updated_by')->nullable()->constrained('users')->nullOnDelete();
-
-            $table->foreignId('validated_by')->nullable()->constrained('users')->nullOnDelete();
-            $table->timestamp('validated_at')->nullable();
-            $table->string('status')->nullable()->default('pending');
-
             $table->timestamps();
             $table->softDeletes();
         });
@@ -39,6 +27,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('stock_adjustments');
+        Schema::dropIfExists('stock_adjustments_items');
     }
 };

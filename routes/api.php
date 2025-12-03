@@ -38,11 +38,14 @@ Route::middleware(['activity'])->group(function () {
         Route::apiResource('warehouses', WarehouseController::class);
         Route::patch('warehouses/{uuid}/is_active', [WarehouseController::class, 'update_status']);
         Route::get('get_all_warehouses_by_users', [WarehouseController::class, 'get_all_warehouses_by_users']);
+
+
         Route::apiResource('products', ProductController::class);
         Route::patch('products/{uuid}/is_active', [ProductController::class, 'update_status']);
         Route::post('products/{uuid}/update_products', [ProductController::class, 'update_products']);
         Route::get('warehouses/{uuid}/products', [WarehouseController::class, 'get_products_by_warehouse']);
         Route::get('warehouses/{uuid}/get_managers_by_warehouse', [WarehouseController::class, 'get_managers_by_warehouse']);
+        Route::get('/inventory/export/{warehouse_uuid}', [WarehouseController::class, 'export_inventory_by_warehouse']);
 
         Route::apiResource('subcategories', SubCategoryController::class);
         Route::patch('subcategories/{uuid}/is_active', [SubCategoryController::class, 'update_status']);
@@ -52,7 +55,6 @@ Route::middleware(['activity'])->group(function () {
         Route::patch('natures_warehouses/{uuid}/is_active', [WarehouseController::class, 'update_status']);
 
         Route::apiResource('orders', PurchaseOrderController::class);
-        Route::patch('orders/{uuid}/status', [PurchaseOrderController::class, 'update_status']);
         Route::post('orders/{uuid}/update_orders', [PurchaseOrderController::class, 'update_orders']);
         Route::patch('orders/{uuid}/cancel_orders', [PurchaseOrderController::class, 'cancel_orders']);
         Route::post('orders/{uuid}/rejected_orders', [PurchaseOrderController::class, 'rejected_orders']);
@@ -82,6 +84,12 @@ Route::middleware(['activity'])->group(function () {
         Route::patch('passations/{uuid}/reject_passations', [\App\Http\Controllers\PassationController::class, 'reject_passations']);
         Route::get('passations/{uuid}/print_passations', [\App\Http\Controllers\PassationController::class, 'print_passations']);
         Route::patch('passations/{uuid}/validate_passations_by_admin', [\App\Http\Controllers\PassationController::class, 'validate_passations_by_admin']);
+
+
+        Route::apiResource('stocks_adjustments', \App\Http\Controllers\StockAdjustmentController::class);
+        Route::patch('stocks_adjustments/{uuid}/cancel_stock_adjustment', [\App\Http\Controllers\StockAdjustmentController::class, 'cancel_stock_adjustment']);
+        Route::patch('stocks_adjustments/{uuid}/validated_stock_adjustment', [\App\Http\Controllers\StockAdjustmentController::class, 'validated_stock_adjustment']);
+        Route::get('stocks_adjustments/{uuid}/print_stock_adjustment', [\App\Http\Controllers\StockAdjustmentController::class, 'print_stock_adjustment']);
 
 
 
