@@ -39,6 +39,8 @@ class SupplyController extends Controller
 
         $perPage = $request->input('limit', 25);
         $page = $request->input('page', 1);
+        $start_date = Carbon::parse($request->input('start_date'))->startOfDay();
+        $end_date = Carbon::parse($request->input('end_date'))->endOfDay();
 
         $query = Supply::with([
             'items.product',
@@ -51,11 +53,15 @@ class SupplyController extends Controller
             'medias',
             'cancelled'
         ]);
+        if ($request->filled('type')) {
+            $query->where('type', $request->type);
+        }
+
         if ($request->filled('status')) {
             $query->where('status', $request->status);
         }
         if ($request->filled('start_date') && $request->filled('end_date')) {
-            $query->whereBetween('created_at', [$request->start_date, $request->end_date]);
+            $query->whereBetween('created_at', [$start_date, $end_date]);
         }
 
         if ($auth->hasRole('SUPER_ADMIN')) {
@@ -164,6 +170,7 @@ class SupplyController extends Controller
 
             'items' => 'required|array|min:1',
             'items.*.sell_price' => 'nullable|numeric|min:0',
+            'items.*.unit_price' => 'nullable|numeric|min:0',
             'items.*.product_uuid' => 'required|uuid',
             'items.*.quantity_supplied' => 'required|numeric|min:1',
             'items.*.purchase_price' => $supplyType === 'external' ? 'required|numeric|min:0' : 'nullable|numeric|min:0',
@@ -295,19 +302,17 @@ class SupplyController extends Controller
                 'updated_by' => $auth->id,
             ]);
 
-            // ================================
-            //     Création SupplyItems
-            // ================================
+
             foreach ($validated['items'] as $item) {
                 SupplyItem::create([
                     'supply_uuid' => $supply->uuid,
                     'product_uuid' => $item['product_uuid'],
                     'quantity_supplied' => $item['quantity_supplied'],
-                    'purchase_price' => $totalPrice,
+                    'purchase_price' => $item['purchase_price'],
                     'supplier_uuid'    => $item['supplier_uuid'] ?? null, // 🔹 Fournisseur spécifique à l'item
                     'notes' => $item['notes'] ?? null,
                     'created_by' => $auth->id,
-                    'unit_price' => $unitPrice,
+                    'unit_price' => $item['unit_price'],
                     'sell_price' => $item['sell_price']
                 ]);
             }
@@ -418,6 +423,7 @@ class SupplyController extends Controller
             'items.*.quantity_supplied' => 'required|numeric|min:1',
             'items.*.purchase_price' => $supplyType === 'external' ? 'required|numeric|min:0' : 'nullable|numeric|min:0',
             'items.*.notes' => 'nullable|string',
+            'items.*.unit_price' => 'nullable|numeric|min:0',
             'items.*.supplier_uuid' => $supplyType === 'external' ? 'required|uuid' : 'nullable|uuid',
             'scanned_documents' => 'nullable|array|min:1',
             'scanned_documents.*' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
@@ -507,7 +513,7 @@ class SupplyController extends Controller
                     'purchase_price' => $item['purchase_price'] ?? 0,
                     'supplier_uuid' => $item['supplier_uuid'] ?? null,
                     'notes' => $item['notes'] ?? null,
-                    'unit_price' => $item['quantity_supplied'] > 0 ? ($item['purchase_price'] / $item['quantity_supplied']) : 0,
+                    'unit_price' => $item['unit_price'] ?? 0,
                     'created_by' => $auth->id,
                     'sell_price' => $item['sell_price'] ?? 0,
                 ]);
@@ -784,6 +790,22 @@ class SupplyController extends Controller
                 'closed_at' => $partial ? null : now(),
                 'updated_by' => $auth->id,
             ]);
+            if ($purchaseOrder->parent_uuid) {
+                $parent = PurchaseOrder::find($purchaseOrder->parent_uuid);
+
+                if ($parent) {
+                    // Vérifier si tous les enfants sont fermés
+                    $allChildrenClosed = $parent->children()->whereNotIn('status', ['closed', 'partially_closed'])->count() === 0;
+
+                    $parentStatus = $allChildrenClosed ? 'closed' : 'partially_closed';
+
+                    $parent->update([
+                        'status' => $parentStatus,
+                        'closed_at' => $allChildrenClosed ? now() : null,
+                        'updated_by' => $auth->id,
+                    ]);
+                }
+            }
 
 
             DB::commit();

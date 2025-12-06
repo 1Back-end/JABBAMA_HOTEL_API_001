@@ -30,9 +30,14 @@ class PurchaseOrderController extends Controller
      */
     public function index(Request $request)
     {
+
         $auth = auth()->user();
         $perPage = $request->input('limit', 25);
         $page = $request->input('page', 1);
+
+        $start_date = Carbon::parse($request->input('start_date'))->startOfDay();
+        $end_date = Carbon::parse($request->input('end_date'))->endOfDay();
+
 
         $query = PurchaseOrder::with([
             'items.product',
@@ -56,7 +61,7 @@ class PurchaseOrderController extends Controller
 
         // 🔹 Filtrage par période
         if ($request->filled('start_date') && $request->filled('end_date')) {
-            $query->whereBetween('created_at', [$request->start_date, $request->end_date]);
+            $query->whereBetween('created_at', [$start_date, $end_date]);
         }
 
         // 🔹 Gestion des accès selon les rôles
@@ -253,7 +258,9 @@ class PurchaseOrderController extends Controller
                 'warehouse_from.natures',
                 'creator',
                 'updater',
-                'approver'
+                'approver',
+                'children',
+                'parent'
             ])
                 ->where('uuid', $uuid)
                 ->firstOrFail();
@@ -709,8 +716,15 @@ class PurchaseOrderController extends Controller
     {
         $auth = auth()->user();
 
-        // Récupération du parent
+        // 🔹 Récupération de la commande parent
         $parentOrder = PurchaseOrder::where('uuid', $uuid)->firstOrFail();
+
+        // 🔹 S'assurer que la commande parent est marquée comme parent
+        if (!$parentOrder->is_parent) {
+            $parentOrder->update([
+                'is_parent' => true
+            ]);
+        }
 
         try {
             DB::beginTransaction();
@@ -751,7 +765,7 @@ class PurchaseOrderController extends Controller
 
             // 🔹 Création du bon de commande enfant
             $childOrder = PurchaseOrder::create([
-                'parent_uuid' => $parentOrder->uuid,
+                'parent_uuid' => $parentOrder->uuid, // ✅ la clé primaire du parent ici
                 'type' => $request->type,
                 'status' => 'draft',
                 'supplier_uuid' => $supplierUuid,
@@ -761,14 +775,15 @@ class PurchaseOrderController extends Controller
                 'created_by' => $auth->id,
                 'updated_by' => $auth->id,
                 'added_by' => $auth->id,
-                'is_parent' => true
+                'is_parent' => false, // c'est bien un enfant
             ]);
 
             // 🔹 Ajout des produits
-            foreach ($request->items as $item) {
+            foreach ($request->items as $index => $item) {
                 $product = Product::find($item['product_uuid']);
                 $productName = $product ? $product->name : $item['product_uuid'];
 
+                // Vérification disponibilité pour commandes internes
                 if ($request->type === 'internal') {
                     $available = Product::where('uuid', $item['product_uuid'])
                         ->whereHas('points', function ($q) use ($warehouseFrom) {
@@ -782,6 +797,25 @@ class PurchaseOrderController extends Controller
                     }
                 }
 
+                // Vérifier que le produit existe dans la commande parent
+                $parentItem = PurchaseOrderItem::where('purchase_order_uuid', $parentOrder->uuid)
+                    ->where('product_uuid', $item['product_uuid'])
+                    ->first();
+
+                if (!$parentItem) {
+                    return response()->json([
+                        'message' => "Le produit {$productName} n'existe pas dans la commande parent."
+                    ], 422);
+                }
+
+                // Vérifier la quantité restante
+                if ($item['quantity'] > $parentItem->quantity_remaining) {
+                    return response()->json([
+                        'message' => "La quantité demandée pour le produit {$productName} ({$item['quantity']}) dépasse la quantité restante dans la commande parent ({$parentItem->quantity_remaining})."
+                    ], 422);
+                }
+
+                // Création de l'article enfant
                 $childOrder->items()->create([
                     'product_uuid' => $item['product_uuid'],
                     'quantity' => $item['quantity'],
@@ -798,7 +832,7 @@ class PurchaseOrderController extends Controller
 
             return response()->json([
                 'message' => $message,
-                'order' => $childOrder->load(['items'])
+                'order' => $childOrder->load(['items', 'parent'])
             ], 201);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -816,65 +850,59 @@ class PurchaseOrderController extends Controller
         }
     }
 
+
     /**
      * Display a listing of the resource.
      * @permission PurchaseOrderController::update_parents_orders
      * @permission_desc Modification d’une commande enfant à partir d’une commande parent
      */
-    public function update_parents_orders(Request $request, $uuid)
+    public function update_parents_orders(Request $request, string $uuid)
     {
         $auth = auth()->user();
 
-        try {
-            // Récupérer la commande
-            $order = PurchaseOrder::where('uuid', $uuid)->first();
-            if (!$order) {
-                return response()->json(['message' => 'Commande introuvable.'], 404);
-            }
+        // 🔹 Récupérer la commande enfant à mettre à jour
+        $order = PurchaseOrder::where('uuid', $uuid)->firstOrFail();
 
-            // Validation des données
+        // 🔹 Récupérer le parent si c'est un enfant
+        $parentOrder = $order->parent_uuid ? PurchaseOrder::where('uuid', $order->parent_uuid)->first() : null;
+
+        try {
+            DB::beginTransaction();
+
+            // 🔹 Validation des données
             $request->validate([
                 'type' => 'required|in:external,internal',
                 'supplier_uuid' => 'nullable|exists:suppliers,uuid',
-                'warehouse_from' => 'required_if:type,internal|nullable|exists:warehouses,uuid',
-                'warehouse_to' => 'nullable|exists:warehouses,uuid',
+                'warehouse_from' => 'nullable|exists:warehouses,uuid',
                 'notes' => 'nullable|string',
                 'items' => 'required|array|min:1',
                 'items.*.product_uuid' => 'required|exists:produits,uuid',
                 'items.*.quantity' => 'required|numeric|min:0.001',
             ], [
-                'warehouse_from.required_if' => 'Vous devez sélectionner l’entrepôt source pour une commande interne.',
                 'items.required' => 'Vous devez ajouter au moins un produit à la commande.',
             ]);
 
+            // 🔹 Préparer entrepôts et fournisseur
             $supplierUuid = $request->type === 'external' ? $request->supplier_uuid : null;
             $warehouseFromUuid = null;
             $warehouseToUuid = null;
 
-            // Commande externe
             if ($request->type === 'internal') {
-                // Entrepôt source
-                $warehouseFrom = Warehouse::find($request->warehouse_from);
-                if (!$warehouseFrom) {
-                    return response()->json(['message' => 'Entrepôt source introuvable.'], 404);
-                }
+                $warehouseFrom = Warehouse::findOrFail($request->warehouse_from);
 
-                // Vérifier que l'utilisateur est manager
                 $isManager = $warehouseFrom->managers()->where('user_id', $auth->id)->exists();
                 if (!$isManager) {
                     return response()->json([
-                        'message' => 'Vous ne pouvez créer une commande interne que depuis un entrepôt que vous gérez.'
+                        'message' => 'Vous ne pouvez mettre à jour une commande interne que depuis un entrepôt que vous gérez.'
                     ], 403);
                 }
 
-                // Entrepôt destination = entrepôt principal
                 $warehouseTo = Warehouse::where('is_primary', true)->firstOrFail();
-
                 $warehouseFromUuid = $warehouseFrom->uuid;
                 $warehouseToUuid = $warehouseTo->uuid;
             }
 
-            // Mise à jour de la commande
+            // 🔹 Mise à jour de la commande enfant
             $order->update([
                 'type' => $request->type,
                 'supplier_uuid' => $supplierUuid,
@@ -882,19 +910,19 @@ class PurchaseOrderController extends Controller
                 'warehouse_to' => $warehouseToUuid,
                 'notes' => $request->notes,
                 'updated_by' => $auth->id,
-                'parent_uuid' => $order->uuid,
-                'is_parent' => true
+                'is_parent' => false, // reste un enfant
+                'parent_uuid' => $parentOrder ? $parentOrder->uuid : null,
+                'status' => 'draft',
             ]);
 
-            // Supprimer les anciens articles et recréer les nouveaux (pour tous les types)
+            // 🔹 Supprimer les anciens articles et recréer les nouveaux
             $order->items()->delete();
 
             foreach ($request->items as $item) {
-                // Récupérer le produit pour le nom
                 $product = Product::find($item['product_uuid']);
                 $productName = $product ? $product->name : $item['product_uuid'];
 
-                // Pour les commandes internes, vérifier la disponibilité dans l'entrepôt
+                // Vérification disponibilité pour commandes internes
                 if ($request->type === 'internal') {
                     $available = Product::where('uuid', $item['product_uuid'])
                         ->whereHas('points', function ($q) use ($warehouseFrom) {
@@ -903,8 +931,27 @@ class PurchaseOrderController extends Controller
 
                     if (!$available) {
                         return response()->json([
-                            'message' => "Le produit {$productName} n'est pas disponible dans l'entrepôt source."
+                            'message' => "Le produit {$productName} n'est pas disponible dans l'entrepôt."
                         ], 403);
+                    }
+                }
+
+                // Vérifier que le produit existe dans la commande parent
+                if ($parentOrder) {
+                    $parentItem = PurchaseOrderItem::where('purchase_order_uuid', $parentOrder->uuid)
+                        ->where('product_uuid', $item['product_uuid'])
+                        ->first();
+
+                    if (!$parentItem) {
+                        return response()->json([
+                            'message' => "Le produit {$productName} n'existe pas dans la commande parent."
+                        ], 422);
+                    }
+
+                    if ($item['quantity'] > $parentItem->quantity_remaining) {
+                        return response()->json([
+                            'message' => "La quantité demandée pour le produit {$productName} ({$item['quantity']}) dépasse la quantité restante dans la commande parent ({$parentItem->quantity_remaining})."
+                        ], 422);
                     }
                 }
 
@@ -916,13 +963,15 @@ class PurchaseOrderController extends Controller
                 ]);
             }
 
+            DB::commit();
+
             $message = $request->type === 'external'
-                ? "Commande externe mise à jour avec succès."
-                : "Commande interne mise à jour avec succès.";
+                ? "Commande externe enfant mise à jour avec succès."
+                : "Commande interne enfant mise à jour avec succès.";
 
             return response()->json([
                 'message' => $message,
-                'order' => $order->load(['items'])
+                'order' => $order->load(['items', 'parent'])
             ], 200);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -932,13 +981,13 @@ class PurchaseOrderController extends Controller
             ], 422);
 
         } catch (\Exception $e) {
+            DB::rollBack();
             return response()->json([
                 'message' => 'Une erreur est survenue lors de la mise à jour de la commande.',
                 'error' => $e->getMessage()
             ], 500);
         }
     }
-
 
     /**
      * Display a listing of the resource.

@@ -20,7 +20,6 @@ class SuppliesExport implements FromCollection, WithHeadings
             'validator',
             'rejector',
             'partially_validated',
-            'suppliers.supplier'
         ])->get();
 
         $data = [];
@@ -29,9 +28,6 @@ class SuppliesExport implements FromCollection, WithHeadings
             foreach ($supply->items as $item) {
 
                 $data[] = [
-
-                    'uuid' => $supply->uuid,
-
                     'Commande' => $supply->purchaseOrder->reference,
 
                     // 1. Reference approvisionnement
@@ -60,11 +56,6 @@ class SuppliesExport implements FromCollection, WithHeadings
 
                     // 8. Note
                     'Note' => $item->note ?? '---',
-
-                    // 9. Fournisseur
-                    'Fournisseur(s)' => $supply->purchaseOrder->type === 'external'
-                        ? ($supply->suppliers->first()->supplier->company_name ?? '---')
-                        : '---',
 
                     // 10. Entrepôt source
                     'Entrepôt source' => $supply->purchaseOrder->type === 'internal'
@@ -109,7 +100,6 @@ class SuppliesExport implements FromCollection, WithHeadings
     public function headings(): array
     {
         return [
-            'uuid',
             'Commande',
             'Reference approvisionnement',
             'Type',
@@ -120,8 +110,6 @@ class SuppliesExport implements FromCollection, WithHeadings
             'Qté approvisionnée',
             'Prix d\'achat',
             'Note',
-
-            'Fournisseur(s)',
 
             'Entrepôt source',
             'Entrepôt destination',

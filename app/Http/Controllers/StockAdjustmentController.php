@@ -12,7 +12,9 @@ use App\Models\StockAdjustmentItem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-
+/**
+ * @permission_category Gestion des régularisations de stocks
+ */
 class StockAdjustmentController extends Controller
 {
     /**

@@ -134,26 +134,32 @@ class PassationController extends Controller
             ], 404);
         }
 
-        $products = $warehouse->products;
+        // 🔥 Récupérer les produits depuis produit_point (pivot)
+        $products = $warehouse->products()
+            ->wherePivot('is_active', true)
+            ->get();
+
+        // 🔥 Total stock = somme des quantités de product_point
+        $totalStock = $products->sum(fn ($p) => $p->pivot->quantity);
 
         DB::beginTransaction();
         try {
 
-            // 1️⃣ Créer une seule passation
+            // 1️⃣ Créer la passation
             $passation = Passation::create([
                 'agent_from_id' => $auth->id,
                 'warehouse_uuid' => $warehouse->uuid,
                 'status' => 'pending',
-                'quantity_sent' => $warehouse->total_stock,
+                'quantity_sent' => $totalStock,
                 'created_by' => $auth->id,
             ]);
 
-            // 2️⃣ Ajouter les produits
+            // 2️⃣ Ajouter les produits de product_point
             foreach ($products as $product) {
                 PassationItem::create([
                     'passation_uuid' => $passation->uuid,
                     'product_uuid' => $product->uuid,
-                    'quantity_sent' => $product->stock_quantity,
+                    'quantity_sent' => $product->pivot->quantity, // quantité réelle de produit_point
                     'quantity_counted' => 0,
                     'difference' => 0,
                     'created_by' => $auth->id,
@@ -161,10 +167,10 @@ class PassationController extends Controller
                 ]);
             }
 
-            // 3️⃣ Lier tous les managers dans la table pivot
+            // 3️⃣ Lier les managers à la passation
             foreach ($managers as $manager) {
-                if($manager->id == $auth->id){
-                    continue;
+                if ($manager->id == $auth->id) {
+                    continue; // ne pas réassigner à l’agent créateur
                 }
 
                 DB::table('passation_managers')->insert([
@@ -195,116 +201,77 @@ class PassationController extends Controller
         }
     }
 
-
-
-
-        /**
+    /**
          * Display a listing of the resource.
          * @permission PassationController::update
          * @permission_desc Modification d'une passation de stocks
          */
-        public function update(Request $request, $uuid)
-        {
-            $auth = auth()->user();
+    public function update(Request $request, string $uuid)
+    {
+        $auth = auth()->user();
 
-            // Validation
-            $validated = $request->validate([
-                'warehouse_uuid' => 'required|exists:warehouses,uuid',
+        // Validation
+        $validated = $request->validate([
+            'warehouse_uuid' => 'required|exists:warehouses,uuid',
+        ]);
+
+        $passation = Passation::where('uuid', $uuid)->firstOrFail();
+
+        // Entrepôt ciblé
+        $warehouse = Warehouse::where('uuid', $validated['warehouse_uuid'])->firstOrFail();
+
+        // Récupérer les produits du pivot produit_point
+        $products = $warehouse->products()
+            ->wherePivot('is_active', true)
+            ->get();
+
+        // Nouveau total stock
+        $totalStock = $products->sum(fn ($p) => $p->pivot->quantity);
+
+        DB::beginTransaction();
+        try {
+
+            // 1️⃣ Mise à jour de la passation
+            $passation->update([
+                'warehouse_uuid' => $warehouse->uuid,
+                'quantity_sent' => $totalStock,
+                'updated_by' => $auth->id,
             ]);
 
-            $passation = Passation::where('uuid', $uuid)->firstOrFail();
+            // 2️⃣ Supprimer tous les anciens items pour recréer proprement
+            PassationItem::where('passation_uuid', $passation->uuid)->delete();
 
-            $warehouse = Warehouse::where('uuid', $validated['warehouse_uuid'])->firstOrFail();
-            $managers = $warehouse->managers;
-            $products = $warehouse->products;
-
-            if ($managers->isEmpty()) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Aucun manager trouvé pour cet entrepôt.'
-                ], 404);
-            }
-
-            DB::beginTransaction();
-
-            try {
-                /**
-                 * 1️⃣ Supprimer les anciens items
-                 */
-                PassationItem::where('passation_uuid', $passation->uuid)->delete();
-
-                /**
-                 * 2️⃣ Supprimer les anciens managers
-                 */
-                DB::table('passation_managers')
-                    ->where('passation_uuid', $passation->uuid)
-                    ->delete();
-
-                /**
-                 * 3️⃣ Mettre à jour la passation
-                 */
-                $passation->update([
-                    'warehouse_uuid' => $warehouse->uuid,
-                    'quantity_sent' => $warehouse->total_stock,
+            // 3️⃣ Recréer les items avec les données actualisées
+            foreach ($products as $product) {
+                PassationItem::create([
+                    'passation_uuid' => $passation->uuid,
+                    'product_uuid' => $product->uuid,
+                    'quantity_sent' => $product->pivot->quantity,
+                    'quantity_counted' => 0,
+                    'difference' => 0,
                     'status' => 'pending',
-                    'updated_by' => $auth->id,
+                    'created_by' => $auth->id,
                 ]);
-
-                /**
-                 * 4️⃣ Recréer tous les nouveaux items
-                 */
-                foreach ($products as $product) {
-                    PassationItem::create([
-                        'passation_uuid' => $passation->uuid,
-                        'product_uuid' => $product->uuid,
-                        'quantity_sent' => $product->stock_quantity,
-                        'quantity_counted' => 0,
-                        'difference' => 0,
-                        'status' => 'pending',
-                        'created_by' => $auth->id,
-                    ]);
-                }
-
-                /**
-                 * 5️⃣ Réassigner les managers
-                 */
-                foreach ($managers as $manager) {
-
-                    // éviter d'ajouter le créateur si c’est aussi un manager
-                    if ($manager->id == $auth->id) {
-                        continue;
-                    }
-
-                    DB::table('passation_managers')->insert([
-                        'uuid' => \Str::uuid(),
-                        'passation_uuid' => $passation->uuid,
-                        'manager_id' => $manager->id,
-                        'status' => 'pending',
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
-                }
-
-                DB::commit();
-
-                return response()->json([
-                    'status' => 'success',
-                    'message' => 'Passation mise à jour avec succès.',
-                    'passation' => $passation->load('items', 'managers', 'warehouse'),
-                ], 200);
-
-            } catch (\Exception $e) {
-
-                DB::rollBack();
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Erreur lors de la mise à jour de la passation.',
-                    'details' => $e->getMessage(),
-                ], 500);
             }
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Passation mise à jour avec succès.',
+                'passation' => $passation->load('items', 'warehouse'),
+            ], 200);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Erreur lors de la mise à jour de la passation.',
+                'details' => $e->getMessage(),
+            ], 500);
         }
-
-
+    }
     /**
      * Display a listing of the resource.
      * @permission PassationController::show
@@ -348,12 +315,18 @@ class PassationController extends Controller
      */
     public function cancel_passations(Request $request, string $uuid){
         $auth = auth()->user();
-        $validated = $request->validate([
-            'status' => 'required|in:cancel',
-        ], [
-            'status.required' => "Le statut est obligatoire.",
-            'status.in' => "Le statut fourni est invalide.",
+
+        $request->validate([
+            'password' => 'required|string'
         ]);
+
+        // Vérification du mot de passe
+        if (!Hash::check($request->password, $auth->password)) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Mot de passe incorrect.'
+            ], 422);
+        }
         $passation = Passation::findOrFail($uuid);
         $passation->update([
             'status' => 'cancel',
@@ -450,10 +423,6 @@ class PassationController extends Controller
             ], 500);
         }
     }
-
-
-
-
 
     /**
      * Display a listing of the resource.

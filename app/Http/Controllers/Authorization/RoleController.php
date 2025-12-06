@@ -14,6 +14,9 @@ use Illuminate\Support\Facades\DB;
 use Log;
 use Symfony\Component\HttpFoundation\Response;
 
+/**
+ * @permission_category Gestion des roles
+ */
 class RoleController extends Controller
 {
     /**

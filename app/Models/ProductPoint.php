@@ -38,11 +38,11 @@ class ProductPoint extends Pivot
 
     public function creator()
     {
-        return $this->belongsTo(User::class, 'created_by', 'uuid');
+        return $this->belongsTo(User::class, 'created_by', 'id');
     }
     public function updater()
     {
-        return $this->belongsTo(User::class, 'updated_by', 'uuid');
+        return $this->belongsTo(User::class, 'updated_by', 'id');
     }
 
 

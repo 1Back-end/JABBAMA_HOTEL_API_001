@@ -1,6 +1,7 @@
 <?php
 use App\Http\Controllers\Admin\UserController;
 
+use App\Http\Controllers\Authorization\PermissionController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\SupplyController;
 use App\Http\Controllers\UnitController;
@@ -22,6 +23,8 @@ Route::middleware(['activity'])->group(function () {
     Route::middleware(['auth:sanctum', 'user.change_password', 'check.permission'])->group(function () {
 
         Route::get("/get_users_where_role_is_gestionnaire_stock",[UserController::class,'get_users_where_role_is_gestionnaire_stock']);
+        Route::get('/permissions_by_category', [PermissionController::class, 'permissionsByCategory']);
+
 
         Route::apiResource("suppliers", SupplierController::class);
         Route::patch('suppliers/{uuid}/is_active', [SupplierController::class, 'update_status']);
@@ -45,7 +48,9 @@ Route::middleware(['activity'])->group(function () {
         Route::post('products/{uuid}/update_products', [ProductController::class, 'update_products']);
         Route::get('warehouses/{uuid}/products', [WarehouseController::class, 'get_products_by_warehouse']);
         Route::get('warehouses/{uuid}/get_managers_by_warehouse', [WarehouseController::class, 'get_managers_by_warehouse']);
-        Route::get('/inventory/export/{warehouse_uuid}', [WarehouseController::class, 'export_inventory_by_warehouse']);
+        Route::get('/warehouses/{pointUuid}/inventory/export', [WarehouseController::class, 'export_inventory_by_warehouse']);
+        Route::get('/warehouses/{point_uuid}/inventory/print', [WarehouseController::class, 'print_inventory_by_warehouse']);
+
 
         Route::apiResource('subcategories', SubCategoryController::class);
         Route::patch('subcategories/{uuid}/is_active', [SubCategoryController::class, 'update_status']);

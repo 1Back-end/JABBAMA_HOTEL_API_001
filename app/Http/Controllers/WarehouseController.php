@@ -2,12 +2,16 @@
 
 namespace App\Http\Controllers;
 
+use App\Exports\InventoryByPointExport;
 use App\Exports\InventoryExport;
 use App\Exports\PurchaseOrdersExport;
+use App\Models\PdfDocument;
+use App\Models\ProductPoint;
 use App\Models\Warehouse;
 use App\Models\WarehouseManager;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -348,6 +352,7 @@ class WarehouseController extends Controller
         ]);
     }
 
+
     public function get_products_by_warehouse(string $uuid, Request $request)
     {
         $search = $request->query('search', '');
@@ -410,15 +415,15 @@ class WarehouseController extends Controller
         ]);
     }
 
-    public function export_inventory_by_warehouse(Request $request)
+    /**
+     * Display a listing of the resource.
+     * @permission WarehouseController::export_inventory_by_warehouse
+     * @permission_desc Exporter l'inventaire d'un entrepôt en Excel
+     */
+    public function export_inventory_by_warehouse(Request $request,$pointUuid)
     {
-        $request->validate([
-            'warehouse_uuid' => 'required|exists:warehouses,uuid',
-        ]);
-        $warehouseUuid = $request->input('warehouse_uuid');
-        $fileName = 'warehouses_inventory-' . Carbon::now()->format('Y-m-d_H-i-s') . '.xlsx';
-
-        Excel::store(new InventoryExport($warehouseUuid), $fileName, 'exportinventory');
+        $fileName = 'inventory_warehouse' . Carbon::now()->format('Ymd_His') . '.xlsx';
+        Excel::store(new InventoryByPointExport($pointUuid), $fileName, 'exportinventory');
 
         return response()->json([
             "message" => "Exportation des données effectuée avec succès",
@@ -427,7 +432,84 @@ class WarehouseController extends Controller
         ]);
 
     }
-    
+
+    /**
+     * Display a listing of the resource.
+     * @permission WarehouseController::print_inventory_by_warehouse
+     * @permission_desc Imprimer l'inventaire de stocks d'un entrepôt en PDF
+     */
+    public function print_inventory_by_warehouse(Request $request, string $point_uuid)
+    {
+        $auth = auth()->user();
+
+        try {
+            DB::beginTransaction();
+
+            // ✅ Récupération des stocks de l'entrepôt
+            $product_points = ProductPoint::with([
+                'product',
+                'point',
+                'creator',
+                'updater'
+            ])
+                ->where('point_uuid', $point_uuid)
+                ->get();
+
+            if ($product_points->isEmpty()) {
+                return response()->json([
+                    'message' => 'Aucun article trouvé pour cet entrepôt'
+                ], 404);
+            }
+
+            // ✅ Entrepôt
+            $warehouse = $product_points->first()->point;
+
+            $fileName   = strtoupper('INVENTORY-WAREHOUSE-' . now()->format('YmdHis') . '.pdf');
+            $folderPath = 'storage/inventory-warehouse/' . $warehouse->uuid;
+            $filePath   = $folderPath . '/' . $fileName;
+
+            if (!is_dir($folderPath)) {
+                mkdir($folderPath, 0755, true);
+            }
+
+            $data = [
+                'warehouse'      => $warehouse,
+                'product_points' => $product_points,
+            ];
+            $footer = 'pdfs.reports.factures.footer';
+
+            save_browser_shot_pdf(
+                view: 'pdfs.inventory-warehouse.inventory-warehouse',
+                data: $data,
+                folderPath: $folderPath,
+                path: $filePath,
+                margins: [10, 10, 10, 10],
+                footer: $footer
+            );
+
+            DB::commit();
+            $pdfContent = file_get_contents($filePath);
+            $base64     = base64_encode($pdfContent);
+
+            return response()->json([
+                'data'     => $data,
+                'base64'   => $base64,
+                'url'      => $filePath,
+                'filename' => $fileName,
+            ], 200);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Erreur lors de la génération du PDF',
+                'details' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+
 
 
 

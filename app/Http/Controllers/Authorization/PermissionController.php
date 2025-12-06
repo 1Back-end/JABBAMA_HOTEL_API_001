@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Authorization;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Authorization\PermissionRequest;
 use App\Models\Permission;
+use App\Models\PermissionCategory;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -12,6 +13,9 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
+/**
+ * @permission_category Gestion des permissions
+ */
 class PermissionController extends Controller
 {
     /**
@@ -53,6 +57,37 @@ class PermissionController extends Controller
         ]);
     }
 
+
+    /**
+     * @return JsonResponse
+     *
+     * @permission PermissionController::permissionsByCategory
+     * @permission_desc Afficher les permissions par catégories
+     */
+    public function permissionsByCategory(Request $request): JsonResponse
+    {
+        $search = $request->input('search');
+
+        $categories = PermissionCategory::where('libelle', '!=', 'Autres')
+            ->with(['permissions' => function($q) use ($search) {
+                if ($search) {
+                    $q->where(function($query) use ($search) {
+                        $query->where('name', 'like', "%{$search}%")
+                            ->orWhere('description', 'like', "%{$search}%");
+                    });
+                }
+                $q->orderBy('name', 'asc');
+            }])
+            ->when($search, function($q) use ($search) {
+                $q->where('libelle', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%");
+            })
+            ->get();
+
+        return response()->json([
+            'categories' => $categories,
+        ]);
+    }
 
     /**
      * @param PermissionRequest $request

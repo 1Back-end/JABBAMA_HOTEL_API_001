@@ -33,17 +33,40 @@ class ProductController extends Controller
             'subCategories',
             'medias',
             'points' => function ($q) use ($auth, $request) {
-                // Filtrer par entrepôt si l'utilisateur n'est pas SUPER_ADMIN
-                if (!$auth->hasRole('SUPER_ADMIN')) {
-                    $q->whereHas('managers', fn($m) => $m->where('user_id', $auth->id));
+
+                // 🔹 SUPER_ADMIN voit tout
+                if (!$auth->hasAnyRole(['SUPER_ADMIN', 'GESTIONNAIRE_STOCK'])) {
+                    $q->whereHas('managers', function ($m) use ($auth) {
+                        $m->where('warehouse_managers.user_id', $auth->id);
+                    });
                 }
 
-                // Filtrer par point_uuid si fourni
                 if ($pointUuid = $request->input('point_uuid')) {
                     $q->where('warehouses.uuid', $pointUuid);
                 }
             }
         ]);
+
+        // 🔹 Limiter les produits réellement affichés
+        if (!$auth->hasAnyRole(['SUPER_ADMIN', 'GESTIONNAIRE_STOCK'])) {
+            $query->whereHas('points', function ($q) use ($auth, $request) {
+
+                // Filtre managers
+                $q->whereHas('managers', function ($m) use ($auth) {
+                    $m->where('warehouse_managers.user_id', $auth->id);
+                });
+
+                // Filtre point_uuid
+                if ($pointUuid = $request->input('point_uuid')) {
+                    $q->where('warehouses.uuid', $pointUuid);
+                }
+            });
+        }
+        if ($pointUuid = $request->input('point_uuid')) {
+            $query->whereHas('points', function ($q) use ($pointUuid) {
+                $q->where('warehouses.uuid', $pointUuid);
+            });
+        }
 
         // 🔹 Filtre catégorie
         if ($request->filled('category_uuid')) {
@@ -55,40 +78,14 @@ class ProductController extends Controller
             $query->where('unit_uuid', $request->unit_uuid);
         }
 
-        // 🔹 Filtrer par entrepôt si l’utilisateur n’est pas SUPER_ADMIN
-        if (!$auth->hasRole('SUPER_ADMIN')) {
-            $query->whereHas('points', function ($q) use ($auth, $request) {
-                $q->whereHas('managers', fn($m) => $m->where('user_id', $auth->id));
-
-                // Filtrer par point_uuid si fourni
-                if ($pointUuid = $request->input('point_uuid')) {
-                    $q->where('uuid', $pointUuid);
-                }
-            });
-        }
-
         // 🔹 Recherche globale
         if ($search = trim($request->input('search'))) {
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
                     ->orWhere('code', 'like', "%{$search}%")
                     ->orWhere('description', 'like', "%{$search}%")
-                    ->orWhere('purchase_price', 'like', "%{$search}%")
-                    ->orWhere('sale_price', 'like', "%{$search}%")
-                    ->orWhere('stock_quantity', 'like', "%{$search}%")
-                    ->orWhere('minimum_stock', 'like', "%{$search}%")
-                    ->orWhereHas('unitMeasure', function ($q) use ($search) {
-                        $q->where('name', 'like', "%{$search}%")
-                            ->orWhere('code', 'like', "%{$search}%")
-                            ->orWhere('abbreviation', 'like', "%{$search}%")
-                            ->orWhere('description', 'like', "%{$search}%");
-                    })
-                    ->orWhereHas('category', function ($q) use ($search) {
-                        $q->where('name', 'like', "%{$search}%")
-                            ->orWhere('code', 'like', "%{$search}%")
-                            ->orWhere('abbreviation', 'like', "%{$search}%")
-                            ->orWhere('description', 'like', "%{$search}%");
-                    });
+                    ->orWhereHas('unitMeasure', fn($u) => $u->where('name', 'like', "%{$search}%"))
+                    ->orWhereHas('category', fn($c) => $c->where('name', 'like', "%{$search}%"));
             });
         }
 
@@ -101,8 +98,6 @@ class ProductController extends Controller
             'total'        => $products->total(),
         ]);
     }
-
-
 
     /**
      * Display a listing of the resource.
