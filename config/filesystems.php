@@ -82,6 +82,12 @@ return [
             'url'    => env('APP_URL') . '/storage/export-inventory',
             'visibility' => 'public',
         ],
+        'exportwarehouse' => [
+            'driver' => 'local',
+            'root'   => storage_path('app/public/export-warehouse'),
+            'url'    => env('APP_URL') . '/storage/export-warehouse',
+            'visibility' => 'public',
+        ],
 
 
 

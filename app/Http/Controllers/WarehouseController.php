@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\DTO\WarehouseFilterData;
 use App\Exports\InventoryByPointExport;
 use App\Exports\InventoryExport;
 use App\Exports\PurchaseOrdersExport;
+use App\Exports\WarehousesExport;
 use App\Models\PdfDocument;
 use App\Models\ProductPoint;
 use App\Models\Warehouse;
@@ -42,20 +44,30 @@ class WarehouseController extends Controller
             });
         }
 
-        // ✅ Filtre is_active
         if ($request->has('is_active')) {
             $query->where('is_active', filter_var($request->input('is_active'), FILTER_VALIDATE_BOOLEAN));
         }
 
-        // ✅ Search
         if ($search = trim($request->input('search'))) {
             $query->where(function ($q) use ($search) {
                 $q->where('ref', 'like', "%{$search}%")
                     ->orWhere('name', 'like', "%{$search}%")
+                    ->orWhere('uuid', 'like', "%{$search}%")
                     ->orWhere('stock_type', 'like', "%{$search}%")
                     ->orWhere('address', 'like', "%{$search}%")
                     ->orWhere('total_stock', 'total_stock', "%{$search}%");
-            });
+            })
+                ->orWhereHas('natures', function ($qw) use ($search) {
+                    $qw->where('code', 'like', "%{$search}%")
+                        ->orWhere('name', 'like', "%{$search}%")
+                        ->orWhere('abbreviation', 'like', "%{$search}%")
+                        ->orWhere('is_active', 'like', "%{$search}%")
+                        ->orWhere('uuid', 'like', "%{$search}%");
+                })
+                ->orWhereHas('managers', function ($ma) use ($search) {
+                    $ma->where('nom_utilisateur', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%");
+                });
         }
 
         $warehouses = $query->latest()->paginate($perPage, ['*'], 'page', $page);
@@ -422,7 +434,9 @@ class WarehouseController extends Controller
      */
     public function export_inventory_by_warehouse(Request $request,$pointUuid)
     {
-        $fileName = 'inventory_warehouse' . Carbon::now()->format('Ymd_His') . '.xlsx';
+        $point = Warehouse::where('uuid', $pointUuid)->firstOrFail();
+        $warehouseName = strtoupper($point->name);
+        $fileName = 'INVENTAIRE_' . $warehouseName . '_' . now()->format('Ymd_His') . '.xlsx';
         Excel::store(new InventoryByPointExport($pointUuid), $fileName, 'exportinventory');
 
         return response()->json([
@@ -507,6 +521,22 @@ class WarehouseController extends Controller
                 'details' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    public function export_warehouse(Request $request)
+    {
+        $filter = WarehouseFilterData::fromRequestWarehouse($request);
+        $filename = 'LISTE-DES-ENTREPOTS-' . now()->format('dmY') . '.xlsx';
+
+        $warehouseQuery = warehouse_filter($filter, false);
+
+        Excel::store(new WarehousesExport($warehouseQuery), $filename, 'exportwarehouse');
+        return response()->json([
+            "message" => "Exportation des données effectuée avec succès",
+            "filename" => $filename,
+            "url" => Storage::disk('exportwarehouse')->url($filename)
+        ]);
+
     }
 
 

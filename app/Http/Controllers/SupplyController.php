@@ -2,6 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\DTO\PurchaseOrderFilterData;
+use App\DTO\SupplyFilterData;
+use App\Exports\PurchaseOrdersExport;
 use App\Exports\SuppliersExport;
 use App\Exports\SuppliesExport;
 use App\Models\PdfDocument;
@@ -55,6 +58,9 @@ class SupplyController extends Controller
         ]);
         if ($request->filled('type')) {
             $query->where('type', $request->type);
+        }
+        if ($request->filled('purchase_order_uuid')) {
+            $query->where('purchase_order_uuid', $request->purchase_order_uuid);
         }
 
         if ($request->filled('status')) {
@@ -779,34 +785,44 @@ class SupplyController extends Controller
             $supplyStatus = $partial ? 'partially_validated' : 'validated';
             $orderStatus  = $partial ? 'partially_closed' : 'closed';
 
+            // 🔹 Mise à jour du supply
             $supply->update([
                 'status' => $supplyStatus,
                 'validated_by' => $auth->id,
                 'updated_by' => $auth->id,
             ]);
 
+            // 🔹 Vérification si la commande peut être fermée
+            $canClose = $purchaseOrder->items()->sum('quantity_remaining') === 0;
+            $orderStatus = $canClose ? 'closed' : ($partial ? 'partially_closed' : $purchaseOrder->status);
+
             $purchaseOrder->update([
                 'status' => $orderStatus,
-                'closed_at' => $partial ? null : now(),
+                'closed_at' => $canClose ? now() : null,
                 'updated_by' => $auth->id,
             ]);
+
+            // 🔹 Vérifier parent si existe
             if ($purchaseOrder->parent_uuid) {
                 $parent = PurchaseOrder::find($purchaseOrder->parent_uuid);
 
                 if ($parent) {
-                    // Vérifier si tous les enfants sont fermés
-                    $allChildrenClosed = $parent->children()->whereNotIn('status', ['closed', 'partially_closed'])->count() === 0;
+                    // Tous les enfants fermés et toutes les quantités utilisées ?
+                    $allChildrenClosed = $parent->children()
+                            ->whereNotIn('status', ['closed', 'partially_closed'])
+                            ->count() === 0;
 
-                    $parentStatus = $allChildrenClosed ? 'closed' : 'partially_closed';
+                    $allQuantitiesUsed = $parent->items()->sum('quantity_remaining') === 0;
+
+                    $parentStatus = ($allChildrenClosed && $allQuantitiesUsed) ? 'closed' : 'partially_closed';
 
                     $parent->update([
                         'status' => $parentStatus,
-                        'closed_at' => $allChildrenClosed ? now() : null,
+                        'closed_at' => ($allChildrenClosed && $allQuantitiesUsed) ? now() : null,
                         'updated_by' => $auth->id,
                     ]);
                 }
             }
-
 
             DB::commit();
 
@@ -876,7 +892,7 @@ class SupplyController extends Controller
         ]);
 
         $purchaseOrder->update([
-            'status' => 'cancel',
+            'status' => 'rejected',
             'updated_by' => auth()->id(),
         ]);
 
@@ -1122,20 +1138,21 @@ class SupplyController extends Controller
      * @permission SupplyController::export_supply
      * @permission_desc Exporter les approvisionnements au format Excel
      */
-    public function export_supply()
+    public function export_supply(Request $request)
     {
-        // Remplacer les espaces et ':' par des '_'
-        $fileName = 'supply-' . Carbon::now()->format('Y-m-d_H-i-s') . '.xlsx';
+        $filter = SupplyFilterData::fromRequestSupply($request);
+        $filename = 'LISTE-DES-APPROVISIONNEMENTS-' . now()->format('dmY') . '.xlsx';
 
-        Excel::store(new SuppliesExport(), $fileName, 'exportsupply');
+        $supplyQuery = supply_filter($filter, false);
 
+        Excel::store(new SuppliesExport($supplyQuery), $filename, 'exportsupply');
         return response()->json([
             "message" => "Exportation des données effectuée avec succès",
-            "filename" => $fileName,
-            "url" => Storage::disk('exportsupply')->url($fileName)
+            "filename" => $filename,
+            "url" => Storage::disk('exportsupply')->url($filename)
         ]);
-    }
 
+    }
 
     /**
      * Display a listing of the resource.

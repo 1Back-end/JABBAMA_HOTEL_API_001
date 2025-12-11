@@ -3,94 +3,79 @@
 namespace App\Exports;
 
 use App\Models\PurchaseOrder;
-use Maatwebsite\Excel\Concerns\FromCollection;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\Relation;
+use LaravelIdea\Helper\App\Models\_IH_Client_QB;
+use Maatwebsite\Excel\Concerns\FromQuery;
+use Maatwebsite\Excel\Concerns\WithColumnFormatting;
+use Maatwebsite\Excel\Concerns\WithHeadingRow;
 use Maatwebsite\Excel\Concerns\WithHeadings;
-use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Log;
+use Maatwebsite\Excel\Concerns\WithMapping;
+use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 
-class PurchaseOrdersExport implements FromCollection, WithHeadings
+class PurchaseOrdersExport  implements FromQuery, WithHeadings, WithMapping, WithColumnFormatting
 {
-    /**
-     * Retourne la collection de données pour l'export Excel
-     *
-     * @return \Illuminate\Support\Collection
-     */
-    public function collection()
+    public function __construct(
+        public Builder $orderQuery
+    )
+    {}
+
+    public function query(): Relation|Builder|_IH_Client_QB|\Laravel\Scout\Builder|\Illuminate\Database\Query\Builder
     {
-        try {
-            $orders = PurchaseOrder::with([
-                'items.product',
-                'warehouseTo.managers',
-                'warehouse_from.managers',
-                'creator',
-                'updater',
-                'approver',
-                'supplier',
-                'transfered'
-            ])->get();
-
-            if ($orders->isEmpty()) {
-                Log::warning('Export PurchaseOrders : aucune donnée à exporter');
-                return collect([]);
-            }
-
-            return $orders->map(function ($order) {
-                return [
-                    'UUID' => $order->uuid,
-                    'Fournisseur' => trim(($order->supplier->first_name ?? '') . ' ' . ($order->supplier->last_name ?? '')),
-                    'Transférer à' => $order->transfered->nom_utilisateur ?? '',
-                    'Transférer le' => optional($order->transfered_at)->format('d/m/Y H:i:s') ?? '',
-                    'Cloturer le' => optional($order->closed_at)->format('d/m/Y H:i:s') ?? '',
-                    'Motif de rejet' => $order->motif_rejet ?? '',
-                    'Reference' => $order->reference ?? '',
-                    'Type' => strtoupper($order->type ?? ''),
-                    'Statut' => $order->status ?? '',
-                    'Entrepôt d\'origine' => $order->warehouse_from->name ?? '',
-                    'Entrepôt de destination' => $order->warehouseTo->name ?? '',
-                    'Créé par' => $order->creator->nom_utilisateur ?? '',
-                    'Modifié par' => $order->updater->nom_utilisateur ?? '',
-                    'Approuvé par' => $order->approver->nom_utilisateur ?? '',
-                    'Total Produits' => $order->items->count(),
-                    'Produits' => $order->items
-                        ->map(fn($item) => ($item->product->name ?? '---') . ' (Qté: ' . ($item->quantity ?? '---') . ')')
-                        ->join(', '),
-                    'Date de création' => optional($order->created_at)->format('d/m/Y H:i:s') ?? '',
-                    'Date de modification' => optional($order->updated_at)->format('d/m/Y H:i:s') ?? '',
-                ];
-            });
-
-        } catch (\Exception $e) {
-            Log::error('Erreur export PurchaseOrdersExport : ' . $e->getMessage());
-            return collect([]);
-        }
+        return $this->orderQuery;
     }
 
-    /**
-     * Titres des colonnes pour l'export Excel
-     *
-     * @return array
-     */
+    public function map($row): array
+    {
+        $itemsList = $row->items->map(function($item) {
+            $quantity = (int) $item->quantity;
+            return $item->product?->name . ' (' . $quantity . ')';
+        })->implode(', ');
+
+        return [
+            $row->reference,
+            $row->type,
+            $row->status,
+            $row->notes || '',
+            optional($row->creator)->nom_utilisateur,
+            optional($row->updater)->nom_utilisateur,
+            optional($row->approver)->nom_utilisateur,
+            optional($row->approved_at)?->format('Y-m-d H:i:s'),
+            optional($row->closed_at)?->format('Y-m-d H:i:s'),
+            optional($row->transfered)->nom_utilisateur,
+            optional($row->transfered_at)?->format('Y-m-d H:i:s'),
+            $row->motif_rejet,
+            $itemsList,
+
+        ];
+    }
+
     public function headings(): array
     {
         return [
-            'UUID',
-            'Fournisseur',
-            'Transférer à',
-            'Transférer le',
-            'Cloturer le',
-            'Motif de rejet',
-            'Reference',
+            'Référence',
             'Type',
             'Statut',
-            'Entrepôt d\'origine',
-            'Entrepôt de destination',
-            'Créé par',
-            'Modifié par',
-            'Approuvé par',
-            'Total Produits',
-            'Produits',
-            'Date de création',
-            'Date de modification'
+            'Notes',
+            'Créé Par',
+            'Mis à jour Par',
+            'Approuvé Par',
+            'Approuvé Le',
+            'Clôturé Le',
+            'Transféré Par',
+            'Transféré Le',
+            'Motif Rejet',
+            'Articles Commandés', // Nouvelle colonne
+        ];
+    }
+
+    public function columnFormats(): array
+    {
+        return [
+            "C" => NumberFormat::FORMAT_DATE_DDMMYYYY,
+            "H" => NumberFormat::FORMAT_NUMBER,
+            "J" => NumberFormat::FORMAT_NUMBER,
+            "U" => NumberFormat::FORMAT_DATE_DATETIME
         ];
     }
 }

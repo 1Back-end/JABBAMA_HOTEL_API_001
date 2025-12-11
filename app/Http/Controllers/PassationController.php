@@ -202,10 +202,10 @@ class PassationController extends Controller
     }
 
     /**
-         * Display a listing of the resource.
-         * @permission PassationController::update
-         * @permission_desc Modification d'une passation de stocks
-         */
+     * Display a listing of the resource.
+     * @permission PassationController::update
+     * @permission_desc Modification d'une passation de stocks
+     */
     public function update(Request $request, string $uuid)
     {
         $auth = auth()->user();
@@ -272,6 +272,7 @@ class PassationController extends Controller
             ], 500);
         }
     }
+
     /**
      * Display a listing of the resource.
      * @permission PassationController::show

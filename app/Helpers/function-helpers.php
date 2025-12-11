@@ -1,7 +1,13 @@
 <?php
 
+use App\DTO\PurchaseOrderFilterData;
+use App\DTO\SupplyFilterData;
 use App\Models\Medias;
+use App\Models\PurchaseOrder;
+use App\Models\Supply;
 use App\Models\User;
+use App\Models\Warehouse;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
@@ -9,6 +15,200 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Browsershot\Exceptions\CouldNotTakeBrowsershot;
 use Spatie\Browsershot\Browsershot;
+use Illuminate\Pagination\LengthAwarePaginator;
+
+
+/**
+ * Retourne la requête ou la collection paginée des bons de commande filtrés
+ *
+ * @param \App\DTO\WarehouseFilterData $filter
+ * @param bool $paginate
+ * @return Builder|LengthAwarePaginator
+ */
+if (!function_exists('warehouse_filter')) {
+
+    function warehouse_filter(\App\DTO\WarehouseFilterData $filterData, bool $paginate = true): Builder|LengthAwarePaginator
+    {
+        $search = $filterData->search;
+        $auth   = $filterData->auth;
+
+        $query = Warehouse::with(['creator', 'updater', 'natures', 'managers'])
+            ->when(!$auth->hasRole('SUPER_ADMIN'), function (Builder $q) use ($auth) {
+                $q->whereHas('managers', function ($sub) use ($auth) {
+                    $sub->where('user_id', $auth->id);
+                });
+            })
+            ->when($search, function (Builder $q) use ($search) {
+                $q->where(function ($sub) use ($search) {
+                    $sub->where('ref', 'like', "%{$search}%")
+                        ->orWhere('name', 'like', "%{$search}%")
+                        ->orWhere('stock_type', 'like', "%{$search}%")
+                        ->orWhere('address', 'like', "%{$search}%")
+                        ->orWhere('total_stock', 'like', "%{$search}%");
+                });
+            })
+            ->orderBy('created_at', 'desc');
+
+        return $paginate
+            ? $query->paginate(perPage: $filterData->limit, page: $filterData->page)
+            : $query;
+    }
+}
+
+if (!function_exists('purchase_order_filter')) {
+    /**
+     * Retourne la requête ou la collection paginée des bons de commande filtrés
+     *
+     * @param PurchaseOrderFilterData $filter
+     * @param bool $paginate
+     * @return Builder|LengthAwarePaginator
+     */
+    function purchase_order_filter(PurchaseOrderFilterData $filterData, bool $paginate = true): Builder|LengthAwarePaginator
+    {
+        $search = $filterData->search;
+        $limit = $filterData->limit;
+        $page  = $filterData->page;
+
+        $query = PurchaseOrder::with([
+            'items.product',
+            'warehouseTo.managers',
+            'warehouse_from.managers',
+            'creator',
+            'updater',
+            'approver',
+            'children',
+            'parent'
+        ])
+            ->when($search, function (Builder $query) use ($search) {
+                $query->where(function (Builder $query) use ($search) {
+                    $query->whereLike('uuid', "%{$search}%")
+                        ->orWhereLike('type', "%{$search}%")
+                        ->orWhereLike('status', "%{$search}%")
+                        ->orWhereLike('notes', "%{$search}%")
+                        ->orWhereLike('created_at', "%{$search}%")
+                        ->orWhereLike('updated_at', "%{$search}%")
+                        ->orWhereLike('reference', "%{$search}%");
+                });
+            })
+            ->when($filterData->type, fn($query) => $query->where('type', $filterData->type))
+            ->when($filterData->status, fn($query) => $query->where('status', $filterData->status))
+            ->when($filterData->start_date && $filterData->end_date, function (Builder $query) use ($filterData) {
+                $query->whereBetween('created_at', [
+                    Carbon::parse($filterData->start_date)->startOfDay(),
+                    Carbon::parse($filterData->end_date)->endOfDay(),
+                ]);
+            })
+            ->when($filterData->auth, function (Builder $query) use ($filterData) {
+                if ($filterData->auth->hasRole('GESTIONNAIRE_STOCK')) {
+                    $query->where('transfered_by', $filterData->auth->id);
+                } elseif (!$filterData->auth->hasRole('SUPER_ADMIN')) {
+                    $query->where('created_by', $filterData->auth->id);
+                }
+            })
+            ->orderBy('created_at', 'desc');
+
+        return $paginate
+            ? $query->paginate(perPage: $filterData->limit, page: $filterData->page)
+            : $query;
+    }
+}
+
+    /**
+     * Retourne la requête ou la collection paginée des bons de approvisionnements filtrés
+     *
+     * @param SupplyFilterData $filter
+     * @param bool $paginate
+     * @return Builder|LengthAwarePaginator
+     */
+    function supply_filter(SupplyFilterData $filterData, bool $paginate = true): Builder|LengthAwarePaginator
+    {
+        $search = $filterData->search;
+        $limit = $filterData->limit;
+        $page  = $filterData->page;
+
+        $query = Supply::with([
+            'items.product',
+            'purchaseOrder.items',
+            'creator',
+            'updater',
+            'validator',
+            'supplier',
+            'warehouse',
+            'medias',
+            'cancelled'
+        ])
+            ->when($filterData->type, fn(Builder $q) => $q->where('type', $filterData->type))
+            ->when($filterData->status, fn(Builder $q) => $q->where('status', $filterData->status))
+            ->when($filterData->start_date && $filterData->end_date, function (Builder $query) use ($filterData) {
+                $query->whereBetween('created_at', [
+                    Carbon::parse($filterData->start_date)->startOfDay(),
+                    Carbon::parse($filterData->end_date)->endOfDay(),
+                ]);
+            })
+            ->when($search, function (Builder $q) use ($search) {
+                $q->where(function (Builder $q2) use ($search) {
+                    $q2->where('reference', 'like', "%{$search}%")
+                        ->orWhere('uuid', 'like', "%{$search}%")
+                        ->orWhere('status', 'like', "%{$search}%")
+                        ->orWhere('notes', 'like', "%{$search}%")
+                        ->orWhere('purchase_order_uuid', 'like', "%{$search}%")
+                        ->orWhere('warehouse_uuid', 'like', "%{$search}%")
+                        ->orWhere('supplier_uuid', 'like', "%{$search}%")
+                        ->orWhereHas('supplier', fn($qs) =>
+                        $qs->where('first_name', 'like', "%{$search}%")
+                            ->orWhere('last_name', 'like', "%{$search}%")
+                            ->orWhere('company_name', 'like', "%{$search}%")
+                            ->orWhere('email', 'like', "%{$search}%")
+                            ->orWhere('phone_number', 'like', "%{$search}%")
+                            ->orWhere('address', 'like', "%{$search}%")
+                        )
+                        ->orWhereHas('purchaseOrder', fn($qpo) =>
+                        $qpo->where('reference', 'like', "%{$search}%")
+                            ->orWhere('type', 'like', "%{$search}%")
+                            ->orWhere('status', 'like', "%{$search}%")
+                            ->orWhere('warehouse_from', 'like', "%{$search}%")
+                            ->orWhere('warehouse_to', 'like', "%{$search}%")
+                            ->orWhere('supplier_uuid', 'like', "%{$search}%")
+                        )
+                        ->orWhereHas('warehouse', fn($qw) =>
+                        $qw->where('ref', 'like', "%{$search}%")
+                            ->orWhere('name', 'like', "%{$search}%")
+                            ->orWhere('stock_type', 'like', "%{$search}%")
+                            ->orWhere('address', 'like', "%{$search}%")
+                        )
+                        ->orWhereHas('creator', fn($qc) =>
+                        $qc->where('nom_utilisateur', 'like', "%{$search}%")
+                            ->orWhere('email', 'like', "%{$search}%")
+                        )
+                        ->orWhereHas('validator', fn($qv) =>
+                        $qv->where('nom_utilisateur', 'like', "%{$search}%")
+                            ->orWhere('email', 'like', "%{$search}%")
+                        )
+                        ->orWhereHas('items.product', fn($qp) =>
+                        $qp->where('name', 'like', "%{$search}%")
+                            ->orWhere('code', 'like', "%{$search}%")
+                            ->orWhere('description', 'like', "%{$search}%")
+                        );
+                });
+            })
+            ->when($filterData->auth, function (Builder $q) use ($filterData) {
+                if ($filterData->auth->hasRole('SUPER_ADMIN')) {
+                    // SUPER_ADMIN voit tout → aucun filtre
+                } elseif ($filterData->auth->hasRole('GESTIONNAIRE_STOCK')) {
+                    $q->where('created_by', $filterData->auth->id);
+                } else {
+                    $q->where(function ($q2) use ($filterData) {
+                        $q2->where('created_by', $filterData->auth->id)
+                            ->orWhereHas('purchaseOrder', fn($qpo) => $qpo->where('created_by', $filterData->auth->id));
+                    });
+                }
+            })
+            ->orderBy('created_at', 'desc');
+
+        return $paginate
+            ? $query->paginate(perPage: $filterData->limit, page: $filterData->page)
+            : $query;
+    }
 
 
 

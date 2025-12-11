@@ -2,7 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\DTO\ClientFilterData;
+use App\DTO\PurchaseOrderFilterData;
+use App\Exports\ClientsExport;
 use App\Exports\PurchaseOrdersExport;
+use App\Models\Client;
 use App\Models\PdfDocument;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
@@ -57,6 +61,9 @@ class PurchaseOrderController extends Controller
 
         if ($request->filled('status')) {
             $query->where('status', $request->status);
+        }
+        if ($request->filled('warehouse_from')) {
+            $query->where('warehouse_from', $request->warehouse_from);
         }
 
         // 🔹 Filtrage par période
@@ -681,18 +688,22 @@ class PurchaseOrderController extends Controller
      * @permission PurchaseOrderController::export_orders
      * @permission_desc Exporter les commandes au format Excel
      */
-    public function export_orders()
+    public function export_orders(Request $request)
     {
-        $fileName = 'orders-' . Carbon::now()->format('Y-m-d_H-i-s') . '.xlsx';
+        $filter = PurchaseOrderFilterData::fromRequestPurchaseOrder($request);
+        $filename = 'LISTE-DES-COMMANDES-' . now()->format('dmY') . '.xlsx';
 
-        Excel::store(new PurchaseOrdersExport(), $fileName, 'exportorders');
+        $ordersQuery = purchase_order_filter($filter, false);
+
+        Excel::store(new PurchaseOrdersExport($ordersQuery), $filename, 'exportorders');
 
         return response()->json([
             "message" => "Exportation des données effectuée avec succès",
-            "filename" => $fileName,
-            "url" => Storage::disk('exportorders')->url($fileName)
+            "filename" => $filename,
+            "url" => Storage::disk('exportorders')->url($filename)
         ]);
     }
+
 
     /**
      * Display a listing of the resource.
@@ -708,10 +719,63 @@ class PurchaseOrderController extends Controller
 
     /**
      * Display a listing of the resource.
+     * @permission PurchaseOrderController::show_parents_orders
+     * @permission_desc Afficher les détails d’une commande parent
+     */
+    public function show_parents_orders($uuid)
+    {
+        try {
+
+            $purchaseOrder = PurchaseOrder::with([
+                'items' => function ($q) {
+                    $q->where('quantity_remaining', '>', 0)
+                        ->with('product');
+                },
+                'supplier',
+                'warehouseTo.managers',
+                'warehouse_from.managers',
+                'warehouseTo.natures',
+                'warehouse_from.natures',
+                'creator',
+                'updater',
+                'approver',
+                'children',
+                'parent'
+            ])
+                ->where('uuid', $uuid)
+                ->where('status', 'partially_closed')
+                ->whereHas('items', function ($q) {
+                    $q->where('quantity_remaining', '>', 0);
+                })
+                ->firstOrFail();
+
+            return response()->json([
+                'success' => true,
+                'message' => "Détails de la commande récupérés avec succès.",
+                'data' => $purchaseOrder
+            ], 200);
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Commande introuvable, non partiellement clôturée ou sans quantité restante.',
+            ], 404);
+
+        } catch (\Exception $e) {
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Impossible de récupérer les détails de la commande.',
+            ], 500);
+        }
+    }
+
+    /**
+     * Display a listing of the resource.
      * @permission PurchaseOrderController::create_parents_orders
      * @permission_desc Création d’une commande enfant à partir d’une commande parent
      */
-
     public function create_parents_orders(Request $request, string $uuid)
     {
         $auth = auth()->user();
@@ -765,7 +829,7 @@ class PurchaseOrderController extends Controller
 
             // 🔹 Création du bon de commande enfant
             $childOrder = PurchaseOrder::create([
-                'parent_uuid' => $parentOrder->uuid, // ✅ la clé primaire du parent ici
+                'parent_uuid' => $parentOrder->uuid,
                 'type' => $request->type,
                 'status' => 'draft',
                 'supplier_uuid' => $supplierUuid,
@@ -775,7 +839,7 @@ class PurchaseOrderController extends Controller
                 'created_by' => $auth->id,
                 'updated_by' => $auth->id,
                 'added_by' => $auth->id,
-                'is_parent' => false, // c'est bien un enfant
+                'is_parent' => false,
             ]);
 
             // 🔹 Ajout des produits
@@ -814,6 +878,12 @@ class PurchaseOrderController extends Controller
                         'message' => "La quantité demandée pour le produit {$productName} ({$item['quantity']}) dépasse la quantité restante dans la commande parent ({$parentItem->quantity_remaining})."
                     ], 422);
                 }
+
+                $rest = $parentItem->quantity_remaining - $item['quantity'];
+
+                $parentItem->update([
+                    'quantity_remaining' => $rest,
+                ]);
 
                 // Création de l'article enfant
                 $childOrder->items()->create([
@@ -861,10 +931,10 @@ class PurchaseOrderController extends Controller
         $auth = auth()->user();
 
         // 🔹 Récupérer la commande enfant à mettre à jour
-        $order = PurchaseOrder::where('uuid', $uuid)->firstOrFail();
+        $childOrder = PurchaseOrder::where('uuid', $uuid)->firstOrFail();
 
-        // 🔹 Récupérer le parent si c'est un enfant
-        $parentOrder = $order->parent_uuid ? PurchaseOrder::where('uuid', $order->parent_uuid)->first() : null;
+        // 🔹 Récupérer la commande parent si elle existe
+        $parentOrder = $childOrder->parent_uuid ? PurchaseOrder::where('uuid', $childOrder->parent_uuid)->first() : null;
 
         try {
             DB::beginTransaction();
@@ -902,22 +972,36 @@ class PurchaseOrderController extends Controller
                 $warehouseToUuid = $warehouseTo->uuid;
             }
 
+            // 🔹 Remettre les quantités de l'ancien enfant dans le parent
+            if ($parentOrder) {
+                foreach ($childOrder->items as $oldItem) {
+                    $parentItem = PurchaseOrderItem::where('purchase_order_uuid', $parentOrder->uuid)
+                        ->where('product_uuid', $oldItem->product_uuid)
+                        ->first();
+
+                    if ($parentItem) {
+                        $parentItem->update([
+                            'quantity_remaining' => $parentItem->quantity_remaining + $oldItem->quantity
+                        ]);
+                    }
+                }
+            }
+
+            // 🔹 Supprimer les anciens articles
+            $childOrder->items()->delete();
+
             // 🔹 Mise à jour de la commande enfant
-            $order->update([
+            $childOrder->update([
                 'type' => $request->type,
                 'supplier_uuid' => $supplierUuid,
                 'warehouse_from' => $warehouseFromUuid,
                 'warehouse_to' => $warehouseToUuid,
                 'notes' => $request->notes,
                 'updated_by' => $auth->id,
-                'is_parent' => false, // reste un enfant
-                'parent_uuid' => $parentOrder ? $parentOrder->uuid : null,
                 'status' => 'draft',
             ]);
 
-            // 🔹 Supprimer les anciens articles et recréer les nouveaux
-            $order->items()->delete();
-
+            // 🔹 Ajouter les nouveaux items et mettre à jour le parent
             foreach ($request->items as $item) {
                 $product = Product::find($item['product_uuid']);
                 $productName = $product ? $product->name : $item['product_uuid'];
@@ -936,7 +1020,6 @@ class PurchaseOrderController extends Controller
                     }
                 }
 
-                // Vérifier que le produit existe dans la commande parent
                 if ($parentOrder) {
                     $parentItem = PurchaseOrderItem::where('purchase_order_uuid', $parentOrder->uuid)
                         ->where('product_uuid', $item['product_uuid'])
@@ -953,9 +1036,10 @@ class PurchaseOrderController extends Controller
                             'message' => "La quantité demandée pour le produit {$productName} ({$item['quantity']}) dépasse la quantité restante dans la commande parent ({$parentItem->quantity_remaining})."
                         ], 422);
                     }
+
                 }
 
-                $order->items()->create([
+                $childOrder->items()->create([
                     'product_uuid' => $item['product_uuid'],
                     'quantity' => $item['quantity'],
                     'created_by' => $auth->id,
@@ -971,7 +1055,7 @@ class PurchaseOrderController extends Controller
 
             return response()->json([
                 'message' => $message,
-                'order' => $order->load(['items', 'parent'])
+                'order' => $childOrder->load(['items', 'parent'])
             ], 200);
 
         } catch (\Illuminate\Validation\ValidationException $e) {

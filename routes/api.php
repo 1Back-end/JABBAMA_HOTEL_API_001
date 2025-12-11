@@ -41,6 +41,7 @@ Route::middleware(['activity'])->group(function () {
         Route::apiResource('warehouses', WarehouseController::class);
         Route::patch('warehouses/{uuid}/is_active', [WarehouseController::class, 'update_status']);
         Route::get('get_all_warehouses_by_users', [WarehouseController::class, 'get_all_warehouses_by_users']);
+        Route::get('/exports/warehouse', [WarehouseController::class, 'export_warehouse']);
 
 
         Route::apiResource('products', ProductController::class);
@@ -70,6 +71,7 @@ Route::middleware(['activity'])->group(function () {
         Route::post('orders/{uuid}/create_parents_orders', [PurchaseOrderController::class, 'create_parents_orders']);
         Route::put('orders/{uuid}/update_parents_orders', [PurchaseOrderController::class, 'update_parents_orders']);
         Route::get('orders/{uuid}/print_orders', [PurchaseOrderController::class, 'print_orders']);
+        Route::get('orders/{uuid}/show_parents_orders', [PurchaseOrderController::class, 'show_parents_orders']);
 
         Route::apiResource('supply_orders', SupplyController::class);
         Route::post('update_supplies/{uuid}/update_supplies', [SupplyController::class, 'update_supplies']);
