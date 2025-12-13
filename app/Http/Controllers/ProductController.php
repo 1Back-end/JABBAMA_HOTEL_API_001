@@ -102,7 +102,7 @@ class ProductController extends Controller
     /**
      * Display a listing of the resource.
      * @permission ProductController::store
-     * @permission_desc Création des articles
+     * @permission_desc Créer les articles
      */
     public function store(Request $request)
     {
@@ -218,7 +218,7 @@ class ProductController extends Controller
     /**
      * Display a listing of the resource.
      * @permission ProductController::update_status
-     * @permission_desc Activation/Désactivation des articles
+     * @permission_desc Activer/Désactiver des articles
      */
     public function update_status(Request $request, $uuid)
     {
@@ -305,7 +305,7 @@ class ProductController extends Controller
     /**
      * Display a listing of the resource.
      * @permission ProductController::update
-     * @permission_desc Modification des articles
+     * @permission_desc Modifier des articles
      */
     public function update_products(Request $request, $uuid)
     {
@@ -419,7 +419,7 @@ class ProductController extends Controller
     /**
      * Display a listing of the resource.
      * @permission ProductController::destroy
-     * @permission_desc Suppression des articles
+     * @permission_desc Supprimer des articles
      */
     public function destroy(Request $request, string $uuid)
     {

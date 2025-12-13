@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\StockAdjustmentAction;
 use App\Models\Passation;
 use App\Models\PdfDocument;
 use App\Models\Product;
@@ -9,14 +10,25 @@ use App\Models\ProductPoint;
 use App\Models\PurchaseOrder;
 use App\Models\StockAdjustment;
 use App\Models\StockAdjustmentItem;
+
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
+
 /**
  * @permission_category Gestion des régularisations de stocks
  */
 class StockAdjustmentController extends Controller
 {
+    public function typeStockAdjustment()
+    {
+        return response()->json([
+            'status' => 'success',
+            'data'   => StockAdjustmentAction::TO_ARRAY(),
+        ]);
+    }
+
     /**
      * Display a listing of the resource.
      * @permission StockAdjustmentController::store
@@ -26,74 +38,33 @@ class StockAdjustmentController extends Controller
     {
         $auth = auth()->user();
 
-        // 🔹 Validation des données d’entrée
         $data = $request->validate([
-            'warehouse_uuid'        => 'nullable|exists:warehouses,uuid',
+            'warehouse_uuid'        => 'required|exists:warehouses,uuid',
             'notes'                 => 'required|string',
             'comment'               => 'nullable|string',
-            'action'                => 'nullable|integer',
-
+            'action'                => [
+                'required',
+                'integer',
+                Rule::in(array_column(StockAdjustmentAction::cases(), 'value')),
+            ],
             'items'                 => 'required|array|min:1',
             'items.*.product_uuid'  => 'required|exists:produits,uuid',
             'items.*.quantity'      => 'required|integer|min:1',
-        ], [
-            'notes.required' => 'La note est obligatoire.',
-            'items.required' => 'Veuillez ajouter au moins un article.',
-            'items.*.product_uuid.required' => "Le produit est obligatoire.",
-            'items.*.quantity.required' => "La quantité est obligatoire.",
         ]);
 
         DB::beginTransaction();
-        $warehouseUuid = $data['warehouse_uuid'];
 
         try {
-
-            // 🔹 Vérification des stocks
-            foreach ($data['items'] as $index => $item) {
-
-                $product = Product::where('uuid', $item['product_uuid'])->first();
-
-                if (!$product) {
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => "Produit introuvable.",
-                    ], 404);
-                }
-                $productPoint = ProductPoint::where('produit_uuid', $item['product_uuid'])
-                    ->where('point_uuid', $warehouseUuid)
-                    ->first();
-
-                $stockDisponible = $productPoint->quantity ?? 0;
-
-
-                if ($item['quantity'] > $stockDisponible) {
-                    $qtyStocks = rtrim(rtrim($stockDisponible, '0'), '.');
-                    return response()->json([
-                        'errors' => [
-                            'items' => [
-                                $index => [
-                                    'quantity' => [
-                                        "La quantité ({$item['quantity']}) ne peut pas dépasser le stock disponible."
-                                    ]
-                                ]
-                            ]
-                        ]
-                    ], 422);
-                }
-            }
-
-            // 🔹 Création de l’ajustement
             $adjustment = StockAdjustment::create([
-                'warehouse_uuid' => $data['warehouse_uuid'] ?? null,
+                'warehouse_uuid' => $data['warehouse_uuid'],
                 'notes'          => $data['notes'],
                 'comment'        => $data['comment'] ?? null,
-                'action'         => $data['action'] ?? 1,
+                'action'         => $data['action'],
+                'status'         => 'pending', // ⏳
                 'created_by'     => $auth->id,
                 'updated_by'     => $auth->id,
-                'status'         => 'pending',
             ]);
 
-            // 🔹 Ajout des items
             foreach ($data['items'] as $item) {
                 StockAdjustmentItem::create([
                     'stock_adjustment_uuid' => $adjustment->uuid,
@@ -108,17 +79,16 @@ class StockAdjustmentController extends Controller
 
             return response()->json([
                 'status'  => 'success',
-                'message' => 'Ajustement de stock créé avec succès.',
+                'message' => 'Ajustement créé (en attente de validation).',
                 'data'    => $adjustment->load('items'),
             ], 201);
 
-        } catch (\Exception $e) {
-
+        } catch (\Throwable $e) {
             DB::rollBack();
 
             return response()->json([
-                'status'  => 'error',
-                'message' => 'Une erreur est survenue lors de la création de l’ajustement.',
+                'status' => 'error',
+                'message' => 'Erreur lors de la création.',
                 'details' => $e->getMessage(),
             ], 500);
         }
@@ -133,84 +103,33 @@ class StockAdjustmentController extends Controller
     {
         $auth = auth()->user();
 
-        // 🔹 Récupération de l’ajustement
-        $adjustment = StockAdjustment::where('uuid', $uuid)->first();
-        if (!$adjustment) {
+        $adjustment = StockAdjustment::where('uuid', $uuid)->firstOrFail();
+
+        if ($adjustment->status !== 'pending') {
             return response()->json([
-                'status' => 'error',
-                'message' => 'Ajustement introuvable.',
-            ], 404);
+                'message' => 'Impossible de modifier un ajustement déjà validé.'
+            ], 403);
         }
 
-        // 🔹 Validation des données
         $data = $request->validate([
-            'warehouse_uuid'        => 'nullable|exists:warehouses,uuid',
-            'notes'                 => 'required|string',
-            'comment'               => 'nullable|string',
-            'action'                => 'nullable|integer',
-
-            'items'                 => 'required|array|min:1',
-            'items.*.product_uuid'  => 'required|exists:produits,uuid',
-            'items.*.quantity'      => 'required|integer|min:1',
-        ], [
-            'notes.required' => 'La note est obligatoire.',
-            'items.required' => 'Veuillez ajouter au moins un article.',
-            'items.*.product_uuid.required' => "Le produit est obligatoire.",
-            'items.*.quantity.required' => "La quantité est obligatoire.",
+            'notes'                => 'required|string',
+            'items'                => 'required|array|min:1',
+            'items.*.product_uuid' => 'required|exists:produits,uuid',
+            'items.*.quantity'     => 'required|integer|min:1',
         ]);
 
         DB::beginTransaction();
-        $warehouseUuid = $data['warehouse_uuid'];
 
         try {
-
-            // 🔹 Vérification des stocks
-            foreach ($data['items'] as $index => $item) {
-
-                $product = Product::where('uuid', $item['product_uuid'])->first();
-                if (!$product) {
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => "Produit introuvable.",
-                    ], 404);
-                }
-
-                $productPoint = ProductPoint::where('produit_uuid', $item['product_uuid'])
-                    ->where('point_uuid', $warehouseUuid)
-                    ->first();
-
-                $stockDisponible = $productPoint->quantity ?? 0;
-
-
-                if ($item['quantity'] > $stockDisponible) {
-                    $qtyStocks = rtrim(rtrim($stockDisponible, '0'), '.');
-                    return response()->json([
-                        'errors' => [
-                            'items' => [
-                                $index => [
-                                    'quantity' => [
-                                        "La quantité ({$item['quantity']}) ne peut pas dépasser le stock disponible."
-                                    ]
-                                ]
-                            ]
-                        ]
-                    ], 422);
-                }
-            }
-
-            // 🔹 Mise à jour de l’ajustement
             $adjustment->update([
-                'warehouse_uuid' => $data['warehouse_uuid'] ?? $adjustment->warehouse_uuid,
-                'notes'          => $data['notes'],
-                'comment'        => $data['comment'] ?? $adjustment->comment,
-                'action'         => $data['action'] ?? $adjustment->action,
-                'updated_by'     => $auth->id,
+                'notes'      => $data['notes'],
+                'updated_by' => $auth->id,
+                'status'     => 'pending',
             ]);
 
-            // 🔹 Suppression des anciens items
-            StockAdjustmentItem::where('stock_adjustment_uuid', $adjustment->uuid)->delete();
+            // 🔄 Reset items
+            $adjustment->items()->delete();
 
-            // 🔹 Ajout des nouveaux items
             foreach ($data['items'] as $item) {
                 StockAdjustmentItem::create([
                     'stock_adjustment_uuid' => $adjustment->uuid,
@@ -224,23 +143,18 @@ class StockAdjustmentController extends Controller
             DB::commit();
 
             return response()->json([
-                'status'  => 'success',
-                'message' => 'Ajustement de stock mis à jour avec succès.',
+                'message' => 'Ajustement modifié avec succès.',
                 'data'    => $adjustment->load('items'),
-            ], 200);
+            ]);
 
-        } catch (\Exception $e) {
-
+        } catch (\Throwable $e) {
             DB::rollBack();
-
             return response()->json([
-                'status'  => 'error',
-                'message' => 'Une erreur est survenue lors de la mise à jour de l’ajustement.',
+                'message' => 'Erreur lors de la modification.',
                 'details' => $e->getMessage(),
             ], 500);
         }
     }
-
 
     /**
      * Display a listing of the resource.
@@ -263,8 +177,11 @@ class StockAdjustmentController extends Controller
         if ($request->filled('status')) {
             $stock_adjustment->where('status', $request->status);
         }
-        if ($request->filled('action')) {
+        if ($request->has('action') && $request->action !== null && $request->action !== '') {
             $stock_adjustment->where('action', $request->action);
+        }
+        if ($request->filled('warehouse_uuid')) {
+            $stock_adjustment->where('warehouse_uuid', $request->warehouse_uuid);
         }
 
         if ($search = trim($request->input('search'))) {
@@ -400,109 +317,79 @@ class StockAdjustmentController extends Controller
     public function validated_stock_adjustment(Request $request, string $uuid)
     {
         $auth = auth()->user();
-
-        // 🔹 Vérification du mot de passe
         $request->validate([
             'password' => 'required|string'
         ]);
 
+        // Vérification du mot de passe
         if (!Hash::check($request->password, $auth->password)) {
             return response()->json([
                 'status'  => 'error',
                 'message' => 'Mot de passe incorrect.'
-            ], 401);
+            ], 422);
+        }
+
+        $adjustment = StockAdjustment::with('items')->where('uuid', $uuid)->firstOrFail();
+
+        if ($adjustment->status !== 'pending') {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Cet ajustement a déjà été validé ou annulé.'
+            ], 403);
         }
 
         DB::beginTransaction();
 
         try {
+            foreach ($adjustment->items as $item) {
+                $productPoint = ProductPoint::firstOrCreate(
+                    [
+                        'produit_uuid' => $item->product_uuid,
+                        'point_uuid'   => $adjustment->warehouse_uuid,
+                    ],
+                    ['quantity' => 0]
+                );
 
-            $stock_adjustment = StockAdjustment::with('items.product')->findOrFail($uuid);
+                // 🔹 Selon l'action, mise à jour du stock
+                switch (StockAdjustmentAction::from($adjustment->action)) {
+                    case StockAdjustmentAction::AVARIE:
+                    case StockAdjustmentAction::DEDUCTION:
+                    case StockAdjustmentAction::AJUSTEMENT_MOINS:
+                        if ($item->quantity > $productPoint->quantity) {
+                            throw new \Exception("Stock insuffisant pour le produit {$item->product_uuid}");
+                        }
+                        $productPoint->quantity -= $item->quantity;
+                        break;
 
-            if ($stock_adjustment->status === 'validated') {
-                return response()->json([
-                    'status'  => 'error',
-                    'message' => 'Cet ajustement a déjà été validé.'
-                ], 400);
-            }
-
-            // 🔹 Entrepôt concerné par l’ajustement
-            $warehouseUuid = $stock_adjustment->warehouse_uuid;
-
-            foreach ($stock_adjustment->items as $item) {
-
-                $product = $item->product;
-                if (!$product) {
-                    DB::rollBack();
-                    return response()->json([
-                        'status'  => 'error',
-                        'message' => "Produit introuvable pour l'article {$item->uuid}."
-                    ], 404);
+                    case StockAdjustmentAction::AJUSTEMENT_PLUS:
+                        $productPoint->quantity += $item->quantity;
+                        break;
                 }
 
-                // 🔹 Récupérer le stock dans l’entrepôt
-                $productPoint = ProductPoint::where('produit_uuid', $product->uuid)
-                    ->where('point_uuid', $warehouseUuid)
-                    ->first();
-
-                $stockDispo = $productPoint->quantity ?? 0;
-
-                // --------------------------------------------
-                // ACTIONS (1 = ajout, 2/3/4 = déduction)
-                // --------------------------------------------
-
-                if (in_array($stock_adjustment->action, [2, 3, 4])) {
-
-                    // 🔹 Vérifier stock suffisant dans l’entrepôt
-                    if ($item->quantity > $stockDispo) {
-                        DB::rollBack();
-                        return response()->json([
-                            'status'  => 'error',
-                            'message' => "Stock insuffisant pour {$product->name} dans cet entrepôt. Disponible : {$stockDispo}, requis : {$item->quantity}."
-                        ], 422);
-                    }
-
-                    // 🔹 Déduire du stock de l'entrepôt
-                    $productPoint->decrement('quantity', $item->quantity);
-
-                } elseif ($stock_adjustment->action == 1) {
-
-                    // 🔹 Ajouter au stock de l'entrepôt
-                    if ($productPoint) {
-                        $productPoint->increment('quantity', $item->quantity);
-                    } else {
-                        // Si pas encore d'entrée pour cet entrepôt → création
-                        ProductPoint::create([
-                            'produit_uuid' => $product->uuid,
-                            'point_uuid'   => $warehouseUuid,
-                            'quantity'     => $item->quantity
-                        ]);
-                    }
-                }
+                $productPoint->save();
             }
 
-            // 🔹 Valider l’ajustement
-            $stock_adjustment->update([
-                'status'        => 'validated',
-                'validated_by'  => $auth->id,
-                'validated_at'  => now(),
-                'updated_by'    => $auth->id
+            $adjustment->update([
+                'status'       => 'validated',
+                'validated_by' => $auth->id,
+                'validated_at' => now(),
             ]);
 
             DB::commit();
 
             return response()->json([
                 'status'  => 'success',
-                'message' => 'Ajustement de stock validé avec succès.',
-                'data'    => $stock_adjustment->load('items.product')
+                'message' => 'Ajustement validé avec succès.',
+                'data'    => $adjustment->load('items'),
             ]);
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             DB::rollBack();
+
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Une erreur est survenue lors de la validation.',
-                'details' => $e->getMessage()
+                'message' => 'Erreur lors de la validation de l’ajustement.',
+                'details' => $e->getMessage(),
             ], 500);
         }
     }

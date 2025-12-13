@@ -7,6 +7,7 @@ use App\Models\PassationItem;
 use App\Models\PdfDocument;
 use App\Models\PurchaseOrder;
 use App\Models\Warehouse;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -44,10 +45,17 @@ class PassationController extends Controller
         if ($request->filled('status')) {
             $query->where('status', $request->status);
         }
-
-        // 🔹 Filtrage par période
+        if ($request->filled('agent_from_id')) {
+            $query->where('agent_from_id', $request->agent_from_id);
+        }
+        if ($request->filled('warehouse_uuid')) {
+            $query->where('warehouse_uuid', $request->warehouse_uuid);
+        }
         if ($request->filled('start_date') && $request->filled('end_date')) {
-            $query->whereBetween('created_at', [$request->start_date, $request->end_date]);
+            $start = \Illuminate\Support\Carbon::parse($request->start_date)->startOfDay();
+            $end = Carbon::parse($request->end_date)->endOfDay();
+
+            $query->whereBetween('created_at', [$start, $end]);
         }
 
         if (!$auth->hasRole('SUPER_ADMIN')) {
@@ -113,7 +121,7 @@ class PassationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PassationController::store
-     * @permission_desc Création d'une passation de stocks
+     * @permission_desc Créer une passation de stocks
      */
     public function store(Request $request)
     {
@@ -204,7 +212,7 @@ class PassationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PassationController::update
-     * @permission_desc Modification d'une passation de stocks
+     * @permission_desc Modifier une passation de stocks
      */
     public function update(Request $request, string $uuid)
     {
@@ -236,6 +244,7 @@ class PassationController extends Controller
                 'warehouse_uuid' => $warehouse->uuid,
                 'quantity_sent' => $totalStock,
                 'updated_by' => $auth->id,
+                'status' => 'pending',
             ]);
 
             // 2️⃣ Supprimer tous les anciens items pour recréer proprement
@@ -305,41 +314,6 @@ class PassationController extends Controller
         return response()->json([
             'status' => 'success',
             'passation' => $passation,
-        ]);
-    }
-
-
-    /**
-     * Display a listing of the resource.
-     * @permission PassationController::cancel_passations
-     * @permission_desc Annuler une passation de stocks
-     */
-    public function cancel_passations(Request $request, string $uuid){
-        $auth = auth()->user();
-
-        $request->validate([
-            'password' => 'required|string'
-        ]);
-
-        // Vérification du mot de passe
-        if (!Hash::check($request->password, $auth->password)) {
-            return response()->json([
-                'status'  => 'error',
-                'message' => 'Mot de passe incorrect.'
-            ], 422);
-        }
-        $passation = Passation::findOrFail($uuid);
-        $passation->update([
-            'status' => 'cancel',
-            'updated_by' => auth()->id(),
-            'cancelled_by' => auth()->id(),
-            'reason_cancelled' => 'La passation de stocks a été annulée avec succès.',
-            'cancelled_at' => now(),
-        ]);
-
-        return response()->json([
-            'message' => "La passation de stocks a été annulée avec succès.",
-            'passation' => $passation
         ]);
     }
 
@@ -424,6 +398,36 @@ class PassationController extends Controller
             ], 500);
         }
     }
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission PassationController::cancel_passations
+     * @permission_desc Annuler une passation de stocks
+     */
+    public function cancel_passations(Request $request, string $uuid){
+        $auth = auth()->user();
+
+        $validated = $request->validate([
+            'reason_cancelled' => 'required|string|min:3',
+        ],[
+            'reason_cancelled.required' => 'Le motif du rejet est obligatoire.',
+        ]);
+        $passation = Passation::findOrFail($uuid);
+        $passation->update([
+            'status' => 'cancel',
+            'updated_by' => $auth->id,
+            'cancelled_by' => $auth->id,
+            'reason_cancelled' => $validated['reason_cancelled'],
+            'cancelled_at' => now(),
+        ]);
+
+        return response()->json([
+            'message' => "La passation de stocks a été annulée avec succès.",
+            'passation' => $passation
+        ]);
+    }
+
 
     /**
      * Display a listing of the resource.

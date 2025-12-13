@@ -76,7 +76,7 @@ class PermissionController extends Controller
                             ->orWhere('description', 'like', "%{$search}%");
                     });
                 }
-                $q->orderBy('name', 'asc');
+                $q->orderBy('created_at', 'desc');
             }])
             ->when($search, function($q) use ($search) {
                 $q->where('libelle', 'like', "%{$search}%")

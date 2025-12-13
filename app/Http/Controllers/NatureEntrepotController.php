@@ -6,14 +6,14 @@ use App\Models\NatureEntrepot;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 /**
- * @permission_category Gestion des entrepots
+ * @permission_category Gestion des natures d'entrepôts
  */
 class NatureEntrepotController extends Controller
 {
     /**
      * Display a listing of the resource.
      * @permission NatureEntrepotController::index
-     * @permission_desc Afficher la liste des natures d'entrepots
+     * @permission_desc Afficher la liste des natures d'entrepôts
      */
     public function index(Request $request)
     {
@@ -47,7 +47,7 @@ class NatureEntrepotController extends Controller
     /**
      * Display a listing of the resource.
      * @permission NatureEntrepotController::store
-     * @permission_desc Création des natures d'entrepots
+     * @permission_desc Créer des natures d'entrepôts
      */
     public function store(Request $request)
     {
@@ -82,7 +82,7 @@ class NatureEntrepotController extends Controller
     /**
      * Display a listing of the resource.
      * @permission NatureEntrepotController::show
-     * @permission_desc Afficher les détails des natures d'entrepots
+     * @permission_desc Afficher les détails des natures d'entrepôts
      */
     public function show(string $uuid)
     {
@@ -100,7 +100,7 @@ class NatureEntrepotController extends Controller
     /**
      * Display a listing of the resource.
      * @permission NatureEntrepotController::update
-     * @permission_desc Mise à jour des natures d'entrepots
+     * @permission_desc Modifier des natures d'entrepôts
      */
     public function update(Request $request, $uuid)
     {
@@ -137,7 +137,7 @@ class NatureEntrepotController extends Controller
     /**
      * Display a listing of the resource.
      * @permission NatureEntrepotController::destroy
-     * @permission_desc Suppression des natures d'entrepots
+     * @permission_desc Supprimer des natures d'entrepôts
      */
     public function destroy(Request $request, string $uuid)
     {
@@ -168,7 +168,7 @@ class NatureEntrepotController extends Controller
     /**
      * Display a listing of the resource.
      * @permission NatureEntrepotController::update_status
-     * @permission_desc Activation/Désactivation des natures d'entrepots
+     * @permission_desc Activer/Désactiver des natures d'entrepôts
      */
     public function update_status(string $uuid, Request $request)
     {

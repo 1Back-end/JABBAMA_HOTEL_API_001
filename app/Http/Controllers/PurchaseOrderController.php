@@ -508,6 +508,36 @@ class PurchaseOrderController extends Controller
         ]);
     }
 
+    /**
+     * Display a listing of the resource.
+     * @permission PurchaseOrderController::cancel_orders_by_admin
+     * @permission_desc Annuler une commande par le SUPER ADMIN
+     */
+    public function cancel_orders_by_admin(Request $request, string $uuid){
+        $auth = auth()->user();
+        $request->validate([
+            'password' => 'required|string'
+        ]);
+
+        // Vérification du mot de passe
+        if (!Hash::check($request->password, $auth->password)) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Mot de passe incorrect.'
+            ], 422);
+        }
+        $order = PurchaseOrder::findOrFail($uuid);
+        $order->update([
+            'status' => 'cancel',
+            'updated_by' => auth()->id(),
+        ]);
+
+        return response()->json([
+            'message' => "La commande a été annulée avec succès.",
+            'order' => $order
+        ]);
+    }
+
 
     /**
      * Display a listing of the resource.
@@ -631,7 +661,7 @@ class PurchaseOrderController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PurchaseOrderController::rejected_orders_by_admin
-     * @permission_desc Rejet d’une commande en livraison par le Super Admin
+     * @permission_desc Rejetter une commande par le SUPER ADMIN
      */
     public function rejected_orders_by_admin(Request $request, string $uuid)
     {
@@ -704,19 +734,6 @@ class PurchaseOrderController extends Controller
         ]);
     }
 
-
-    /**
-     * Display a listing of the resource.
-     * @permission PurchaseOrderController::create_orders
-     * @permission_desc Récréer une commande à partir d'une existante
-     */
-
-    public function create_orders(Request $request, string $uuid){
-        $auth = auth()->user();
-
-
-    }
-
     /**
      * Display a listing of the resource.
      * @permission PurchaseOrderController::show_parents_orders
@@ -774,7 +791,7 @@ class PurchaseOrderController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PurchaseOrderController::create_parents_orders
-     * @permission_desc Création d’une commande enfant à partir d’une commande parent
+     * @permission_desc Créer une commande enfant
      */
     public function create_parents_orders(Request $request, string $uuid)
     {
@@ -924,7 +941,7 @@ class PurchaseOrderController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PurchaseOrderController::update_parents_orders
-     * @permission_desc Modification d’une commande enfant à partir d’une commande parent
+     * @permission_desc Modifier une commande enfant
      */
     public function update_parents_orders(Request $request, string $uuid)
     {

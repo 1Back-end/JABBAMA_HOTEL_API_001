@@ -49,7 +49,7 @@ class CategoryProductsController extends Controller
     /**
      * Display a listing of the resource.
      * @permission CategoryProductsController::store
-     * @permission_desc Création des catégories d'articles
+     * @permission_desc Créer les catégories d'articles
      */
     public function store(Request $request)
     {
@@ -99,7 +99,7 @@ class CategoryProductsController extends Controller
     /**
      * Display a listing of the resource.
      * @permission CategoryProductsController::update
-     * @permission_desc Modification des catégories d'articles
+     * @permission_desc Modifier les catégories d'articles
      */
     public function update(Request $request, string $uuid)
     {
@@ -129,12 +129,10 @@ class CategoryProductsController extends Controller
     }
 
 
-
-
     /**
      * Display a listing of the resource.
      * @permission CategoryProductsController::destroy
-     * @permission_desc Suppression des catégories d'articles
+     * @permission_desc Supprimer les catégories d'articles
      */
     public function destroy(Request $request, string $uuid)
     {
@@ -191,7 +189,7 @@ class CategoryProductsController extends Controller
     /**
      * Display a listing of the resource.
      * @permission CategoryProductsController::update_status
-     * @permission_desc Activation/Désactivation des catégories d'articles
+     * @permission_desc Activer/Désactiver les catégories d'articles
      */
     public function update_status(Request $request, $uuid){
         $auth = auth()->user();

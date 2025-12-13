@@ -254,12 +254,14 @@ class SupplyController extends Controller
                 $warehousePrimary = Warehouse::where('is_primary', true)->firstOrFail();
                 $warehouseUuid = $warehousePrimary->uuid;
 
-                $pointStock = ProductPoint::where('produit_uuid', $item['product_uuid'])
+                $pointStock = (float) (ProductPoint::where('produit_uuid', $item['product_uuid'])
                     ->where('point_uuid', $warehouseUuid)
-                    ->value('quantity') ?? 0;
+                    ->value('quantity') ?? 0);
+
+                $quantitySupplied = (float) $item['quantity_supplied'];
+
                 if ($purchaseOrder->type === 'internal') {
-                    if ($item['quantity_supplied'] > $pointStock) {
-                        $qtyStocks = rtrim(rtrim($pointStock, '0'), '.');
+                    if ($quantitySupplied > $pointStock) {
                         return response()->json([
                             'errors' => [
                                 'items' => [
@@ -372,8 +374,8 @@ class SupplyController extends Controller
                 'items.product',
                 'items.supplier',       // fournisseurs des items
                 'purchaseOrder.items',
-                'purchaseOrder.warehouseTo',
-                'purchaseOrder.warehouse_from',
+                'purchaseOrder.warehouseTo.natures',
+                'purchaseOrder.warehouse_from.natures',
                 'creator',
                 'updater',
                 'validator',

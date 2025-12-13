@@ -63,6 +63,7 @@ Route::middleware(['activity'])->group(function () {
         Route::apiResource('orders', PurchaseOrderController::class);
         Route::post('orders/{uuid}/update_orders', [PurchaseOrderController::class, 'update_orders']);
         Route::patch('orders/{uuid}/cancel_orders', [PurchaseOrderController::class, 'cancel_orders']);
+        Route::patch('orders/{uuid}/cancel_orders_by_admin', [PurchaseOrderController::class, 'cancel_orders_by_admin']);
         Route::post('orders/{uuid}/rejected_orders', [PurchaseOrderController::class, 'rejected_orders']);
         Route::post('orders/{uuid}/send_orders', [PurchaseOrderController::class, 'send_orders']);
         Route::patch('orders/{uuid}/validate_orders', [PurchaseOrderController::class, 'validate_orders']);
@@ -97,6 +98,12 @@ Route::middleware(['activity'])->group(function () {
         Route::patch('stocks_adjustments/{uuid}/cancel_stock_adjustment', [\App\Http\Controllers\StockAdjustmentController::class, 'cancel_stock_adjustment']);
         Route::patch('stocks_adjustments/{uuid}/validated_stock_adjustment', [\App\Http\Controllers\StockAdjustmentController::class, 'validated_stock_adjustment']);
         Route::get('stocks_adjustments/{uuid}/print_stock_adjustment', [\App\Http\Controllers\StockAdjustmentController::class, 'print_stock_adjustment']);
+        Route::get('stocks_adjustments_actions', [\App\Http\Controllers\StockAdjustmentController::class, 'typeStockAdjustment']);
+
+        Route::get('/statistics/price_variation_all', [\App\Http\Controllers\StatisticsController::class, 'priceVariationAll']);
+        Route::get('/statistics/quantity_variation', [\App\Http\Controllers\StatisticsController::class, 'quantityVariation']);
+        Route::get('/statistics/most_consumed_articles', [\App\Http\Controllers\StatisticsController::class, 'mostConsumedArticles']);
+
 
 
 

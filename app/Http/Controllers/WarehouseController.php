@@ -52,17 +52,14 @@ class WarehouseController extends Controller
             $query->where(function ($q) use ($search) {
                 $q->where('ref', 'like', "%{$search}%")
                     ->orWhere('name', 'like', "%{$search}%")
-                    ->orWhere('uuid', 'like', "%{$search}%")
                     ->orWhere('stock_type', 'like', "%{$search}%")
                     ->orWhere('address', 'like', "%{$search}%")
-                    ->orWhere('total_stock', 'total_stock', "%{$search}%");
+                    ->orWhere('total_stock', 'like', "%{$search}%"); // ✅ corrigé
             })
                 ->orWhereHas('natures', function ($qw) use ($search) {
                     $qw->where('code', 'like', "%{$search}%")
                         ->orWhere('name', 'like', "%{$search}%")
-                        ->orWhere('abbreviation', 'like', "%{$search}%")
-                        ->orWhere('is_active', 'like', "%{$search}%")
-                        ->orWhere('uuid', 'like', "%{$search}%");
+                        ->orWhere('abbreviation', 'like', "%{$search}%");
                 })
                 ->orWhereHas('managers', function ($ma) use ($search) {
                     $ma->where('nom_utilisateur', 'like', "%{$search}%")
@@ -84,7 +81,7 @@ class WarehouseController extends Controller
     /**
      * Display a listing of the resource.
      * @permission WarehouseController::store
-     * @permission_desc Création des entrepôts
+     * @permission_desc Créer des entrepôts
      */
     public function store(Request $request)
     {
@@ -191,7 +188,7 @@ class WarehouseController extends Controller
     /**
      * Display a listing of the resource.
      * @permission WarehouseController::update
-     * @permission_desc Modification des entrepôts
+     * @permission_desc Modifier des entrepôts
      */
     public function update(Request $request, $uuid)
     {
@@ -276,14 +273,10 @@ class WarehouseController extends Controller
         ]);
     }
 
-
-
-
-
     /**
      * Display a listing of the resource.
      * @permission WarehouseController::destroy
-     * @permission_desc Suppression des entrepôts
+     * @permission_desc Supprimer des entrepôts
      */
     public function destroy(Request $request, string $uuid)
     {
@@ -321,7 +314,7 @@ class WarehouseController extends Controller
     /**
      * Display a listing of the resource.
      * @permission WarehouseController::update_status
-     * @permission_desc Activation/Désactivation des entrepôts
+     * @permission_desc Activer/Désactiver des entrepôts
      */
     public function update_status(Request $request, $uuid){
         $auth = auth()->user();
