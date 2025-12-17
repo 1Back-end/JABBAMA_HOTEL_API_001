@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\EnsureEmailIsVerified;
+use App\Http\Middleware\NoCache;
 use App\Http\Middleware\UserPasswordChangeMiddleware;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -27,6 +28,10 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'Excel' => Maatwebsite\Excel\Facades\Excel::class,
+        ]);
+        $middleware->api([
+            EnsureFrontendRequestsAreStateful::class,
+            NoCache::class, // ✅ ICI C’EST BON
         ]);
 
         $middleware->alias([

@@ -364,7 +364,7 @@ class SupplierController extends Controller
      */
     public function export_suppliers()
     {
-        $fileName = 'suppliers-' . Carbon::now()->format('Y-m-d_H-i-s') . '.xlsx';
+        $fileName = 'LISTE-DES-FOURNISSEURS-' . Carbon::now()->format('d-m-Y-H-i-s') . '.xlsx';
 
         Excel::store(new SuppliersExport(), $fileName, 'exportsuppliers');
 

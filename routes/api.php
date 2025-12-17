@@ -47,11 +47,13 @@ Route::middleware(['activity'])->group(function () {
         Route::apiResource('products', ProductController::class);
         Route::patch('products/{uuid}/is_active', [ProductController::class, 'update_status']);
         Route::post('products/{uuid}/update_products', [ProductController::class, 'update_products']);
+
+
         Route::get('warehouses/{uuid}/products', [WarehouseController::class, 'get_products_by_warehouse']);
         Route::get('warehouses/{uuid}/get_managers_by_warehouse', [WarehouseController::class, 'get_managers_by_warehouse']);
         Route::get('/warehouses/{pointUuid}/inventory/export', [WarehouseController::class, 'export_inventory_by_warehouse']);
         Route::get('/warehouses/{point_uuid}/inventory/print', [WarehouseController::class, 'print_inventory_by_warehouse']);
-
+        Route::get("/exports/warehouses", [WarehouseController::class, 'export_warehouses']);
 
         Route::apiResource('subcategories', SubCategoryController::class);
         Route::patch('subcategories/{uuid}/is_active', [SubCategoryController::class, 'update_status']);
@@ -99,11 +101,10 @@ Route::middleware(['activity'])->group(function () {
         Route::patch('stocks_adjustments/{uuid}/validated_stock_adjustment', [\App\Http\Controllers\StockAdjustmentController::class, 'validated_stock_adjustment']);
         Route::get('stocks_adjustments/{uuid}/print_stock_adjustment', [\App\Http\Controllers\StockAdjustmentController::class, 'print_stock_adjustment']);
         Route::get('stocks_adjustments_actions', [\App\Http\Controllers\StockAdjustmentController::class, 'typeStockAdjustment']);
+        Route::get('/exports/export_stock_adjustment', [\App\Http\Controllers\StockAdjustmentController::class, 'export_stock_adjustment']);
 
-        Route::get('/statistics/price_variation_all', [\App\Http\Controllers\StatisticsController::class, 'priceVariationAll']);
-        Route::get('/statistics/quantity_variation', [\App\Http\Controllers\StatisticsController::class, 'quantityVariation']);
-        Route::get('/statistics/most_consumed_articles', [\App\Http\Controllers\StatisticsController::class, 'mostConsumedArticles']);
-
+        Route::get('/statistics/products/{uuid}/statistics', [\App\Http\Controllers\StatisticsController::class, 'get_statistics_by_product']);
+        Route::get('/statistics/products/top_consumed', [\App\Http\Controllers\StatisticsController::class, 'topConsumedProducts']);
 
 
 

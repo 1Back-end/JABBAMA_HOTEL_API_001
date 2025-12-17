@@ -28,28 +28,17 @@ class SuppliesExport implements FromQuery, WithHeadings, WithMapping
      */
     public function map($row): array
     {
-        $itemsList = $row->items->map(function($item) {
-            $quantitySupplied = (int) $item->quantity_supplied; // quantité approvisionnée sans décimales
-            $rest = (int) ($item->quantity_supplied - ($item->quantity_delivered ?? 0)); // reste
-            return $item->product?->name
-                . " (Approvisionné: $quantitySupplied, Reste: $rest)";
-        })->implode(', ');
+
         return [
-            $row->reference,
             $row->type,
-            $row->status,
+            $row->reference,
             $row->purchaseOrder->reference,
-            $itemsList,
+            optional($row->supply_date)?->format('Y-m-d H:i:s'),
+            $row->status,
             optional($row->creator)->nom_utilisateur,
             optional($row->updater)->nom_utilisateur,
-            optional($row->transferredBy)->nom_utilisateur,
-            optional($row->validator)->nom_utilisateur,
-            optional($row->cancelled)->nom_utilisateur,
-            optional($row->rejector)->nom_utilisateur,
-            optional($row->partially_validated)->nom_utilisateur,
             optional($row->created_at)?->format('Y-m-d H:i:s'),
             optional($row->updated_at)?->format('Y-m-d H:i:s'),
-            optional($row->transferred_at)?->format('Y-m-d H:i:s'),
         ];
     }
 
@@ -59,21 +48,16 @@ class SuppliesExport implements FromQuery, WithHeadings, WithMapping
     public function headings(): array
     {
         return [
-            'Référence',
             'Type',
+            'Référence',
+            'Commande',
+            'Date Approvisionnement',
             'Statut',
-            'Reférence',
-            'Articles',
-            'Crée par',
-            'Modifié par',
-            'Tranférér à',
-            'Validé par',
-            'Annulé par',
-            'Rejeté par',
-            'Validé partiellement par',
+            'Créé Par',
+            'Mis à jour Par',
             'Date création',
             'Date modification',
-            'Date Transfert'
+
         ];
     }
 

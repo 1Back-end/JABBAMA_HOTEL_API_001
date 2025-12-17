@@ -88,6 +88,18 @@ return [
             'url'    => env('APP_URL') . '/storage/export-warehouse',
             'visibility' => 'public',
         ],
+        'exportwarehouseall' => [
+            'driver' => 'local',
+            'root'   => storage_path('app/public/export-warehouse-all'),
+            'url'    => env('APP_URL') . '/storage/export-warehouse-all',
+            'visibility' => 'public',
+        ],
+        'stock_adjustment' => [
+            'driver' => 'local',
+            'root'   => storage_path('app/public/export-stock_adjustment'),
+            'url'    => env('APP_URL') . '/storage/export-stock_adjustment',
+            'visibility' => 'public',
+        ],
 
 
 

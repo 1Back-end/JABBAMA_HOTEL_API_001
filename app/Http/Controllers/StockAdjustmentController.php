@@ -2,7 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\DTO\PurchaseOrderFilterData;
+use App\DTO\StockAdjustmentFilterData;
 use App\Enums\StockAdjustmentAction;
+use App\Exports\PurchaseOrdersExport;
+use App\Exports\StockAdjustmentsExport;
 use App\Models\Passation;
 use App\Models\PdfDocument;
 use App\Models\Product;
@@ -14,7 +18,9 @@ use App\Models\StockAdjustmentItem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Maatwebsite\Excel\Facades\Excel;
 
 /**
  * @permission_category Gestion des régularisations de stocks
@@ -40,7 +46,7 @@ class StockAdjustmentController extends Controller
 
         $data = $request->validate([
             'warehouse_uuid'        => 'required|exists:warehouses,uuid',
-            'notes'                 => 'required|string',
+            'notes'                 => 'nullable|string',
             'comment'               => 'nullable|string',
             'action'                => [
                 'required',
@@ -112,7 +118,7 @@ class StockAdjustmentController extends Controller
         }
 
         $data = $request->validate([
-            'notes'                => 'required|string',
+            'notes'                => 'nullable|string',
             'items'                => 'required|array|min:1',
             'items.*.product_uuid' => 'required|exists:produits,uuid',
             'items.*.quantity'     => 'required|integer|min:1',
@@ -311,17 +317,45 @@ class StockAdjustmentController extends Controller
 
     /**
      * Display a listing of the resource.
+     * @permission StockAdjustmentController::destroy
+     * @permission_desc Supprimer une régularisation de stocks
+     */
+    public function destroy(Request $request, string $uuid)
+    {
+        $auth = auth()->user();
+
+        $request->validate([
+            'password' => 'required|string'
+        ]);
+
+        if (!Hash::check($request->password, $auth->password)) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Mot de passe incorrect.'
+            ], 422);
+        }
+        $stock_adjustment = StockAdjustment::findOrFail($uuid);
+
+        $stock_adjustment->delete();
+        return response()->json([
+            'success' => true,
+            'message' => 'Ajustement supprimé avec succès.'
+        ]);
+    }
+
+    /**
+     * Display a listing of the resource.
      * @permission StockAdjustmentController::validated_stock_adjustment
      * @permission_desc Valider une régularisation de stocks
      */
     public function validated_stock_adjustment(Request $request, string $uuid)
     {
         $auth = auth()->user();
+
         $request->validate([
             'password' => 'required|string'
         ]);
 
-        // Vérification du mot de passe
         if (!Hash::check($request->password, $auth->password)) {
             return response()->json([
                 'status'  => 'error',
@@ -329,7 +363,9 @@ class StockAdjustmentController extends Controller
             ], 422);
         }
 
-        $adjustment = StockAdjustment::with('items')->where('uuid', $uuid)->firstOrFail();
+        $adjustment = StockAdjustment::with('items')
+            ->where('uuid', $uuid)
+            ->firstOrFail();
 
         if ($adjustment->status !== 'pending') {
             return response()->json([
@@ -342,6 +378,7 @@ class StockAdjustmentController extends Controller
 
         try {
             foreach ($adjustment->items as $item) {
+
                 $productPoint = ProductPoint::firstOrCreate(
                     [
                         'produit_uuid' => $item->product_uuid,
@@ -350,23 +387,26 @@ class StockAdjustmentController extends Controller
                     ['quantity' => 0]
                 );
 
-                // 🔹 Selon l'action, mise à jour du stock
                 switch (StockAdjustmentAction::from($adjustment->action)) {
+
                     case StockAdjustmentAction::AVARIE:
                     case StockAdjustmentAction::DEDUCTION:
-                    case StockAdjustmentAction::AJUSTEMENT_MOINS:
                         if ($item->quantity > $productPoint->quantity) {
-                            throw new \Exception("Stock insuffisant pour le produit {$item->product_uuid}");
+                            throw new \Exception(
+                                "Stock insuffisant pour le produit {$item->product_uuid}"
+                            );
                         }
+
                         $productPoint->quantity -= $item->quantity;
+                        $productPoint->save();
                         break;
 
                     case StockAdjustmentAction::AJUSTEMENT_PLUS:
                         $productPoint->quantity += $item->quantity;
+                        $productPoint->save();
                         break;
-                }
 
-                $productPoint->save();
+                }
             }
 
             $adjustment->update([
@@ -495,6 +535,27 @@ class StockAdjustmentController extends Controller
         }
 
 
+    }
+
+    /**
+     * Display a listing of the resource.
+     * @permission StockAdjustmentController::export_stock_adjustment
+     * @permission_desc Exporter la régularisation des stocks en Excel(En fonction du filtre)
+     */
+    public function export_stock_adjustment(Request $request)
+    {
+        $filter = StockAdjustmentFilterData::fromRequestStockAdjustmentFilterData($request);
+        $filename = 'LISTE-DES-REGULARISATIONS DE STOCKS-' . now()->format('dmY') . '.xlsx';
+
+        $stocksAdjustmentQuery = filter_stocks_adjustment($filter, false);
+
+        Excel::store(new StockAdjustmentsExport($stocksAdjustmentQuery), $filename, 'stock_adjustment');
+
+        return response()->json([
+            "message" => "Exportation des données effectuée avec succès",
+            "filename" => $filename,
+            "url" => Storage::disk('stock_adjustment')->url($filename)
+        ]);
     }
 
 

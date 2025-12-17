@@ -87,7 +87,7 @@
 </p>
 
 <div class="d-flex justify-content-center mt-2">
-<table class="table table-bordered table-striped text-center border-black" style="font-size: 13px;">
+<table class="table table-bordered table-striped text-center border-black" style="font-size: 11px;">
     <thead>
     <tr>
         <th>N°</th>

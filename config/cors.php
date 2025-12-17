@@ -15,19 +15,26 @@ return [
     |
     */
 
-    'paths' => ['*'],
+
+    'paths' => ['api/*', 'sanctum/csrf-cookie'],
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => ['*'],
+    'allowed_origins' => [
+        'http://localhost:4300',
+        'http://127.0.0.1:4300',
+    ],
 
     'allowed_origins_patterns' => [],
 
     'allowed_headers' => ['*'],
 
-    'exposed_headers' => [],
+    'exposed_headers' => [
+        'Authorization',
+        'X-Requested-With',
+    ],
 
-    'max_age' => 0,
+    'max_age' => 86400,
 
     'supports_credentials' => true,
 

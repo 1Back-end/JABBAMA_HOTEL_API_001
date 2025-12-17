@@ -27,47 +27,34 @@ class PurchaseOrdersExport  implements FromQuery, WithHeadings, WithMapping, Wit
 
     public function map($row): array
     {
-        $itemsList = $row->items->map(function($item) {
-            $quantity = (int) $item->quantity;
-            return $item->product?->name . ' (' . $quantity . ')';
-        })->implode(', ');
-
         return [
-            $row->reference,
             $row->type,
+            $row->reference,
+            optional($row->warehouse_from)->name,
+            $row->is_parent ? 'Commande parent' : 'Commande enfant', // Correctement positionné
             $row->status,
-            $row->notes || '',
             optional($row->creator)->nom_utilisateur,
             optional($row->updater)->nom_utilisateur,
-            optional($row->approver)->nom_utilisateur,
-            optional($row->approved_at)?->format('Y-m-d H:i:s'),
-            optional($row->closed_at)?->format('Y-m-d H:i:s'),
-            optional($row->transfered)->nom_utilisateur,
-            optional($row->transfered_at)?->format('Y-m-d H:i:s'),
-            $row->motif_rejet,
-            $itemsList,
-
+            optional($row->created_at)?->format('Y-m-d H:i:s'),
+            optional($row->updated_at)?->format('Y-m-d H:i:s'),
         ];
     }
 
     public function headings(): array
     {
         return [
-            'Référence',
             'Type',
+            'Référence',
+            'Entrepôt',                // Accent corrigé
+            'Commande',                // Libellé correspondant à is_parent
             'Statut',
-            'Notes',
             'Créé Par',
             'Mis à jour Par',
-            'Approuvé Par',
-            'Approuvé Le',
-            'Clôturé Le',
-            'Transféré Par',
-            'Transféré Le',
-            'Motif Rejet',
-            'Articles Commandés', // Nouvelle colonne
+            'Date Création',
+            'Date Modification',
         ];
     }
+
 
     public function columnFormats(): array
     {

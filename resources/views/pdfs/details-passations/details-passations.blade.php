@@ -80,26 +80,28 @@
 
 
 <div class="d-flex justify-content-between mb-3" style="font-size: 13px; gap: 2rem;">
-    @if(!empty($passations->creator))
+    @if($passations->creator)
         <div>
             <div class="fs-6 fw-bold">Agent initiateur :</div>
             <p class="m-0">
-                <strong>Nom complet :</strong> <span class="text-uppercase fw-bold fs-6">{{ $passations->creator->nom_utilisateur }}</span>
+                <strong>Nom complet :</strong> <span
+                    class="text-uppercase fw-bold fs-6">{{ $passations->creator?->nom_utilisateur ?? '—' }}</span>
             </p>
             <p class="m-0">
-                <strong>Email :</strong> <span class="fw-bold fs-6">{{ $passations->creator->email }}</span>
+                <strong>Email :</strong> <span class="fw-bold fs-6">{{ $passations->creator?->email ?? '—' }}</span>
             </p>
         </div>
     @endif
 
-    @if(!empty($passations->validator))
+    @if($passations->validator)
         <div>
             <div class="fs-6 fw-bold">Agent valideur :</div>
             <p class="m-0">
-                <strong>Nom complet :</strong> <span class="text-uppercase fw-bold fs-6">{{ $passations->validator->nom_utilisateur }}</span>
+                <strong>Nom complet :</strong> <span
+                    class="text-uppercase fw-bold fs-6">{{ $passations->validator?->nom_utilisateur ?? '—' }}</span>
             </p>
             <p class="m-0">
-                <strong>Email :</strong> <span class="fw-bold fs-6">{{ $passations->validator->email }}</span>
+                <strong>Email :</strong> <span class="fw-bold fs-6">{{ $passations->validator?->email ?? '—' }}</span>
             </p>
         </div>
     @endif
@@ -112,7 +114,7 @@
 </p>
 
 <div class="d-flex justify-content-center mt-2">
-    <table class="table table-bordered table-striped text-center border-black" style="font-size: 13px;">
+    <table class="table table-bordered table-striped text-center border-black" style="font-size: 11px;">
         <thead>
         <tr>
             <th>N°</th>
@@ -147,7 +149,7 @@
                     <span style="color: gray;">N/A</span>
                 @endif
             </td>
-            <td>{{ $item->validated->nom_utilisateur }}</td>
+            <td>{{ $item->validated?->nom_utilisateur }}</td>
 
         </tr>
         @endforeach

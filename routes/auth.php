@@ -9,6 +9,7 @@ use App\Http\Controllers\Auth\VerifyEmailController;
 use App\Http\Controllers\ChangeDefaultPasswordController;
 use Illuminate\Support\Facades\Route;
 
+Route::middleware('auth:sanctum')->get('/profile', [AuthenticatedSessionController::class, 'me']);
 
 Route::post('/login', [AuthenticatedSessionController::class, 'store'])
     ->middleware('guest');

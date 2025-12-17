@@ -2,9 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\StockAdjustmentAction;
 use App\Models\Product;
+use App\Models\SupplyItem;
 use App\Models\Warehouse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
@@ -456,6 +459,16 @@ class ProductController extends Controller
         ]);
         //
     }
+
+
+
+
+
+
+
+
+
+
 
 
 

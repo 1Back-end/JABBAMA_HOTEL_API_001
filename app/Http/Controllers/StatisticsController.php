@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\StockAdjustmentAction;
 use App\Models\Supply;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -14,208 +15,107 @@ class StatisticsController extends Controller
 {
     /**
      * Display a listing of the resource.
-     * @permission StatisticsController::priceVariationAll
-     * @permission_desc Statistiques sur la variation des prix des approvisionnements
+     * @permission StatisticsController::get_statistics_by_product
+     * @permission_desc Statistiques sur la variation des quantités, prix unitaires et avaries des articles
      */
-    public function priceVariationAll(Request $request)
+    public function get_statistics_by_product(Request $request, string $uuid)
     {
-        // Validation des dates
-        $request->validate([
-            'start_date' => 'nullable|date',
-            'end_date' => 'nullable|date',
-        ]);
+        $auth = auth()->user();
 
-        $query = Supply::with('items')->orderBy('supply_date');
+        // Récupération sécurisée des dates
+        $start_date_input = $request->input('start_date');
+        $end_date_input   = $request->input('end_date');
 
-        if ($request->start_date) {
-            $start = Carbon::parse($request->start_date)->startOfDay();
-            $query->where('supply_date', '>=', $start);
+        $start_date = ($start_date_input && $start_date_input !== 'undefined')
+            ? \Illuminate\Support\Carbon::parse($start_date_input)->startOfDay()
+            : null;
+
+        $end_date = ($end_date_input && $end_date_input !== 'undefined')
+            ? Carbon::parse($end_date_input)->endOfDay()
+            : null;
+
+        // Action : variation_quantity, variation_price ou avarie
+        $action = $request->input('action', 'variation_quantity');
+
+        // Base query pour les approvisionnements
+        $query = \DB::table('supply_items')
+            ->join('supplies', 'supply_items.supply_uuid', '=', 'supplies.uuid')
+            ->select('supply_items.*', 'supplies.supply_date')
+            ->where('supply_items.product_uuid', $uuid);
+
+        if ($start_date && $end_date) {
+            $query->whereBetween('supplies.supply_date', [$start_date, $end_date]);
         }
 
-        if ($request->end_date) {
-            $end = Carbon::parse($request->end_date)->endOfDay();
-            $query->where('supply_date', '<=', $end);
+        $supplies = $query->orderBy('supplies.supply_date', 'asc')->get();
+
+        if ($action === 'avarie') {
+            // Récupération des ajustements d'avaries
+            $avaries = \DB::table('stock_adjustments_items as sai')
+                ->join('stock_adjustments as sa', 'sai.stock_adjustment_uuid', '=', 'sa.uuid')
+                ->where('sai.product_uuid', $uuid)
+                ->where('sa.action', StockAdjustmentAction::AVARIE->value)
+                ->when($start_date && $end_date, function($q) use ($start_date, $end_date) {
+                    $q->whereBetween('sa.created_at', [$start_date, $end_date]);
+                })
+                ->selectRaw('SUM(sai.quantity) as total_avarie')
+                ->first();
+
+            // Somme totale approvisionnée
+            $total_supplied = $supplies->sum('quantity_supplied');
+
+            $taux_avarie = $total_supplied > 0
+                ? ($avaries->total_avarie / $total_supplied) * 100
+                : 0;
+
+            return response()->json([
+                ['date' => now()->format('Y-m-d'), 'value' => round($taux_avarie, 2)]
+            ]);
         }
 
-        $supplies = $query->get();
-
-        $chartData = $supplies->map(function ($supply) {
-            $totalPrice = $supply->items->sum(fn($item) => (float)$item->unit_price);
-
+        // Sinon on retourne quantity ou price
+        $data = $supplies->map(function($item) use ($action) {
             return [
-                'reference' => $supply->reference,
-                'date' => $supply->supply_date->format('d-m-Y'),
-                'total_unit_price' => $totalPrice,
+                'date' => Carbon::parse($item->supply_date)->format('Y-m-d'),
+                'value' => $action === 'variation_price'
+                    ? (float) $item->unit_price
+                    : (int) $item->quantity_supplied,
             ];
         });
 
-        return response()->json([
-            'status' => 'success',
-            'data' => $chartData,
-        ]);
+        return response()->json($data);
     }
+
+
 
     /**
      * Display a listing of the resource.
-     * @permission StatisticsController::quantityVariation
-     * @permission_desc Statistiques sur la variation des quantités des articles approvisionnées
+     * @permission StatisticsController::topConsumedProducts
+     * @permission_desc Statistiques sur les articles les plus consommés en approvisionnements
      */
-    public function quantityVariation(Request $request)
+    public function topConsumedProducts(Request $request)
     {
-        $request->validate([
-            'period' => 'required|in:week,month,year',
-            'week' => 'nullable|integer|min:1|max:53',
-            'year' => 'nullable|integer|min:2000',
-            'start_date' => 'nullable|date',
-            'end_date' => 'nullable|date',
-        ]);
+        // On peut filtrer par date si nécessaire
+        $start_date = $request->input('start_date') ? $request->input('start_date') : null;
+        $end_date = $request->input('end_date') ? $request->input('end_date') : null;
 
-        try {
-            $period = $request->period;
+        $query = DB::table('supply_items as si')
+            ->join('supplies as s', 'si.supply_uuid', '=', 's.uuid')
+            ->join('produits as p', 'si.product_uuid', '=', 'p.uuid')
+            ->select('p.uuid', 'p.name', 'p.code', DB::raw('COUNT(s.uuid) as frequency'))
+            ->groupBy('p.uuid', 'p.name', 'p.code')
+            ->orderByDesc('frequency');
 
-            // 🔹 Calcul start et end selon la période
-            $start = null;
-            $end = null;
-
-            if ($period === 'week') {
-                if (!$request->week || !$request->year) {
-                    return response()->json(['status' => 'error', 'message' => 'Semaine et année obligatoires'], 400);
-                }
-                $start = Carbon::now()->setISODate($request->year, $request->week)->startOfWeek();
-                $end   = Carbon::now()->setISODate($request->year, $request->week)->endOfWeek();
-            } elseif ($period === 'month') {
-                if (!$request->start_date || !$request->end_date) {
-                    return response()->json(['status' => 'error', 'message' => 'Dates début et fin obligatoires'], 400);
-                }
-                $start = Carbon::parse($request->start_date)->startOfMonth();
-                $end   = Carbon::parse($request->end_date)->endOfMonth();
-            } elseif ($period === 'year') {
-                if (!$request->year) {
-                    return response()->json(['status' => 'error', 'message' => 'Année obligatoire'], 400);
-                }
-                // Pour l'année, on prend du 01/01 à 31/12 de l'année choisie
-                $start = Carbon::createFromDate($request->year, 1, 1)->startOfDay();
-                $end   = Carbon::createFromDate($request->year, 12, 31)->endOfDay();
-            }
-
-            // 🔹 Sélection de la période pour le groupement
-            switch ($period) {
-                case 'week':
-                    $periodSelect = DB::raw("YEARWEEK(supplies.created_at, 1) as period");
-                    break;
-                case 'month':
-                    $periodSelect = DB::raw("DATE_FORMAT(supplies.created_at, '%Y-%m') as period");
-                    break;
-                case 'year':
-                    $periodSelect = DB::raw("DATE_FORMAT(supplies.created_at, '%Y-%m') as period"); // grouper par mois pour l'année
-                    break;
-            }
-
-            $query = DB::table('supplies')
-                ->join('supply_items', 'supply_items.supply_uuid', '=', 'supplies.uuid')
-                ->select(
-                    'supplies.reference',
-                    $periodSelect,
-                    DB::raw('SUM(supply_items.quantity_supplied) as total_quantity')
-                )
-                ->whereBetween('supplies.created_at', [$start, $end])
-                ->groupBy('supplies.reference', DB::raw('period'))
-                ->orderBy('period', 'ASC');
-
-            $data = $query->get();
-
-            // 🔹 Transformer les labels
-            $data = $data->map(function($item) use ($period) {
-                if ($period === 'week') {
-                    $year = intdiv($item->period, 100);
-                    $week = $item->period % 100;
-                    $item->period = "Semaine $week / $year";
-                } elseif ($period === 'month' || $period === 'year') {
-                    $item->period = Carbon::createFromFormat('Y-m', $item->period)->format('m/Y');
-                }
-                return $item;
-            });
-
-            return response()->json([
-                'status' => 'success',
-                'period' => $period,
-                'year'   => $request->year ?? null,
-                'data'   => $data
-            ]);
-
-        } catch (\Throwable $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => $e->getMessage()
-            ], 500);
+        if ($start_date && $end_date) {
+            $query->whereBetween('s.supply_date', [$start_date, $end_date]);
         }
+
+        $data = $query->get();
+
+        return response()->json($data);
     }
 
-    /**
-     * Display a listing of the resource.
-     * @permission StatisticsController::mostConsumedArticles
-     * @permission_desc Statistiques sur les articles les plus consommés dans les approvisionnements
-     */
-    public function mostConsumedArticles(Request $request)
-    {
-        $request->validate([
-            'start_date' => 'nullable|date',
-            'end_date'   => 'nullable|date',
-            'per_page'   => 'nullable|integer|min:1|max:100',
-            'page'       => 'nullable|integer|min:1'
-        ]);
 
-        $start = $request->start_date
-            ? Carbon::parse($request->start_date)->startOfDay()
-            : null;
-
-        $end = $request->end_date
-            ? Carbon::parse($request->end_date)->endOfDay()
-            : null;
-
-        // ✅ pagination
-        $perPage = $request->input('per_page', 25);
-
-        try {
-            $query = DB::table('supply_items')
-                ->join('supplies', 'supplies.uuid', '=', 'supply_items.supply_uuid')
-                ->join('produits', 'produits.uuid', '=', 'supply_items.product_uuid')
-                ->select(
-                    'produits.uuid as product_uuid',
-                    'produits.code as reference',
-                    'produits.name as product_name',
-                    DB::raw('COUNT(supplies.uuid) as supply_count'),
-                    DB::raw('SUM(supply_items.quantity_supplied) as total_quantity')
-                )
-                ->groupBy(
-                    'produits.uuid',
-                    'produits.code',
-                    'produits.name'
-                )
-                ->orderByDesc('supply_count');
-
-            if ($start) {
-                $query->where('supplies.created_at', '>=', $start);
-            }
-
-            if ($end) {
-                $query->where('supplies.created_at', '<=', $end);
-            }
-
-            $data = $query->paginate($perPage);
-
-            return response()->json([
-                'status' => 'success',
-                'data'   => $data
-            ]);
-
-        } catch (\Throwable $e) {
-            return response()->json([
-                'status'  => 'error',
-                'message' => $e->getMessage()
-            ], 500);
-        }
-    }
 
 
 

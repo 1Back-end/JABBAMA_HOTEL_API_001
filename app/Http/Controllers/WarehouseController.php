@@ -6,8 +6,11 @@ use App\DTO\WarehouseFilterData;
 use App\Exports\InventoryByPointExport;
 use App\Exports\InventoryExport;
 use App\Exports\PurchaseOrdersExport;
+use App\Exports\SuppliersExport;
 use App\Exports\WarehousesExport;
+use App\Exports\WarehousesExportAll;
 use App\Models\PdfDocument;
+use App\Models\Product;
 use App\Models\ProductPoint;
 use App\Models\Warehouse;
 use App\Models\WarehouseManager;
@@ -358,29 +361,65 @@ class WarehouseController extends Controller
     }
 
 
-    public function get_products_by_warehouse(string $uuid, Request $request)
+    public function get_products_by_warehouse($uuid, Request $request)
     {
-        $search = $request->query('search', '');
-        $is_active = $request->query('is_active', null);
+        $perPage = $request->input('limit', 25);
+        $page = $request->input('page', 1);
 
-        $warehouse = Warehouse::with(['products' => function($query) use ($search, $is_active) {
-            if ($search) {
-                $query->where('produits.name', 'like', "%{$search}%");
+        // 🔹 Récupérer les produits liés aux points de cet entrepôt
+        $query = Product::with([
+            'creator',
+            'updater',
+            'category',
+            'unitMeasure',
+            'subCategories',
+            'medias',
+            'points' => function ($q) use ($uuid) {
+                $q->where('warehouses.uuid', $uuid);
             }
+        ])->whereHas('points', function ($q) use ($uuid) {
+            $q->where('warehouses.uuid', $uuid);
+        });
 
-            // IMPORTANT : préciser la table !
-            if (!is_null($is_active)) {
-                $query->where('produit_point.is_active', $is_active);
-                // ⚠️ ou alors `produits.is_active` selon ce que tu veux vraiment filtrer
-            }
-        }])->findOrFail($uuid);
+        // 🔹 Filtre catégorie
+        if ($request->filled('category_uuid')) {
+            $query->where('category_uuid', $request->category_uuid);
+        }
+
+        // 🔹 Filtre unité
+        if ($request->filled('unit_uuid')) {
+            $query->where('unit_uuid', $request->unit_uuid);
+        }
+
+        // 🔹 Recherche globale
+        if ($search = trim($request->input('search'))) {
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('code', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%")
+                    ->orWhereHas('unitMeasure', fn($u) => $u->where('name', 'like', "%{$search}%"))
+                    ->orWhereHas('category', fn($c) => $c->where('name', 'like', "%{$search}%"));
+            });
+        }
+
+        $products = $query->latest()->paginate($perPage, ['*'], 'page', $page);
 
         return response()->json([
-            'success' => true,
-            'message' => "Produits de l’entrepôt récupérés avec succès.",
-            'data'    => $warehouse->products,
+            'data'         => $products->items(),
+            'current_page' => $products->currentPage(),
+            'last_page'    => $products->lastPage(),
+            'total'        => $products->total(),
         ]);
     }
+
+
+
+
+
+
+
+
+
 
 
 
@@ -530,6 +569,24 @@ class WarehouseController extends Controller
             "url" => Storage::disk('exportwarehouse')->url($filename)
         ]);
 
+    }
+
+    /**
+     * Display a listing of the resource.
+     * @permission WarehouseController::export_warehouses
+     * @permission_desc Exporter la liste des Points / entrepôts
+     */
+    public function export_warehouses()
+    {
+        $fileName = 'LISTE-DES-ENTREPOTS-' . Carbon::now()->format('Y-m-d') . '.xlsx';
+
+        Excel::store(new WarehousesExportAll(), $fileName, 'exportwarehouseall');
+
+        return response()->json([
+            "message" => "Exportation des données effectuée avec succès",
+            "filename" => $fileName,
+            "url" => Storage::disk('exportwarehouseall')->url($fileName)
+        ]);
     }
 
 

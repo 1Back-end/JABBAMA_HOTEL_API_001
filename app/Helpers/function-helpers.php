@@ -4,6 +4,7 @@ use App\DTO\PurchaseOrderFilterData;
 use App\DTO\SupplyFilterData;
 use App\Models\Medias;
 use App\Models\PurchaseOrder;
+use App\Models\StockAdjustment;
 use App\Models\Supply;
 use App\Models\User;
 use App\Models\Warehouse;
@@ -18,6 +19,92 @@ use Spatie\Browsershot\Browsershot;
 use Illuminate\Pagination\LengthAwarePaginator;
 
 
+/**
+ * Retourne la requête ou la collection paginée des bons de commande filtrés
+ *
+ * @param \App\DTO\StockAdjustmentFilterData $filter
+ * @param bool $paginate
+ * @return Builder|LengthAwarePaginator
+ */
+if (!function_exists('filter_stocks_adjustment')) {
+    function filter_stocks_adjustment(
+        \App\DTO\StockAdjustmentFilterData $filterData,
+        bool $paginate = true
+    ): Builder|LengthAwarePaginator {
+
+        $query = StockAdjustment::with([
+            'warehouse',
+            'items.product',
+            'creator',
+            'updater',
+            'validator',
+        ]);
+
+        // 🔹 Filtres simples
+        if (!empty($filterData->status)) {
+            $query->where('status', $filterData->status);
+        }
+
+        if (!empty($filterData->action)) {
+            $query->where('action', $filterData->action);
+        }
+
+        if (!empty($filterData->warehouse_uuid)) {
+            $query->where('warehouse_uuid', $filterData->warehouse_uuid);
+        }
+
+        // 🔹 Recherche globale
+        if (!empty($filterData->search)) {
+            $search = trim($filterData->search);
+
+            $query->where(function ($q) use ($search) {
+                $q->where('uuid', 'like', "%{$search}%")
+                    ->orWhere('status', 'like', "%{$search}%")
+                    ->orWhere('notes', 'like', "%{$search}%")
+                    ->orWhere('comment', 'like', "%{$search}%")
+                    ->orWhere('action', 'like', "%{$search}%")
+                    ->orWhere('reference', 'like', "%{$search}%")
+
+                    // Entrepôt
+                    ->orWhereHas('warehouse', fn ($qw) =>
+                    $qw->where('name', 'like', "%{$search}%")
+                        ->orWhere('ref', 'like', "%{$search}%")
+                        ->orWhere('address', 'like', "%{$search}%")
+                        ->orWhere('stock_type', 'like', "%{$search}%")
+                    )
+
+                    // Utilisateurs
+                    ->orWhereHas('creator', fn ($qu) =>
+                    $qu->where('nom_utilisateur', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%")
+                        ->orWhere('login', 'like', "%{$search}%")
+                    )
+                    ->orWhereHas('updater', fn ($qu) =>
+                    $qu->where('nom_utilisateur', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%")
+                        ->orWhere('login', 'like', "%{$search}%")
+                    )
+                    ->orWhereHas('validator', fn ($qu) =>
+                    $qu->where('nom_utilisateur', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%")
+                        ->orWhere('login', 'like', "%{$search}%")
+                    )
+
+                    // Produits
+                    ->orWhereHas('items.product', fn ($qp) =>
+                    $qp->where('name', 'like', "%{$search}%")
+                        ->orWhere('code', 'like', "%{$search}%")
+                        ->orWhere('description', 'like', "%{$search}%")
+                    );
+            });
+        }
+        return $paginate
+            ? $query->paginate(perPage: $filterData->limit, page: $filterData->page)
+            : $query;
+    }
+
+
+}
 /**
  * Retourne la requête ou la collection paginée des bons de commande filtrés
  *

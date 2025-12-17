@@ -14,8 +14,7 @@ enum StockAdjustmentAction: int
         return [
             self::AVARIE->value           => 'AVARIE',
             self::DEDUCTION->value        => 'DEDUCTION',
-            self::AJUSTEMENT_PLUS->value  => 'AJUSTEMENT POSITIF',
-            self::AJUSTEMENT_MOINS->value => 'AJUSTEMENT NEGATIF',
+            self::AJUSTEMENT_PLUS->value  => 'AUGMENTATION',
         ];
     }
 
@@ -24,8 +23,7 @@ enum StockAdjustmentAction: int
         return match ($value) {
             self::AVARIE->value           => 'AVARIE',
             self::DEDUCTION->value        => 'DEDUCTION',
-            self::AJUSTEMENT_PLUS->value  => 'AJUSTEMENT POSITIF',
-            self::AJUSTEMENT_MOINS->value => 'AJUSTEMENT NEGATIF',
+            self::AJUSTEMENT_PLUS->value  => 'AUGMENTATION DU STOCK',
             default => 'INCONNU',
         };
     }
