@@ -111,9 +111,10 @@ class ProductController extends Controller
     {
         $auth = auth()->user();
 
-        DB::beginTransaction(); // Démarre la transaction
+        DB::beginTransaction();
 
         try {
+            // Validation des champs
             $validated = $request->validate([
                 'name' => 'required|string|max:255|unique:produits,name',
                 'description' => 'nullable|string',
@@ -122,27 +123,24 @@ class ProductController extends Controller
                 'purchase_price' => 'nullable|numeric|min:0',
                 'sale_price' => 'nullable|numeric|min:0',
                 'stock_quantity' => 'nullable|integer|min:0',
-                'minimum_stock' => 'nullable|integer|min:0',
+                'minimum_stock' => 'required|integer|min:0', // obligatoire
                 'sub_categories' => 'nullable|array',
                 'sub_categories.*' => 'exists:sub_categories,uuid',
                 'points' => 'nullable|array',
                 'points.*.uuid' => 'required|exists:warehouses,uuid',
                 'points.*.quantity' => 'nullable|integer|min:0',
-                'image_file' => 'nullable', 'file', 'max:2048', 'mimes:jpg,jpeg,png,svg'
+                'image_file' => 'nullable|file|max:2048|mimes:jpg,jpeg,png,svg',
             ], [
                 'name.required' => 'Le nom du produit est obligatoire.',
                 'name.unique' => 'Ce nom de produit existe déjà.',
-                'purchase_price.required' => 'Le prix d\'achat est obligatoire.',
-                'sale_price.required' => 'Le prix de vente est obligatoire.',
-                'stock_quantity.required' => 'La quantité en stock est obligatoire.',
-                'minimum_stock.required' => 'Le stock minimum est obligatoire.',
+                'minimum_stock.required' => 'Le stock minimal est obligatoire.',
                 'category_uuid.exists' => 'La catégorie sélectionnée n\'existe pas.',
                 'unit_uuid.exists' => 'L\'unité de mesure sélectionnée n\'existe pas.',
                 'sub_categories.*.exists' => 'Une sous-catégorie sélectionnée est invalide.',
                 'points.*.uuid.exists' => 'Un point de dépôt sélectionné est invalide.',
-                'points.*.quantity.required' => 'La quantité pour chaque point est obligatoire.',
+                'points.*.quantity.min' => 'La quantité pour chaque point doit être au moins 0.',
                 'image_file.max' => 'La taille maximale de l\'image du produit doit être de 2Mo',
-                'image_fil.mimes' => 'L\'image du produit doit prendre en compte uniquement ce type de fichier: jpg, jpeg et png'
+                'image_file.mimes' => 'L\'image du produit doit être de type jpg, jpeg, png ou svg',
             ]);
 
             $validated['created_by'] = $auth->id;
@@ -150,7 +148,7 @@ class ProductController extends Controller
             // Création du produit
             $product = Product::create($validated);
 
-            // Association des sous-catégories
+            // Sous-catégories
             if (!empty($validated['sub_categories'])) {
                 $pivotData = [];
                 foreach ($validated['sub_categories'] as $sub_uuid) {
@@ -163,12 +161,13 @@ class ProductController extends Controller
                 $product->subCategories()->sync($pivotData);
             }
 
-            // Association des points de dépôt
+            // Points de dépôt avec stocks_minimal
             if (!empty($validated['points'])) {
                 $pivotData = [];
                 foreach ($validated['points'] as $point) {
                     $pivotData[$point['uuid']] = [
-                        'quantity' => $point['quantity'],
+                        'quantity' => $point['quantity'] ?? 0,
+                        'stocks_minimal' => $point['stocks_minimal'] ?? $validated['minimum_stock'], // prend la valeur envoyée pour chaque point ou le minimum_stock global
                         'created_by' => $auth->id,
                         'updated_by' => $auth->id,
                     ];
@@ -179,7 +178,7 @@ class ProductController extends Controller
             // Upload de l'image
             if ($request->hasFile('image_file')) {
                 $file = $request->file('image_file');
-                $filename = time() . '_' . $file->getClientOriginalName(); // pour éviter les doublons
+                $filename = time() . '_' . $file->getClientOriginalName();
                 $path = $file->store('products', 'public');
 
                 $product->medias()->create([
@@ -197,11 +196,11 @@ class ProductController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => "Le produit '{$product->name}' a été créé avec succès !",
-                'product' => $product->load(['subCategories', 'points'])
+                'product' => $product->load(['subCategories', 'points']),
             ], 201);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
-            DB::rollback(); // Annule la transaction en cas d'erreur de validation
+            DB::rollBack();
             return response()->json([
                 'success' => false,
                 'message' => 'Erreur de validation. Veuillez vérifier les champs saisis.',
@@ -209,7 +208,7 @@ class ProductController extends Controller
             ], 422);
 
         } catch (\Exception $e) {
-            DB::rollback(); // Annule la transaction en cas d'erreur
+            DB::rollBack();
             return response()->json([
                 'success' => false,
                 'message' => 'Impossible de créer le produit pour le moment. Veuillez réessayer plus tard.',
@@ -217,6 +216,7 @@ class ProductController extends Controller
             ], 500);
         }
     }
+
 
     /**
      * Display a listing of the resource.
@@ -316,7 +316,7 @@ class ProductController extends Controller
         DB::beginTransaction();
 
         try {
-            $product = Product::findOrFail($uuid);
+            $product = Product::where('uuid', $uuid)->firstOrFail();
 
             // Validation des champs obligatoires
             $validated = $request->validate([
@@ -333,7 +333,8 @@ class ProductController extends Controller
                 'points' => 'nullable|array',
                 'points.*.uuid' => 'required|exists:warehouses,uuid',
                 'points.*.quantity' => 'required|integer|min:0',
-                'image_file' => 'nullable', 'file', 'max:2048', 'mimes:jpg,jpeg,png,svg'
+                'points.*.stocks_minimal' => 'nullable|integer|min:0',
+                'image_file' => 'nullable|file|max:2048|mimes:jpg,jpeg,png,svg'
             ], [
                 'name.required' => 'Le nom du produit est obligatoire.',
                 'name.unique' => 'Ce nom de produit existe déjà.',
@@ -351,36 +352,49 @@ class ProductController extends Controller
 
             $validated['updated_by'] = $auth->id;
 
-            // Mise à jour du produit
+            // Mise à jour produit
             $product->update($validated);
 
-            // Gestion des sous-catégories
-            if (isset($validated['sub_categories'])) {
+            // Sous-catégories
+            if ($request->has('sub_categories')) {
                 $pivotData = [];
                 foreach ($validated['sub_categories'] as $sub_uuid) {
                     $pivotData[$sub_uuid] = [
+                        'is_active' => true,
                         'updated_by' => $auth->id,
                     ];
                 }
                 $product->subCategories()->sync($pivotData);
             }
 
-            // Gestion des points de dépôt
-            if (isset($validated['points'])) {
+            // Points de dépôt (⚠️ ne supprime pas les quantités si non envoyées)
+            if ($request->has('points')) {
                 $pivotData = [];
+
                 foreach ($validated['points'] as $point) {
+                    $existing = $product->points()->where('warehouses.uuid', $point['uuid'])->first();
+
                     $pivotData[$point['uuid']] = [
-                        'quantity' => $point['quantity'],
+                        'quantity' => array_key_exists('quantity', $point)
+                            ? $point['quantity']
+                            : ($existing->pivot->quantity ?? 0),
+
+                        'stocks_minimal' => $point['stocks_minimal']
+                            ?? ($existing->pivot->stocks_minimal ?? $validated['minimum_stock']),
+
                         'updated_by' => $auth->id,
                     ];
                 }
+
                 $product->points()->sync($pivotData);
             }
 
-            // Upload image si présent
+            // Image (remplacement)
             if ($request->hasFile('image_file')) {
+                $product->medias()->delete();
+
                 $file = $request->file('image_file');
-                $filename = $file->getClientOriginalName();
+                $filename = time() . '_' . $file->getClientOriginalName();
                 $path = $file->store('products', 'public');
 
                 $product->medias()->create([
@@ -388,7 +402,7 @@ class ProductController extends Controller
                     'disk' => 'public',
                     'path' => $path,
                     'filename' => $filename,
-                    'mimetype' => $file->getMimeType(),
+                    'mimetype' => $file->getClientMimeType(),
                     'extension' => $file->getClientOriginalExtension(),
                 ]);
             }
@@ -397,17 +411,9 @@ class ProductController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => "Le produit '{$product->name}' a été mis à jour avec succès !",
-                'product' => $product->load(['subCategories', 'points', 'medias'])
+                'message' => "Le produit '{$product->name}' a été mis à jour avec succès.",
+                'product' => $product->load(['subCategories', 'points']),
             ], 200);
-
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            DB::rollback();
-            return response()->json([
-                'success' => false,
-                'message' => 'Erreur de validation. Veuillez vérifier les champs saisis.',
-                'errors' => $e->errors()
-            ], 422);
 
         } catch (\Exception $e) {
             DB::rollback();

@@ -41,7 +41,7 @@ class WarehouseController extends Controller
         $query = Warehouse::with(['creator', 'updater', 'natures', 'managers']);
 
         // 🔥 Filtrer selon le rôle
-        if (!$auth->hasRole('SUPER_ADMIN')) {
+        if (!$auth->hasRole(['SUPER_ADMIN', 'GESTIONNAIRE_STOCK'])) {
             $query->whereHas('managers', function ($q) use ($auth) {
                 $q->where('user_id', $auth->id);
             });
@@ -360,7 +360,11 @@ class WarehouseController extends Controller
         ]);
     }
 
-
+    /**
+     * Display a listing of the resource.
+     * @permission WarehouseController::get_products_by_warehouse
+     * @permission_desc Afficher les articles par entrepôts
+     */
     public function get_products_by_warehouse($uuid, Request $request)
     {
         $perPage = $request->input('limit', 25);
@@ -413,16 +417,11 @@ class WarehouseController extends Controller
     }
 
 
-
-
-
-
-
-
-
-
-
-
+    /**
+     * Display a listing of the resource.
+     * @permission WarehouseController::get_managers_by_warehouse
+     * @permission_desc Afficher les managers par entrepôts
+     */
     public function get_managers_by_warehouse(string $uuid, Request $request)
     {
         $search = $request->query('search', '');
@@ -555,6 +554,11 @@ class WarehouseController extends Controller
         }
     }
 
+    /**
+     * Display a listing of the resource.
+     * @permission WarehouseController::export_warehouse
+     * @permission_desc Exporter la liste des entrepôts en Excel
+     */
     public function export_warehouse(Request $request)
     {
         $filter = WarehouseFilterData::fromRequestWarehouse($request);

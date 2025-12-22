@@ -24,6 +24,7 @@ class ProductPoint extends Pivot
         'is_active',
         'created_by',
         'updated_by',
+        'stocks_minimal'
     ];
 
     public function product()

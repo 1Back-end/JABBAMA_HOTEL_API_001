@@ -106,6 +106,8 @@ Route::middleware(['activity'])->group(function () {
         Route::get('/statistics/products/{uuid}/statistics', [\App\Http\Controllers\StatisticsController::class, 'get_statistics_by_product']);
         Route::get('/statistics/products/top_consumed', [\App\Http\Controllers\StatisticsController::class, 'topConsumedProducts']);
 
+        Route::post('/permissions/sync_permissions', [\App\Http\Controllers\PermissionAdminController::class, 'sync_permissions']);
+        Route::post('/migrations/run_migrations', [\App\Http\Controllers\MigrationController::class, 'run_migrations']);
 
 
     });

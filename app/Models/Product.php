@@ -83,7 +83,7 @@ class Product extends Model
             'point_uuid'
         )
             ->using(\App\Models\ProductPoint::class) // pivot personnalisé
-            ->withPivot('uuid', 'quantity', 'is_active')
+            ->withPivot('uuid', 'quantity', 'stocks_minimal','is_active')
             ->withTimestamps();
     }
 

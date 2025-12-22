@@ -118,6 +118,12 @@ class StockAdjustmentController extends Controller
         }
 
         $data = $request->validate([
+            'warehouse_uuid'        => 'required|exists:warehouses,uuid',
+            'action'                => [
+                'required',
+                'integer',
+                Rule::in(array_column(StockAdjustmentAction::cases(), 'value')),
+            ],
             'notes'                => 'nullable|string',
             'items'                => 'required|array|min:1',
             'items.*.product_uuid' => 'required|exists:produits,uuid',
@@ -128,6 +134,8 @@ class StockAdjustmentController extends Controller
 
         try {
             $adjustment->update([
+                'warehouse_uuid' => $data['warehouse_uuid'],
+                'action'          => $data['action'],
                 'notes'      => $data['notes'],
                 'updated_by' => $auth->id,
                 'status'     => 'pending',
@@ -386,14 +394,16 @@ class StockAdjustmentController extends Controller
                     ],
                     ['quantity' => 0]
                 );
+                $productName = $item->product->name ?? $item->product_uuid;
 
                 switch (StockAdjustmentAction::from($adjustment->action)) {
 
                     case StockAdjustmentAction::AVARIE:
                     case StockAdjustmentAction::DEDUCTION:
+                    case StockAdjustmentAction::AJUSTEMENT_MOINS:
                         if ($item->quantity > $productPoint->quantity) {
                             throw new \Exception(
-                                "Stock insuffisant pour le produit {$item->product_uuid}"
+                                "Stock insuffisant pour le produit {$productName}"
                             );
                         }
 

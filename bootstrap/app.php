@@ -38,8 +38,6 @@ return Application::configure(basePath: dirname(__DIR__))
             'check.permission' => \App\Http\Middleware\CheckPermission::class,
             'user.change_password' => UserPasswordChangeMiddleware::class,
             'auth.system' => \App\Http\Middleware\AuthSystemMiddleware::class,
-            'api.activity' => \App\Http\Middleware\SaveLastApiUrl::class,
-
         ]);
 
     })

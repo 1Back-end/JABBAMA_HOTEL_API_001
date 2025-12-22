@@ -15,6 +15,7 @@ enum StockAdjustmentAction: int
             self::AVARIE->value           => 'AVARIE',
             self::DEDUCTION->value        => 'DEDUCTION',
             self::AJUSTEMENT_PLUS->value  => 'AUGMENTATION',
+            self::AJUSTEMENT_MOINS->value => 'SUPPRESSION',
         ];
     }
 
@@ -24,6 +25,7 @@ enum StockAdjustmentAction: int
             self::AVARIE->value           => 'AVARIE',
             self::DEDUCTION->value        => 'DEDUCTION',
             self::AJUSTEMENT_PLUS->value  => 'AUGMENTATION DU STOCK',
+            self::AJUSTEMENT_MOINS->value => 'SUPPRESSION DU STOCK',
             default => 'INCONNU',
         };
     }

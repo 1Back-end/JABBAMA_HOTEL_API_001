@@ -488,7 +488,7 @@ class PassationController extends Controller
         DB::beginTransaction();
         $passation = Passation::where('uuid', $uuid)->firstOrFail();
 
-        $passation->forceDelete();
+        $passation->delete();
         DB::commit();
         return response()->json([
             'status'  => 'success',
