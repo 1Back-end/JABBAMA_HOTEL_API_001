@@ -412,7 +412,7 @@ class SupplyController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SupplyController::update_supplies
-     * @permission_desc Modification des approvisionnements
+     * @permission_desc Modifier les approvisionnements
      */
     public function update_supplies(Request $request, string $uuid)
     {
@@ -570,7 +570,7 @@ class SupplyController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SupplyController::destroy
-     * @permission_desc Suppression des approvisionnements
+     * @permission_desc Supprimer les approvisionnements
      */
     public function destroy(Request $request, string $uuid)
     {
@@ -640,7 +640,7 @@ class SupplyController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SupplyController::rejected_supplies
-     * @permission_desc Rejet des approvisionnements
+     * @permission_desc Rejetter les approvisionnements
      */
     public function rejected_supplies(Request $request, string $uuid)
     {
@@ -669,7 +669,7 @@ class SupplyController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SupplyController::validate_supply
-     * @permission_desc Validation complète des approvisionnements
+     * @permission_desc Valider les approvisionnements
      */
     public function validate_supply(Request $request, string $uuid)
     {
@@ -852,7 +852,7 @@ class SupplyController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SupplyController::open_supply
-     * @permission_desc Ouvrir des approvisionnements
+     * @permission_desc Ouvrir les approvisionnements
      */
     public function open_supply(Request $request, string $uuid)
     {
@@ -873,7 +873,7 @@ class SupplyController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SupplyController::cancel_supply
-     * @permission_desc Annuler un approvisionnement
+     * @permission_desc Annuler les approvisionnements
      */
     public function cancel_supply(Request $request, string $uuid)
     {
