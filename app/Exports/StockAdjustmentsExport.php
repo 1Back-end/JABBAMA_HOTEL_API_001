@@ -2,6 +2,9 @@
 
 namespace App\Exports;
 
+use App\Enums\PurchaseOrdersStatus;
+use App\Enums\StockAdjustmentAction;
+use App\Enums\StocksAdjustmentStatus;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Maatwebsite\Excel\Concerns\FromQuery;
@@ -47,8 +50,8 @@ class StockAdjustmentsExport implements FromQuery, WithHeadings, WithMapping
         return [
             $row->reference,
             $row->warehouse?->name, // safe
-            $row->action,
-            $row->status,
+            StockAdjustmentAction::LABEL($row->action),
+            StocksAdjustmentStatus::safeLabel($row->status), // ✅ traduction ici
             optional($row->created_at)->format('Y-m-d H:i:s'),
             optional($row->updated_at)->format('Y-m-d H:i:s'),
             optional($row->creator)->nom_utilisateur,

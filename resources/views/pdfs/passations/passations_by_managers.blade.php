@@ -71,7 +71,13 @@
 {{-- Header --}}
 <header class="text-center">
     <div class="fs-3 fw-bold text-uppercase">
-        INVENTAIRE DE STOCKS DE L'{{ $warehouse->name }}
+        Écarts de passations de stocks
+        <h2 style="font-style: italic;font-size: 12px">Agent : {{ $manager->nom_utilisateur }}</h2>
+        @if($start_date && $end_date)
+            <h3 style="font-style: italic;font-size: 11px">
+                Période : {{ $start_date }} au {{ $end_date }}
+            </h3>
+        @endif
     </div>
 </header>
 
@@ -85,32 +91,48 @@
 </p>
 
 <div class="d-flex justify-content-center mt-2">
-    <table class="table table-bordered table-striped text-center border-black" style="font-size: 12px;">
-        <thead>
-        <tr>
-            <th>N°</th>
-            <th>Réference</th>
-            <th>Article</th>
-            <th>Quantité</th>
-            <th>Stock d'alerte</th>
-        </tr>
-        </thead>
-
-        <tbody>
-        @foreach ($product_points as $index => $item)
+    @foreach($passations as $passation)
+        <table class="table table-bordered table-striped border-black" style="font-size: 11px;">
+            <thead>
             <tr>
-                <td>{{ $index + 1 }}</td>
-                <td>{{ $item->product->code ?? '-' }}</td>
-                <td>{{ $item->product->name ?? '-' }}</td>
-                <td class="fw-bold">{{ $item->quantity }}</td>
-                <td class="fw-bold">{{ $item->stocks_minimal }}</td>
+                <th>N°</th>
+                <th>Réference</th>
+                <th>Article</th>
+                <th>Qté transférée</th>
+                <th>Qté comptée</th>
+                <th>Ecart</th>
+                <th>Statut</th>
             </tr>
-        @endforeach
-        </tbody>
-    </table>
+            </thead>
+            <tbody>
+            @foreach($passation->items as $index => $item)
+                <tr>
+                    <td>{{ $index + 1 }}</td>
+                    <td>{{ $item->product->code ?? '---' }}</td>
+                    <td>{{ $item->product->name ?? '---' }}</td>
+                    <td>{{ $item->quantity_sent }}</td>
+                    <td>{{ $item->quantity_counted }}</td>
+                    <td>{{ $item->difference }}</td>
+                    <td>
+                        @if($item->status === 'ok')
+                            <span class="text-success fw-bold">Ok</span>
+                        @elseif($item->status === 'pending')
+                            <span class="text-warning fw-bold">En attente</span>
+                        @elseif($item->status === 'in_discuss')
+                            <span class="text-danger fw-bold">Non Ok</span>
+                        @else
+                            <span style="color: gray;">N/A</span>
+                        @endif
+                    </td>
+                </tr>
+            @endforeach
+            </tbody>
+        </table>
+    @endforeach
+
 </div>
 <div class="text-end mt-3" style="font-size: 13px;">
-    <p>Fait le {{ now()->format('d/m/Y H:i') }}</p>
+    <p>Fait le {{ $passation->created_at->format('d/m/Y H:i') }}</p>
 </div>
 
 

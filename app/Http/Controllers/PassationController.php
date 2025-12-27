@@ -6,6 +6,7 @@ use App\Models\Passation;
 use App\Models\PassationItem;
 use App\Models\PdfDocument;
 use App\Models\PurchaseOrder;
+use App\Models\User;
 use App\Models\Warehouse;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -633,6 +634,207 @@ class PassationController extends Controller
             'passation' => $passation->load('agentFrom', 'agentTo', 'warehouse'),
         ]);
     }
+
+    /**
+     * Display a listing of the resource.
+     * @permission PassationController::print_passations_by_agents_uuid
+     * @permission_desc Imprimer les écarts de passations de stocks en PDF
+     */
+//    public function print_passations_by_agents_uuid(Request $request)
+//    {
+//        $auth = auth()->user();
+//
+//        try {
+//            $manager_id = $request->input('manager_id');
+//            if (!$manager_id) {
+//                return response()->json([
+//                    'status' => 'error',
+//                    'message' => 'Manager non sélectionné.'
+//                ], 422);
+//            }
+//            $start_date = \Illuminate\Support\Carbon::parse($request->input('start_date'))->startOfDay();
+//            $end_date = Carbon::parse($request->input('end_date'))->endOfDay();
+//            // Récupération des passations liées au manager et en discussion
+//            $passations = Passation::with([
+//                'agentFrom',
+//                'agentTo',
+//                'warehouse',
+//                'creator',
+//                'updater',
+//                'validator',
+//                'rejector',
+//                'cancellor',
+//                'managers',
+//                'items' => function($q) {
+//                    $q->where('status', 'in_discuss'); // ne récupérer que les items en discussion
+//                }
+//            ])
+//                ->whereHas('managers', function($q) use ($manager_id) {
+//                    $q->where('users.id', $manager_id);
+//                })
+//                ->whereHas('items', function($q) {
+//                    $q->where('status', 'in_discuss'); // au moins un item en discussion
+//                })
+//                ->when($start_date && $end_date, function($q) use ($start_date, $end_date) {
+//                    $q->whereBetween('created_at', [$start_date, $end_date]); // Filtre sur la passation
+//                })
+//                ->get();
+//
+//
+//            if ($passations->isEmpty()) {
+//                return response()->json([
+//                    'message' => 'Aucune passation avec écart trouvée pour cet agent.'
+//                ], 404);
+//            }
+//
+//            // Récupérer les infos du manager
+//            $manager = User::find($manager_id);
+//
+//            // Nom du fichier
+//            $fileName = 'ECARTS-PASSATIONS-' . strtoupper($manager->nom_utilisateur) . '-' . now()->format('YmdHis') . '.pdf';
+//            $folderPath = 'storage/passations-managers/' . $manager_id;
+//            $filePath   = $folderPath . '/' . $fileName;
+//
+//            if (!is_dir($folderPath)) {
+//                mkdir($folderPath, 0755, true);
+//            }
+//
+//            $data = [
+//                'manager'    => $manager,
+//                'passations' => $passations,
+//                'start_date' => $start_date ? $start_date->format('d/m/Y') : null,
+//                'end_date'   => $end_date ? $end_date->format('d/m/Y') : null,
+//            ];
+//
+//            // Footer optionnel
+//            $footer = 'pdfs.reports.factures.footer';
+//
+//            save_browser_shot_pdf(
+//                view: 'pdfs.passations.passations_by_managers',
+//                data: $data,
+//                folderPath: $folderPath,
+//                path: $filePath,
+//                margins: [10, 10, 10, 10],
+//                footer: $footer
+//            );
+//
+//            $pdfContent = file_get_contents($filePath);
+//            $base64     = base64_encode($pdfContent);
+//
+//            return response()->json([
+//                'data'     => $data,
+//                'base64'   => $base64,
+//                'url'      => $filePath,
+//                'filename' => $fileName,
+//            ], 200);
+//
+//        } catch (\Throwable $e) {
+//            return response()->json([
+//                'status'  => 'error',
+//                'message' => 'Erreur lors de la génération du PDF',
+//                'details' => $e->getMessage(),
+//            ], 500);
+//        }
+//    }
+
+
+
+    public function print_passations_by_agents_uuid(Request $request)
+    {
+        $auth = auth()->user();
+
+        try {
+            $agentFromId = $request->input('agent_from_id');
+
+            if (!$agentFromId) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Agent initiateur non sélectionné.'
+                ], 422);
+            }
+            $start_date = \Illuminate\Support\Carbon::parse($request->input('start_date'))->startOfDay();
+            $end_date = Carbon::parse($request->input('end_date'))->endOfDay();
+            // Récupération des passations liées au manager et en discussion
+            $passations = Passation::with([
+                'agentFrom',
+                'agentTo',
+                'warehouse',
+                'creator',
+                'updater',
+                'validator',
+                'rejector',
+                'cancellor',
+                'managers',
+                'items' => function($q) {
+                    $q->where('status', 'in_discuss'); // ne récupérer que les items en discussion
+                }
+            ])
+                ->where('agent_from_id', $agentFromId)
+                ->whereHas('items', function ($q) {
+                    $q->where('status', 'in_discuss');
+                })
+                ->when($start_date && $end_date, function($q) use ($start_date, $end_date) {
+                    $q->whereBetween('created_at', [$start_date, $end_date]); // Filtre sur la passation
+                })
+                ->get();
+
+
+            if ($passations->isEmpty()) {
+                return response()->json([
+                    'message' => 'Aucune passation avec écart trouvée pour cet agent.'
+                ], 404);
+            }
+
+            // Récupérer les infos du manager
+            $manager = User::find($agentFromId);
+
+            // Nom du fichier
+            $fileName = 'ECARTS-PASSATIONS-' . strtoupper($manager->nom_utilisateur) . '-' . now()->format('YmdHis') . '.pdf';
+            $folderPath = 'storage/passations-managers/' . $agentFromId;
+            $filePath   = $folderPath . '/' . $fileName;
+
+            if (!is_dir($folderPath)) {
+                mkdir($folderPath, 0755, true);
+            }
+
+            $data = [
+                'manager'    => $manager,
+                'passations' => $passations,
+                'start_date' => $start_date ? $start_date->format('d/m/Y') : null,
+                'end_date'   => $end_date ? $end_date->format('d/m/Y') : null,
+            ];
+
+            // Footer optionnel
+            $footer = 'pdfs.reports.factures.footer';
+
+            save_browser_shot_pdf(
+                view: 'pdfs.passations.passations_by_managers',
+                data: $data,
+                folderPath: $folderPath,
+                path: $filePath,
+                margins: [10, 10, 10, 10],
+                footer: $footer
+            );
+
+            $pdfContent = file_get_contents($filePath);
+            $base64     = base64_encode($pdfContent);
+
+            return response()->json([
+                'data'     => $data,
+                'base64'   => $base64,
+                'url'      => $filePath,
+                'filename' => $fileName,
+            ], 200);
+
+        } catch (\Throwable $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Erreur lors de la génération du PDF',
+                'details' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
 
 
 

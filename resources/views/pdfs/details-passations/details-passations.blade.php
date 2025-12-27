@@ -144,7 +144,7 @@
                 @elseif($item->status === 'pending')
                     <span class="text-center fw-bold text-warning">En attente</span>
                 @elseif($item->status === 'in_discuss')
-                    <span class="text-center fw-bold text-info">En discussion</span>
+                    <span class="text-center fw-bold text-danger">Non Ok</span>
                 @else
                     <span style="color: gray;">N/A</span>
                 @endif

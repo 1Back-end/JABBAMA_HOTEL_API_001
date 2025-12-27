@@ -375,7 +375,7 @@ class SupplyController extends Controller
                 'items.supplier',       // fournisseurs des items
                 'purchaseOrder.items',
                 'purchaseOrder.warehouseTo.natures',
-                'purchaseOrder.warehouse_from.natures',
+                'purchaseOrder.warehouseFrom.natures',
                 'creator',
                 'updater',
                 'validator',
@@ -919,8 +919,8 @@ class SupplyController extends Controller
                 'items.product',
                 'items.supplier',
                 'purchaseOrder.items',
-                'purchaseOrder.warehouseTo',
-                'purchaseOrder.warehouse_from',
+                'purchaseOrder.warehouseTo.natures',
+                'purchaseOrder.warehouseFrom.natures',
                 'creator',
                 'updater',
                 'partially_validated',
@@ -932,7 +932,7 @@ class SupplyController extends Controller
             ])->findOrFail($uuid);
 
             $supply_uuid  = $supply->uuid;
-            $fileName = strtoupper('DETAILS-SUPPLY-' . now()->format('YmdHis') . '.pdf');
+            $fileName = strtoupper('APPROVISIONNEMENT-N°' . strtoupper($supply->reference) . '-'. '.pdf');
             $folderPath = 'storage/details-approvisionnements';
             $filePath     = $folderPath . '/' . $fileName;
 

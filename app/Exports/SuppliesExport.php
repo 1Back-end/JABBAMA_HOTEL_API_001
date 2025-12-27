@@ -2,6 +2,8 @@
 
 namespace App\Exports;
 
+use App\Enums\SupplyStatus;
+use App\Enums\SupplyType;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Maatwebsite\Excel\Concerns\FromQuery;
@@ -30,11 +32,11 @@ class SuppliesExport implements FromQuery, WithHeadings, WithMapping
     {
 
         return [
-            $row->type,
+            SupplyType::safeLabel($row->type),
             $row->reference,
             $row->purchaseOrder->reference,
             optional($row->supply_date)?->format('Y-m-d H:i:s'),
-            $row->status,
+            SupplyStatus::safeLabel($row->status), // ✅ traduction ici
             optional($row->creator)->nom_utilisateur,
             optional($row->updater)->nom_utilisateur,
             optional($row->created_at)?->format('Y-m-d H:i:s'),

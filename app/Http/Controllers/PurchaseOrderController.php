@@ -4,9 +4,7 @@ namespace App\Http\Controllers;
 
 use App\DTO\ClientFilterData;
 use App\DTO\PurchaseOrderFilterData;
-use App\Exports\ClientsExport;
 use App\Exports\PurchaseOrdersExport;
-use App\Models\Client;
 use App\Models\PdfDocument;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
@@ -46,7 +44,7 @@ class PurchaseOrderController extends Controller
         $query = PurchaseOrder::with([
             'items.product',
             'warehouseTo.managers',
-            'warehouse_from.managers',
+            'warehouseFrom.managers',
             'creator',
             'updater',
             'approver',
@@ -100,7 +98,7 @@ class PurchaseOrderController extends Controller
                             ->orWhere('stock_type', 'like', "%{$search}%")
                             ->orWhere('address', 'like', "%{$search}%");
                     })
-                    ->orWhereHas('warehouse_from', function ($qf) use ($search) {
+                    ->orWhereHas('warehouseFrom', function ($qf) use ($search) {
                         $qf->where('ref', 'like', "%{$search}%")
                             ->orWhere('name', 'like', "%{$search}%")
                             ->orWhere('stock_type', 'like', "%{$search}%")
@@ -260,9 +258,9 @@ class PurchaseOrderController extends Controller
                 'items.product',
                 'supplier',
                 'warehouseTo.managers',
-                'warehouse_from.managers',
+                'warehouseFrom.managers',
                 'warehouseTo.natures',
-                'warehouse_from.natures',
+                'warehouseFrom.natures',
                 'creator',
                 'updater',
                 'approver',
@@ -750,9 +748,9 @@ class PurchaseOrderController extends Controller
                 },
                 'supplier',
                 'warehouseTo.managers',
-                'warehouse_from.managers',
+                'warehouseFrom.managers',
                 'warehouseTo.natures',
-                'warehouse_from.natures',
+                'warehouseFrom.natures',
                 'creator',
                 'updater',
                 'approver',
@@ -1110,10 +1108,10 @@ class PurchaseOrderController extends Controller
                 'parent',
                 'supplier',
                 'warehouseTo',
-                'warehouse_from',
+                'warehouseFrom',
             ])->findOrFail($uuid);
 
-            $fileName   = strtoupper('DETAILS-ORDERS-' . now()->format('YmdHis') . '.pdf');
+            $fileName   = strtoupper('COMMANDE-N°-' . strtoupper($order->reference) . '-'. '.pdf');
             $folderPath = 'storage/details-orders/' . $order->uuid;
             $filePath   = $folderPath . '/' . $fileName;
 

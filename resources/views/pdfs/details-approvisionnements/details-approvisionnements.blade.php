@@ -71,16 +71,40 @@
 {{-- Header --}}
 <header class="text-center">
     <div class="fs-3 fw-bold text-uppercase">
-        FICHE D'APPROVISIONNEMENT N° {{ $supply->reference }}
+        FICHE D'APPROVISIONNEMENT
     </div>
 </header>
 
 <div class="mt-2 w-100" style="border-top: 1px double rgba(0,0,0,0.75); margin-bottom: 2px"></div>
 <div class="mb-2 w-100" style="border-top: 1px double rgba(0,0,0,0.75);"></div>
 
-<h1 class="fw-bold text-center text-uppercase text-decoration-underline mt-3">
-    Articles approvisionnés
-</h1>
+<div class="d-flex justify-content-between mb-3" style="font-size: 13px; gap: 2rem;">
+    @if($supply->creator)
+        <div>
+            <div class="fs-6 fw-bold">Initier par :</div>
+            <p class="m-0">
+                <strong>Nom complet :</strong> <span
+                    class="text-uppercase fw-bold fs-6">{{ $supply->creator?->nom_utilisateur ?? '—' }}</span>
+            </p>
+            <p class="m-0">
+                <strong>Email :</strong> <span class="fw-bold fs-6">{{ $supply->creator?->email ?? '—' }}</span>
+            </p>
+        </div>
+    @endif
+
+    @if($supply->validator)
+        <div>
+            <div class="fs-6 fw-bold">Valider par:</div>
+            <p class="m-0">
+                <strong>Nom complet :</strong> <span
+                    class="text-uppercase fw-bold fs-6">{{ $supply->validator?->nom_utilisateur ?? '—' }}</span>
+            </p>
+            <p class="m-0">
+                <strong>Email :</strong> <span class="fw-bold fs-6">{{ $supply->validator?->email ?? '—' }}</span>
+            </p>
+        </div>
+    @endif
+</div>
 
 <p class="fst-italic text-end">
     Date d'impression : {{ now()->format('d/m/Y H:i') }}
@@ -90,18 +114,24 @@
 <table class="table table-bordered table-striped text-center border-black" style="font-size: 11px;">
     <thead>
     <tr>
+        <th colspan="12" class="text-center py-3" style="border-style: dotted">
+            <strong>
+               COMMANDE N° {{ $supply->purchaseOrder->reference }}
+            </strong>
+        </th>
+    </tr>
+    <tr>
         <th>N°</th>
         <th>Reference</th>
         <th>Article</th>
         <th>Qté commandée</th>
         <th>Qté approvisionnée</th>
         @if($supply->purchaseOrder->type === 'external')
-            <th>Fournisseur</th>
+            <th>Fournisseur(s)</th>
         @endif
         @if($supply->purchaseOrder->type === 'external')
             <th>Prix d'achat</th>
         @endif
-
     </tr>
     </thead>
 
@@ -134,6 +164,21 @@
     </tbody>
 </table>
 </div>
+
+<div class="d-flex align-content-center mb-3" style="font-size: 13px; gap: 2rem;">
+    <p class="m-0">
+        <strong>Type :</strong>
+        <span class="text-capitalize">{{ \App\Enums\SupplyType::safeLabel($supply->type) }}</span>
+    </p>
+    <p class="m-0">
+        <strong>Statut :</strong>
+        <span class="text-capitalize">{{ \App\Enums\SupplyStatus::safeLabel($supply->status) }}</span>
+    </p>
+</div>
+
+
+
+
     <div class="text-end mt-3" style="font-size: 13px;">
         <p>Fait le {{ $supply->created_at->format('d/m/Y H:i') }}</p>
     </div>

@@ -2,6 +2,9 @@
 
 namespace App\Exports;
 
+use App\Enums\PurchaseOrdersStatus;
+use App\Enums\PurchaseOrdersType;
+use App\Enums\SupplyStatus;
 use App\Models\PurchaseOrder;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
@@ -28,11 +31,11 @@ class PurchaseOrdersExport  implements FromQuery, WithHeadings, WithMapping, Wit
     public function map($row): array
     {
         return [
-            $row->type,
+            PurchaseOrdersType::safeLabel($row->type), // ✅ traduction ici
             $row->reference,
             optional($row->warehouse_from)->name,
             $row->is_parent ? 'Commande parent' : 'Commande enfant', // Correctement positionné
-            $row->status,
+            PurchaseOrdersStatus::safeLabel($row->status), // ✅ traduction ici
             optional($row->creator)->nom_utilisateur,
             optional($row->updater)->nom_utilisateur,
             optional($row->created_at)?->format('Y-m-d H:i:s'),

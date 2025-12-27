@@ -80,48 +80,64 @@
 <div class="mb-2 w-100" style="border-top: 1px double rgba(0,0,0,0.75);"></div>
 
 
-@if(!empty($order->supplier))
-    <div class="mb-3" style="font-size: 13px;">
-        <p class="m-0">
-            <strong>Fournisseur :</strong> <span class="text-uppercase fw-bold">{{ $order->supplier->company_name }}</span>
-        </p>
-        <p class="m-0">
-            <strong>Adresse :</strong> <span class="text-uppercase">{{ $order->supplier->address }}</span>
-        </p>
-        <p class="m-0">
-            <strong>Numéro Téléphone :</strong> <span class="text-uppercase">{{ $order->supplier->company_phone }}</span>
-        </p>
-        <p class="m-0">
-            <strong>Email :</strong> <span class="text-uppercase">{{ $order->supplier->company_email }}</span>
-        </p>
-    </div>
-@endif
-
-{{-- Date d'impression --}}
-<p class="fst-italic text-end" style="font-size: 13px;">
-    Date d'impression : {{ now()->format('d/m/Y H:i') }}
-</p>
-
-{{-- Fournisseur --}}
-
-@if(!empty($order->warehouse_from))
-    <div class="mb-3" style="font-size: 13px;">
-        <p class="m-0">
-            <strong>Entrepôt source :</strong>
-            <span class="text-uppercase fw-bold">{{ optional($order->warehouse_from)->name ?? '---' }}</span>
-        </p>
-        <p class="m-0">
-            <strong>Type de stocks :</strong>
-            <span class="text-uppercase">{{ optional($order->warehouse_from)->stock_type ?? '---' }}</span>
-        </p>
-        <p class="m-0">
-            <strong>Adresse :</strong>
-            <span class="text-uppercase">{{ optional($order->warehouse_from)->address ?? '---' }}</span>
-        </p>
-    </div>
-@endif
 
 
+<div class="d-flex justify-content-between mb-3" style="font-size: 13px; gap: 2rem;">
+    @if($order->creator)
+        <div>
+            <div class="fs-6 fw-bold">Initiateur de la commande :</div>
+            <p class="m-0">
+                <strong>Nom complet :</strong> <span
+                    class="text-uppercase fw-bold fs-6">{{ $order->creator?->nom_utilisateur ?? '—' }}</span>
+            </p>
+            <p class="m-0">
+                <strong>Email :</strong> <span class="fw-bold fs-6">{{ $order->creator?->email ?? '—' }}</span>
+            </p>
+        </div>
+    @endif
+
+    @if($order->approver)
+        <div>
+            <div class="fs-6 fw-bold">Valideur de la commande :</div>
+            <p class="m-0">
+                <strong>Nom complet :</strong> <span
+                    class="text-uppercase fw-bold fs-6">{{ $order->approver?->nom_utilisateur ?? '—' }}</span>
+            </p>
+            <p class="m-0">
+                <strong>Email :</strong> <span class="fw-bold fs-6">{{ $order->approver?->email ?? '—' }}</span>
+            </p>
+        </div>
+    @endif
+</div>
+
+
+
+
+<div class="d-flex justify-content-between mb-3" style="font-size: 13px; gap: 2rem;">
+
+    @if($order->type === 'internal')
+        <!-- Entrepôt source -->
+        <div>
+            <p class="m-0">
+                <strong>Entrepôt source :</strong>
+                <span class="text-capitalize fw-bold">
+                    {{ optional($order->warehouseTo)->name ?? '---' }}
+                </span>
+            </p>
+        </div>
+
+        <!-- Entrepôt destination -->
+        <div>
+            <p class="m-0">
+                <strong>Entrepôt destination :</strong>
+                <span class="text-capitalize fw-bold">
+                    {{ optional($order->warehouseFrom)->name ?? '---' }}
+                </span>
+            </p>
+        </div>
+    @endif
+
+</div>
 
 
 <h1 class="fw-bold text-center text-uppercase mt-3" style="font-size: 16px;">
@@ -129,7 +145,7 @@
 </h1>
 
 <div class="d-flex justify-content-center mt-2">
-    <table class="table table-bordered table-striped text-center border-black" style="font-size: 13px;">
+    <table class="table table-bordered border-black" style="font-size: 13px;">
         <thead>
         <tr>
             <th>N°</th>
@@ -150,6 +166,21 @@
         </tbody>
     </table>
 </div>
+
+
+<div class="d-flex align-content-center mb-3" style="font-size: 13px; gap: 2rem;">
+    <p class="m-0">
+        <strong>Type :</strong>
+        <span class="text-capitalize">{{ \App\Enums\PurchaseOrdersType::safeLabel($order->type) }}</span>
+    </p>
+    <p class="m-0">
+        <strong>Statut :</strong>
+        <span class="text-capitalize">{{ \App\Enums\PurchaseOrdersStatus::safeLabel($order->status) }}</span>
+    </p>
+</div>
+
+
+
 
 <div class="text-end mt-3" style="font-size: 13px;">
     <p>Fait le {{ $order->created_at->format('d/m/Y H:i') }}</p>

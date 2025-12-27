@@ -159,7 +159,7 @@ if (!function_exists('purchase_order_filter')) {
         $query = PurchaseOrder::with([
             'items.product',
             'warehouseTo.managers',
-            'warehouse_from.managers',
+            'warehouseFrom.managers',
             'creator',
             'updater',
             'approver',

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\StockAdjustmentAction;
+use App\Models\StockAdjustmentItem;
 use App\Models\Supply;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -169,6 +170,159 @@ class StatisticsController extends Controller
 
         return response()->json($data);
     }
+
+    public function get_statistics_by_products(Request $request)
+    {
+        // Récupérer le total des articles ajustés
+        $totalItems = StockAdjustmentItem::count();
+
+        if ($totalItems === 0) {
+            return response()->json([
+                'message' => 'Aucun ajustement trouvé',
+                'data' => []
+            ]);
+        }
+
+        // Récupérer le nombre d'articles par type d'action
+        $stats = StockAdjustmentItem::select('adjustments.action', DB::raw('COUNT(*) as total'))
+            ->join('stock_adjustments as adjustments', 'adjustments.uuid', '=', 'stock_adjustments_items.stock_adjustment_uuid')
+            ->groupBy('adjustments.action')
+            ->get();
+
+        // Calculer le pourcentage par type
+        $result = [];
+        foreach ($stats as $stat) {
+            $result[] = [
+                'action' => StockAdjustmentAction::LABEL($stat->action),
+                'total' => $stat->total,
+                'percentage' => round(($stat->total / $totalItems) * 100, 2) . '%',
+            ];
+        }
+
+        // Ajouter éventuellement les actions qui n'ont aucun item (0%)
+        foreach (StockAdjustmentAction::TO_ARRAY() as $value => $label) {
+            if (!collect($result)->pluck('action')->contains(StockAdjustmentAction::LABEL($value))) {
+                $result[] = [
+                    'action' => StockAdjustmentAction::LABEL($value),
+                    'total' => 0,
+                    'percentage' => '0%'
+                ];
+            }
+        }
+
+        return response()->json([
+            'total_items' => $totalItems,
+            'data' => $result
+        ]);
+    }
+
+
+
+
+
+    private function resolveScale(Carbon $startDate, Carbon $endDate): string
+    {
+        $days = $startDate->diffInDays($endDate);
+
+        return match (true) {
+            $days <= 7   => 'day',
+            $days <= 60  => 'week',
+            default      => 'month', // plus de 'year', on garde day/week/month
+        };
+    }
+
+    public function statisticsByProduct(Request $request, string $productUuid)
+    {
+        $startDate = $request->start_date ? Carbon::parse($request->start_date)->startOfDay() : now()->subMonth()->startOfDay();
+        $endDate   = $request->end_date ? Carbon::parse($request->end_date)->endOfDay() : now()->endOfDay();
+        $warehouseUuid = $request->warehouse_uuid ?? null;
+        $action = $request->action ?? 'price_variation'; // default action
+
+        $productName = DB::table('produits')->where('uuid', $productUuid)->value('name') ?? 'Inconnu';
+
+        if ($action === 'avaries_rate') {
+            // Total fourni
+            $totalQuantity = DB::table('supply_items as si')
+                ->join('supplies as s', 's.uuid', '=', 'si.supply_uuid')
+                ->join('purchase_orders as po', 'po.uuid', '=', 's.purchase_order_uuid')
+                ->where('si.product_uuid', $productUuid)
+                ->whereBetween('s.supply_date', [$startDate, $endDate])
+                ->when($warehouseUuid, fn($q) => $q->where('s.warehouse_uuid', $warehouseUuid)->where('po.type', 'internal'))
+                ->when(!$warehouseUuid, fn($q) => $q->where('po.type', 'external'))
+                ->sum('si.quantity_supplied');
+
+            // Total avaries
+            $totalAvarie = DB::table('stock_adjustments_items as sai')
+                ->join('stock_adjustments as sa', 'sa.uuid', '=', 'sai.stock_adjustment_uuid')
+                ->where('sai.product_uuid', $productUuid)
+                ->where('sa.action', StockAdjustmentAction::AVARIE->value)
+                ->whereBetween('sa.created_at', [$startDate, $endDate])
+                ->when($warehouseUuid, fn($q) => $q->where('sa.warehouse_uuid', $warehouseUuid))
+                ->sum('sai.quantity');
+
+            $avarieRate = $totalQuantity > 0 ? ($totalAvarie / $totalQuantity) * 100 : 0;
+
+            return response()->json([
+                'product'        => $productName,
+                'scale'          => 'percentage',
+                'total_quantity' => $totalQuantity,
+                'total_avarie'   => $totalAvarie,
+                'avarie_rate'    => round($avarieRate, 2),
+            ]);
+        }
+
+        // Pour price_variation et quantity_variation (graphique linéaire)
+        $itemsQuery = DB::table('supply_items as si')
+            ->join('supplies as s', 's.uuid', '=', 'si.supply_uuid')
+            ->join('purchase_orders as po', 'po.uuid', '=', 's.purchase_order_uuid')
+            ->where('si.product_uuid', $productUuid)
+            ->whereBetween('s.supply_date', [$startDate, $endDate]);
+
+        if ($warehouseUuid) {
+            $itemsQuery
+                ->where('po.type', 'internal')
+                ->where(function ($q) use ($warehouseUuid) {
+                    $q->where('po.warehouse_from', $warehouseUuid)
+                        ->orWhere('po.warehouse_to', $warehouseUuid);
+                });
+        } else {
+            $itemsQuery->where('po.type', 'external');
+        }
+
+        switch ($action) {
+            case 'price_variation':
+                $itemsQuery->select('s.supply_date', DB::raw("IF(po.type='internal', si.sell_price, si.unit_price) as value"));
+                break;
+            case 'quantity_variation':
+                $itemsQuery->select('s.supply_date', 'si.quantity_supplied as value');
+                break;
+            default:
+                return response()->json(['error' => 'Action non supportée'], 400);
+        }
+
+        $items = $itemsQuery->get();
+
+        $resultPoints = $items->groupBy(function ($item) {
+            return Carbon::parse($item->supply_date)->format('Y-m-d');
+        })->map(function ($dayItems, $day) {
+            $total = collect($dayItems)->sum('value');
+            return [
+                'period' => $day,
+                'value'  => number_format($total, 3, '.', '')
+            ];
+        })->values(); // reset index
+
+        return response()->json([
+            'product' => $productName,
+            'scale'   => 'day',
+            'points'  => $resultPoints,
+        ]);
+    }
+
+
+
+
+
 
 
 

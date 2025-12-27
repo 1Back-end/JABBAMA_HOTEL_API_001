@@ -342,14 +342,71 @@ class StockAdjustmentController extends Controller
                 'message' => 'Mot de passe incorrect.'
             ], 422);
         }
-        $stock_adjustment = StockAdjustment::findOrFail($uuid);
 
-        $stock_adjustment->delete();
-        return response()->json([
-            'success' => true,
-            'message' => 'Ajustement supprimé avec succès.'
-        ]);
+        $adjustment = StockAdjustment::with('items')
+            ->where('uuid', $uuid)
+            ->firstOrFail();
+
+        DB::beginTransaction();
+
+        try {
+
+            // 👉 Si l’ajustement était validé, on restaure le stock
+            if ($adjustment->status === 'validated') {
+
+                foreach ($adjustment->items as $item) {
+
+                    $productPoint = ProductPoint::where(
+                        'produit_uuid', $item->product_uuid
+                    )->where(
+                        'point_uuid', $adjustment->warehouse_uuid
+                    )->first();
+
+                    if (!$productPoint) {
+                        continue;
+                    }
+
+                    switch (StockAdjustmentAction::from($adjustment->action)) {
+
+                        case StockAdjustmentAction::AJUSTEMENT_PLUS:
+                            // On annule l’ajout
+                            $productPoint->quantity -= $item->quantity;
+                            break;
+
+                        case StockAdjustmentAction::AVARIE:
+                        case StockAdjustmentAction::DEDUCTION:
+                        case StockAdjustmentAction::AJUSTEMENT_MOINS:
+                            // On annule la déduction
+                            $productPoint->quantity += $item->quantity;
+                            break;
+                    }
+
+                    $productPoint->save();
+                }
+            }
+
+            // Suppression de l’ajustement
+            $adjustment->delete();
+
+            DB::commit();
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Ajustement supprimé et stock restauré avec succès.'
+            ]);
+
+        } catch (\Throwable $e) {
+
+            DB::rollBack();
+
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Erreur lors de la suppression.',
+                'details' => $e->getMessage()
+            ], 500);
+        }
     }
+
 
     /**
      * Display a listing of the resource.

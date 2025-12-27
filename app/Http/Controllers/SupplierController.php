@@ -360,7 +360,7 @@ class SupplierController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SupplierController::export_suppliers
-     * @permission_desc Exportation des fournisseurs au format Excel
+     * @permission_desc Exporer les fournisseurs au format Excel
      */
     public function export_suppliers()
     {

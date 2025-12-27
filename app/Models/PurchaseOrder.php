@@ -68,14 +68,14 @@ class PurchaseOrder extends Model
         return $this->belongsTo(Supplier::class, 'supplier_uuid', 'uuid');
     }
 
+    public function warehouseFrom()
+    {
+        return $this->belongsTo(Warehouse::class, 'warehouse_from', 'uuid');
+    }
+
     public function warehouseTo()
     {
         return $this->belongsTo(Warehouse::class, 'warehouse_to', 'uuid');
-    }
-
-    public function warehouse_from()
-    {
-        return $this->belongsTo(Warehouse::class, 'warehouse_from', 'uuid');
     }
 
 

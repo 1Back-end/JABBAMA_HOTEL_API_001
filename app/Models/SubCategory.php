@@ -27,6 +27,7 @@ class SubCategory extends Model
         'is_active',
         'created_by',
         'updated_by',
+        'parent_uuid'
     ];
 
     // Champs cachés / masqués

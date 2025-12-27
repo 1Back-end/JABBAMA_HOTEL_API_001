@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\StockAdjustmentAction;
 use App\Models\Product;
+use App\Models\ProductPoint;
 use App\Models\SupplyItem;
 use App\Models\Warehouse;
 use Illuminate\Http\Request;
@@ -465,6 +466,88 @@ class ProductController extends Controller
         ]);
         //
     }
+
+    /**
+     * Display a listing of the resource.
+     * @permission ProductController::export_products_by_points_uuid
+     * @permission_desc Imprimer l'inventaire des articles par entrepots en PDF
+     */
+    public function export_products_by_points_uuid(Request $request, string $warehouse_uuid)
+    {
+        try {
+
+            $warehouse = Warehouse::where('uuid', $warehouse_uuid)->first();
+
+            if (!$warehouse) {
+                return response()->json([
+                    'message' => 'Entrepôt introuvable'
+                ], 404);
+            }
+
+            $product_points = ProductPoint::with([
+                'product',
+                'point',
+                'creator',
+                'updater'
+            ])
+                ->where('point_uuid', $warehouse_uuid)
+                ->get();
+
+            if ($product_points->isEmpty()) {
+                return response()->json([
+                    'message' => 'Aucun article trouvé pour cet entrepôt'
+                ], 404);
+            }
+
+            // ✅ Entrepôt
+            $warehouse = $product_points->first()->point;
+
+
+            // ✅ Nom du fichier (corrigé)
+            $fileName = 'INVENTAIRE-DE-L-ENTREPOT-' . strtoupper($warehouse->name) . '-'  . now()->format('YmdHis') . '.pdf';
+
+            $folderPath = 'storage/inventory-warehouse/' . $warehouse->uuid;
+            $filePath   = $folderPath . '/' . $fileName;
+
+            if (!is_dir($folderPath)) {
+                mkdir($folderPath, 0755, true);
+            }
+
+            $data = [
+                'warehouse'      => $warehouse,
+                'product_points' => $product_points,
+            ];
+
+            $footer = 'pdfs.reports.factures.footer';
+
+            save_browser_shot_pdf(
+                view: 'pdfs.inventory-warehouse.inventory-warehouse',
+                data: $data,
+                folderPath: $folderPath,
+                path: $filePath,
+                margins: [10, 10, 10, 10],
+                footer: $footer
+            );
+
+            $pdfContent = file_get_contents($filePath);
+            $base64     = base64_encode($pdfContent);
+
+            return response()->json([
+                'data'     => $data,
+                'base64'   => $base64,
+                'url'      => $filePath,
+                'filename' => $fileName,
+            ], 200);
+
+        } catch (\Throwable $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Erreur lors de la génération du PDF',
+                'details' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
 
 
 
