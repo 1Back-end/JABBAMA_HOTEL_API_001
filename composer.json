@@ -7,15 +7,15 @@
     "license": "MIT",
     "require": {
         "php": "^8.2",
+        "ext-intl": "*",
         "jeremykenedy/laravel-logger": "^10.0",
         "laravel/framework": "^12.0",
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^2.10.1",
         "maatwebsite/excel": "^3.1",
-        "spatie/browsershot": "^5.0",
+        "spatie/browsershot": "^5.2",
         "spatie/laravel-activitylog": "^4.10",
-        "spatie/laravel-permission": "^6.21",
-        "ext-intl": "*"
+        "spatie/laravel-permission": "^6.21"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",

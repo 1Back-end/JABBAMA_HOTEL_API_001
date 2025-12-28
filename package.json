@@ -15,6 +15,24 @@
         "vite": "^7.0.4"
     },
     "dependencies": {
-        "puppeteer": "^24.28.0"
-    }
+        "puppeteer": "^24.34.0"
+    },
+    "name": "jabbama_hotel_api_001",
+    "version": "1.0.0",
+    "description": "<p align=\"center\"><a href=\"https://laravel.com\" target=\"_blank\"><img src=\"https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg\" width=\"400\" alt=\"Laravel Logo\"></a></p>",
+    "main": "vite.config.js",
+    "directories": {
+        "test": "tests"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/1Back-end/JABBAMA_HOTEL_API_001.git"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "bugs": {
+        "url": "https://github.com/1Back-end/JABBAMA_HOTEL_API_001/issues"
+    },
+    "homepage": "https://github.com/1Back-end/JABBAMA_HOTEL_API_001#readme"
 }
