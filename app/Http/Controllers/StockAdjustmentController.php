@@ -15,9 +15,11 @@ use App\Models\PurchaseOrder;
 use App\Models\StockAdjustment;
 use App\Models\StockAdjustmentItem;
 
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Maatwebsite\Excel\Facades\Excel;
@@ -196,6 +198,12 @@ class StockAdjustmentController extends Controller
         }
         if ($request->filled('warehouse_uuid')) {
             $stock_adjustment->where('warehouse_uuid', $request->warehouse_uuid);
+        }
+        if ($request->filled('start_date') && $request->filled('end_date')) {
+            $start = \Illuminate\Support\Carbon::parse($request->start_date)->startOfDay();
+            $end = Carbon::parse($request->end_date)->endOfDay();
+
+            $stock_adjustment->whereBetween('created_at', [$start, $end]);
         }
 
         if ($search = trim($request->input('search'))) {
@@ -624,6 +632,108 @@ class StockAdjustmentController extends Controller
             "url" => Storage::disk('stock_adjustment')->url($filename)
         ]);
     }
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission StockAdjustmentController::print_stock_adjustments_by_action
+     * @permission_desc Imprimer les rapports de régularisations de stocks
+     */
+    public function print_stock_adjustments_by_action(Request $request)
+    {
+        try {
+            $action = (int) $request->input('action');
+            Log::info("Action reçue : {$action}");
+
+            // Vérification action via l'enum
+            if (!array_key_exists($action, StockAdjustmentAction::TO_ARRAY())) {
+                Log::warning("Action invalide : {$action}");
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Action invalide.'
+                ], 422);
+            }
+
+            // Dates optionnelles
+            $start_date = $request->input('start_date') ? Carbon::parse($request->input('start_date'))->startOfDay() : null;
+            $end_date   = $request->input('end_date') ? Carbon::parse($request->input('end_date'))->endOfDay() : null;
+
+            Log::info("Filtre de date : start_date={$start_date}, end_date={$end_date}");
+
+            // Récupération des régularisations
+            $stock_adjustments = StockAdjustment::with([
+                'warehouse',
+                'items.product',
+                'creator',
+                'updater',
+                'validator',
+            ])
+                ->where('action', $action)
+                ->when($start_date && $end_date, function ($q) use ($start_date, $end_date) {
+                    $q->whereBetween('created_at', [$start_date, $end_date]);
+                })
+                ->get();
+
+            Log::info("Nombre de régularisations trouvées : " . $stock_adjustments->count());
+
+            if ($stock_adjustments->isEmpty()) {
+                Log::warning("Aucune régularisation trouvée pour action={$action} entre {$start_date} et {$end_date}");
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Aucune régularisation trouvée pour cette action et cette période.'
+                ], 404);
+            }
+
+            // Nom du fichier
+            $actionLabel = StockAdjustmentAction::LABEL($action);
+            $fileName = 'RAPPORTS-REGULARISATION-STOCKS-' . $actionLabel . '-' . now()->format('YmdHis') . '.pdf';
+            $folderPath = 'storage/rapports_stock_adjustment/' . strtolower($actionLabel);
+            $filePath = $folderPath . '/' . $fileName;
+
+            if (!is_dir(public_path($folderPath))) {
+                mkdir(public_path($folderPath), 0755, true);
+                Log::info("Dossier créé : {$folderPath}");
+            }
+
+            $data = [
+                'stock_adjustments' => $stock_adjustments,
+                'action_label'      => $actionLabel,
+                'start_date'        => $start_date ? $start_date->format('d/m/Y') : null,
+                'end_date'          => $end_date ? $end_date->format('d/m/Y') : null,
+            ];
+
+            $footer = 'pdfs.reports.factures.footer';
+
+            save_browser_shot_pdf(
+                view: 'pdfs.passations.rapports_stock_adjustment',
+                data: $data,
+                folderPath: $folderPath,
+                path: $filePath,
+                margins: [10, 10, 10, 10],
+                footer: $footer
+            );
+
+            Log::info("PDF généré : {$filePath}");
+
+            $pdfContent = file_get_contents($filePath);
+            $base64     = base64_encode($pdfContent);
+
+            return response()->json([
+                'base64'   => $base64,
+                'url'      => $filePath,
+                'filename' => $fileName,
+            ], 200);
+
+        } catch (\Throwable $e) {
+            Log::error("Erreur génération PDF : " . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Erreur lors de la génération du PDF',
+                'details' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
 
 
 

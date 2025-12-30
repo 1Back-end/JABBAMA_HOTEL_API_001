@@ -30,4 +30,5 @@ enum StockAdjustmentAction: int
         };
     }
 
+
 }

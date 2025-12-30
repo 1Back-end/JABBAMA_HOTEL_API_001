@@ -20,12 +20,10 @@
             font-family: "Merriweather", serif;
         }
 
-        /* Wrapper */
         .print-wrapper {
             position: relative;
         }
 
-        /* Footer fixe */
         .print-footer {
             position: fixed;
             bottom: 0;
@@ -35,7 +33,6 @@
             text-align: center;
         }
 
-        /* Pagination */
         .page-number:before {
             content: "Page " counter(page) " / " counter(pages);
         }
@@ -44,43 +41,38 @@
             font-size: 5mm !important;
         }
 
-        /* ✅ TABLE : PAS DE SAUT FORCÉ */
         table {
+            page-break-inside: auto;
             width: 100%;
-            page-break-inside: avoid;   /* évite coupure interne */
-            margin-bottom: 20px;        /* espace entre passations */
         }
 
-        /* En-tête répété si coupure */
         thead {
-            display: table-header-group;
+            display: table-header-group; /* Garde l'en-tête sur chaque page */
         }
 
         tfoot {
             display: table-footer-group;
         }
 
-        /* Lignes non coupées */
         tr {
             page-break-inside: avoid;
+            page-break-after: auto;
         }
 
-        /* Images */
         img {
-            max-width: 100%;
+            width: auto;
             height: auto;
         }
-
     </style>
 </head>
 
 <body>
 
-{{-- Header --}}
+
 <header class="text-center">
     <div class="fs-3 fw-bold text-uppercase">
-        Écarts de passations de stocks
-        <h2 style="font-style: italic;font-size: 12px">Agent : {{ $manager->nom_utilisateur }}</h2>
+        RAPPORT DE RÉGULARISATION DE STOCK
+        <h2 style="font-style: italic;font-size: 12px">Action : {{ $action_label }}</h2>
         @if($start_date && $end_date)
             <h3 style="font-style: italic;font-size: 11px">
                 Période : {{ $start_date }} au {{ $end_date }}
@@ -89,78 +81,64 @@
     </div>
 </header>
 
+
+{{-- Ligne de séparation --}}
 <div class="mt-2 w-100" style="border-top: 1px double rgba(0,0,0,0.75); margin-bottom: 2px"></div>
 <div class="mb-2 w-100" style="border-top: 1px double rgba(0,0,0,0.75);"></div>
 
-
-
-<p class="fst-italic text-end">
+{{-- Date d'impression --}}
+<p class="fst-italic text-end" style="font-size: 12px;">
     Date d'impression : {{ now()->format('d/m/Y H:i') }}
 </p>
 
-<div class="mt-2">
-    @foreach($passations as $passation)
-
-        <table class="table table-bordered table-striped border-black"
-               style="font-size: 11px; width: 100%;">
-
+{{-- Boucle sur chaque StockAdjustment --}}
+@foreach($stock_adjustments as $adjustment)
+    <div class="d-flex justify-content-center mt-2">
+        <table class="table table-bordered table-striped border-black" style="font-size: 12px; width: 100%;">
             <thead>
             <tr>
-                <th colspan="7"
+                <th colspan="5"
                     class="text-center fw-bold py-2"
                     style="border: 2px dotted black;">
-                    PASSATION N° {{ $passation->reference }} <br>
-
+                    REGULARISATION N° {{ $adjustment->reference ?? '---' }} <br>
                     <span style="font-size: 10px; font-weight: normal;">
-                        Entrepôt : {{ $passation->warehouse->name ?? '---' }}
-                    </span>
-
+                            Entrepôt : {{ $adjustment->warehouse->name ?? '---' }}
+                        </span>
                 </th>
             </tr>
-
             <tr>
                 <th>N°</th>
                 <th>Référence</th>
                 <th>Article</th>
-                <th>Qté transférée</th>
-                <th>Qté comptée</th>
-                <th>Écart</th>
-                <th>Statut</th>
+                <th>Description</th>
+                <th>Quantité à régulariser</th>
             </tr>
             </thead>
-
             <tbody>
-            @foreach($passation->items as $index => $item)
+            @forelse($adjustment->items as $index => $item)
                 <tr>
-                    <td>{{ $index + 1 }}</td>
+                    <td>{{ $loop->iteration }}</td>
                     <td>{{ $item->product->code ?? '---' }}</td>
                     <td>{{ $item->product->name ?? '---' }}</td>
-                    <td>{{ $item->quantity_sent }}</td>
-                    <td>{{ $item->quantity_counted }}</td>
-                    <td>{{ $item->difference }}</td>
-                    <td>
-                        @if($item->status === 'ok')
-                            <span class="text-success fw-bold">Ok</span>
-                        @elseif($item->status === 'pending')
-                            <span class="text-warning fw-bold">En attente</span>
-                        @elseif($item->status === 'in_discuss')
-                            <span class="text-danger fw-bold">Non Ok</span>
-                        @else
-                            <span class="text-muted">N/A</span>
-                        @endif
-                    </td>
+                    <td>{{ $item->product->description ?? '---' }}</td>
+                    <td>{{ $item->quantity ?? 0 }}</td>
                 </tr>
-            @endforeach
+            @empty
+                <tr>
+                    <td colspan="12" class="text-center text-muted">Aucun article pour cette régularisation</td>
+                </tr>
+            @endforelse
             </tbody>
-
         </table>
+    </div>
+@endforeach
 
-    @endforeach
+{{-- Footer --}}
+
+<div class="text-end mt-3" style="font-size: 12px;">
+    <p>Fait le {{ now()->format('d/m/Y H:i') }}</p>
 </div>
 
-<div class="text-end mt-3" style="font-size: 13px;">
-    <p>Fait le {{ $passation->created_at->format('d/m/Y H:i') }}</p>
-</div>
 
 
 </body>

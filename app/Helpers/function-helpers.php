@@ -3,6 +3,7 @@
 use App\DTO\PurchaseOrderFilterData;
 use App\DTO\SupplyFilterData;
 use App\Models\Medias;
+use App\Models\Passation;
 use App\Models\PurchaseOrder;
 use App\Models\StockAdjustment;
 use App\Models\Supply;
@@ -18,6 +19,95 @@ use Spatie\Browsershot\Exceptions\CouldNotTakeBrowsershot;
 use Spatie\Browsershot\Browsershot;
 use Illuminate\Pagination\LengthAwarePaginator;
 
+
+if (!function_exists('filter_passations')) {
+
+    /**
+     * Filtrer les passations pour le module stocks / régularisation
+     *
+     * @param \App\DTO\PassationsFilterData $filterData
+     * @param bool $paginate
+     * @return Builder|LengthAwarePaginator
+     */
+    function filter_passations(\App\DTO\PassationsFilterData $filterData, bool $paginate = true): Builder|LengthAwarePaginator
+    {
+        $auth = auth()->user();
+
+        $query = Passation::with([
+            'agentFrom',
+            'agentTo',
+            'warehouse',
+            'creator',
+            'updater',
+            'validator',
+            'rejector',
+            'cancellor',
+            'managers',
+            'items.product'
+        ]);
+
+        // 🔹 Filtre status
+        if (!empty($filterData->status)) {
+            $query->where('status', $filterData->status);
+        }
+
+        // 🔹 Filtre agent_from
+        if (!empty($filterData->agent_from_id)) {
+            $query->where('agent_from_id', $filterData->agent_from_id);
+        }
+
+        // 🔹 Filtre entrepôt
+        if (!empty($filterData->warehouse_uuid)) {
+            $query->where('warehouse_uuid', $filterData->warehouse_uuid);
+        }
+
+        // 🔹 Filtre dates
+        if (!empty($filterData->start_date) && !empty($filterData->end_date)) {
+            $start = Carbon::parse($filterData->start_date)->startOfDay();
+            $end = Carbon::parse($filterData->end_date)->endOfDay();
+            $query->whereBetween('created_at', [$start, $end]);
+        }
+
+        // 🔹 Permissions : voir uniquement ses passations si pas SUPER_ADMIN ou view_all_passations
+        if (!$auth->hasRole('SUPER_ADMIN') && !$auth->can('view_all_passations')) {
+            $query->where(function ($q) use ($auth) {
+                $q->where('created_by', $auth->id)
+                    ->orWhereHas('managers', function ($q2) use ($auth) {
+                        $q2->where('manager_id', $auth->id);
+                    });
+            });
+        }
+
+        // 🔹 Recherche globale
+        if (!empty($filterData->search)) {
+            $search = trim($filterData->search);
+            $query->where(function ($q) use ($search) {
+                $q->where('uuid', 'like', "%{$search}%")
+                    ->orWhere('status', 'like', "%{$search}%")
+                    ->orWhere('reference', 'like', "%{$search}%")
+                    ->orWhereHas('agentFrom', fn($qf) => $qf->where('login', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%")
+                        ->orWhere('nom_utilisateur', 'like', "%{$search}%")
+                        ->orWhere('prenom', 'like', "%{$search}%")
+                        ->orWhere('id', 'like', "%{$search}%"))
+                    ->orWhereHas('agentTo', fn($qf) => $qf->where('login', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%")
+                        ->orWhere('nom_utilisateur', 'like', "%{$search}%")
+                        ->orWhere('prenom', 'like', "%{$search}%")
+                        ->orWhere('id', 'like', "%{$search}%"))
+                    ->orWhereHas('creator', fn($qc) => $qc->where('nom_utilisateur', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%"))
+                    ->orWhereHas('items.product', fn($qp) => $qp->where('name', 'like', "%{$search}%")
+                        ->orWhere('code', 'like', "%{$search}%")
+                        ->orWhere('description', 'like', "%{$search}%")
+                        ->orWhere('uuid', 'like', "%{$search}%"));
+            });
+        }
+
+        return $paginate ? $query->latest()->paginate($filterData->per_page ?? 25, ['*'], 'page', $filterData->page ?? 1)
+            : $query;
+    }
+}
 
 /**
  * Retourne la requête ou la collection paginée des bons de commande filtrés
@@ -351,12 +441,6 @@ function save_browser_shot_pdf(string $view, array $data, string $folderPath, st
 {
     $bootstrapPath = public_path('assets/bootstrap/css/bootstrap.min.css');
     $bootstrapContent = file_get_contents($bootstrapPath);
-    $bootstrapContent .= "
-    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
-    body {
-        font-family: 'Poppins', sans-serif;
-    }
-    ";
     $data = array_merge($data, ['bootstrap' => $bootstrapContent]);
 
     $folderPath = public_path($folderPath);
@@ -364,11 +448,15 @@ function save_browser_shot_pdf(string $view, array $data, string $folderPath, st
         File::makeDirectory($folderPath, 0755, true);
     }
 
+    $html = view($view, $data)->render();
 
-    $browserShot = Browsershot::html(view($view, $data)->render())
+    $browserShot = Browsershot::html($html)
         ->format($format)
         ->margins($margins[0], $margins[1], $margins[2], $margins[3])
-        ->showBackground();
+        ->timeout(120) // ✅ FIX TIMEOUT
+        ->waitUntilNetworkIdle()
+        ->printBackground();
+
 
 
     if (env('APP_ENV') == "production") {
@@ -394,6 +482,7 @@ function save_browser_shot_pdf(string $view, array $data, string $folderPath, st
 
     $browserShot->save($path);
 }
+
 
 
 if (! function_exists('delete_media')) {

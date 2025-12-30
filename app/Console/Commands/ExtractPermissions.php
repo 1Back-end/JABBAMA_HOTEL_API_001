@@ -6,7 +6,6 @@ use App\Models\Permission;
 use App\Models\PermissionCategory;
 use App\Models\Role;
 use App\Models\User;
-use App\Models\Menu;
 use Illuminate\Console\Command;
 use ReflectionClass;
 use ReflectionMethod;
@@ -16,15 +15,33 @@ class ExtractPermissions extends Command
     protected $signature = 'permissions:extract';
     protected $description = 'Synchronise les permissions avec les annotations des contrôleurs et les catégorise par menu.';
 
+    // 🔹 Permissions manuelles
+    protected array $manualPermissions = [
+        'view_all_products' => [
+            'description' => 'Accéder à tous les produits, indépendamment de son rôle.',
+            'category' => 'Permissions supplémentaires',
+        ],
+        'view_all_warehouses' => [
+            'description' => 'Accéder à tous les entrepôts, indépendamment de son rôle.',
+            'category' => 'Permissions supplémentaires',
+        ],
+        'view_all_passations' => [
+            'description' => "Accéder à toutes les passations de stocks, indépendamment de son rôle.",
+            'category' => 'Permissions supplémentaires',
+        ],
+    ];
+
     public function handle(): void
     {
         $controllersPath = app_path('Http/Controllers');
         $permissions = [];
-
         $userSYSTEM = User::where('login', 'SYSTEM')->first();
+        $systemId = $userSYSTEM?->id ?? 1;
         $role = Role::find(1);
 
-        // Extraire les permissions des contrôleurs
+        // -----------------------
+        // 1️⃣ Extraction des permissions depuis les contrôleurs
+        // -----------------------
         foreach ($this->getControllers($controllersPath) as $controller) {
             $this->extractPermissionsFromController($controller, $permissions);
         }
@@ -36,15 +53,17 @@ class ExtractPermissions extends Command
             ->filter()
             ->toArray();
 
-        // Création/Mise à jour des permissions
+        // -----------------------
+        // 2️⃣ Création / mise à jour des permissions des contrôleurs
+        // -----------------------
         foreach ($permissions as $controller => $methods) {
             $categoryName = $this->extractControllerCategory($controller) ?? 'Autres';
             $category = PermissionCategory::firstOrCreate(
                 ['libelle' => $categoryName],
                 [
                     'description' => $categoryName,
-                    'created_by' => $userSYSTEM->id,
-                    'updated_by' => $userSYSTEM->id,
+                    'created_by' => $systemId,
+                    'updated_by' => $systemId,
                 ]
             );
 
@@ -58,26 +77,64 @@ class ExtractPermissions extends Command
                         'category_id' => $category->id,
                         'system' => true,
                         'active' => true,
-                        'created_by' => $userSYSTEM->id,
-                        'updated_by' => $userSYSTEM->id
+                        'created_by' => $systemId,
+                        'updated_by' => $systemId
                     ]
                 );
 
-                $this->info($permission->wasRecentlyCreated ? "✅ Créée : {$permission->name}" : "🔁 Mis à jour : {$permission->name}");
+                $this->info($permission->wasRecentlyCreated ? "✅ Créée : {$permission->name}" : "🔁 Mise à jour : {$permission->name}");
 
-                // Attribution au rôle par défaut
                 if ($role && !$role->permissions->contains($permission->id)) {
                     $role->permissions()->attach($permission->id, [
-                        'created_by' => $userSYSTEM->id,
-                        'updated_by' => $userSYSTEM->id
+                        'created_by' => $systemId,
+                        'updated_by' => $systemId
                     ]);
                 }
             }
         }
 
-        // Suppression des permissions obsolètes
+        // -----------------------
+        // 3️⃣ Création / mise à jour des permissions manuelles
+        // -----------------------
+        foreach ($this->manualPermissions as $name => $data) {
+            $category = PermissionCategory::firstOrCreate(
+                ['libelle' => $data['category']],
+                [
+                    'description' => $data['category'],
+                    'created_by' => $systemId,
+                    'updated_by' => $systemId,
+                ]
+            );
+
+            $permission = Permission::updateOrCreate(
+                ['name' => $name],
+                [
+                    'description' => $data['description'],
+                    'category_id' => $category->id,
+                    'system' => true,
+                    'active' => true,
+                    'created_by' => $systemId,
+                    'updated_by' => $systemId,
+                ]
+            );
+
+            $this->info($permission->wasRecentlyCreated ? "✅ Créée : {$name}" : "🔁 Mise à jour : {$name}");
+
+            if ($role && !$role->permissions->contains($permission->id)) {
+                $role->permissions()->attach($permission->id, [
+                    'created_by' => $systemId,
+                    'updated_by' => $systemId
+                ]);
+                $this->info("✅ Permission attachée au rôle SUPER_ADMIN");
+            }
+        }
+
+        // -----------------------
+        // 4️⃣ Suppression des permissions obsolètes provenant uniquement des contrôleurs
+        // -----------------------
         $toDelete = Permission::whereNotIn('name', $allControllerPermissions)
             ->where('system', true)
+            ->whereNotIn('name', array_keys($this->manualPermissions))
             ->get();
 
         foreach ($toDelete as $perm) {

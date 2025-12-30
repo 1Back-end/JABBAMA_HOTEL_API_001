@@ -2,6 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\DTO\PassationsFilterData;
+use App\DTO\StockAdjustmentFilterData;
+use App\Exports\PassationsStocksExport;
+use App\Exports\StockAdjustmentsExport;
 use App\Models\Passation;
 use App\Models\PassationItem;
 use App\Models\PdfDocument;
@@ -12,6 +16,8 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
+use Maatwebsite\Excel\Facades\Excel;
 use Mockery\Generator\StringManipulation\Pass\Pass;
 
 /**
@@ -59,7 +65,7 @@ class PassationController extends Controller
             $query->whereBetween('created_at', [$start, $end]);
         }
 
-        if (!$auth->hasRole('SUPER_ADMIN')) {
+        if (!$auth->hasRole(['SUPER_ADMIN']) && !$auth->can('view_all_passations')) {
             // Tous les autres utilisateurs voient seulement leurs propres créations ou les passations dont ils sont managers
             $query->where(function($q) use ($auth) {
                 $q->where('created_by', $auth->id)
@@ -73,6 +79,7 @@ class PassationController extends Controller
             $query->where(function ($q) use ($search) {
                 $q->where('uuid', 'like', "%{$search}%")
                     ->orWhere('status', 'like', "%{$search}%")
+                    ->orWhere('reference', 'like', "%{$search}%")
 
                     // 🔹 Entrepôts
                     ->orWhereHas('agentFrom', function ($qw) use ($search) {
@@ -327,59 +334,70 @@ class PassationController extends Controller
     {
         $auth = auth()->user();
 
-        // 🔹 Validation des données
+        // 🔹 Validation
         $validated = $request->validate([
             'items' => 'required|array|min:1',
             'items.*.uuid' => 'required|exists:passation_items,uuid',
             'items.*.quantity_counted' => 'required|integer|min:0',
         ], [
             'items.required' => 'Les items sont obligatoires.',
-            'items.*.quantity_counted.required' => 'La quantité comptée est obligatoire pour chaque item.',
+            'items.*.quantity_counted.required' => 'La quantité comptée est obligatoire.',
         ]);
 
         DB::beginTransaction();
 
         try {
-            $passation = Passation::with('items.product')->where('uuid', $uuid)->firstOrFail();
+            $passation = Passation::with('items.product')
+                ->where('uuid', $uuid)
+                ->firstOrFail();
+
+            $hasGap = false;
 
             foreach ($validated['items'] as $itemData) {
-                $item = $passation->items->where('uuid', $itemData['uuid'])->first();
-                if (!$item) continue;
+                $item = $passation->items
+                    ->where('uuid', $itemData['uuid'])
+                    ->first();
 
-                $qte_sent = (int) $item->quantity_sent;
-                $qte_counted = (int) $itemData['quantity_counted'];
+                if (!$item) {
+                    continue;
+                }
 
-                if ($qte_counted > $qte_sent) {
+                $qteSent = (int) $item->quantity_sent;
+                $qteCounted = (int) $itemData['quantity_counted'];
+
+                if ($qteCounted > $qteSent) {
+                    DB::rollBack();
                     return response()->json([
                         'status' => 'error',
                         'message' => "La quantité comptée pour l'article {$item->product?->name} ne peut pas être supérieure à la quantité envoyée.",
                     ], 400);
                 }
 
-                $difference = $qte_sent - $qte_counted;
+                $difference = $qteSent - $qteCounted;
 
-                $status = $qte_counted === $qte_sent ? 'ok' : 'in_discuss';
+                if ($difference > 0) {
+                    $hasGap = true;
+                }
 
                 $item->update([
-                    'quantity_counted' => $qte_counted,
+                    'quantity_counted' => $qteCounted,
                     'difference' => $difference,
-                    'status' => $status,
-                    'updated_by' => $auth->id,
+                    'status' => $difference === 0 ? 'ok' : 'in_discuss',
                     'validated_at' => now(),
                     'validated_by' => $auth->id,
+                    'updated_by' => $auth->id,
                 ]);
             }
 
-            // 🔹 Mettre à jour le statut global de la passation
-            $allOk = $passation->items->every(fn($i) => $i->status === 'ok');
-            $passationStatus = $allOk ? 'closed' : 'in_discuss';
+            // 🔹 STATUT UNIQUE DE LA PASSATION
+            $passationStatus = $hasGap ? 'with_gap' : 'no_gap';
 
             $passation->update([
                 'status' => $passationStatus,
                 'validated_at' => now(),
                 'validated_by' => $auth->id,
                 'updated_by' => $auth->id,
-                'reason_validated' => 'Validation par items.',
+                'reason_validated' => 'Validation par comptage',
             ]);
 
             DB::commit();
@@ -387,18 +405,25 @@ class PassationController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'Passation validée avec succès.',
-                'passation' => $passation->load('items.product', 'agentFrom', 'agentTo', 'warehouse'),
+                'passation' => $passation->load(
+                    'items.product',
+                    'agentFrom',
+                    'agentTo',
+                    'warehouse'
+                ),
             ]);
 
         } catch (\Throwable $e) {
             DB::rollBack();
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Une erreur est survenue lors de la validation de la passation.',
+                'message' => 'Erreur lors de la validation de la passation.',
                 'details' => $e->getMessage(),
             ], 500);
         }
     }
+
 
 
     /**
@@ -640,105 +665,6 @@ class PassationController extends Controller
      * @permission PassationController::print_passations_by_agents_uuid
      * @permission_desc Imprimer les écarts de passations de stocks en PDF
      */
-//    public function print_passations_by_agents_uuid(Request $request)
-//    {
-//        $auth = auth()->user();
-//
-//        try {
-//            $manager_id = $request->input('manager_id');
-//            if (!$manager_id) {
-//                return response()->json([
-//                    'status' => 'error',
-//                    'message' => 'Manager non sélectionné.'
-//                ], 422);
-//            }
-//            $start_date = \Illuminate\Support\Carbon::parse($request->input('start_date'))->startOfDay();
-//            $end_date = Carbon::parse($request->input('end_date'))->endOfDay();
-//            // Récupération des passations liées au manager et en discussion
-//            $passations = Passation::with([
-//                'agentFrom',
-//                'agentTo',
-//                'warehouse',
-//                'creator',
-//                'updater',
-//                'validator',
-//                'rejector',
-//                'cancellor',
-//                'managers',
-//                'items' => function($q) {
-//                    $q->where('status', 'in_discuss'); // ne récupérer que les items en discussion
-//                }
-//            ])
-//                ->whereHas('managers', function($q) use ($manager_id) {
-//                    $q->where('users.id', $manager_id);
-//                })
-//                ->whereHas('items', function($q) {
-//                    $q->where('status', 'in_discuss'); // au moins un item en discussion
-//                })
-//                ->when($start_date && $end_date, function($q) use ($start_date, $end_date) {
-//                    $q->whereBetween('created_at', [$start_date, $end_date]); // Filtre sur la passation
-//                })
-//                ->get();
-//
-//
-//            if ($passations->isEmpty()) {
-//                return response()->json([
-//                    'message' => 'Aucune passation avec écart trouvée pour cet agent.'
-//                ], 404);
-//            }
-//
-//            // Récupérer les infos du manager
-//            $manager = User::find($manager_id);
-//
-//            // Nom du fichier
-//            $fileName = 'ECARTS-PASSATIONS-' . strtoupper($manager->nom_utilisateur) . '-' . now()->format('YmdHis') . '.pdf';
-//            $folderPath = 'storage/passations-managers/' . $manager_id;
-//            $filePath   = $folderPath . '/' . $fileName;
-//
-//            if (!is_dir($folderPath)) {
-//                mkdir($folderPath, 0755, true);
-//            }
-//
-//            $data = [
-//                'manager'    => $manager,
-//                'passations' => $passations,
-//                'start_date' => $start_date ? $start_date->format('d/m/Y') : null,
-//                'end_date'   => $end_date ? $end_date->format('d/m/Y') : null,
-//            ];
-//
-//            // Footer optionnel
-//            $footer = 'pdfs.reports.factures.footer';
-//
-//            save_browser_shot_pdf(
-//                view: 'pdfs.passations.passations_by_managers',
-//                data: $data,
-//                folderPath: $folderPath,
-//                path: $filePath,
-//                margins: [10, 10, 10, 10],
-//                footer: $footer
-//            );
-//
-//            $pdfContent = file_get_contents($filePath);
-//            $base64     = base64_encode($pdfContent);
-//
-//            return response()->json([
-//                'data'     => $data,
-//                'base64'   => $base64,
-//                'url'      => $filePath,
-//                'filename' => $fileName,
-//            ], 200);
-//
-//        } catch (\Throwable $e) {
-//            return response()->json([
-//                'status'  => 'error',
-//                'message' => 'Erreur lors de la génération du PDF',
-//                'details' => $e->getMessage(),
-//            ], 500);
-//        }
-//    }
-
-
-
     public function print_passations_by_agents_uuid(Request $request)
     {
         $auth = auth()->user();
@@ -833,6 +759,27 @@ class PassationController extends Controller
                 'details' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Display a listing of the resource.
+     * @permission PassationController::export_passations_stocks
+     * @permission_desc Exporter les passations de stocks en Excel
+     */
+    public function export_passations_stocks(Request $request)
+    {
+        $filter = PassationsFilterData::fromRequestPassationsFilterData($request);
+        $filename = 'LISTE-DES-PASSATIONS-DE-STOCKS-' . now()->format('dmY') . '.xlsx';
+
+        $passationsStocksQuery = filter_passations($filter, false);
+
+        Excel::store(new PassationsStocksExport($passationsStocksQuery), $filename, 'passations_stocks');
+
+        return response()->json([
+            "message" => "Exportation des données effectuée avec succès",
+            "filename" => $filename,
+            "url" => Storage::disk('passations_stocks')->url($filename)
+        ]);
     }
 
 

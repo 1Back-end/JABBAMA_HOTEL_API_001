@@ -36,6 +36,7 @@ class Passation extends Model
         'quantity_sent',
         'quantity_counted',
         'difference',
+        'reference'
     ];
     protected $casts = [
         'rejected_at' => 'datetime',
@@ -43,14 +44,20 @@ class Passation extends Model
         'validated_at' => 'datetime',
     ];
 
-    // Générer automatiquement un UUID lors de la création
-    protected static function booted()
+    public static function boot()
     {
+        parent::boot();
         static::creating(function ($model) {
+            $prefix = 'PASS_';
+            $timestamp = now()->format('dYmd');
+
+            $random = strtoupper(Str::random(5));
+            $model->reference = $prefix . $timestamp . $random;
             $model->uuid = (string) Str::uuid();
         });
     }
 
+    // Générer automatiquement un UUID lors de la création
     public function validator()
     {
         return $this->belongsTo(User::class, 'validated_by');

@@ -41,7 +41,7 @@ class WarehouseController extends Controller
         $query = Warehouse::with(['creator', 'updater', 'natures', 'managers']);
 
         // 🔥 Filtrer selon le rôle
-        if (!$auth->hasRole(['SUPER_ADMIN', 'GESTIONNAIRE_STOCK'])) {
+        if (!$auth->hasRole(['SUPER_ADMIN']) && !$auth->can('view_all_warehouses')) {
             $query->whereHas('managers', function ($q) use ($auth) {
                 $q->where('user_id', $auth->id);
             });

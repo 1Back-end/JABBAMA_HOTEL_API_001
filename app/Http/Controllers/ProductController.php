@@ -28,6 +28,7 @@ class ProductController extends Controller
         $auth = auth()->user();
         $perPage = $request->input('limit', 25);
         $page = $request->input('page', 1);
+        $pointsFilter = $request->input('point_uuid'); // "" pour tous, uuid sinon
 
         $query = Product::with([
             'creator',
@@ -36,41 +37,22 @@ class ProductController extends Controller
             'unitMeasure',
             'subCategories',
             'medias',
-            'points' => function ($q) use ($auth, $request) {
+            'points' => function ($q) use ($auth, $pointsFilter) {
 
-                // 🔹 SUPER_ADMIN voit tout
-                if (!$auth->hasAnyRole(['SUPER_ADMIN', 'GESTIONNAIRE_STOCK'])) {
+                // 🔹 Si l'utilisateur n'a pas la permission de voir tous les entrepôts, limiter par ses entrepôts
+                if (!$auth->hasAnyRole(['SUPER_ADMIN']) && !$auth->can('view_all_products')) {
                     $q->whereHas('managers', function ($m) use ($auth) {
                         $m->where('warehouse_managers.user_id', $auth->id);
                     });
                 }
 
-                if ($pointUuid = $request->input('point_uuid')) {
-                    $q->where('warehouses.uuid', $pointUuid);
+                // 🔹 Filtre par entrepôt spécifique si fourni
+                if ($pointsFilter) {
+                    $q->where('warehouses.uuid', $pointsFilter);
                 }
             }
         ]);
 
-        // 🔹 Limiter les produits réellement affichés
-        if (!$auth->hasAnyRole(['SUPER_ADMIN', 'GESTIONNAIRE_STOCK'])) {
-            $query->whereHas('points', function ($q) use ($auth, $request) {
-
-                // Filtre managers
-                $q->whereHas('managers', function ($m) use ($auth) {
-                    $m->where('warehouse_managers.user_id', $auth->id);
-                });
-
-                // Filtre point_uuid
-                if ($pointUuid = $request->input('point_uuid')) {
-                    $q->where('warehouses.uuid', $pointUuid);
-                }
-            });
-        }
-        if ($pointUuid = $request->input('point_uuid')) {
-            $query->whereHas('points', function ($q) use ($pointUuid) {
-                $q->where('warehouses.uuid', $pointUuid);
-            });
-        }
 
         // 🔹 Filtre catégorie
         if ($request->filled('category_uuid')) {
@@ -95,6 +77,19 @@ class ProductController extends Controller
 
         $products = $query->latest()->paginate($perPage, ['*'], 'page', $page);
 
+        if (!$pointsFilter) {
+            foreach ($products as $product) {
+                // total_quantity = somme de toutes les quantités des entrepôts
+                $product->total_quantity = $product->points->sum('pivot.quantity');
+            }
+        } else {
+            // Si entrepôt spécifique, afficher juste la quantité de cet entrepôt
+            foreach ($products as $product) {
+                $product->total_quantity = $product->points->first()?->pivot->quantity ?? 0;
+            }
+        }
+
+
         return response()->json([
             'data'         => $products->items(),
             'current_page' => $products->currentPage(),
@@ -102,6 +97,7 @@ class ProductController extends Controller
             'total'        => $products->total(),
         ]);
     }
+
 
     /**
      * Display a listing of the resource.
@@ -485,7 +481,8 @@ class ProductController extends Controller
             }
 
             $product_points = ProductPoint::with([
-                'product',
+                'product.unitMeasure',
+                'product.category',
                 'point',
                 'creator',
                 'updater'

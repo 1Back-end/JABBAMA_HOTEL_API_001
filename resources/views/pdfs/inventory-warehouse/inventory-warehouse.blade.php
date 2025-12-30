@@ -85,12 +85,14 @@
 </p>
 
 <div class="d-flex justify-content-center mt-2">
-    <table class="table table-bordered table-striped text-center border-black" style="font-size: 12px;">
+    <table class="table table-bordered table-striped text-center border-black" style="font-size: 11px;">
         <thead>
         <tr>
             <th>N°</th>
             <th>Réference</th>
             <th>Article</th>
+            <th>Catégorie</th>
+            <th>Unité</th>
             <th>Quantité</th>
             <th>Stock d'alerte</th>
         </tr>
@@ -102,6 +104,8 @@
                 <td>{{ $index + 1 }}</td>
                 <td>{{ $item->product->code ?? '-' }}</td>
                 <td>{{ $item->product->name ?? '-' }}</td>
+                <td>{{ $item->product->category->name ?? '-' }}</td>
+                <td>{{ $item->product->unitMeasure->name ?? '-' }}</td>
                 <td class="fw-bold">{{ $item->quantity }}</td>
                 <td class="fw-bold">{{ $item->stocks_minimal }}</td>
             </tr>

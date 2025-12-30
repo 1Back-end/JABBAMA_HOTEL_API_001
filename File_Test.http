@@ -1,1 +1,2 @@
 GET http://localhost:9000/api/orders/export_orders
+php artisan db:seed --class=PermissionsSeeder

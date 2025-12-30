@@ -57,43 +57,35 @@ class SubCategoryController extends Controller
         try {
             $auth = auth()->user();
 
-            // Validation
             $validated = $request->validate([
                 'sub_categories' => 'required|array|min:1',
-                'sub_categories.*.name' => 'required|string|max:255',
-                'sub_categories.*.description' => 'nullable|string|max:500',
-                'sub_categories.*.children' => 'nullable|array',
                 'category_uuid' => 'required|exists:categories,uuid',
-            ], [
-                'sub_categories.required' => 'Veuillez ajouter au moins une sous-catégorie.',
-                'sub_categories.*.name.required' => 'Le nom de chaque sous-catégorie est obligatoire.',
-                'category_uuid.required' => 'La catégorie est obligatoire.',
-                'category_uuid.exists' => 'La catégorie sélectionnée est invalide.',
             ]);
 
             $created = [];
             $ignored = [];
 
-            // Fonction récursive pour créer les sous-catégories
             $storeRecursive = function ($subs, $category_uuid, $parent_uuid = null) use (&$storeRecursive, $auth, &$created, &$ignored) {
                 foreach ($subs as $sub) {
-                    // Vérifier si la sous-catégorie existe déjà pour cette catégorie et parent
                     $existing = SubCategory::where('category_uuid', $category_uuid)
                         ->where('parent_uuid', $parent_uuid)
-                        ->where('name', $sub['name'])
+                        ->where('name', $sub['name'] ?? '')
                         ->first();
 
                     if ($existing) {
                         $ignored[] = [
-                            'name' => $sub['name'],
+                            'name' => $sub['name'] ?? '',
                             'parent_uuid' => $parent_uuid,
                             'category_uuid' => $category_uuid,
                         ];
-                        continue; // ignorer
+                        if (!empty($sub['children'])) {
+                            $storeRecursive($sub['children'], $category_uuid, $existing->uuid);
+                        }
+                        continue;
                     }
 
                     $subCategory = SubCategory::create([
-                        'name' => $sub['name'],
+                        'name' => $sub['name'] ?? 'Sans nom',
                         'description' => $sub['description'] ?? null,
                         'category_uuid' => $category_uuid,
                         'parent_uuid' => $parent_uuid,
@@ -106,46 +98,32 @@ class SubCategoryController extends Controller
                         'parent_uuid' => $parent_uuid,
                     ];
 
-                    // Appel récursif pour les enfants
                     if (!empty($sub['children'])) {
                         $storeRecursive($sub['children'], $category_uuid, $subCategory->uuid);
                     }
                 }
             };
 
-            // Lancer la récursion
             $storeRecursive($validated['sub_categories'], $validated['category_uuid']);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Sous-catégories traitées avec succès.',
+                'message' => 'Sous-catégories enregistrées avec succès.',
                 'created_count' => count($created),
                 'ignored_count' => count($ignored),
                 'created' => $created,
                 'ignored' => $ignored
             ], 201);
 
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage(),
-                'errors' => $e->errors(),
-            ], 422);
-
         } catch (\Exception $e) {
             \Log::error('Erreur store sub_categories: '.$e->getMessage(), ['trace' => $e->getTraceAsString()]);
             return response()->json([
                 'success' => false,
-                'message' => 'Une erreur est survenue lors de l\'enregistrement des sous-catégories.',
+                'message' => 'Une erreur est survenue lors de l\'enregistrement.',
                 'error' => $e->getMessage(),
             ], 500);
         }
     }
-
-
-
-
-
 
     /**
      * Display a listing of the resource.

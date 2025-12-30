@@ -109,6 +109,9 @@
         </tbody>
     </table>
 </div>
+
+
+
 <div class="text-end mt-3" style="font-size: 13px;">
     <p>Fait le {{ $stock_adjustment->created_at->format('d/m/Y H:i') }}</p>
 </div>
