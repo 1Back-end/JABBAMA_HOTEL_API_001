@@ -71,7 +71,7 @@
 {{-- Header --}}
 <header class="text-center">
     <div class="fs-3 fw-bold text-uppercase">
-        FICHE D'APPROVISIONNEMENT
+        BON D'APPROVISIONNEMENT N°{{ $supply->reference }}
     </div>
 </header>
 
@@ -111,7 +111,7 @@
 </p>
 
 <div class="d-flex justify-content-center mt-2">
-<table class="table table-bordered table-striped text-center border-black" style="font-size: 11px;">
+<table class="table table-bordered table-striped border-black" style="font-size: 11px;">
     <thead>
     <tr>
         <th colspan="12" class="text-center py-3" style="border-style: dotted">

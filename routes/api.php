@@ -96,6 +96,7 @@ Route::middleware(['activity'])->group(function () {
         Route::get('passations/{uuid}/print_passations', [\App\Http\Controllers\PassationController::class, 'print_passations']);
         Route::patch('passations/{uuid}/validate_passations_by_admin', [\App\Http\Controllers\PassationController::class, 'validate_passations_by_admin']);
         Route::get('/passations/inventory/print', [\App\Http\Controllers\PassationController::class, 'print_passations_by_agents_uuid']);
+        Route::get("/exports/passations_stocks", [\App\Http\Controllers\PassationController::class, 'export_passations_stocks']);
 
 
         Route::apiResource('stocks_adjustments', \App\Http\Controllers\StockAdjustmentController::class);
@@ -104,6 +105,7 @@ Route::middleware(['activity'])->group(function () {
         Route::get('stocks_adjustments/{uuid}/print_stock_adjustment', [\App\Http\Controllers\StockAdjustmentController::class, 'print_stock_adjustment']);
         Route::get('stocks_adjustments_actions', [\App\Http\Controllers\StockAdjustmentController::class, 'typeStockAdjustment']);
         Route::get('/exports/export_stock_adjustment', [\App\Http\Controllers\StockAdjustmentController::class, 'export_stock_adjustment']);
+        Route::get('/stock-adjustments/print', [\App\Http\Controllers\StockAdjustmentController::class, 'print_stock_adjustments_by_action']);
 
         Route::get('/statistics/products/{uuid}/statistics', [\App\Http\Controllers\StatisticsController::class, 'get_statistics_by_product']);
         Route::get('/statistics/products/top_consumed', [\App\Http\Controllers\StatisticsController::class, 'topConsumedProducts']);

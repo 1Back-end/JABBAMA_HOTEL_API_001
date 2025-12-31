@@ -2,6 +2,7 @@
 
 namespace App\Exports;
 
+use App\Enums\PassationStatus;
 use App\Enums\PurchaseOrdersStatus;
 use App\Enums\PurchaseOrdersType;
 use App\Enums\SupplyStatus;
@@ -16,26 +17,27 @@ use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithMapping;
 use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 
-class PurchaseOrdersExport  implements FromQuery, WithHeadings, WithMapping, WithColumnFormatting
+class PassationsStocksExport  implements FromQuery, WithHeadings, WithMapping, WithColumnFormatting
 {
     public function __construct(
-        public Builder $orderQuery
+        public Builder $passationsStocksQuery
     )
     {}
 
     public function query(): Relation|Builder|_IH_Client_QB|\Laravel\Scout\Builder|\Illuminate\Database\Query\Builder
     {
-        return $this->orderQuery;
+        return $this->passationsStocksQuery;
     }
 
     public function map($row): array
     {
+        $receivers = $row->managers->pluck('nom_utilisateur')->implode(', ');
         return [
-            PurchaseOrdersType::safeLabel($row->type), // ✅ traduction ici
             $row->reference,
-            optional($row->warehouseFrom)->name,
-            $row->is_parent ? 'Commande parent' : 'Commande enfant', // Correctement positionné
-            PurchaseOrdersStatus::safeLabel($row->status), // ✅ traduction ici
+            optional($row->warehouse)->name,
+            optional($row->agentFrom)->nom_utilisateur,
+            $receivers,
+            PassationStatus::safeLabel($row->status), // ✅ traduction ici
             optional($row->creator)->nom_utilisateur,
             optional($row->updater)->nom_utilisateur,
             optional($row->created_at)?->format('Y-m-d H:i:s'),
@@ -46,10 +48,10 @@ class PurchaseOrdersExport  implements FromQuery, WithHeadings, WithMapping, Wit
     public function headings(): array
     {
         return [
-            'Type',
             'Référence',
-            'Entrepôt',                // Accent corrigé
-            'Commande',                // Libellé correspondant à is_parent
+            'Entrepot',
+            'Agent Initiateur',
+            'Agent(s) Récepteur(s)',
             'Statut',
             'Créé Par',
             'Mis à jour Par',

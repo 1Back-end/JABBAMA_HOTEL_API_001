@@ -82,7 +82,7 @@
 <div class="d-flex justify-content-between mb-3" style="font-size: 13px; gap: 2rem;">
     @if($passations->creator)
         <div>
-            <div class="fs-6 fw-bold">Agent initiateur :</div>
+            <div class="fs-6 fw-bold">Initier par :</div>
             <p class="m-0">
                 <strong>Nom complet :</strong> <span
                     class="text-uppercase fw-bold fs-6">{{ $passations->creator?->nom_utilisateur ?? '—' }}</span>
@@ -95,7 +95,7 @@
 
     @if($passations->validator)
         <div>
-            <div class="fs-6 fw-bold">Agent valideur :</div>
+            <div class="fs-6 fw-bold">Valider par :</div>
             <p class="m-0">
                 <strong>Nom complet :</strong> <span
                     class="text-uppercase fw-bold fs-6">{{ $passations->validator?->nom_utilisateur ?? '—' }}</span>
@@ -114,8 +114,15 @@
 </p>
 
 <div class="d-flex justify-content-center mt-2">
-    <table class="table table-bordered table-striped text-center border-black" style="font-size: 11px;">
+    <table class="table table-bordered table-striped  border-black" style="font-size: 11px;">
         <thead>
+        <tr>
+            <th colspan="12" class="text-center py-3" style="border-style: dotted">
+                <strong>
+                    PASSATION N°{{ $passations->reference }}
+                </strong>
+            </th>
+        </tr>
         <tr>
             <th>N°</th>
             <th>Réference</th>
@@ -124,7 +131,6 @@
             <th>Qté comptée</th>
             <th>Ecart</th>
             <th>Statut</th>
-            <th>Validée par</th>
 
         </tr>
         </thead>
@@ -149,12 +155,21 @@
                     <span style="color: gray;">N/A</span>
                 @endif
             </td>
-            <td>{{ $item->validated?->nom_utilisateur }}</td>
 
         </tr>
         @endforeach
         </tbody>
     </table>
+</div>
+<div class="d-flex align-content-center mb-3" style="font-size: 13px; gap: 2rem;">
+    <p class="m-0">
+        <strong>Entrepot :</strong>
+        <span class="text-capitalize">{{ $passations->warehouse->name ?? '---' }}</span>
+    </p>
+    <p class="m-0">
+        <strong>Statut :</strong>
+        <span class="text-capitalize">{{ \App\Enums\PassationStatus::safeLabel($passations->status) }}</span>
+    </p>
 </div>
 <div class="text-end mt-3" style="font-size: 13px;">
     <p>Fait le {{ $passations->created_at->format('d/m/Y H:i') }}</p>
