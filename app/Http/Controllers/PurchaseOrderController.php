@@ -38,9 +38,6 @@ class PurchaseOrderController extends Controller
     }
 
 
-
-
-
     /**
      * Display a listing of the resource.
      * @permission PurchaseOrderController::index
@@ -66,6 +63,117 @@ class PurchaseOrderController extends Controller
             'approver',
             'children',
             'parent'
+        ]);
+
+        // 🔹 Filtrage par type et statut
+        if ($request->filled('type')) {
+            $query->where('type', $request->type);
+        }
+
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+        if ($request->filled('warehouse_from')) {
+            $query->where('warehouse_from', $request->warehouse_from);
+        }
+
+        // 🔹 Filtrage par période
+        if ($request->filled('start_date') && $request->filled('end_date')) {
+            $query->whereBetween('created_at', [$start_date, $end_date]);
+        }
+
+        // 🔹 Gestion des accès selon les rôles
+        if ($auth->hasRole('GESTIONNAIRE_STOCK')) {
+            // 👉 Le gestionnaire de stock voit uniquement les bons transférés par lui
+            $query->where('transfered_by', $auth->id);
+
+        } elseif (!$auth->hasRole('SUPER_ADMIN')) {
+            // 👉 Tous les autres utilisateurs (sauf Super Admin)
+            $query->where('created_by', $auth->id);
+        }
+        // 👉 Le SUPER_ADMIN voit tout (aucune restriction)
+
+        // 🔹 Recherche globale
+        if ($search = trim($request->input('search'))) {
+            $query->where(function ($q) use ($search) {
+                $q->where('reference', 'like', "%{$search}%")
+                    ->orWhere('type', 'like', "%{$search}%")
+                    ->orWhere('status', 'like', "%{$search}%")
+                    ->orWhere('notes', 'like', "%{$search}%")
+                    ->orWhere('warehouse_from', 'like', "%{$search}%")
+                    ->orWhere('warehouse_to', 'like', "%{$search}%")
+                    ->orWhere('supplier_uuid', 'like', "%{$search}%")
+
+                    // 🔹 Entrepôts
+                    ->orWhereHas('warehouseTo', function ($qw) use ($search) {
+                        $qw->where('ref', 'like', "%{$search}%")
+                            ->orWhere('name', 'like', "%{$search}%")
+                            ->orWhere('stock_type', 'like', "%{$search}%")
+                            ->orWhere('address', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('warehouseFrom', function ($qf) use ($search) {
+                        $qf->where('ref', 'like', "%{$search}%")
+                            ->orWhere('name', 'like', "%{$search}%")
+                            ->orWhere('stock_type', 'like', "%{$search}%")
+                            ->orWhere('address', 'like', "%{$search}%");
+                    })
+
+                    // 🔹 Créateur
+                    ->orWhereHas('creator', function ($qc) use ($search) {
+                        $qc->where('nom_utilisateur', 'like', "%{$search}%")
+                            ->orWhere('email', 'like', "%{$search}%");
+                    })
+
+                    // 🔹 Produits
+                    ->orWhereHas('items.product', function ($qp) use ($search) {
+                        $qp->where('name', 'like', "%{$search}%")
+                            ->orWhere('code', 'like', "%{$search}%")
+                            ->orWhere('description', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        // 🔹 Pagination
+        $data = $query->latest()->paginate($perPage, ['*'], 'page', $page);
+
+        return response()->json([
+            'data'         => $data->items(),
+            'current_page' => $data->currentPage(),
+            'last_page'    => $data->lastPage(),
+            'total'        => $data->total(),
+        ]);
+    }
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission PurchaseOrderController::get_validated_and_partial_validated_orders
+     * @permission_desc Afficher les commandes Clôturée totalement et partiellement
+     */
+    public function get_validated_and_partial_validated_orders(Request $request)
+    {
+
+        $auth = auth()->user();
+        $perPage = $request->input('limit', 10);
+        $page = $request->input('page', 1);
+
+        $start_date = Carbon::parse($request->input('start_date'))->startOfDay();
+        $end_date = Carbon::parse($request->input('end_date'))->endOfDay();
+
+
+        $query = PurchaseOrder::with([
+            'items.product',
+            'warehouseTo.managers',
+            'warehouseFrom.managers',
+            'creator',
+            'updater',
+            'approver',
+            'children',
+            'parent'
+        ])
+            ->whereIn('status', [
+            PurchaseOrdersStatus::CLOSED,
+            PurchaseOrdersStatus::PARTIALLY_CLOSED
         ]);
 
         // 🔹 Filtrage par type et statut

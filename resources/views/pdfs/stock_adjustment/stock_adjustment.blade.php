@@ -73,9 +73,9 @@
         RAPPORT DE RÉGULARISATION DE STOCK
 
         @if(!empty($filter->warehouse_uuid) && $warehouse)
-        <h2 style="font-style: italic;font-size: 12px">
-            Entrepôt : {{ $warehouse->name }}
-        </h2>
+            <h3 style="font-style: italic;font-size: 11px">
+                Entrepot : {{ $warehouse->name }}
+            </h3>
         @endif
 
         @if(!empty($action))

@@ -6,14 +6,13 @@
     <meta name="viewport"
           content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
-
     <style>
         {!! $bootstrap !!}
     </style>
 
-
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Merriweather:ital,opsz,wght@0,18..144,300..900;1,18..144,300..900&display=swap');
+
         body, html {
             height: 100%;
             margin: 0;
@@ -66,7 +65,6 @@
             width: auto;
             height: auto;
         }
-
     </style>
 </head>
 
@@ -92,79 +90,65 @@
 <p class="fst-italic text-end" style="font-size: 12px;">
     Date d'impression : {{ now()->format('d/m/Y H:i') }}
 </p>
-<div class="mt-3">
+<div class="col-12 mt-3">
+    <div class="row g-3">
 
-        <div class="col-lg-12 mb-3 pe-2 text-center">
-            <h5 class="fw-bold text-center"
-                style="border-bottom: 2px dotted black; padding-bottom: 5px;">
+        {{-- Première moitié : Stock Adjustments --}}
+        <div class="col-lg-6 col-sm-12 mb-3">
+            <h5 class="fw-bold text-center mb-3" style="border-bottom: 2px dotted black; padding-bottom: 5px;">
                 ÉTAT DES RÉGULARISATIONS DE STOCK
             </h5>
-
-            <div class="row g-3 align-items-center text-center">
+            <div class="d-flex flex-column gap-3">
                 @foreach($data['stock_adjustments'] as $adjustment)
-                    <div class="col-auto">
-                        <h5 class="fw-bold mb-2">{{ $adjustment['total'] }}</h5>
-                        <span class="badge px-3 py-2 rounded-pill text-white">
-                    {{ $adjustment['label'] }}
-                </span>
+                    <div class="card shadow-sm border border-dark p-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="fw-semibold">{{ $adjustment['label'] }}</span>
+                            <span class="badge bg-primary">{{ $adjustment['total'] }}</span>
+                        </div>
                     </div>
                 @endforeach
             </div>
         </div>
 
-        <div class="col-lg-12 mb-3 pe-2">
-            <h5 class="fw-bold text-center"
-                style="border-bottom: 2px dotted black; padding-bottom: 5px;">
+        {{-- Deuxième moitié : Supplies --}}
+        <div class="col-lg-6 col-sm-12 mb-3">
+            <h5 class="fw-bold text-center mb-3" style="border-bottom: 2px dotted black; padding-bottom: 5px;">
                 ÉTAT DES APPROVISIONNEMENTS
             </h5>
-
-            <div class="row g-3 align-items-center text-center">
+            <div class="d-flex flex-column gap-3">
                 @foreach($data['supplies'] as $supply)
-                    <div class="col-auto">
-                        <h5 class="fw-bold mb-2">{{ $supply['total'] }}</h5>
-                        <span class="badge px-3 py-2 rounded-pill text-white">
-                    {{ $supply['label'] }}
-                </span>
+                    <div class="card shadow-sm border border-dark p-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="fw-semibold">{{ $supply['label'] }}</span>
+                            <span class="badge bg-success">{{ $supply['total'] }}</span>
+                        </div>
                     </div>
                 @endforeach
             </div>
         </div>
-    </div>
 
-
-        <div class="col-lg-12 mb-3 pe-2">
-            <h5 class="fw-bold text-center"
-                style="border-bottom: 2px dotted black; padding-bottom: 5px;">
+        {{-- Nouvelle ligne pour Purchase Orders si nécessaire --}}
+        <div class="col-12 mt-3">
+            <h5 class="fw-bold text-center mb-3" style="border-bottom: 2px dotted black; padding-bottom: 5px;">
                 ÉTAT DES COMMANDES
             </h5>
-            <div class="row g-3 align-items-center text-center">
+            <div class="d-flex flex-column gap-3">
                 @foreach($data['purchase_orders'] as $order)
-                    <div class="col-auto">
-                        <h5 class="fw-bold mb-2">{{ $order['total'] }}</h5>
-                        <span class="badge px-3 py-2 rounded-pill text-white">
-                        {{ $order['label'] }}
-                    </span>
+                    <div class="card shadow-sm border border-dark p-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="fw-semibold">{{ $order['label'] }}</span>
+                            <span class="badge bg-warning">{{ $order['total'] }}</span>
+                        </div>
                     </div>
                 @endforeach
             </div>
         </div>
 
-        <!-- Bloc top 3 produits consommés -->
-        <div class="col-lg-12 mb-3 pe-2">
-            <h5 class="fw-bold text-center"
-                style="border-bottom: 2px dotted black; padding-bottom: 5px;">
-                ARTICLES LES PLUS CONSOMMÉS
-            </h5>
-            <div class="row g-3 align-items-center text-center mt-2">
-                @foreach($data['most_consumed'] as $product)
-                    <div class="col-auto">
-                        <h5 class="fw-bold mb-2">{{ $product->name ?? '' }}</h5>
-                        <span class="badge px-3 py-2 rounded-pill text-white">
-                        {{ $product->code }}
-                    </div>
-                @endforeach
-            </div>
-        </div>
+    </div>
+</div>
+
+
+
 
 
 
