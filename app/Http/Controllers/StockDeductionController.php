@@ -159,7 +159,9 @@ class StockDeductionController extends Controller
      */
     public function index(Request $request)
     {
+
         $auth = auth()->user();
+        $roleIds = $auth->roles->pluck('id');
         $perPage = $request->input('limit', 25);
         $page = $request->input('page', 1);
 
@@ -185,8 +187,18 @@ class StockDeductionController extends Controller
             $deduction->whereBetween('created_at', [$start, $end]);
         }
         if (!$auth->hasRole('SUPER_ADMIN')) {
-            // Si l'utilisateur n'est pas SUPER_ADMIN, il voit seulement ses déductions
-            $deduction->where('created_by', $auth->id);
+
+            $deduction->where(function($q) use ($auth, $roleIds) {
+                // 🔹 Utilisateurs avec la permission view_role_related_data
+                if ($auth->can('view_role_related_data')) {
+                    $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
+                }
+                // 🔹 Utilisateurs sans cette permission : seulement leurs propres déductions
+                if (!$auth->can('view_role_related_data')) {
+                    $q->orWhere('created_by', $auth->id);
+                }
+
+            });
         }
 
         if ($search = trim($request->input('search'))) {

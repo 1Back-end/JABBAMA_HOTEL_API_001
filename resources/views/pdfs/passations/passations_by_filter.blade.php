@@ -128,7 +128,7 @@
 
             <thead>
             <tr>
-                <th colspan="7"
+                <th colspan="12"
                     class="text-center fw-bold py-2"
                     style="border: 2px dotted black;">
                     PASSATION N° {{ $passation->reference }} <br>

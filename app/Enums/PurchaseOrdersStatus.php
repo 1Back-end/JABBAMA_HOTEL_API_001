@@ -16,7 +16,7 @@ enum PurchaseOrdersStatus: string
     public function label(): string
     {
         return match ($this) {
-            self::DRAFT => 'En brouillon',
+            self::DRAFT => 'Brouillon',
             self::OPEN => 'Transférée',
             self::CLOSED => 'Clôturée totalement',
             self::REJECTED => 'Rejetée',

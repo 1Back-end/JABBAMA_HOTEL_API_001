@@ -41,8 +41,12 @@ class ProductController extends Controller
             'medias',
             'points' => function ($q) use ($auth, $pointUuid) {
 
-                // 🔐 Restriction managers
-                if (!$auth->hasAnyRole(['SUPER_ADMIN', 'GESTIONNAIRE_STOCK'])) {
+                // 🔐 Restriction managers (basée sur permissions)
+                if (
+                    !$auth->hasRole('SUPER_ADMIN') &&
+                    !$auth->can('view_all_products_access') &&
+                    !$auth->can('view_role_related_data')
+                ) {
                     $q->whereHas('managers', function ($m) use ($auth) {
                         $m->where('warehouse_managers.user_id', $auth->id);
                     });
@@ -58,7 +62,11 @@ class ProductController extends Controller
         /**
          * 🔹 Produits visibles
          */
-        if (!$auth->hasAnyRole(['SUPER_ADMIN', 'GESTIONNAIRE_STOCK'])) {
+        if (
+            !$auth->hasRole('SUPER_ADMIN') &&
+            !$auth->can('view_all_products_access') &&
+            !$auth->can('view_role_related_data')
+        ) {
             $query->whereHas('points', function ($q) use ($auth, $pointUuid) {
 
                 $q->whereHas('managers', function ($m) use ($auth) {
@@ -69,9 +77,9 @@ class ProductController extends Controller
                     $q->where('warehouses.uuid', $pointUuid);
                 }
             });
-        }
-        elseif ($pointUuid && $pointUuid !== 'all') {
-            // SUPER_ADMIN + entrepôt précis
+
+        } elseif ($pointUuid && $pointUuid !== 'all') {
+            // SUPER_ADMIN ou permissions globales + entrepôt précis
             $query->whereHas('points', function ($q) use ($pointUuid) {
                 $q->where('warehouses.uuid', $pointUuid);
             });
@@ -594,6 +602,154 @@ class ProductController extends Controller
             ], 500);
         }
     }
+
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission ProductController::print_inventory_by_day_and_warehouses
+     * @permission_desc Imprimer l'inventaire des articles par entrepots en PDF par période
+     */
+
+    public function print_inventory_by_day_and_warehouses(Request $request, ?string $warehouse_uuid = null)
+    {
+        try {
+
+            // ==========================
+            // ✅ Récupérer warehouse_uuid depuis query si pas en paramètre de route
+            // ==========================
+            $warehouse_uuid = $warehouse_uuid ?? $request->query('warehouse_uuid');
+
+            // ==========================
+            // ✅ Validation des dates
+            // ==========================
+            $start_date = $request->filled('start_date')
+                ? Carbon::parse($request->start_date)->startOfDay()
+                : null;
+
+            $end_date = $request->filled('end_date')
+                ? Carbon::parse($request->end_date)->endOfDay()
+                : null;
+
+            // ==========================
+            // ✅ CAS 1 : UN ENTREPÔT
+            // ==========================
+            if ($warehouse_uuid && $warehouse_uuid !== 'all') {
+
+                $warehouse = Warehouse::where('uuid', $warehouse_uuid)->first();
+
+                if (!$warehouse) {
+                    return response()->json([
+                        'message' => 'Entrepôt introuvable'
+                    ], 404);
+                }
+
+                $product_points = ProductPoint::with([
+                    'product.unitMeasure',
+                    'product.category',
+                    'point',
+                    'creator',
+                    'updater'
+                ])
+                    ->where('point_uuid', $warehouse_uuid)
+                    ->when($start_date && $end_date, function ($query) use ($start_date, $end_date) {
+                        $query->whereBetween('created_at', [$start_date, $end_date]);
+                    })
+                    ->get();
+
+                if ($product_points->isEmpty()) {
+                    return response()->json([
+                        'message' => 'Aucun article trouvé pour cette période'
+                    ], 404);
+                }
+
+                $fileName = 'INVENTAIRE-ENTREPOT-'
+                    . strtoupper($warehouse->name) . '-'
+                    . now()->format('YmdHis') . '.pdf';
+
+                $folderPath = 'storage/inventory_warehouse_day/' . $warehouse->uuid;
+
+            }
+            // ==========================
+            // ✅ CAS 2 : TOUS LES ENTREPÔTS
+            // ==========================
+            else {
+
+                $product_points = ProductPoint::select(
+                    'produit_uuid',
+                    DB::raw('SUM(quantity) as quantity'),
+                    DB::raw('MAX(stocks_minimal) as stocks_minimal')
+                )
+                    ->with([
+                        'product.unitMeasure',
+                        'product.category'
+                    ])
+                    ->when($start_date && $end_date, function ($query) use ($start_date, $end_date) {
+                        $query->whereBetween('created_at', [$start_date, $end_date]);
+                    })
+                    ->groupBy('produit_uuid')
+                    ->get();
+
+                if ($product_points->isEmpty()) {
+                    return response()->json([
+                        'message' => 'Aucun article trouvé pour cette période'
+                    ], 404);
+                }
+
+                $warehouse = null;
+
+                $fileName = 'INVENTAIRE-TOUS-ENTREPOTS-'
+                    . now()->format('YmdHis') . '.pdf';
+
+                $folderPath = 'storage/inventory_warehouse_day/all';
+            }
+
+            // ==========================
+            // ✅ Créer dossier si inexistant
+            // ==========================
+            if (!is_dir($folderPath)) {
+                mkdir($folderPath, 0755, true);
+            }
+
+            $filePath = $folderPath . '/' . $fileName;
+
+            // ==========================
+            // ✅ Générer PDF
+            // ==========================
+            $data = [
+                'warehouse'      => $warehouse,
+                'product_points' => $product_points,
+                'start_date'     => $start_date ? $start_date->format('Y-m-d') : null,
+                'end_date'       => $end_date ? $end_date->format('Y-m-d') : null,
+            ];
+
+            $footer = 'pdfs.reports.factures.footer';
+
+            save_browser_shot_pdf(
+                view: 'pdfs.inventory_warehouse_day.inventory_warehouse_day',
+                data: $data,
+                folderPath: $folderPath,
+                path: $filePath,
+                margins: [10, 10, 10, 10],
+                footer: $footer
+            );
+
+            return response()->json([
+                'base64'   => base64_encode(file_get_contents($filePath)),
+                'filename' => $fileName,
+                'url'      => $filePath,
+            ], 200);
+
+        } catch (\Throwable $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Erreur lors de la génération du PDF',
+                'details' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+
 
 
 

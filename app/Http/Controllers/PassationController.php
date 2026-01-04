@@ -34,6 +34,7 @@ class PassationController extends Controller
     public function index(Request $request)
     {
         $auth = auth()->user();
+        $roleIds = $auth->roles->pluck('id');
         $perPage = $request->input('limit', 25);
         $page = $request->input('page', 1);
 
@@ -65,13 +66,21 @@ class PassationController extends Controller
             $query->whereBetween('created_at', [$start, $end]);
         }
 
-        if (!$auth->hasRole(['SUPER_ADMIN']) && !$auth->can('view_all_passations')) {
-            // Tous les autres utilisateurs voient seulement leurs propres créations ou les passations dont ils sont managers
-            $query->where(function($q) use ($auth) {
-                $q->where('created_by', $auth->id)
-                    ->orWhereHas('managers', function($q2) use ($auth) {
-                        $q2->where('manager_id', $auth->id);
-                    });
+        if (!$auth->hasRole('SUPER_ADMIN') && !$auth->can('view_all_passations')) {
+
+            $query->where(function($q) use ($auth, $roleIds) {
+
+                // 🔹 Utilisateurs avec view_role_related_data : voient toutes les passations des utilisateurs du même rôle
+                if ($auth->can('view_role_related_data')) {
+                    $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
+                }
+
+                // 🔹 Utilisateurs sans cette permission : seulement leurs propres passations ou celles dont ils sont managers
+                if (!$auth->can('view_role_related_data')) {
+                    $q->orWhere('created_by', $auth->id)
+                        ->orWhereHas('managers', fn($q2) => $q2->where('manager_id', $auth->id));
+                }
+
             });
         }
 
@@ -425,6 +434,104 @@ class PassationController extends Controller
     }
 
 
+    /**
+     * Display a listing of the resource.
+     * @permission PassationController::update_passation_validation
+     * @permission_desc Modifier une passation de stocks en discussion
+     */
+    public function update_passation_validation(Request $request, string $uuid)
+    {
+        $auth = auth()->user();
+
+        // 🔹 Validation
+        $validated = $request->validate([
+            'items' => 'required|array|min:1',
+            'items.*.uuid' => 'required|exists:passation_items,uuid',
+            'items.*.quantity_counted' => 'required|integer|min:0',
+        ], [
+            'items.required' => 'Les items sont obligatoires.',
+            'items.*.quantity_counted.required' => 'La quantité comptée est obligatoire.',
+        ]);
+
+        DB::beginTransaction();
+
+        try {
+            $passation = Passation::with('items.product')
+                ->where('uuid', $uuid)
+                ->firstOrFail();
+
+            $hasGap = false;
+
+            foreach ($validated['items'] as $itemData) {
+                $item = $passation->items
+                    ->where('uuid', $itemData['uuid'])
+                    ->first();
+
+                if (!$item) continue;
+
+                $qteSent = (int) $item->quantity_sent;
+                $qteCounted = (int) $itemData['quantity_counted'];
+
+                if ($qteCounted > $qteSent) {
+                    DB::rollBack();
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => "La quantité comptée pour l'article {$item->product?->name} ne peut pas être supérieure à la quantité envoyée.",
+                    ], 400);
+                }
+
+                $difference = $qteSent - $qteCounted;
+
+                if ($difference > 0) {
+                    $hasGap = true;
+                }
+
+                // 🔹 Mise à jour des items, même si validés
+                $item->update([
+                    'quantity_counted' => $qteCounted,
+                    'difference' => $difference,
+                    'status' => $difference === 0 ? 'ok' : 'in_discuss',
+                    'validated_at' => now(),
+                    'validated_by' => $auth->id,
+                    'updated_by' => $auth->id,
+                ]);
+            }
+
+            // 🔹 Mise à jour du statut global de la passation
+            $passationStatus = 'in_discuss';
+
+            $passation->update([
+                'status' => $passationStatus,
+                'validated_at' => now(),
+                'validated_by' => $auth->id,
+                'updated_by' => $auth->id,
+                'reason_validated' => 'Validation modifiée par comptage',
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Passation mise à jour avec succès.',
+                'passation' => $passation->load(
+                    'items.product',
+                    'agentFrom',
+                    'agentTo',
+                    'warehouse'
+                ),
+            ]);
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Erreur lors de la mise à jour de la passation.',
+                'details' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
 
     /**
      * Display a listing of the resource.
@@ -466,30 +573,55 @@ class PassationController extends Controller
 
         $validated = $request->validate([
             'reason_reject' => 'required|string|min:3',
-        ],[
+        ], [
             'reason_reject.required' => 'Le motif du rejet est obligatoire.',
         ]);
 
-        $passation = Passation::where('uuid', $uuid)->firstOrFail();
+        $passation = Passation::with('items')->where('uuid', $uuid)->firstOrFail();
 
         DB::beginTransaction();
 
-        $passation->update([
-            'status'         => 'rejected',
-            'rejected_at'    => now(),
-            'rejected_by'    => $auth->id,
-            'updated_by'     => $auth->id,
-            'reason_reject'  => $validated['reason_reject'],
-        ]);
+        try {
+            // 🔹 Mettre à jour la passation
+            $passation->update([
+                'status'        => 'rejected',
+                'rejected_at'   => now(),
+                'rejected_by'   => $auth->id,
+                'updated_by'    => $auth->id,
+                'reason_reject' => $validated['reason_reject'],
+            ]);
 
-        DB::commit();
+            // 🔹 Remettre tous les items à pending
+            foreach ($passation->items as $item) {
+                $item->update([
+                    'status' => 'pending',
+                    'quantity_counted' => 0,
+                    'difference' => 0,
+                    'validated_at' => null,
+                    'validated_by' => null,
+                    'updated_by' => $auth->id,
+                ]);
+            }
 
-        return response()->json([
-            'status'  => 'success',
-            'message' => 'Passation rejetée avec succès.',
-            'passation' => $passation->load('agentFrom', 'agentTo', 'warehouse'),
-        ]);
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Passation rejetée et tous les items remis à pending avec succès.',
+                'passation' => $passation->load('agentFrom', 'agentTo', 'warehouse', 'items.product'),
+            ]);
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Erreur lors du rejet de la passation.',
+                'details' => $e->getMessage(),
+            ], 500);
+        }
     }
+
 
     /**
      * Display a listing of the resource.

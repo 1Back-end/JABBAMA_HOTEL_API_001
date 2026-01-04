@@ -25,15 +25,42 @@ class RoleController extends Controller
      * @permission RoleController::index
      * @permission_desc Liste de tous les roles
      */
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
-        return response()->json([
-            'roles' => Role::with([
-                'createdBy:id,nom_utilisateur',
-                'updatedBy:id,nom_utilisateur',
-                'permissions:id,name,description',
-            ])->get(),
+        $auth = auth()->user();
+        $perPage = $request->input('limit', 5);
+        $page = $request->input('page', 1);
+
+        $query = Role::with([
+            'createdBy:id,nom_utilisateur',
+            'updatedBy:id,nom_utilisateur',
+            'permissions:id,name,description',
         ]);
+
+        if ($search = trim($request->input('search'))) {
+            $query->where(function ($q) use ($search) {
+                $q->where('id', 'like', "%{$search}%")
+                    ->orWhere('name', 'like', "%{$search}%")
+                    ->orWhere('guard_name', 'like', "%{$search}%")
+
+                    // 🔹 Permissions
+                    ->orWhereHas('permissions', function ($qw) use ($search) {
+                        $qw->where('id', 'like', "%{$search}%")
+                            ->orWhere('name', 'like', "%{$search}%")
+                            ->orWhere('description', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        $data = $query->latest()->paginate($perPage, ['*'], 'page', $page);
+
+        return response()->json([
+            'data'         => $data->items(),
+            'current_page' => $data->currentPage(),
+            'last_page'    => $data->lastPage(),
+            'total'        => $data->total(),
+        ]);
+
     }
 
     /**
