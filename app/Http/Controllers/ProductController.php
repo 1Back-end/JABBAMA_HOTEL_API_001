@@ -28,7 +28,9 @@ class ProductController extends Controller
         $auth = auth()->user();
         $perPage = $request->input('limit', 25);
         $page = $request->input('page', 1);
-        $pointsFilter = $request->input('point_uuid'); // "" pour tous, uuid sinon
+
+        // 🔹 null = tous les entrepôts
+        $pointUuid = $request->input('point_uuid');
 
         $query = Product::with([
             'creator',
@@ -37,58 +39,65 @@ class ProductController extends Controller
             'unitMeasure',
             'subCategories',
             'medias',
-            'points' => function ($q) use ($auth, $pointsFilter) {
+            'points' => function ($q) use ($auth, $pointUuid) {
 
-                // 🔹 Si l'utilisateur n'a pas la permission de voir tous les entrepôts, limiter par ses entrepôts
-                if (!$auth->hasAnyRole(['SUPER_ADMIN']) && !$auth->can('view_all_products')) {
+                // 🔐 Restriction managers
+                if (!$auth->hasAnyRole(['SUPER_ADMIN', 'GESTIONNAIRE_STOCK'])) {
                     $q->whereHas('managers', function ($m) use ($auth) {
                         $m->where('warehouse_managers.user_id', $auth->id);
                     });
                 }
 
-                // 🔹 Filtre par entrepôt spécifique si fourni
-                if ($pointsFilter) {
-                    $q->where('warehouses.uuid', $pointsFilter);
+                // 🏭 Filtrer SEULEMENT si un entrepôt est choisi
+                if ($pointUuid) {
+                    $q->where('warehouses.uuid', $pointUuid);
                 }
             }
         ]);
 
+        /**
+         * 🔹 Produits visibles
+         */
+        if (!$auth->hasAnyRole(['SUPER_ADMIN', 'GESTIONNAIRE_STOCK'])) {
+            $query->whereHas('points', function ($q) use ($auth, $pointUuid) {
 
-        // 🔹 Filtre catégorie
+                $q->whereHas('managers', function ($m) use ($auth) {
+                    $m->where('warehouse_managers.user_id', $auth->id);
+                });
+
+                if ($pointUuid) {
+                    $q->where('warehouses.uuid', $pointUuid);
+                }
+            });
+        }
+        elseif ($pointUuid) {
+            // SUPER_ADMIN + entrepôt précis
+            $query->whereHas('points', function ($q) use ($pointUuid) {
+                $q->where('warehouses.uuid', $pointUuid);
+            });
+        }
+
+        // 🔹 Filtres simples
         if ($request->filled('category_uuid')) {
             $query->where('category_uuid', $request->category_uuid);
         }
 
-        // 🔹 Filtre unité
         if ($request->filled('unit_uuid')) {
             $query->where('unit_uuid', $request->unit_uuid);
         }
 
-        // 🔹 Recherche globale
+        // 🔹 Recherche
         if ($search = trim($request->input('search'))) {
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
                     ->orWhere('code', 'like', "%{$search}%")
                     ->orWhere('description', 'like', "%{$search}%")
-                    ->orWhereHas('unitMeasure', fn($u) => $u->where('name', 'like', "%{$search}%"))
-                    ->orWhereHas('category', fn($c) => $c->where('name', 'like', "%{$search}%"));
+                    ->orWhereHas('unitMeasure', fn ($u) => $u->where('name', 'like', "%{$search}%"))
+                    ->orWhereHas('category', fn ($c) => $c->where('name', 'like', "%{$search}%"));
             });
         }
 
         $products = $query->latest()->paginate($perPage, ['*'], 'page', $page);
-
-        if (!$pointsFilter) {
-            foreach ($products as $product) {
-                // total_quantity = somme de toutes les quantités des entrepôts
-                $product->total_quantity = $product->points->sum('pivot.quantity');
-            }
-        } else {
-            // Si entrepôt spécifique, afficher juste la quantité de cet entrepôt
-            foreach ($products as $product) {
-                $product->total_quantity = $product->points->first()?->pivot->quantity ?? 0;
-            }
-        }
-
 
         return response()->json([
             'data'         => $products->items(),
@@ -97,6 +106,8 @@ class ProductController extends Controller
             'total'        => $products->total(),
         ]);
     }
+
+
 
 
     /**
