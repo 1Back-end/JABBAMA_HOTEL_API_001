@@ -463,19 +463,25 @@ class WarehouseController extends Controller
      * @permission WarehouseController::export_inventory_by_warehouse
      * @permission_desc Exporter l'inventaire d'un entrepôt en Excel
      */
-    public function export_inventory_by_warehouse(Request $request,$pointUuid)
+    public function export_inventory_by_warehouse(Request $request, ?string $pointUuid = null)
     {
-        $point = Warehouse::where('uuid', $pointUuid)->firstOrFail();
-        $warehouseName = strtoupper($point->name);
-        $fileName = 'INVENTAIRE_' . $warehouseName . '_' . now()->format('Ymd_His') . '.xlsx';
-        Excel::store(new InventoryByPointExport($pointUuid), $fileName, 'exportinventory');
+        // 🔹 Nom du fichier
+        $fileName = $pointUuid
+            ? 'INVENTAIRE_' . strtoupper(str_replace(' ', '_', Warehouse::findOrFail($pointUuid)->name)) . '_' . now()->format('Ymd_His') . '.xlsx'
+            : 'INVENTAIRE_TOUS_LES_ENTREPOTS_' . now()->format('Ymd_His') . '.xlsx';
+
+        Excel::store(
+            new InventoryByPointExport($pointUuid ?? null),
+            $fileName,
+            'exportinventory',
+            \Maatwebsite\Excel\Excel::XLSX
+        );
 
         return response()->json([
-            "message" => "Exportation des données effectuée avec succès",
-            "filename" => $fileName,
-            "url" => Storage::disk('exportinventory')->url($fileName)
-        ]);
-
+            'message'  => 'Exportation des données effectuée avec succès',
+            'filename' => $fileName,
+            'url'      => Storage::disk('exportinventory')->url($fileName),
+        ], 200);
     }
 
     /**

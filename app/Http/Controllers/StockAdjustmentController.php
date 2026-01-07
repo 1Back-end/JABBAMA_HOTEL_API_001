@@ -59,6 +59,15 @@ class StockAdjustmentController extends Controller
             'items.*.product_uuid'  => 'required|exists:produits,uuid',
             'items.*.quantity'      => 'required|integer|min:1',
         ]);
+        if ((int) $data['action'] === StockAdjustmentAction::DEDUCTION->value) {
+            if (!($auth->hasRole('AGENT_DEDUCTEUR') || $auth->hasRole('SUPER_ADMIN'))) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Action non autorisée. Seuls les AGENT_DEDUCTEUR ou SUPER_ADMIN peuvent effectuer une consommation de stock.'
+                ], 403);
+            }
+        }
+
 
         DB::beginTransaction();
 
@@ -131,6 +140,15 @@ class StockAdjustmentController extends Controller
             'items.*.product_uuid' => 'required|exists:produits,uuid',
             'items.*.quantity'     => 'required|integer|min:1',
         ]);
+
+        if ((int) $data['action'] === StockAdjustmentAction::DEDUCTION->value) {
+            if (!($auth->hasRole('AGENT_DEDUCTEUR') || $auth->hasRole('SUPER_ADMIN'))) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Action non autorisée. Seuls les AGENT_DEDUCTEUR ou SUPER_ADMIN peuvent effectuer une consommation de stock.'
+                ], 403);
+            }
+        }
 
         DB::beginTransaction();
 

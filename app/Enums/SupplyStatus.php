@@ -54,4 +54,10 @@ enum SupplyStatus: string
     {
         return self::tryFrom($value)?->label() ?? 'Inconnu';
     }
+    public static function toArray(): array
+    {
+        return collect(self::cases())
+            ->mapWithKeys(fn($case) => [$case->value => $case->label()])
+            ->toArray();
+    }
 }

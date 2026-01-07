@@ -71,9 +71,14 @@
 {{-- Header --}}
 <header class="text-center">
     <div class="fs-3 fw-bold text-uppercase">
-        INVENTAIRE DE STOCKS DE L'{{ $warehouse->name }}
+        @if(!empty($warehouse))
+            INVENTAIRE DE STOCKS DE L'{{ $warehouse->name }}
+        @else
+            INVENTAIRE DE TOUS LE STOCKS
+        @endif
     </div>
 </header>
+
 
 <div class="mt-2 w-100" style="border-top: 1px double rgba(0,0,0,0.75); margin-bottom: 2px"></div>
 <div class="mb-2 w-100" style="border-top: 1px double rgba(0,0,0,0.75);"></div>
@@ -85,7 +90,7 @@
 </p>
 
 <div class="d-flex justify-content-center mt-2">
-    <table class="table table-bordered table-striped text-center border-black" style="font-size: 11px;">
+    <table class="table table-bordered table-striped border-black" style="font-size: 11px;">
         <thead>
         <tr>
             <th>N°</th>
