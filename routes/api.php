@@ -47,12 +47,15 @@ Route::middleware(['activity'])->group(function () {
         Route::apiResource('products', ProductController::class);
         Route::patch('products/{uuid}/is_active', [ProductController::class, 'update_status']);
         Route::post('products/{uuid}/update_products', [ProductController::class, 'update_products']);
+        Route::get('/products/inventory/print', [ProductController::class, 'export_products_by_points_uuid']);
         Route::get('/products/{warehouse_uuid}/inventory/print', [ProductController::class, 'export_products_by_points_uuid']);
+
 
 
         Route::get('warehouses/{uuid}/products', [WarehouseController::class, 'get_products_by_warehouse']);
         Route::get('warehouses/{uuid}/get_managers_by_warehouse', [WarehouseController::class, 'get_managers_by_warehouse']);
         Route::get('/warehouses/{pointUuid}/inventory/export', [WarehouseController::class, 'export_inventory_by_warehouse']);
+        Route::get('/warehouses/inventory/export', [WarehouseController::class, 'export_inventory_by_warehouse']);
         Route::get('/warehouses/{point_uuid}/inventory/print', [WarehouseController::class, 'print_inventory_by_warehouse']);
         Route::get("/exports/warehouses", [WarehouseController::class, 'export_warehouses']);
 
@@ -76,6 +79,7 @@ Route::middleware(['activity'])->group(function () {
         Route::put('orders/{uuid}/update_parents_orders', [PurchaseOrderController::class, 'update_parents_orders']);
         Route::get('orders/{uuid}/print_orders', [PurchaseOrderController::class, 'print_orders']);
         Route::get('orders/{uuid}/show_parents_orders', [PurchaseOrderController::class, 'show_parents_orders']);
+        Route::get('orders_actions', [\App\Http\Controllers\PurchaseOrderController::class, 'PurchaseOrdersStatus']);
 
         Route::apiResource('supply_orders', SupplyController::class);
         Route::post('update_supplies/{uuid}/update_supplies', [SupplyController::class, 'update_supplies']);
@@ -87,6 +91,7 @@ Route::middleware(['activity'])->group(function () {
         Route::patch('supply_orders/{uuid}/cancel_supply', [SupplyController::class, 'cancel_supply']);
         Route::patch('supply_orders/{uuid}/transfer_supply', [SupplyController::class, 'transfer_supply']);
         Route::get("/exports/supply", [SupplyController::class, 'export_supply']);
+        Route::get('supply_actions', [\App\Http\Controllers\SupplyController::class, 'SupplyStatus']);
 
 
         Route::apiResource('passations', \App\Http\Controllers\PassationController::class);
@@ -111,6 +116,11 @@ Route::middleware(['activity'])->group(function () {
         Route::get('/statistics/products/top_consumed', [\App\Http\Controllers\StatisticsController::class, 'topConsumedProducts']);
         Route::get('/statistics/products_percentage', [\App\Http\Controllers\StatisticsController::class, 'get_statistics_by_products']);
         Route::get('/stats/products/{productUuid}/data_variation', [\App\Http\Controllers\StatisticsController::class, 'statisticsByProduct']);
+        Route::get('/purchase_orders/total_by_status', [\App\Http\Controllers\StatisticsController::class, 'suppliesOrders']);
+        Route::get('/supply/total_by_status', [\App\Http\Controllers\StatisticsController::class, 'suppliesJournal']);
+        Route::get('/stocks_adjustments_actions/total_by_stocks_adjustments', [\App\Http\Controllers\StatisticsController::class, 'StockAdjustmentsJournal']);
+        Route::get('/print_suppliesOrders', [\App\Http\Controllers\StatisticsController::class, 'print_suppliesOrders']);
+        Route::get('/print_suppliesJournal', [\App\Http\Controllers\StatisticsController::class, 'print_suppliesJournal']);
 
 
         Route::post('/permissions/sync_permissions', [\App\Http\Controllers\PermissionAdminController::class, 'sync_permissions']);

@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Enums\PurchaseOrdersStatus;
+use App\Enums\PurchaseOrdersType;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -39,6 +41,16 @@ class PurchaseOrder extends Model
         'parent_uuid',
         'is_parent',
     ];
+    protected $appends = ['status_label','type_label'];
+
+    public function getStatusLabelAttribute(): string
+    {
+        return PurchaseOrdersStatus::safeLabel($this->status);
+    }
+    public function getTypeLabelAttribute(): string
+    {
+        return PurchaseOrdersType::safeLabel($this->type);
+    }
 
 
 

@@ -6,6 +6,7 @@
     <meta name="viewport"
           content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
+
     <style>
         {!! $bootstrap !!}
     </style>
@@ -67,12 +68,12 @@
 </head>
 
 <body>
-
-
-<header class="text-center">
+{{-- Header général --}}
+<header class="text-center mb-3">
     <div class="fs-3 fw-bold text-uppercase">
-        RAPPORT DE RÉGULARISATION DE STOCK
-        <h2 style="font-style: italic;font-size: 12px">Action : {{ $action_label }}</h2>
+        LISTE DES COMMANDES
+    </div>
+    <div class="fs-6">
         @if($start_date && $end_date)
             <h3 style="font-style: italic;font-size: 11px">
                 Période : {{ $start_date }} au {{ $end_date }}
@@ -81,67 +82,58 @@
     </div>
 </header>
 
+@foreach($orders as $order)
+    {{-- Séparateurs --}}
+    <div class="mt-2 w-100" style="border-top: 1px double rgba(0,0,0,0.75); margin-bottom: 2px;"></div>
+    <div class="mb-2 w-100" style="border-top: 1px double rgba(0,0,0,0.75);"></div>
 
-{{-- Ligne de séparation --}}
-<div class="mt-2 w-100" style="border-top: 1px double rgba(0,0,0,0.75); margin-bottom: 2px"></div>
-<div class="mb-2 w-100" style="border-top: 1px double rgba(0,0,0,0.75);"></div>
-
-{{-- Date d'impression --}}
-<p class="fst-italic text-end" style="font-size: 12px;">
-    Date d'impression : {{ now()->format('d/m/Y H:i') }}
-</p>
-
-{{-- Boucle sur chaque StockAdjustment --}}
-@foreach($stock_adjustments as $adjustment)
-    <div class="d-flex justify-content-center mt-2">
-        <table class="table table-bordered table-striped border-black" style="font-size: 12px; width: 100%;">
+    <div class="d-flex justify-content-center mt-2 mb-3">
+        <table class="table table-bordered border-black table-striped" style="font-size: 11px;">
             <thead>
             <tr>
-                <th colspan="12"
+                <th colspan="7"
                     class="text-center fw-bold py-2"
                     style="border: 2px dotted black;">
-                    REGULARISATION N° {{ $adjustment->reference ?? '---' }} <br>
+                    BON DE COMMANDE N° {{ $order->reference }} <br>
                     <span style="font-size: 10px; font-weight: normal;">
-                            Entrepôt : {{ $adjustment->warehouse->name ?? '---' }}
-                        </span>
+                        Articles commandés
+                    </span>
                 </th>
             </tr>
             <tr>
                 <th>N°</th>
-                <th>Référence</th>
+                <th>Réference</th>
                 <th>Article</th>
-                <th>Description</th>
-                <th>Quantité à régulariser</th>
-                <th>Date mise à jour</th>
+                <th>Qté commandée</th>
             </tr>
             </thead>
             <tbody>
-            @forelse($adjustment->items as $index => $item)
+            @foreach($order->items as $index => $item)
                 <tr>
-                    <td>{{ $loop->iteration }}</td>
-                    <td>{{ $item->product->code ?? '---' }}</td>
-                    <td>{{ $item->product->name ?? '---' }}</td>
-                    <td>{{ $item->product->description ?? '---' }}</td>
-                    <td>{{ $item->quantity ?? 0 }}</td>
-                    <td>{{ $item->updated_at ?? $item->created_at }}</td>
+                    <td>{{ $index + 1 }}</td>
+                    <td class="text-uppercase">{{ $item->product->code ?? '---' }}</td>
+                    <td class="text-uppercase">{{ $item->product->name ?? '---' }}</td>
+                    <td>{{ intval($item->quantity ?? 0) ?: '---' }}</td>
                 </tr>
-            @empty
-                <tr>
-                    <td colspan="12" class="text-center text-muted">Aucun article pour cette régularisation</td>
-                </tr>
-            @endforelse
+            @endforeach
             </tbody>
         </table>
     </div>
+
+    {{-- Type et statut --}}
+    <div class="d-flex align-content-center mb-1" style="font-size: 12px; gap: 2rem;">
+        <p class="m-0"><strong>Type :</strong> {{ \App\Enums\PurchaseOrdersType::safeLabel($order->type) }}</p>
+        <p class="m-0"><strong>Statut :</strong> {{ \App\Enums\PurchaseOrdersStatus::safeLabel($order->status) }}</p>
+    </div>
+
 @endforeach
 
-{{-- Footer --}}
 
-<div class="text-end mt-3" style="font-size: 12px;">
-    <p>Fait le {{ now()->format('d/m/Y H:i') }}</p>
+<div class="text-end mt-3" style="font-size: 13px;">
+    <p>Fait le {{ $order->created_at->format('d/m/Y H:i') }}</p>
 </div>
 
 
-
+</div>
 </body>
 </html>

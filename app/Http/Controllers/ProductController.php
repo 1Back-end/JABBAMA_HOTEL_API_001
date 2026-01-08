@@ -479,50 +479,91 @@ class ProductController extends Controller
      * @permission ProductController::export_products_by_points_uuid
      * @permission_desc Imprimer l'inventaire des articles par entrepots en PDF
      */
-    public function export_products_by_points_uuid(Request $request, string $warehouse_uuid)
+    public function export_products_by_points_uuid(Request $request, ?string $warehouse_uuid = null)
     {
         try {
 
-            $warehouse = Warehouse::where('uuid', $warehouse_uuid)->first();
+            // ==========================
+            // ✅ CAS 1 : UN ENTREPÔT
+            // ==========================
+            if ($warehouse_uuid) {
 
-            if (!$warehouse) {
-                return response()->json([
-                    'message' => 'Entrepôt introuvable'
-                ], 404);
+                $warehouse = Warehouse::where('uuid', $warehouse_uuid)->first();
+
+                if (!$warehouse) {
+                    return response()->json([
+                        'message' => 'Entrepôt introuvable'
+                    ], 404);
+                }
+
+                $product_points = ProductPoint::with([
+                    'product.unitMeasure',
+                    'product.category',
+                    'point',
+                    'creator',
+                    'updater'
+                ])
+                    ->where('point_uuid', $warehouse_uuid)
+                    ->get();
+
+                if ($product_points->isEmpty()) {
+                    return response()->json([
+                        'message' => 'Aucun article trouvé pour cet entrepôt'
+                    ], 404);
+                }
+
+                $fileName = 'INVENTAIRE-DE-L-ENTREPOT-'
+                    . strtoupper($warehouse->name) . '-'
+                    . now()->format('YmdHis') . '.pdf';
+
+                $folderPath = 'storage/inventory-warehouse/' . $warehouse->uuid;
             }
 
-            $product_points = ProductPoint::with([
-                'product.unitMeasure',
-                'product.category',
-                'point',
-                'creator',
-                'updater'
-            ])
-                ->where('point_uuid', $warehouse_uuid)
-                ->get();
+            // ==========================
+            // ✅ CAS 2 : TOUS LES ENTREPÔTS
+            // ==========================
+            else {
 
-            if ($product_points->isEmpty()) {
-                return response()->json([
-                    'message' => 'Aucun article trouvé pour cet entrepôt'
-                ], 404);
+                $product_points = ProductPoint::select(
+                    'produit_uuid',
+                    DB::raw('SUM(quantity) as quantity'),
+                    DB::raw('MAX(stocks_minimal) as stocks_minimal') // ⚠️ PAS DE SUM
+                )
+                    ->with([
+                        'product.unitMeasure',
+                        'product.category'
+                    ])
+                    ->groupBy('produit_uuid')
+                    ->get();
+
+                if ($product_points->isEmpty()) {
+                    return response()->json([
+                        'message' => 'Aucun article trouvé'
+                    ], 404);
+                }
+
+                $warehouse = null;
+
+                $fileName = 'INVENTAIRE-DE-TOUS-LES-ENTREPOTS-'
+                    . now()->format('YmdHis') . '.pdf';
+
+                $folderPath = 'storage/inventory-warehouse/all';
             }
 
-            // ✅ Entrepôt
-            $warehouse = $product_points->first()->point;
-
-
-            // ✅ Nom du fichier (corrigé)
-            $fileName = 'INVENTAIRE-DE-L-ENTREPOT-' . strtoupper($warehouse->name) . '-'  . now()->format('YmdHis') . '.pdf';
-
-            $folderPath = 'storage/inventory-warehouse/' . $warehouse->uuid;
-            $filePath   = $folderPath . '/' . $fileName;
-
+            // ==========================
+            // ✅ DOSSIER
+            // ==========================
             if (!is_dir($folderPath)) {
                 mkdir($folderPath, 0755, true);
             }
 
+            $filePath = $folderPath . '/' . $fileName;
+
+            // ==========================
+            // ✅ PDF
+            // ==========================
             $data = [
-                'warehouse'      => $warehouse,
+                'warehouse'      => $warehouse, // null si tous
                 'product_points' => $product_points,
             ];
 
@@ -538,13 +579,11 @@ class ProductController extends Controller
             );
 
             $pdfContent = file_get_contents($filePath);
-            $base64     = base64_encode($pdfContent);
 
             return response()->json([
-                'data'     => $data,
-                'base64'   => $base64,
-                'url'      => $filePath,
+                'base64'   => base64_encode($pdfContent),
                 'filename' => $fileName,
+                'url'      => $filePath,
             ], 200);
 
         } catch (\Throwable $e) {
@@ -555,6 +594,7 @@ class ProductController extends Controller
             ], 500);
         }
     }
+
 
 
 

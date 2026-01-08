@@ -390,7 +390,7 @@ class PassationController extends Controller
             }
 
             // 🔹 STATUT UNIQUE DE LA PASSATION
-            $passationStatus = $hasGap ? 'with_gap' : 'no_gap';
+            $passationStatus = 'in_discuss';
 
             $passation->update([
                 'status' => $passationStatus,
@@ -632,33 +632,56 @@ class PassationController extends Controller
      * @permission PassationController::validate_passations_by_admin
      * @permission_desc Valider une passation de stocks par le SUPER ADMIN
      */
-    public function validate_passations_by_admin(Request $request, string $uuid){
+    public function validate_passations_by_admin(Request $request, string $uuid)
+    {
         $auth = auth()->user();
+
+        // 🔐 Validation mot de passe
         $request->validate([
             'password' => 'required|string'
         ]);
 
-        // Vérification du mot de passe
         if (!Hash::check($request->password, $auth->password)) {
             return response()->json([
                 'status'  => 'error',
                 'message' => 'Mot de passe incorrect.'
             ], 422);
         }
-        $passation = Passation::findOrFail($uuid);
+
+        // 🔎 Récupération passation avec items
+        $passation = Passation::with('items')
+            ->where('uuid', $uuid)
+            ->firstOrFail();
+
+        // 🔹 Vérifier s'il existe un écart
+        $hasGap = $passation->items
+                ->where('difference', '>', 0)
+                ->count() > 0;
+
+        // 🔹 Statut final décidé par le super admin
+        $finalStatus = $hasGap ? 'with_gap' : 'no_gap';
+
+        // ✅ Mise à jour finale
         $passation->update([
-            'status' => 'validated',
-            'updated_by' => auth()->id(),
-            'approved_by' => auth()->id(),
-            'approved_at' => now(),
-            'closed_at' => now()
+            'status'       => $finalStatus,
+            'approved_by'  => $auth->id,
+            'approved_at'  => now(),
+            'updated_by'   => $auth->id,
+            'closed_at'    => now(),
         ]);
 
         return response()->json([
-            'message' => "La passation a été validée avec succès.",
-            'passation' => $passation->load('agentFrom', 'agentTo', 'warehouse'),
+            'status'    => 'success',
+            'message'   => 'Passation validée définitivement par le super administrateur.',
+            'passation' => $passation->load(
+                'items.product',
+                'agentFrom',
+                'agentTo',
+                'warehouse'
+            ),
         ]);
     }
+
 
     /**
      * Display a listing of the resource.

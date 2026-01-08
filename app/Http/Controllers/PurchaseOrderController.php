@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\DTO\ClientFilterData;
 use App\DTO\PurchaseOrderFilterData;
+use App\Enums\PurchaseOrdersStatus;
+use App\Enums\StockAdjustmentAction;
 use App\Exports\PurchaseOrdersExport;
 use App\Models\PdfDocument;
 use App\Models\Product;
@@ -25,6 +27,20 @@ use Maatwebsite\Excel\Facades\Excel;
  */
 class PurchaseOrderController extends Controller
 {
+
+
+    public function PurchaseOrdersStatus()
+    {
+        return response()->json([
+            'status' => 'success',
+            'data'   => PurchaseOrdersStatus::toArray(),
+        ]);
+    }
+
+
+
+
+
     /**
      * Display a listing of the resource.
      * @permission PurchaseOrderController::index

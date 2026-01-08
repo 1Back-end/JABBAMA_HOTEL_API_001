@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\DTO\PurchaseOrderFilterData;
 use App\DTO\SupplyFilterData;
+use App\Enums\PurchaseOrdersStatus;
+use App\Enums\SupplyStatus;
 use App\Exports\PurchaseOrdersExport;
 use App\Exports\SuppliersExport;
 use App\Exports\SuppliesExport;
@@ -31,6 +33,17 @@ use Maatwebsite\Excel\Facades\Excel;
  */
 class SupplyController extends Controller
 {
+
+    public function SupplyStatus()
+    {
+        return response()->json([
+            'status' => 'success',
+            'data'   => SupplyStatus::toArray(),
+        ]);
+    }
+
+
+
     /**
      * Display a listing of the resource.
      * @permission SupplyController::index
