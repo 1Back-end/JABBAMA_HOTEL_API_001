@@ -6,6 +6,7 @@ use App\Models\Medias;
 use App\Models\Passation;
 use App\Models\PurchaseOrder;
 use App\Models\StockAdjustment;
+use App\Models\StockDeduction;
 use App\Models\Supply;
 use App\Models\User;
 use App\Models\Warehouse;
@@ -18,6 +19,73 @@ use Illuminate\Support\Facades\Storage;
 use Spatie\Browsershot\Exceptions\CouldNotTakeBrowsershot;
 use Spatie\Browsershot\Browsershot;
 use Illuminate\Pagination\LengthAwarePaginator;
+
+
+
+
+if (!function_exists('filter_stocks_deductions')) {
+    /**
+     * Filtrer les déductions de stocks
+     *
+     * @param \App\DTO\DeductionsStocksFiliterData $filterData
+     * @param bool $paginate
+     * @return Builder|LengthAwarePaginator
+     */
+    function filter_stocks_deductions(\App\DTO\DeductionsStocksFiliterData $filterData, bool $paginate = true): Builder|LengthAwarePaginator
+    {
+        $query = StockDeduction::with([
+            'items.product',
+            'warehouse',
+            'creator',
+            'updater',
+            'validator',
+            'canceler'
+        ]);
+
+        // Filtre status
+        if ($filterData->status) {
+            $query->where('status', $filterData->status);
+        }
+
+        // Filtre entrepôt
+        if ($filterData->warehouse_uuid) {
+            $query->where('warehouse_uuid', $filterData->warehouse_uuid);
+        }
+
+        // Filtre date
+        if ($filterData->start_date && $filterData->end_date) {
+            $start = \Illuminate\Support\Carbon::parse($filterData->start_date)->startOfDay();
+            $end   = \Illuminate\Support\Carbon::parse($filterData->end_date)->endOfDay();
+            $query->whereBetween('created_at', [$start, $end]);
+        }
+
+        // Filtre super admin / user normal
+        if ($filterData->auth && !$filterData->auth->hasRole('SUPER_ADMIN')) {
+            $query->where('created_by', $filterData->auth->id);
+        }
+
+        // Filtre recherche globale
+        if ($search = trim($filterData->search ?? '')) {
+            $query->where(function ($q) use ($search) {
+                $q->where('uuid', 'like', "%{$search}%")
+                    ->orWhere('status', 'like', "%{$search}%")
+                    ->orWhere('comment', 'like', "%{$search}%")
+                    ->orWhere('reason_of_cancel', 'like', "%{$search}%")
+                    ->orWhere('reference', 'like', "%{$search}%")
+                    ->orWhereHas('warehouse', fn($qw) => $qw->where('name', 'like', "%{$search}%"))
+                    ->orWhereHas('creator', fn($qc) => $qc->where('nom_utilisateur', 'like', "%{$search}%"))
+                    ->orWhereHas('updater', fn($qu) => $qu->where('nom_utilisateur', 'like', "%{$search}%"))
+                    ->orWhereHas('validator', fn($qv) => $qv->where('nom_utilisateur', 'like', "%{$search}%"))
+                    ->orWhereHas('items.product', fn($qp) => $qp->where('name', 'like', "%{$search}%"));
+            });
+        }
+
+        // Retourne Builder ou Paginator
+        return $paginate
+            ? $query->latest()->paginate($filterData->limit, ['*'], 'page', $filterData->page)
+            : $query;
+    }
+}
 
 
 if (!function_exists('filter_passations')) {

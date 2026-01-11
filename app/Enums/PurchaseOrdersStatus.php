@@ -16,9 +16,9 @@ enum PurchaseOrdersStatus: string
     public function label(): string
     {
         return match ($this) {
-            self::DRAFT => 'Brouillon',
+            self::DRAFT => 'En brouillon',
             self::OPEN => 'Transférée',
-            self::CLOSED => 'Clôturée',
+            self::CLOSED => 'Clôturée totalement',
             self::REJECTED => 'Rejetée',
             self::VALIDATED => 'En cours de livraison',
             self::PARTIALLY_CLOSED => 'Clôturé partiellement',

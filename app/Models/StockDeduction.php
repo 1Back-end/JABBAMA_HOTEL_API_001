@@ -2,17 +2,17 @@
 
 namespace App\Models;
 
-use App\Enums\StocksAdjustmentStatus;
+use App\Enums\StocksDeductionsStatus;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Support\Str;
 
-class StockAdjustment extends Model
+class StockDeduction extends Model
 {
     use HasFactory, SoftDeletes;
 
-    protected $table = 'stock_adjustments';
+    protected $table = 'stocks_deductions';
 
     protected $primaryKey = 'uuid';
     public $incrementing = false;
@@ -22,53 +22,51 @@ class StockAdjustment extends Model
         'uuid',
         'reference',
         'warehouse_uuid',
-        'notes',
         'comment',
         'action',
         'created_by',
         'updated_by',
         'validated_by',
         'validated_at',
-        'status',
         'cancelled_by',
         'cancelled_at',
+        'status',
+        'reason_of_cancel'
     ];
 
     protected $appends = ['status_label'];
 
     public function getStatusLabelAttribute(): string
     {
-        return StocksAdjustmentStatus::safeLabel($this->status);
+        return StocksDeductionsStatus::safeLabel($this->status);
     }
 
-    /**
-     * Auto-génération UUID
-     */
+    /* ================= RELATIONS ================= */
+
+    public function items()
+    {
+        return $this->hasMany(
+            StockDeductionItem::class,
+            'stocks_deduction_uuid',
+            'uuid'
+        );
+    }
     public static function boot()
     {
         parent::boot();
         static::creating(function ($model) {
-            $prefix = 'REG_';
+            $prefix = 'DEDUC_';
             $timestamp = now()->format('ymdHi');
 
-            $random = strtoupper(Str::random(7));
+            $random = strtoupper(Str::random(5));
             $model->reference = $prefix . $timestamp . $random;
             $model->uuid = (string) Str::uuid();
         });
     }
 
-    /* -----------------------------------
-     *            RELATIONS
-     * ----------------------------------- */
-
     public function warehouse()
     {
         return $this->belongsTo(Warehouse::class, 'warehouse_uuid', 'uuid');
-    }
-
-    public function items()
-    {
-        return $this->hasMany(StockAdjustmentItem::class, 'stock_adjustment_uuid', 'uuid');
     }
 
     public function creator()
@@ -85,8 +83,10 @@ class StockAdjustment extends Model
     {
         return $this->belongsTo(User::class, 'validated_by');
     }
-    public function cancelled()
+
+    public function canceler()
     {
         return $this->belongsTo(User::class, 'cancelled_by');
     }
+    //
 }

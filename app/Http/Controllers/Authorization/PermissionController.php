@@ -76,13 +76,13 @@ class PermissionController extends Controller
                             ->orWhere('description', 'like', "%{$search}%");
                     });
                 }
-                $q->orderBy('created_at', 'desc');
+                $q->orderBy('name', 'asc');
             }])
             ->when($search, function($q) use ($search) {
                 $q->where('libelle', 'like', "%{$search}%")
                     ->orWhere('description', 'like', "%{$search}%");
             })
-            ->get();
+            ->orderBy('created_at', 'desc')->get();
 
         return response()->json([
             'categories' => $categories,

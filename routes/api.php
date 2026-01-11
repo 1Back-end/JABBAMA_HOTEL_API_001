@@ -93,7 +93,6 @@ Route::middleware(['activity'])->group(function () {
         Route::get("/exports/supply", [SupplyController::class, 'export_supply']);
         Route::get('supply_actions', [\App\Http\Controllers\SupplyController::class, 'SupplyStatus']);
 
-
         Route::apiResource('passations', \App\Http\Controllers\PassationController::class);
         Route::patch('passations/{uuid}/cancel_passations', [\App\Http\Controllers\PassationController::class, 'cancel_passations']);
         Route::patch('passations/{uuid}/validate_passations', [\App\Http\Controllers\PassationController::class, 'validate_passations']);
@@ -112,7 +111,6 @@ Route::middleware(['activity'])->group(function () {
         Route::get('/exports/export_stock_adjustment', [\App\Http\Controllers\StockAdjustmentController::class, 'export_stock_adjustment']);
         Route::get('/stock-adjustments/print', [\App\Http\Controllers\StockAdjustmentController::class, 'print_stock_adjustments_by_action']);
 
-        Route::get('/statistics/products/{uuid}/statistics', [\App\Http\Controllers\StatisticsController::class, 'get_statistics_by_product']);
         Route::get('/statistics/products/top_consumed', [\App\Http\Controllers\StatisticsController::class, 'topConsumedProducts']);
         Route::get('/statistics/products_percentage', [\App\Http\Controllers\StatisticsController::class, 'get_statistics_by_products']);
         Route::get('/stats/products/{productUuid}/data_variation', [\App\Http\Controllers\StatisticsController::class, 'statisticsByProduct']);
@@ -121,10 +119,23 @@ Route::middleware(['activity'])->group(function () {
         Route::get('/stocks_adjustments_actions/total_by_stocks_adjustments', [\App\Http\Controllers\StatisticsController::class, 'StockAdjustmentsJournal']);
         Route::get('/print_suppliesOrders', [\App\Http\Controllers\StatisticsController::class, 'print_suppliesOrders']);
         Route::get('/print_suppliesJournal', [\App\Http\Controllers\StatisticsController::class, 'print_suppliesJournal']);
+        Route::get('/products/{productUuid}/price_variation', [\App\Http\Controllers\StatisticsController::class, 'get_statictic_by_variation_supply_price']);
+        Route::get('/products/{productUuid}/quantity_variation', [\App\Http\Controllers\StatisticsController::class, 'get_statitics_by_variation_quantity']);
+        Route::get('/products/{productUuid}/avaries', [\App\Http\Controllers\StatisticsController::class, 'get_statistics_by_avaries_products']);
 
 
         Route::post('/permissions/sync_permissions', [\App\Http\Controllers\PermissionAdminController::class, 'sync_permissions']);
         Route::post('/migrations/run_migrations', [\App\Http\Controllers\MigrationController::class, 'run_migrations']);
+
+        Route::apiResource('deductions_stocks', \App\Http\Controllers\StockDeductionController::class);
+        Route::get('deductions_stocks_actions', [\App\Http\Controllers\StockDeductionController::class, 'TypeStocksDeductionsStatus']);
+        Route::patch('deductions_stocks/{uuid}/cancel_deductions_stocks', [\App\Http\Controllers\StockDeductionController::class, 'cancel_deductions_stocks']);
+        Route::patch('deductions_stocks/{uuid}/validate_deductions_stocks', [\App\Http\Controllers\StockDeductionController::class, 'validated_deductions_stocks']);
+        Route::get("/exports/exports_stocks_deductions", [\App\Http\Controllers\StockDeductionController::class, 'export_stocks_deductions']);
+        Route::get('deductions_stocks/{uuid}/print_deductions_stocks', [\App\Http\Controllers\StockDeductionController::class, 'print_stocks_deductions']);
+
+
+
 
 
     });

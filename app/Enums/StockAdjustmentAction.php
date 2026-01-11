@@ -5,7 +5,6 @@ namespace App\Enums;
 enum StockAdjustmentAction: int
 {
     case AVARIE           = 1;
-    case DEDUCTION        = 2;
     case AJUSTEMENT_PLUS  = 3;
     case AJUSTEMENT_MOINS = 4;
 
@@ -13,7 +12,6 @@ enum StockAdjustmentAction: int
     {
         return [
             self::AVARIE->value           => 'AVARIE',
-            self::DEDUCTION->value        => 'CONSOMMATION',
             self::AJUSTEMENT_PLUS->value  => 'AUGMENTATION',
             self::AJUSTEMENT_MOINS->value => 'SUPPRESSION',
         ];
@@ -23,7 +21,6 @@ enum StockAdjustmentAction: int
     {
         return match ($value) {
             self::AVARIE->value           => 'AVARIE',
-            self::DEDUCTION->value        => 'CONSOMMATION',
             self::AJUSTEMENT_PLUS->value  => 'AUGMENTATION',
             self::AJUSTEMENT_MOINS->value => 'SUPPRESSION',
             default => 'INCONNU',
