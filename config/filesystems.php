@@ -106,6 +106,12 @@ return [
             'url'    => env('APP_URL') . '/storage/export-passations_stocks',
             'visibility' => 'public',
         ],
+        'stocks_deductions' => [
+            'driver' => 'local',
+            'root'   => storage_path('app/public/export-stocks_deductions'),
+            'url'    => env('APP_URL') . '/storage/export-stocks_deductions',
+            'visibility' => 'public',
+        ],
 
 
 

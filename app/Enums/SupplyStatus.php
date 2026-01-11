@@ -19,7 +19,7 @@ enum SupplyStatus: string
     public function label(): string
     {
         return match ($this) {
-            self::DRAFT               => 'Brouillon',
+            self::DRAFT               => 'En brouillon',
             self::OPEN                => 'Ouvert',
             self::CANCELLED           => 'Annulé',
             self::REJECTED            => 'Rejetée',

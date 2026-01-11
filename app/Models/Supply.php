@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Enums\SupplyStatus;
+use App\Enums\SupplyType;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
@@ -51,7 +53,17 @@ class Supply extends Model
         'supply_date' => 'datetime',
     ];
 
-    protected $appends = ['scanned_documents_purchase_orders'];
+    protected $appends = ['scanned_documents_purchase_orders','status_label','type_label'];
+
+
+    public function getStatusLabelAttribute(): string
+    {
+        return SupplyStatus::safeLabel($this->status);
+    }
+    public function getTypeLabelAttribute(): string
+    {
+        return SupplyType::safeLabel($this->type);
+    }
     public static function boot()
     {
         parent::boot();

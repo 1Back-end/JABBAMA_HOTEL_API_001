@@ -82,7 +82,7 @@ class UserController extends Controller
      * @return JsonResponse
      *
      * @permission UserController::get_users_where_role_is_gestionnaire_stock
-     * @permission_desc Afficher la liste des GESTIONNAIRES DE STOCKS
+     * @permission_desc Afficher la liste des gestionnaires stocks
      */
     public function get_users_where_role_is_gestionnaire_stock(Request $request): JsonResponse
     {
@@ -191,7 +191,7 @@ class UserController extends Controller
      * @return JsonResponse
      *
      * @permission UserController::show
-     * @permission_desc Afficher un utilisateur
+     * @permission_desc Afficher les détails d'un utilisateur
      */
     public function show(User $user): JsonResponse
     {
@@ -249,7 +249,7 @@ class UserController extends Controller
      * @return JsonResponse
      *
      * @permission UserController::changeStatus
-     * @permission_desc Changer le status de l'utilisateur
+     * @permission_desc Activer/Désactiver utilisateur
      */
     public function changeStatus(Request $request, User $user): JsonResponse
     {

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\PassationStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -38,6 +39,12 @@ class Passation extends Model
         'difference',
         'reference'
     ];
+    protected $appends = ['status_label'];
+
+    public function getStatusLabelAttribute(): string
+    {
+        return PassationStatus::safeLabel($this->status);
+    }
     protected $casts = [
         'rejected_at' => 'datetime',
         'cancelled_at' => 'datetime',

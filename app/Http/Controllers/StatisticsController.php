@@ -113,116 +113,12 @@ class StatisticsController extends Controller
 
     /**
      * Display a listing of the resource.
-     * @permission StatisticsController::statisticsByProduct
-     * @permission_desc Statistiques sur les articles(Variation prix Unitaire,Quantitée)
+     * @permission StatisticsController::menu_statistics
+     * @permission_desc Afficher le menu des rapports de stocks
      */
-    public function statisticsByProduct(Request $request, string $productUuid)
+    public function menu_statistics(Request $request)
     {
-        $startDate = $request->start_date ? Carbon::parse($request->start_date)->startOfDay() : now()->subMonth()->startOfDay();
-        $endDate   = $request->end_date ? Carbon::parse($request->end_date)->endOfDay() : now()->endOfDay();
-        $warehouseUuid = $request->warehouse_uuid ?? null;
-        $action = $request->action ?? 'quantity_variation'; // par défaut quantity_variation
 
-        $productName = DB::table('produits')->where('uuid', $productUuid)->value('name') ?? 'Inconnu';
-
-        // --- AVARIES_RATE et PRICE_VARIATION restent inchangés ---
-        if ($action === 'avaries_rate') {
-            $totalQuantity = DB::table('supply_items as si')
-                ->join('supplies as s', 's.uuid', '=', 'si.supply_uuid')
-                ->join('purchase_orders as po', 'po.uuid', '=', 's.purchase_order_uuid')
-                ->where('si.product_uuid', $productUuid)
-                ->whereBetween('s.supply_date', [$startDate, $endDate])
-                ->when($warehouseUuid, fn($q) => $q->where('s.warehouse_uuid', $warehouseUuid)->where('po.type', 'internal'))
-                ->when(!$warehouseUuid, fn($q) => $q->where('po.type', 'external'))
-                ->sum('si.quantity_supplied');
-
-            $totalAvarie = DB::table('stock_adjustments_items as sai')
-                ->join('stock_adjustments as sa', 'sa.uuid', '=', 'sai.stock_adjustment_uuid')
-                ->where('sai.product_uuid', $productUuid)
-                ->where('sa.action', StockAdjustmentAction::AVARIE->value)
-                ->whereBetween('sa.created_at', [$startDate, $endDate])
-                ->when($warehouseUuid, fn($q) => $q->where('sa.warehouse_uuid', $warehouseUuid))
-                ->sum('sai.quantity');
-
-            $avarieRate = $totalQuantity > 0 ? ($totalAvarie / $totalQuantity) * 100 : 0;
-
-            return response()->json([
-                'product'        => $productName,
-                'scale'          => 'percentage',
-                'total_quantity' => $totalQuantity,
-                'total_avarie'   => $totalAvarie,
-                'avarie_rate'    => round($avarieRate, 2),
-            ]);
-        }
-
-        if ($action === 'price_variation') {
-            $itemsQuery = DB::table('supply_items as si')
-                ->join('supplies as s', 's.uuid', '=', 'si.supply_uuid')
-                ->join('purchase_orders as po', 'po.uuid', '=', 's.purchase_order_uuid')
-                ->where('si.product_uuid', $productUuid)
-                ->whereBetween('s.supply_date', [$startDate, $endDate]);
-
-            if ($warehouseUuid) {
-                $itemsQuery
-                    ->where('po.type', 'internal')
-                    ->where(function ($q) use ($warehouseUuid) {
-                        $q->where('po.warehouse_from', $warehouseUuid)
-                            ->orWhere('po.warehouse_to', $warehouseUuid);
-                    });
-            } else {
-                $itemsQuery->where('po.type', 'external');
-            }
-
-            $itemsQuery->select('s.supply_date', DB::raw("IF(po.type='internal', si.sell_price, si.unit_price) as value"));
-
-            $items = $itemsQuery->get();
-
-            $resultPoints = $items->groupBy(function ($item) {
-                return Carbon::parse($item->supply_date)->format('Y-m-d');
-            })->map(function ($dayItems, $day) {
-                $total = collect($dayItems)->sum('value');
-                return [
-                    'period' => $day,
-                    'value'  => number_format($total, 3, '.', '')
-                ];
-            })->values();
-
-            return response()->json([
-                'product' => $productName,
-                'scale'   => 'day',
-                'points'  => $resultPoints,
-            ]);
-        }
-
-        if ($action === 'quantity_variation') {
-            $items = StockAdjustmentItem::query()
-                ->select('stock_adjustments_items.*', 'sa.created_at as adjustment_date')
-                ->join('stock_adjustments as sa', 'sa.uuid', '=', 'stock_adjustments_items.stock_adjustment_uuid')
-                ->where('stock_adjustments_items.product_uuid', $productUuid)
-                ->where('sa.action', StockAdjustmentAction::DEDUCTION->value) // uniquement consommations
-                ->whereBetween('sa.created_at', [$startDate, $endDate])
-                ->when($warehouseUuid && $warehouseUuid !== 'tous', function ($q) use ($warehouseUuid) {
-                    $q->where('sa.warehouse_uuid', $warehouseUuid);
-                })
-                ->get();
-
-            $pointsByDate = $items->groupBy(function ($item) {
-                return Carbon::parse($item->adjustment_date)->format('Y-m-d');
-            })->map(function ($dayItems, $day) {
-                return [
-                    'period' => $day,
-                    'value'  => $dayItems->sum('quantity')
-                ];
-            })->values();
-
-            return response()->json([
-                'product' => $productName,
-                'scale'   => 'day',
-                'points'  => $pointsByDate,
-            ]);
-        }
-
-        return response()->json(['error' => 'Action non supportée'], 400);
     }
 
 
@@ -234,21 +130,27 @@ class StatisticsController extends Controller
     public function suppliesOrders(Request $request)
     {
         try {
-            // 🔹 Validation des dates et du statut optionnel
+            // 🔹 Validation (dates optionnelles)
             $request->validate([
-                'start_date' => 'required|date',
-                'end_date'   => 'required|date',
+                'start_date' => 'nullable|date',
+                'end_date'   => 'nullable|date',
                 'status'     => 'nullable|string',
             ]);
 
-            $start = \Illuminate\Support\Carbon::parse($request->start_date)->startOfDay();
-            $end   = \Illuminate\Support\Carbon::parse($request->end_date)->endOfDay();
+            // 🔹 Dates par défaut = aujourd’hui
+            $start = $request->start_date
+                ? \Illuminate\Support\Carbon::parse($request->start_date)->startOfDay()
+                : now()->startOfDay();
+
+            $end = $request->end_date
+                ? \Illuminate\Support\Carbon::parse($request->end_date)->endOfDay()
+                : now()->endOfDay();
+
             $statusFilter = $request->status;
 
-            // 🔹 Construction de la requête
+            // 🔹 Requête
             $query = PurchaseOrder::whereBetween('created_at', [$start, $end]);
 
-            // Filtre par statut si différent de "all"
             if ($statusFilter && strtolower($statusFilter) !== 'all') {
                 $query->where('status', $statusFilter);
             }
@@ -265,12 +167,13 @@ class StatisticsController extends Controller
                 ];
             });
 
-            // 🔹 Réponse OK
             return response()->json([
                 'status'  => 'success',
                 'data'    => $totals,
                 'summary' => [
                     'total_orders' => $orders->count(),
+                    'from' => $start->toDateString(),
+                    'to'   => $end->toDateString(),
                 ]
             ]);
 
@@ -284,11 +187,11 @@ class StatisticsController extends Controller
         } catch (\Throwable $e) {
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Erreur interne lors du chargement des commandes',
-                'error'   => $e->getMessage(), // retire en prod si besoin
+                'message' => 'Erreur interne',
             ], 500);
         }
     }
+
 
 
 
@@ -300,52 +203,62 @@ class StatisticsController extends Controller
     public function suppliesJournal(Request $request)
     {
         try {
-            // 🔹 Validation
+            // 🔹 Validation (dates optionnelles)
             $request->validate([
-                'start_date' => 'required|date',
-                'end_date'   => 'required|date',
+                'start_date' => 'nullable|date',
+                'end_date'   => 'nullable|date',
                 'status'     => 'nullable|string', // "all" ou statut spécifique
             ]);
 
-            $start = Carbon::parse($request->start_date)->startOfDay();
-            $end   = Carbon::parse($request->end_date)->endOfDay();
+            // 🔹 Dates par défaut = aujourd’hui
+            $start = $request->start_date
+                ? Carbon::parse($request->start_date)->startOfDay()
+                : now()->startOfDay();
+
+            $end = $request->end_date
+                ? Carbon::parse($request->end_date)->endOfDay()
+                : now()->endOfDay();
+
             $statusFilter = $request->status ?? 'all';
 
-            // 🔹 Récupération des approvisionnements sur la période
+            // 🔹 Requête approvisionnements
             $suppliesQuery = Supply::whereBetween('created_at', [$start, $end]);
 
-            // 🔹 Filtrer par statut si ce n'est pas "all"
-            if ($statusFilter !== 'all') {
+            if (strtolower($statusFilter) !== 'all') {
                 $suppliesQuery->where('status', $statusFilter);
             }
 
             $supplies = $suppliesQuery->get();
 
             // 🔹 Groupement par statut
-            $totalsByStatus = $supplies->groupBy('status')->map(function ($group, $status) {
-                return [
-                    'total'      => $group->count(),
-                    'references' => $group->pluck('reference')->values(),
-                    'label'      => SupplyStatus::safeLabel($status),
-                ];
-            })->toArray();
+            $totalsByStatus = $supplies
+                ->groupBy('status')
+                ->map(function ($group, $status) {
+                    return [
+                        'total'      => $group->count(),
+                        'references' => $group->pluck('reference')->values(),
+                        'label'      => SupplyStatus::safeLabel($status),
+                    ];
+                });
 
             return response()->json([
-                'status' => 'success',
-                'data'   => $totalsByStatus,
+                'status'  => 'success',
+                'data'    => $totalsByStatus,
                 'summary' => [
                     'total_supplies' => $supplies->count(),
+                    'from' => $start->toDateString(),
+                    'to'   => $end->toDateString(),
                 ]
             ]);
 
-        } catch (\Exception $e) {
-            // 🔹 Gestion des erreurs
+        } catch (\Throwable $e) {
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Erreur lors du chargement des approvisionnements : ' . $e->getMessage()
+                'message' => 'Erreur lors du chargement des approvisionnements',
             ], 500);
         }
     }
+
 
     /**
      * Display a listing of the resource.
@@ -355,23 +268,29 @@ class StatisticsController extends Controller
     public function StockAdjustmentsJournal(Request $request)
     {
         try {
-            // 🔹 Validation
+            // 🔹 Validation (dates optionnelles)
             $request->validate([
-                'start_date' => 'required|date',
-                'end_date'   => 'required|date',
+                'start_date' => 'nullable|date',
+                'end_date'   => 'nullable|date',
                 'action'     => 'nullable|string', // 'all' ou action spécifique
             ]);
 
-            $start = \Carbon\Carbon::parse($request->start_date)->startOfDay();
-            $end   = \Carbon\Carbon::parse($request->end_date)->endOfDay();
-            $actionFilter = $request->action;
+            // 🔹 Dates par défaut = aujourd’hui
+            $start = $request->start_date
+                ? \Carbon\Carbon::parse($request->start_date)->startOfDay()
+                : now()->startOfDay();
+
+            $end = $request->end_date
+                ? \Carbon\Carbon::parse($request->end_date)->endOfDay()
+                : now()->endOfDay();
+
+            $actionFilter = $request->action ?? 'all';
 
             // 🔹 Requête de base
             $query = StockAdjustment::whereBetween('created_at', [$start, $end]);
 
-            // 🔹 Filtrer par action si ce n'est pas "all"
-            if ($actionFilter && strtolower($actionFilter) !== 'all') {
-                $query->where('action', $actionFilter);
+            if (strtolower($actionFilter) !== 'all') {
+                $query->where('action', (int) $actionFilter); // forcer l'entier
             }
 
             $adjustments = $query->get();
@@ -392,7 +311,9 @@ class StatisticsController extends Controller
                 'data'    => $data,
                 'summary' => [
                     'total_adjustments' => $adjustments->count(),
-                    'actions'           => \App\Enums\StockAdjustmentAction::TO_ARRAY(),
+                    'from'    => $start->toDateString(),
+                    'to'      => $end->toDateString(),
+                    'actions' => \App\Enums\StockAdjustmentAction::TO_ARRAY(),
                 ]
             ]);
 
@@ -407,10 +328,10 @@ class StatisticsController extends Controller
             return response()->json([
                 'status'  => 'error',
                 'message' => 'Erreur interne lors du chargement des régularisations de stock',
-                'error'   => $e->getMessage(), // à masquer en prod
             ], 500);
         }
     }
+
 
     /**
      * Display a listing of the resource.
@@ -671,6 +592,230 @@ class StatisticsController extends Controller
             ], 500);
         }
     }
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission StatisticsController::get_statictic_by_variation_supply_price
+     * @permission_desc Statistiques sur la variation sur les prix unitaires
+     */
+    public function get_statictic_by_variation_supply_price(Request $request, string $productUuid)
+    {
+        // 🔹 Validation
+        $request->validate([
+            'start_date' => 'nullable|date',
+            'end_date'   => 'nullable|date',
+        ]);
+
+        // 🔹 Dates par défaut
+        $endDate = $request->end_date
+            ? Carbon::parse($request->end_date)->endOfDay()
+            : now()->endOfDay();
+
+        $startDate = $request->start_date
+            ? Carbon::parse($request->start_date)->startOfDay()
+            : now()->endOfDay();
+
+        // 🔹 Nom du produit
+        $productName = DB::table('produits')
+            ->where('uuid', $productUuid)
+            ->value('name') ?? 'Inconnu';
+
+        // 🔹 Récupérer les supply_items des commandes internes
+        $itemsQuery = DB::table('supply_items as si')
+            ->join('supplies as s', 's.uuid', '=', 'si.supply_uuid')
+            ->join('purchase_orders as po', 'po.uuid', '=', 's.purchase_order_uuid')
+            ->where('si.product_uuid', $productUuid)
+            ->where('s.status', [SupplyStatus::VALIDATED, SupplyStatus::PARTIALLY_VALIDATED])
+            ->whereBetween('s.supply_date', [$startDate, $endDate]);
+
+        $itemsQuery->select('s.supply_date', DB::raw("IF(po.type='internal', si.sell_price, si.unit_price) as value"));
+
+        $items = $itemsQuery->get();
+
+        $resultPoints = $items->groupBy(function ($item) {
+            return Carbon::parse($item->supply_date)->format('Y-m-d');
+        })->map(function ($dayItems, $day) {
+            $total = collect($dayItems)->sum('value');
+            return [
+                'period' => $day,
+                'value'  => number_format($total, 3, '.', '')
+            ];
+        })
+            ->sortBy('period')   // 🔹 TRI croissant par date
+            ->values();          // 🔹 Réindexe les clés
+
+        return response()->json([
+            'product' => $productName,
+            'scale'   => 'day',
+            'from'    => $startDate->toDateString(),
+            'to'      => $endDate->toDateString(),
+            'points'  => $resultPoints,
+        ]);
+    }
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission StatisticsController::get_statitics_by_variation_quantity
+     * @permission_desc Statistiques sur la variation sur les quantités
+     */
+    public function get_statitics_by_variation_quantity(Request $request, string $productUuid)
+    {
+        $request->validate([
+            'start_date'     => 'nullable|date',
+            'end_date'       => 'nullable|date',
+            'warehouse_uuid' => 'nullable|exists:warehouses,uuid',
+        ]);
+
+        $endDate = $request->end_date
+            ? Carbon::parse($request->end_date)->endOfDay()
+            : now()->endOfDay();
+
+        $startDate = $request->start_date
+            ? Carbon::parse($request->start_date)->startOfDay()
+            : $endDate->copy()->subMonth()->startOfDay(); // 1 mois par défaut
+
+        // Nom du produit
+        $productName = DB::table('produits')
+            ->where('uuid', $productUuid)
+            ->value('name') ?? 'Inconnu';
+
+        $warehouseUuid = $request->warehouse_uuid;
+
+        $points = collect();
+
+        if ($warehouseUuid) {
+            $warehouse = DB::table('warehouses')->where('uuid', $warehouseUuid)->first();
+
+            if ($warehouse && $warehouse->is_primary) {
+                // 🔹 Entrepôt principal → Approvisionnements
+                $items = DB::table('supply_items as si')
+                    ->join('supplies as s', 's.uuid', '=', 'si.supply_uuid')
+                    ->where('si.product_uuid', $productUuid)
+                    ->where('s.warehouse_uuid', $warehouseUuid)
+                    ->where('s.status', [SupplyStatus::VALIDATED, SupplyStatus::PARTIALLY_VALIDATED])
+                    ->whereBetween('s.supply_date', [$startDate, $endDate])
+                    ->select('s.supply_date', DB::raw('SUM(si.quantity_supplied) as total'))
+                    ->groupBy('s.supply_date')
+                    ->orderBy('s.supply_date')
+                    ->get();
+
+                $points = $items->map(fn($item) => [
+                    'period' => Carbon::parse($item->supply_date)->format('Y-m-d'),
+                    'value'  => (int) $item->total,
+                ]);
+
+            } else {
+                // 🔹 Entrepôt non principal → Consommations (stocks_deductions)
+                $items = DB::table('stocks_deductions_items as sdi')
+                    ->join('stocks_deductions as sd', 'sd.uuid', '=', 'sdi.stocks_deduction_uuid')
+                    ->where('sdi.product_uuid', $productUuid)
+                    ->where('sd.warehouse_uuid', $warehouseUuid)
+                    ->where('sd.status', 'validated') // uniquement validées
+                    ->whereBetween('sd.created_at', [$startDate, $endDate])
+                    ->select(DB::raw('DATE(sd.created_at) as deduction_date'), DB::raw('SUM(sdi.quantity) as total'))
+                    ->groupBy(DB::raw('DATE(sd.created_at)'))
+                    ->orderBy('deduction_date')
+                    ->get();
+
+                $points = $items->map(fn($item) => [
+                    'period' => $item->deduction_date,
+                    'value'  => (int) $item->total,
+                ]);
+            }
+        }
+
+        return response()->json([
+            'product' => $productName,
+            'warehouse' => $warehouse->name ?? 'Tous',
+            'scale' => 'day',
+            'from'  => $startDate->toDateString(),
+            'to'    => $endDate->toDateString(),
+            'points' => $points->values(),
+        ]);
+    }
+
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission StatisticsController::get_statistics_by_avaries_products
+     * @permission_desc Statistiques sur le taux d'avaries des articles
+     */
+    public function get_statistics_by_avaries_products(Request $request, string $productUuid)
+    {
+        $request->validate([
+            'start_date'     => 'nullable|date',
+            'end_date'       => 'nullable|date',
+            'warehouse_uuid' => 'nullable|exists:warehouses,uuid',
+        ]);
+
+        $endDate = $request->end_date
+            ? Carbon::parse($request->end_date)->endOfDay()
+            : now()->endOfDay();
+
+        $startDate = $request->start_date
+            ? Carbon::parse($request->start_date)->startOfDay()
+            : $endDate->copy()->subMonth()->startOfDay();
+
+        // 🔹 Nom du produit
+        $productName = DB::table('produits')
+            ->where('uuid', $productUuid)
+            ->value('name') ?? 'Inconnu';
+
+        $warehouseUuid = $request->warehouse_uuid;
+
+        // 🔹 Nom de l'entrepôt si fourni
+        $warehouseName = $warehouseUuid
+            ? DB::table('warehouses')->where('uuid', $warehouseUuid)->value('name')
+            : 'Tous';
+
+        // 🔹 Total approvisionné pour le produit
+        $totalSupplied = DB::table('supply_items as si')
+            ->join('supplies as s', 's.uuid', '=', 'si.supply_uuid')
+            ->when($warehouseUuid, fn($q) => $q->where('s.warehouse_uuid', $warehouseUuid))
+            ->where('si.product_uuid', $productUuid)
+            ->whereBetween('s.supply_date', [$startDate, $endDate])
+            ->sum('si.quantity_supplied');
+
+        // 🔹 Total des avaries (ajustements de type AVARIE)
+        $totalAvaries = DB::table('stock_adjustments_items as sai')
+            ->join('stock_adjustments as sa', 'sa.uuid', '=', 'sai.stock_adjustment_uuid')
+            ->when($warehouseUuid, fn($q) => $q->where('sa.warehouse_uuid', $warehouseUuid))
+            ->where('sai.product_uuid', $productUuid)
+            ->where('sa.action', 1) // uniquement AVARIE
+            ->whereBetween('sa.created_at', [$startDate, $endDate])
+            ->sum('sai.quantity');
+
+        // 🔹 Calcul du pourcentage d'avaries
+        $percentAvaries = $totalSupplied > 0
+            ? round(($totalAvaries / $totalSupplied) * 100, 2)
+            : 0;
+
+        // 🔹 Préparer les données pour le camembert
+        $data = [
+            ['label' => 'Avaries', 'value' => $percentAvaries],
+            ['label' => 'Quantité intacte', 'value' => 100 - $percentAvaries],
+        ];
+
+        return response()->json([
+            'product'   => $productName,
+            'warehouse' => $warehouseName,
+            'from'      => $startDate->toDateString(),
+            'to'        => $endDate->toDateString(),
+            'data'      => $data,
+        ]);
+    }
+
+
+
+
+
+
+
+
+
 
 
 
