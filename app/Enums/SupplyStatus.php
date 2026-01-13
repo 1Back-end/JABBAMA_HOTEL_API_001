@@ -24,7 +24,7 @@ enum SupplyStatus: string
             self::CANCELLED           => 'Annulé',
             self::REJECTED            => 'Rejetée',
             self::VALIDATED           => 'Validation complète',
-            self::TRANSFERRED         => 'En cours d\'approvisionnement',
+            self::TRANSFERRED         => 'En cours d\'approvi....',
             self::IN_DISCUSS          => 'En discussion',
             self::PARTIALLY_VALIDATED => 'Validé partiellement',
         };
