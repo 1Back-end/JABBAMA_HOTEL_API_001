@@ -363,26 +363,26 @@ class StockAdjustmentController extends Controller
 
                 foreach ($adjustment->items as $item) {
 
-                    $productPoint = ProductPoint::where(
-                        'produit_uuid', $item->product_uuid
-                    )->where(
-                        'point_uuid', $adjustment->warehouse_uuid
-                    )->first();
+                    $productPoint = ProductPoint::where('produit_uuid', $item->product_uuid)
+                        ->where('point_uuid', $adjustment->warehouse_uuid)
+                        ->first();
 
-                    if (!$productPoint) {
+                    if (!$productPoint) continue;
+
+                    try {
+                        $actionEnum = StockAdjustmentAction::from($adjustment->action);
+                    } catch (\ValueError $e) {
+                        // Action invalide, on ignore cet item
                         continue;
                     }
 
-                    switch (StockAdjustmentAction::from($adjustment->action)) {
-
+                    switch ($actionEnum) {
                         case StockAdjustmentAction::AJUSTEMENT_PLUS:
-                            // On annule l’ajout
                             $productPoint->quantity -= $item->quantity;
                             break;
 
                         case StockAdjustmentAction::AVARIE:
                         case StockAdjustmentAction::AJUSTEMENT_MOINS:
-                            // On annule la déduction
                             $productPoint->quantity += $item->quantity;
                             break;
                     }
@@ -462,7 +462,6 @@ class StockAdjustmentController extends Controller
                 switch (StockAdjustmentAction::from($adjustment->action)) {
 
                     case StockAdjustmentAction::AVARIE:
-                    case StockAdjustmentAction::DEDUCTION:
                     case StockAdjustmentAction::AJUSTEMENT_MOINS:
                         if ($item->quantity > $productPoint->quantity) {
                             throw new \Exception(

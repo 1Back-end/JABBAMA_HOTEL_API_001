@@ -668,74 +668,133 @@ class StatisticsController extends Controller
             'warehouse_uuid' => 'nullable|exists:warehouses,uuid',
         ]);
 
+        // 📅 Période
         $endDate = $request->end_date
             ? Carbon::parse($request->end_date)->endOfDay()
             : now()->endOfDay();
 
         $startDate = $request->start_date
             ? Carbon::parse($request->start_date)->startOfDay()
-            : $endDate->copy()->subMonth()->startOfDay(); // 1 mois par défaut
+            : $endDate->copy()->subMonth()->startOfDay();
 
-        // Nom du produit
+        // 🏷️ Produit
         $productName = DB::table('produits')
             ->where('uuid', $productUuid)
             ->value('name') ?? 'Inconnu';
 
         $warehouseUuid = $request->warehouse_uuid;
-
+        $warehouseName = 'Tous';
         $points = collect();
 
-        if ($warehouseUuid) {
-            $warehouse = DB::table('warehouses')->where('uuid', $warehouseUuid)->first();
+        /**
+         * ==========================================
+         * 🔹 CAS 1 : AUCUN ENTREPÔT → TOUS
+         * ==========================================
+         */
+        if (!$warehouseUuid) {
 
+            // Approvisionnements (tous entrepôts)
+            $supplies = DB::table('supply_items as si')
+                ->join('supplies as s', 's.uuid', '=', 'si.supply_uuid')
+                ->where('si.product_uuid', $productUuid)
+                ->whereIn('s.status', [SupplyStatus::VALIDATED, SupplyStatus::PARTIALLY_VALIDATED])
+                ->whereBetween('s.supply_date', [$startDate, $endDate])
+                ->select(
+                    DB::raw('DATE(s.supply_date) as day'),
+                    DB::raw('SUM(si.quantity_supplied) as qty')
+                )
+                ->groupBy('day')
+                ->get();
+
+            // Consommations (tous entrepôts)
+            $deductions = DB::table('stocks_deductions_items as sdi')
+                ->join('stocks_deductions as sd', 'sd.uuid', '=', 'sdi.stocks_deduction_uuid')
+                ->where('sdi.product_uuid', $productUuid)
+                ->where('sd.status', 'validated')
+                ->whereBetween('sd.created_at', [$startDate, $endDate])
+                ->select(
+                    DB::raw('DATE(sd.created_at) as day'),
+                    DB::raw('SUM(sdi.quantity) as qty')
+                )
+                ->groupBy('day')
+                ->get();
+
+            // Fusion + somme par jour
+            $points = $supplies
+                ->merge($deductions)
+                ->groupBy('day')
+                ->map(fn ($rows, $day) => [
+                    'period' => $day,
+                    'value'  => $rows->sum('qty'),
+                ])
+                ->sortBy('period')
+                ->values();
+        }
+
+        /**
+         * ==========================================
+         * 🔹 CAS 2 : ENTREPÔT SPÉCIFIQUE
+         * ==========================================
+         */
+        else {
+            $warehouse = DB::table('warehouses')->where('uuid', $warehouseUuid)->first();
+            $warehouseName = $warehouse->name ?? 'Tous';
+
+            // 🟢 Entrepôt principal → approvisionnements
             if ($warehouse && $warehouse->is_primary) {
-                // 🔹 Entrepôt principal → Approvisionnements
+
                 $items = DB::table('supply_items as si')
                     ->join('supplies as s', 's.uuid', '=', 'si.supply_uuid')
                     ->where('si.product_uuid', $productUuid)
                     ->where('s.warehouse_uuid', $warehouseUuid)
-                    ->where('s.status', [SupplyStatus::VALIDATED, SupplyStatus::PARTIALLY_VALIDATED])
+                    ->whereIn('s.status', [SupplyStatus::VALIDATED, SupplyStatus::PARTIALLY_VALIDATED])
                     ->whereBetween('s.supply_date', [$startDate, $endDate])
-                    ->select('s.supply_date', DB::raw('SUM(si.quantity_supplied) as total'))
-                    ->groupBy('s.supply_date')
-                    ->orderBy('s.supply_date')
+                    ->select(
+                        DB::raw('DATE(s.supply_date) as day'),
+                        DB::raw('SUM(si.quantity_supplied) as total')
+                    )
+                    ->groupBy('day')
+                    ->orderBy('day')
                     ->get();
 
-                $points = $items->map(fn($item) => [
-                    'period' => Carbon::parse($item->supply_date)->format('Y-m-d'),
+                $points = $items->map(fn ($item) => [
+                    'period' => $item->day,
                     'value'  => (int) $item->total,
                 ]);
+            }
 
-            } else {
-                // 🔹 Entrepôt non principal → Consommations (stocks_deductions)
+            // 🔴 Entrepôt secondaire → consommations
+            else {
                 $items = DB::table('stocks_deductions_items as sdi')
                     ->join('stocks_deductions as sd', 'sd.uuid', '=', 'sdi.stocks_deduction_uuid')
                     ->where('sdi.product_uuid', $productUuid)
                     ->where('sd.warehouse_uuid', $warehouseUuid)
-                    ->where('sd.status', 'validated') // uniquement validées
+                    ->where('sd.status', 'validated')
                     ->whereBetween('sd.created_at', [$startDate, $endDate])
-                    ->select(DB::raw('DATE(sd.created_at) as deduction_date'), DB::raw('SUM(sdi.quantity) as total'))
-                    ->groupBy(DB::raw('DATE(sd.created_at)'))
-                    ->orderBy('deduction_date')
+                    ->select(
+                        DB::raw('DATE(sd.created_at) as day'),
+                        DB::raw('SUM(sdi.quantity) as total')
+                    )
+                    ->groupBy('day')
+                    ->orderBy('day')
                     ->get();
 
-                $points = $items->map(fn($item) => [
-                    'period' => $item->deduction_date,
+                $points = $items->map(fn ($item) => [
+                    'period' => $item->day,
                     'value'  => (int) $item->total,
                 ]);
             }
         }
 
         return response()->json([
-            'product' => $productName,
-            'warehouse' => $warehouse->name ?? 'Tous',
-            'scale' => 'day',
-            'from'  => $startDate->toDateString(),
-            'to'    => $endDate->toDateString(),
-            'points' => $points->values(),
+            'product'   => $productName,
+            'warehouse' => $warehouseName,
+            'scale'     => 'day',
+            'from'      => $startDate->toDateString(),
+            'to'        => $endDate->toDateString(),
+            'points'    => $points,
         ]);
     }
-
 
 
     /**
