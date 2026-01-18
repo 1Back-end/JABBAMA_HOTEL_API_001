@@ -806,6 +806,126 @@ class PassationController extends Controller
     }
 
 
+    /**
+     * Display a listing of the resource.
+     * @permission PassationController::print_passations_by_filter
+     * @permission_desc Imprimer  passations de stocks en PDF
+     */
+    public function print_passations_by_filter(Request $request)
+    {
+        try {
+            // 🔹 Création de l'objet filter depuis la requête
+            $filter = PassationsFilterData::fromRequestPassationsFilterData($request);
+
+            // 🔹 Dates par défaut
+            $startDate = $filter->start_date
+                ? Carbon::parse($filter->start_date)->startOfDay()
+                : null; // null = pas de restriction
+            $endDate = $filter->end_date
+                ? Carbon::parse($filter->end_date)->endOfDay()
+                : null;
+
+            // 🔹 Construction de la requête
+            $query = Passation::with([
+                'agentFrom',
+                'agentTo',
+                'warehouse',
+                'creator',
+                'updater',
+                'validator',
+                'rejector',
+                'cancellor',
+                'managers',
+                'items'
+            ]);
+
+            // 🔹 Application des filtres uniquement si remplis
+            if (!empty($filter->agent_from_id)) {
+                $query->where('agent_from_id', $filter->agent_from_id);
+            }
+
+            if (!empty($filter->status)) {
+                $query->where('status', $filter->status);
+            }
+
+            if (!empty($filter->warehouse_uuid)) {
+                $query->where('warehouse_uuid', $filter->warehouse_uuid);
+            }
+
+            if (!empty($filter->search)) {
+                $search = $filter->search;
+                $query->where(function($q) use ($search) {
+                    $q->where('reference', 'like', "%$search%")
+                        ->orWhereHas('agentFrom', fn($q2) => $q2->where('nom_utilisateur', 'like', "%$search%"))
+                        ->orWhereHas('agentTo', fn($q2) => $q2->where('nom_utilisateur', 'like', "%$search%"));
+                });
+            }
+
+            // 🔹 Application du filtre date si présent
+            if ($startDate && $endDate) {
+                $query->whereBetween('created_at', [$startDate, $endDate]);
+            }
+
+            // 🔹 Pagination (facultative)
+            $passations = $query->skip(($filter->page - 1) * $filter->limit)
+                ->take($filter->limit)
+                ->get();
+
+            if ($passations->isEmpty()) {
+                return response()->json([
+                    'message' => 'Aucune passation trouvée avec les filtres sélectionnés.'
+                ], 404);
+            }
+            $manager = $filter->agent_from_id ? User::find($filter->agent_from_id) : null;
+            $warehouse = $filter->warehouse_uuid ? Warehouse::find($filter->warehouse_uuid) : null;
+
+
+            // 🔹 Préparer le PDF
+            $fileName = 'PASSATIONS-' . now()->format('YmdHis') . '.pdf';
+            $folderPath = 'storage/passations_by_filter';
+            $filePath = $folderPath . '/' . $fileName;
+            if (!is_dir($folderPath)) mkdir($folderPath, 0755, true);
+
+            $data = [
+                'manager' => $manager,
+                'filter'     => $filter,
+                'passations' => $passations,
+                'start_date' => $startDate?->format('d/m/Y'),
+                'end_date'   => $endDate?->format('d/m/Y'),
+                'warehouse'  => $warehouse,
+            ];
+
+            save_browser_shot_pdf(
+                view: 'pdfs.passations.passations_by_filter',
+                data: $data,
+                folderPath: $folderPath,
+                path: $filePath,
+                margins: [10, 10, 10, 10],
+                footer: 'pdfs.reports.factures.footer'
+            );
+
+            $pdfContent = file_get_contents($filePath);
+            $base64     = base64_encode($pdfContent);
+
+            return response()->json([
+                'data'     => $data,
+                'base64'   => $base64,
+                'url'      => $filePath,
+                'filename' => $fileName,
+            ], 200);
+
+        } catch (\Throwable $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Erreur lors de la génération du PDF',
+                'details' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+
+
+
 
 
 

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\DTO\PassationsFilterData;
 use App\DTO\PurchaseOrderFilterData;
 use App\DTO\StockAdjustmentFilterData;
 use App\Enums\StockAdjustmentAction;
@@ -15,6 +16,7 @@ use App\Models\PurchaseOrder;
 use App\Models\StockAdjustment;
 use App\Models\StockAdjustmentItem;
 
+use App\Models\Warehouse;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -634,7 +636,7 @@ class StockAdjustmentController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StockAdjustmentController::print_stock_adjustments_by_action
-     * @permission_desc Imprimer les rapports de régularisations de stocks
+     * @permission_desc Imprimer les rapports de régularisations de stocks par action
      */
     public function print_stock_adjustments_by_action(Request $request)
     {
@@ -730,6 +732,107 @@ class StockAdjustmentController extends Controller
             ], 500);
         }
     }
+
+
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission StockAdjustmentController::print_stock_adjustments
+     * @permission_desc Imprimer les rapports de régularisations de stocks en PDF
+     */
+    public function print_stock_adjustments(Request $request)
+    {
+        try {
+            // 🔹 Création de l'objet filter depuis la requête
+            $filter = StockAdjustmentFilterData::fromRequestStockAdjustmentFilterData($request);
+
+            // 🔹 Dates par défaut
+            $startDate = $filter->start_date ? Carbon::parse($filter->start_date)->startOfDay() : null;
+            $endDate   = $filter->end_date ? Carbon::parse($filter->end_date)->endOfDay() : null;
+
+            // 🔹 Construction de la requête avec filtres
+            $query = StockAdjustment::with([
+                'warehouse',
+                'items.product',
+                'creator',
+                'updater',
+                'validator',
+            ]);
+
+            if (!empty($filter->warehouse_uuid)) {
+                $query->where('warehouse_uuid', $filter->warehouse_uuid);
+            }
+
+            if (!empty($filter->action)) {
+                $query->where('action', $filter->action);
+            }
+
+            if (!empty($filter->status)) {
+                $query->where('status', $filter->status);
+            }
+
+            if ($startDate && $endDate) {
+                $query->whereBetween('created_at', [$startDate, $endDate]);
+            }
+
+            $stock_adjustments = $query->get();
+
+            $warehouse = $filter->warehouse_uuid ? Warehouse::find($filter->warehouse_uuid) : null;
+
+            // 🔹 Nom du fichier
+            $actionLabel = $filter->action ? StockAdjustmentAction::LABEL($filter->action) : 'TOUS';
+            $fileName    = 'RAPPORTS-REGULARISATION-STOCKS-' . $actionLabel . '-' . now()->format('YmdHis') . '.pdf';
+            $folderPath  = 'storage/stock_adjustment/' . strtolower($actionLabel);
+            $filePath    = $folderPath . '/' . $fileName;
+
+            // 🔹 Création du dossier si inexistant
+            if (!is_dir(public_path($folderPath))) {
+                mkdir(public_path($folderPath), 0755, true);
+            }
+
+            // 🔹 Préparation des données pour le PDF
+            $data = [
+                'stock_adjustments' => $stock_adjustments,
+                'action_label'      => $actionLabel,
+                'start_date'        => $startDate?->format('d/m/Y'),
+                'end_date'          => $endDate?->format('d/m/Y'),
+                'warehouse'         => $filter->warehouse_uuid,
+                'status'            => $filter->status,
+                'action'            => $filter->action, // int
+            ];
+
+            $footer = 'pdfs.reports.factures.footer';
+
+            // 🔹 Génération du PDF
+            save_browser_shot_pdf(
+                view: 'pdfs.stock_adjustment.stock_adjustment',
+                data: $data,
+                folderPath: $folderPath,
+                path: $filePath,
+                margins: [10, 10, 10, 10],
+                footer: $footer
+            );
+
+            $pdfContent = file_get_contents($filePath);
+            $base64     = base64_encode($pdfContent);
+
+            return response()->json([
+                'base64'   => $base64,
+                'url'      => $filePath,
+                'filename' => $fileName,
+            ], 200);
+
+        } catch (\Throwable $e) {
+            Log::error("Erreur génération PDF : " . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Erreur lors de la génération du PDF',
+                'details' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
 
 
 

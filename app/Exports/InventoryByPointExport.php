@@ -14,7 +14,9 @@ class InventoryByPointExport implements FromCollection, WithHeadings, WithMappin
 
     public function __construct(?string $pointUuid = null)
     {
-        $this->pointUuid = $pointUuid;
+        $this->pointUuid = ($pointUuid === 'all' || empty($pointUuid))
+            ? null
+            : $pointUuid;
     }
 
     /**
@@ -23,7 +25,7 @@ class InventoryByPointExport implements FromCollection, WithHeadings, WithMappin
     public function collection()
     {
         // Cas 1 : Entrepôt précis
-        if ($this->pointUuid) {
+        if (!is_null($this->pointUuid)) {
             return ProductPoint::with([
                 'product.unitMeasure',
                 'product.category',
@@ -66,8 +68,6 @@ class InventoryByPointExport implements FromCollection, WithHeadings, WithMappin
             'Catégorie',
             'Unité',
             'Quantité',
-            'Stock minimal',
-            'Statut',
             'Entrepôt',
             'Créé le',
             'Mis à jour le',
@@ -86,9 +86,7 @@ class InventoryByPointExport implements FromCollection, WithHeadings, WithMappin
             $row->product->name ?? '<UNK>',
             $row->product->category->name ?? '<UNK>',
             $row->product->unitMeasure->name ?? '<UNK>',
-            $row->quantity ?? 0,               // ⚠️ COALESCE gère les 0
-            $row->stocks_minimal ?? 0,
-            $row->is_active ? 'Actif' : 'Inactif',
+            $row->quantity ?? 0,
             $row->point?->name ?? '<Tous>',
             optional($row->created_at)->format('d/m/Y H:i:s') ?? '<UNK>',
             optional($row->updated_at)->format('d/m/Y H:i:s') ?? '<UNK>',

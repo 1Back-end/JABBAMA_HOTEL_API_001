@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CategoryTree;
 use App\Models\Product;
 use App\Models\ProductSubCategory;
 use App\Models\PurchaseOrder;
 use App\Models\SubCategory;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 /**
  * @permission_category Gestion des sous catégories d'articles
@@ -23,10 +25,7 @@ class SubCategoryController extends Controller
         $perPage = $request->input('limit', 5);
         $page = $request->input('page', 1);
 
-        $query = SubCategory::with(['category','creator','updater'])
-            ->when($request->has('is_active'), function ($query) use ($request) {
-                $query->where('is_active', filter_var($request->input('is_active'), FILTER_VALIDATE_BOOLEAN));
-            });
+        $query = CategoryTree::with(['category','creator','updater']);
 
         if($search = trim($request->input('search'))){
             $query->where(function ($q) use ($search) {
@@ -47,6 +46,21 @@ class SubCategoryController extends Controller
         ]);
     }
 
+    public function normalizeSubCategories(array $items): array
+    {
+        return collect($items)->map(function ($item) {
+            return [
+                'uuid'        => \Str::uuid()->toString(),
+                'name'        => $item['name'],
+                'description' => $item['description'] ?? null,
+                'children'    => isset($item['children']) && is_array($item['children'])
+                    ? $this->normalizeSubCategories($item['children'])
+                    : [],
+            ];
+        })->values()->toArray();
+    }
+
+
     /**
      * Display a listing of the resource.
      * @permission SubCategoryController::store
@@ -57,70 +71,55 @@ class SubCategoryController extends Controller
         try {
             $auth = auth()->user();
 
+            // 🔹 Validation
             $validated = $request->validate([
-                'sub_categories' => 'required|array|min:1',
-                'category_uuid' => 'required|exists:categories,uuid',
+                'category_uuid'            => 'required|uuid|exists:categories,uuid',
+                'sub_categories'           => 'required|array|min:1',
+                'sub_categories.*.name'    => 'required|string|max:255',
+                'sub_categories.*.children'=> 'nullable|array',
             ]);
 
-            $created = [];
-            $ignored = [];
+            DB::beginTransaction();
 
-            $storeRecursive = function ($subs, $category_uuid, $parent_uuid = null) use (&$storeRecursive, $auth, &$created, &$ignored) {
-                foreach ($subs as $sub) {
-                    $existing = SubCategory::where('category_uuid', $category_uuid)
-                        ->where('parent_uuid', $parent_uuid)
-                        ->where('name', $sub['name'] ?? '')
-                        ->first();
+            // 🔹 Normalisation récursive
+            $children = $this->normalizeSubCategories($validated['sub_categories']);
 
-                    if ($existing) {
-                        $ignored[] = [
-                            'name' => $sub['name'] ?? '',
-                            'parent_uuid' => $parent_uuid,
-                            'category_uuid' => $category_uuid,
-                        ];
-                        if (!empty($sub['children'])) {
-                            $storeRecursive($sub['children'], $category_uuid, $existing->uuid);
-                        }
-                        continue;
-                    }
+            // 🔹 Upsert (1 arbre par catégorie)
+            $tree = CategoryTree::updateOrCreate(
+                ['category_uuid' => $validated['category_uuid']],
+                [
+                    'children'   => $children,
+                    'updated_by' => $auth->id,
+                    'created_by' => $auth->id,
+                ]
+            );
 
-                    $subCategory = SubCategory::create([
-                        'name' => $sub['name'] ?? 'Sans nom',
-                        'description' => $sub['description'] ?? null,
-                        'category_uuid' => $category_uuid,
-                        'parent_uuid' => $parent_uuid,
-                        'created_by' => $auth->id,
-                    ]);
-
-                    $created[] = [
-                        'uuid' => $subCategory->uuid,
-                        'name' => $subCategory->name,
-                        'parent_uuid' => $parent_uuid,
-                    ];
-
-                    if (!empty($sub['children'])) {
-                        $storeRecursive($sub['children'], $category_uuid, $subCategory->uuid);
-                    }
-                }
-            };
-
-            $storeRecursive($validated['sub_categories'], $validated['category_uuid']);
+            DB::commit();
 
             return response()->json([
-                'success' => true,
-                'message' => 'Sous-catégories enregistrées avec succès.',
-                'created_count' => count($created),
-                'ignored_count' => count($ignored),
-                'created' => $created,
-                'ignored' => $ignored
+                'status'  => 'success',
+                'message' => 'Sous-catégories enregistrées avec succès',
+                'data'    => $tree,
             ], 201);
 
-        } catch (\Exception $e) {
-            \Log::error('Erreur store sub_categories: '.$e->getMessage(), ['trace' => $e->getTraceAsString()]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
-                'success' => false,
-                'message' => 'Une erreur est survenue lors de l\'enregistrement.',
-                'error' => $e->getMessage(),
+                'status'  => 'error',
+                'message' => 'Erreur de validation',
+                'errors'  => $e->errors(),
+            ], 422);
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            \Log::error('CategoryTree store error', [
+                'message' => $e->getMessage(),
+                'trace'   => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Erreur interne lors de l’enregistrement',
+                'error'   => $e->getMessage(), // 🔥 utile pour Postman
             ], 500);
         }
     }

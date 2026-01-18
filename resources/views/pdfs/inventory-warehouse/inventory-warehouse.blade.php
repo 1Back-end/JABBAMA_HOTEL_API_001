@@ -99,7 +99,6 @@
             <th>Catégorie</th>
             <th>Unité</th>
             <th>Quantité</th>
-            <th>Stock d'alerte</th>
         </tr>
         </thead>
 
@@ -112,7 +111,6 @@
                 <td>{{ $item->product->category->name ?? '-' }}</td>
                 <td>{{ $item->product->unitMeasure->name ?? '-' }}</td>
                 <td class="fw-bold">{{ $item->quantity }}</td>
-                <td class="fw-bold">{{ $item->stocks_minimal }}</td>
             </tr>
         @endforeach
         </tbody>
