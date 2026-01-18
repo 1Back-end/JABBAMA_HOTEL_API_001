@@ -30,6 +30,9 @@ class StatisticsController extends Controller
         $end_date       = $request->input('end_date');
         $warehouse_uuid = $request->input('warehouse_uuid');
 
+        $perPage = $request->input('limit', 25);
+        $page = $request->input('page', 1);
+
         $query = DB::table('supply_items as si')
             ->join('supplies as s', 'si.supply_uuid', '=', 's.uuid')
             ->join('purchase_orders as po', 's.purchase_order_uuid', '=', 'po.uuid')
@@ -130,25 +133,25 @@ class StatisticsController extends Controller
     public function suppliesOrders(Request $request)
     {
         try {
-            // 🔹 Validation (dates optionnelles)
+            // 🔹 Validation
             $request->validate([
                 'start_date' => 'nullable|date',
                 'end_date'   => 'nullable|date',
                 'status'     => 'nullable|string',
             ]);
 
-            // 🔹 Dates par défaut = aujourd’hui
+            // 🔹 Dates par défaut = aujourd’hui (par jour)
             $start = $request->start_date
-                ? \Illuminate\Support\Carbon::parse($request->start_date)->startOfDay()
+                ? \Carbon\Carbon::parse($request->start_date)->startOfDay()
                 : now()->startOfDay();
 
             $end = $request->end_date
-                ? \Illuminate\Support\Carbon::parse($request->end_date)->endOfDay()
+                ? \Carbon\Carbon::parse($request->end_date)->endOfDay()
                 : now()->endOfDay();
 
             $statusFilter = $request->status;
 
-            // 🔹 Requête
+            // 🔹 Requête principale
             $query = PurchaseOrder::whereBetween('created_at', [$start, $end]);
 
             if ($statusFilter && strtolower($statusFilter) !== 'all') {
@@ -157,23 +160,39 @@ class StatisticsController extends Controller
 
             $orders = $query->get();
 
-            // 🔹 Groupement par statut
-            $totals = $orders->groupBy('status')->map(function ($group, $status) {
+            // 🔹 Tous les statuts possibles
+            $allStatuses = PurchaseOrdersStatus::cases();
+
+            // 🔹 Initialisation avec 0
+            $totals = collect($allStatuses)->mapWithKeys(function ($status) {
                 return [
+                    $status->value => [
+                        'total'      => 0,
+                        'types'      => [],
+                        'references' => [],
+                        'label'      => PurchaseOrdersStatus::safeLabel($status->value),
+                    ]
+                ];
+            });
+
+            // 🔹 Injection des vraies données
+            foreach ($orders->groupBy('status') as $status => $group) {
+                $totals[$status] = [
                     'total'      => $group->count(),
                     'types'      => $group->pluck('type')->unique()->values(),
                     'references' => $group->pluck('reference')->values(),
                     'label'      => PurchaseOrdersStatus::safeLabel($status),
                 ];
-            });
+            }
 
             return response()->json([
                 'status'  => 'success',
-                'data'    => $totals,
+                'data'    => $totals->values(), // frontend-friendly
                 'summary' => [
                     'total_orders' => $orders->count(),
-                    'from' => $start->toDateString(),
-                    'to'   => $end->toDateString(),
+                    'from'         => $start->toDateString(),
+                    'to'           => $end->toDateString(),
+                    'scale'        => 'day',
                 ]
             ]);
 
@@ -195,6 +214,7 @@ class StatisticsController extends Controller
 
 
 
+
     /**
      * Display a listing of the resource.
      * @permission StatisticsController::suppliesJournal
@@ -207,7 +227,7 @@ class StatisticsController extends Controller
             $request->validate([
                 'start_date' => 'nullable|date',
                 'end_date'   => 'nullable|date',
-                'status'     => 'nullable|string', // "all" ou statut spécifique
+                'status'     => 'nullable|string',
             ]);
 
             // 🔹 Dates par défaut = aujourd’hui
@@ -221,43 +241,63 @@ class StatisticsController extends Controller
 
             $statusFilter = $request->status ?? 'all';
 
-            // 🔹 Requête approvisionnements
-            $suppliesQuery = Supply::whereBetween('created_at', [$start, $end]);
+            // 🔹 Requête principale
+            $query = Supply::whereBetween('created_at', [$start, $end]);
 
             if (strtolower($statusFilter) !== 'all') {
-                $suppliesQuery->where('status', $statusFilter);
+                $query->where('status', $statusFilter);
             }
 
-            $supplies = $suppliesQuery->get();
+            $supplies = $query->get();
 
-            // 🔹 Groupement par statut
-            $totalsByStatus = $supplies
-                ->groupBy('status')
-                ->map(function ($group, $status) {
-                    return [
-                        'total'      => $group->count(),
-                        'references' => $group->pluck('reference')->values(),
-                        'label'      => SupplyStatus::safeLabel($status),
-                    ];
-                });
+            // 🔹 Tous les statuts possibles
+            $allStatuses = SupplyStatus::cases();
+
+            // 🔹 Initialisation avec 0
+            $totals = collect($allStatuses)->mapWithKeys(function ($status) {
+                return [
+                    $status->value => [
+                        'total'      => 0,
+                        'references' => [],
+                        'label'      => SupplyStatus::safeLabel($status->value),
+                    ]
+                ];
+            });
+
+            // 🔹 Injection des vraies données
+            foreach ($supplies->groupBy('status') as $status => $group) {
+                $totals[$status] = [
+                    'total'      => $group->count(),
+                    'references' => $group->pluck('reference')->values(),
+                    'label'      => SupplyStatus::safeLabel($status),
+                ];
+            }
 
             return response()->json([
                 'status'  => 'success',
-                'data'    => $totalsByStatus,
+                'data'    => $totals->values(), // frontend-friendly
                 'summary' => [
                     'total_supplies' => $supplies->count(),
-                    'from' => $start->toDateString(),
-                    'to'   => $end->toDateString(),
+                    'from'           => $start->toDateString(),
+                    'to'             => $end->toDateString(),
                 ]
             ]);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Erreur de validation',
+                'errors'  => $e->errors(),
+            ], 422);
 
         } catch (\Throwable $e) {
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Erreur lors du chargement des approvisionnements',
+                'message' => 'Erreur interne',
             ], 500);
         }
     }
+
 
 
     /**
@@ -295,25 +335,42 @@ class StatisticsController extends Controller
 
             $adjustments = $query->get();
 
-            // 🔹 Groupement par action
-            $data = $adjustments->groupBy('action')->map(function ($group, $action) {
+            // 🔹 Tous les types d'action possibles
+            $allActions = \App\Enums\StockAdjustmentAction::TO_ARRAY();
+
+            // 🔹 Initialiser tous les types avec total = 0
+            $data = collect($allActions)->mapWithKeys(function ($label, $action) {
                 return [
-                    'total'      => $group->count(),
-                    'action'     => $action,
-                    'label'      => \App\Enums\StockAdjustmentAction::LABEL((int) $action),
-                    'references' => $group->pluck('reference')->values(),
-                    'statuses'   => $group->pluck('status')->unique()->values(),
+                    $action => [
+                        'total'      => 0,
+                        'action'     => $action,
+                        'label'      => $label,
+                        'references' => [],
+                        'statuses'   => [],
+                    ]
                 ];
             });
 
+            // 🔹 Injecter les vraies données si présentes
+            foreach ($adjustments->groupBy('action') as $action => $group) {
+                $label = \App\Enums\StockAdjustmentAction::LABEL((int)$action);
+                $data[$action] = [
+                    'total'      => $group->count(),
+                    'action'     => $action,
+                    'label'      => $label,
+                    'references' => $group->pluck('reference')->values(),
+                    'statuses'   => $group->pluck('status')->unique()->values(),
+                ];
+            }
+
             return response()->json([
                 'status'  => 'success',
-                'data'    => $data,
+                'data'    => $data, // clé = action
                 'summary' => [
                     'total_adjustments' => $adjustments->count(),
                     'from'    => $start->toDateString(),
                     'to'      => $end->toDateString(),
-                    'actions' => \App\Enums\StockAdjustmentAction::TO_ARRAY(),
+                    'actions' => $allActions,
                 ]
             ]);
 
@@ -333,6 +390,7 @@ class StatisticsController extends Controller
     }
 
 
+
     /**
      * Display a listing of the resource.
      * @permission StatisticsController::print_suppliesOrders
@@ -345,8 +403,8 @@ class StatisticsController extends Controller
 
             // 🔹 Validation
             $request->validate([
-                'start_date' => 'required|date',
-                'end_date'   => 'required|date',
+                'start_date' => 'nullable|date',
+                'end_date'   => 'nullable|date',
                 'status'     => 'nullable|string',
             ]);
 
@@ -608,51 +666,61 @@ class StatisticsController extends Controller
         ]);
 
         // 🔹 Dates par défaut
-        $endDate = $request->end_date
-            ? Carbon::parse($request->end_date)->endOfDay()
-            : now()->endOfDay();
-
-        $startDate = $request->start_date
-            ? Carbon::parse($request->start_date)->startOfDay()
-            : now()->endOfDay();
+        $startDate = $request->start_date ? Carbon::parse($request->start_date)->startOfDay() : now()->startOfDay();
+        $endDate   = $request->end_date   ? Carbon::parse($request->end_date)->endOfDay()   : now()->endOfDay();
 
         // 🔹 Nom du produit
         $productName = DB::table('produits')
             ->where('uuid', $productUuid)
             ->value('name') ?? 'Inconnu';
 
-        // 🔹 Récupérer les supply_items des commandes internes
-        $itemsQuery = DB::table('supply_items as si')
+        // 🔹 Récupérer les supply_items
+        $items = DB::table('supply_items as si')
             ->join('supplies as s', 's.uuid', '=', 'si.supply_uuid')
             ->join('purchase_orders as po', 'po.uuid', '=', 's.purchase_order_uuid')
             ->where('si.product_uuid', $productUuid)
-            ->where('s.status', [SupplyStatus::VALIDATED, SupplyStatus::PARTIALLY_VALIDATED])
-            ->whereBetween('s.supply_date', [$startDate, $endDate]);
+            ->whereNull('si.deleted_at')
+            ->whereIn('s.status', [
+                SupplyStatus::VALIDATED,
+                SupplyStatus::PARTIALLY_VALIDATED
+            ])
+            ->whereBetween('s.supply_date', [$startDate, $endDate])
+            ->select(
+                's.supply_date',
+                DB::raw('si.unit_price as value')
+            )
+            ->get();
 
-        $itemsQuery->select('s.supply_date', DB::raw("IF(po.type='internal', si.sell_price, si.unit_price) as value"));
-
-        $items = $itemsQuery->get();
-
-        $resultPoints = $items->groupBy(function ($item) {
+        // 🔹 Grouper par date et sommer
+        $grouped = $items->groupBy(function ($item) {
             return Carbon::parse($item->supply_date)->format('Y-m-d');
         })->map(function ($dayItems, $day) {
             $total = collect($dayItems)->sum('value');
-            return [
-                'period' => $day,
-                'value'  => number_format($total, 3, '.', '')
-            ];
-        })
-            ->sortBy('period')   // 🔹 TRI croissant par date
-            ->values();          // 🔹 Réindexe les clés
+            return number_format($total, 3, '.', '');
+        });
+
+        // 🔹 Générer toutes les dates entre startDate et endDate
+        $period = [];
+        for ($date = $startDate->copy(); $date->lte($endDate); $date->addDay()) {
+            $dayStr = $date->format('Y-m-d');
+            if (isset($grouped[$dayStr])) {
+                $period[] = [
+                    'period' => $dayStr,
+                    'value'  => $grouped[$dayStr]
+                ];
+            }
+
+        }
 
         return response()->json([
             'product' => $productName,
             'scale'   => 'day',
-            'from'    => $startDate->toDateString(),
-            'to'      => $endDate->toDateString(),
-            'points'  => $resultPoints,
+            'from'    => $startDate->toDateString(), // toujours start_date envoyé
+            'to'      => $endDate->toDateString(),   // toujours end_date envoyé
+            'points'  => $period,
         ]);
     }
+
 
 
     /**
@@ -688,84 +756,95 @@ class StatisticsController extends Controller
 
         /**
          * ==========================================
-         * 🔹 CAS 1 : AUCUN ENTREPÔT → TOUS
+         * 🔹 CAS 1 : AUCUN ENTREPÔT
+         * → déductions de tous les entrepôts
+         *   SAUF l’entrepôt principal
          * ==========================================
          */
         if (!$warehouseUuid) {
 
-            // Approvisionnements (tous entrepôts)
-            $supplies = DB::table('supply_items as si')
-                ->join('supplies as s', 's.uuid', '=', 'si.supply_uuid')
-                ->where('si.product_uuid', $productUuid)
-                ->whereIn('s.status', [SupplyStatus::VALIDATED, SupplyStatus::PARTIALLY_VALIDATED])
-                ->whereBetween('s.supply_date', [$startDate, $endDate])
-                ->select(
-                    DB::raw('DATE(s.supply_date) as day'),
-                    DB::raw('SUM(si.quantity_supplied) as qty')
-                )
-                ->groupBy('day')
-                ->get();
-
-            // Consommations (tous entrepôts)
+            // 🔴 Déductions de stock (entrepôts secondaires)
             $deductions = DB::table('stocks_deductions_items as sdi')
                 ->join('stocks_deductions as sd', 'sd.uuid', '=', 'sdi.stocks_deduction_uuid')
+                ->join('warehouses as w', 'w.uuid', '=', 'sd.warehouse_uuid')
                 ->where('sdi.product_uuid', $productUuid)
                 ->where('sd.status', 'validated')
+                ->where('w.is_primary', false)
                 ->whereBetween('sd.created_at', [$startDate, $endDate])
                 ->select(
                     DB::raw('DATE(sd.created_at) as day'),
-                    DB::raw('SUM(sdi.quantity) as qty')
+                    DB::raw('SUM(sdi.quantity) as value')
                 )
-                ->groupBy('day')
-                ->get();
+                ->groupBy('day');
 
-            // Fusion + somme par jour
-            $points = $supplies
-                ->merge($deductions)
+            // 🔴 Régularisations (AVARIE uniquement)
+            $adjustments = DB::table('stock_adjustments_items as sai')
+                ->join('stock_adjustments as sa', 'sa.uuid', '=', 'sai.stock_adjustment_uuid')
+                ->join('warehouses as w', 'w.uuid', '=', 'sa.warehouse_uuid')
+                ->where('sai.product_uuid', $productUuid)
+                ->where('sa.action', 1)
+                ->where('sa.status', 'validated')
+                ->where('w.is_primary', false)
+                ->whereBetween('sa.created_at', [$startDate, $endDate])
+                ->select(
+                    DB::raw('DATE(sa.created_at) as day'),
+                    DB::raw('SUM(sai.quantity) as value')
+                )
+                ->groupBy('day');
+
+            // 🔹 Fusionner + sommer par jour
+            $points = $deductions
+                ->unionAll($adjustments)
+                ->get()
                 ->groupBy('day')
                 ->map(fn ($rows, $day) => [
                     'period' => $day,
-                    'value'  => $rows->sum('qty'),
+                    'value'  => (int) $rows->sum('value'),
                 ])
                 ->sortBy('period')
                 ->values();
         }
-
         /**
          * ==========================================
          * 🔹 CAS 2 : ENTREPÔT SPÉCIFIQUE
          * ==========================================
          */
         else {
-            $warehouse = DB::table('warehouses')->where('uuid', $warehouseUuid)->first();
-            $warehouseName = $warehouse->name ?? 'Tous';
 
-            // 🟢 Entrepôt principal → approvisionnements
+            $warehouse = DB::table('warehouses')->where('uuid', $warehouseUuid)->first();
+            $warehouseName = $warehouse->name ?? 'Inconnu';
+
+            // 🟢 ENTREPÔT PRINCIPAL → approvisionnements
             if ($warehouse && $warehouse->is_primary) {
 
-                $items = DB::table('supply_items as si')
+                $points = DB::table('supply_items as si')
                     ->join('supplies as s', 's.uuid', '=', 'si.supply_uuid')
+                    ->join('purchase_orders as po', 'po.uuid', '=', 's.purchase_order_uuid')
                     ->where('si.product_uuid', $productUuid)
-                    ->where('s.warehouse_uuid', $warehouseUuid)
-                    ->whereIn('s.status', [SupplyStatus::VALIDATED, SupplyStatus::PARTIALLY_VALIDATED])
+                    ->whereNull('si.deleted_at')
+                    ->where('s.warehouse_uuid', $warehouseUuid) // filtre sur l’entrepôt principal
+                    ->whereIn('s.status', [
+                        SupplyStatus::VALIDATED,
+                        SupplyStatus::PARTIALLY_VALIDATED
+                    ])
                     ->whereBetween('s.supply_date', [$startDate, $endDate])
                     ->select(
                         DB::raw('DATE(s.supply_date) as day'),
-                        DB::raw('SUM(si.quantity_supplied) as total')
+                        DB::raw('SUM(si.quantity_supplied) as value') // 🔹 même que $items
                     )
                     ->groupBy('day')
                     ->orderBy('day')
-                    ->get();
-
-                $points = $items->map(fn ($item) => [
-                    'period' => $item->day,
-                    'value'  => (int) $item->total,
-                ]);
+                    ->get()
+                    ->map(fn ($row) => [
+                        'period' => $row->day,
+                        'value'  => (float) $row->value,
+                    ]);
             }
 
-            // 🔴 Entrepôt secondaire → consommations
+            // 🔴 ENTREPÔT SECONDAIRE → déductions
             else {
-                $items = DB::table('stocks_deductions_items as sdi')
+
+                $deductions = DB::table('stocks_deductions_items as sdi')
                     ->join('stocks_deductions as sd', 'sd.uuid', '=', 'sdi.stocks_deduction_uuid')
                     ->where('sdi.product_uuid', $productUuid)
                     ->where('sd.warehouse_uuid', $warehouseUuid)
@@ -773,16 +852,35 @@ class StatisticsController extends Controller
                     ->whereBetween('sd.created_at', [$startDate, $endDate])
                     ->select(
                         DB::raw('DATE(sd.created_at) as day'),
-                        DB::raw('SUM(sdi.quantity) as total')
+                        DB::raw('SUM(sdi.quantity) as value')
                     )
-                    ->groupBy('day')
-                    ->orderBy('day')
-                    ->get();
+                    ->groupBy('day');
 
-                $points = $items->map(fn ($item) => [
-                    'period' => $item->day,
-                    'value'  => (int) $item->total,
-                ]);
+                // 🔹 Régularisations de stocks validées (ex: avaries)
+                $adjustments = DB::table('stock_adjustments_items as sai')
+                    ->join('stock_adjustments as sa', 'sa.uuid', '=', 'sai.stock_adjustment_uuid')
+                    ->where('sai.product_uuid', $productUuid)
+                    ->where('sa.warehouse_uuid', $warehouseUuid)
+                    ->where('sa.action', 1)
+                    ->where('sa.status', 'validated')
+                    ->whereBetween('sa.created_at', [$startDate, $endDate])
+                    ->select(
+                        DB::raw('DATE(sa.created_at) as day'),
+                        DB::raw('SUM(sai.quantity) as value')
+                    )
+                    ->groupBy('day');
+
+                // 🔹 Fusionner et sommer les deux sources par jour
+                $points = $deductions
+                    ->unionAll($adjustments)
+                    ->get()
+                    ->groupBy('day')
+                    ->map(fn ($rows, $day) => [
+                        'period' => $day,
+                        'value' => $rows->sum('value')
+                    ])
+                    ->sortBy('period')
+                    ->values();
             }
         }
 
@@ -804,12 +902,14 @@ class StatisticsController extends Controller
      */
     public function get_statistics_by_avaries_products(Request $request, string $productUuid)
     {
+        // 🔹 Validation
         $request->validate([
             'start_date'     => 'nullable|date',
             'end_date'       => 'nullable|date',
             'warehouse_uuid' => 'nullable|exists:warehouses,uuid',
         ]);
 
+        // 🔹 Dates par défaut
         $endDate = $request->end_date
             ? Carbon::parse($request->end_date)->endOfDay()
             : now()->endOfDay();
@@ -823,29 +923,36 @@ class StatisticsController extends Controller
             ->where('uuid', $productUuid)
             ->value('name') ?? 'Inconnu';
 
+        // 🔹 Entrepôt sélectionné ou "Tous" (pour les avaries seulement)
         $warehouseUuid = $request->warehouse_uuid;
-
-        // 🔹 Nom de l'entrepôt si fourni
         $warehouseName = $warehouseUuid
             ? DB::table('warehouses')->where('uuid', $warehouseUuid)->value('name')
             : 'Tous';
 
-        // 🔹 Total approvisionné pour le produit
+        // 🔹 Total approvisionné pour le produit (TOUS entrepôts)
         $totalSupplied = DB::table('supply_items as si')
             ->join('supplies as s', 's.uuid', '=', 'si.supply_uuid')
-            ->when($warehouseUuid, fn($q) => $q->where('s.warehouse_uuid', $warehouseUuid))
             ->where('si.product_uuid', $productUuid)
             ->whereBetween('s.supply_date', [$startDate, $endDate])
-            ->sum('si.quantity_supplied');
+            ->whereNull('si.deleted_at')
+            ->whereIn('s.status', [
+                SupplyStatus::VALIDATED,
+                SupplyStatus::PARTIALLY_VALIDATED
+            ])
+            ->sum('si.quantity_supplied'); // ✅ quantity_supplied
 
-        // 🔹 Total des avaries (ajustements de type AVARIE)
-        $totalAvaries = DB::table('stock_adjustments_items as sai')
+        // 🔹 Total des avaries (action = 1), filtré par entrepôt si sélectionné
+        $totalAvariesQuery = DB::table('stock_adjustments_items as sai')
             ->join('stock_adjustments as sa', 'sa.uuid', '=', 'sai.stock_adjustment_uuid')
-            ->when($warehouseUuid, fn($q) => $q->where('sa.warehouse_uuid', $warehouseUuid))
             ->where('sai.product_uuid', $productUuid)
             ->where('sa.action', 1) // uniquement AVARIE
-            ->whereBetween('sa.created_at', [$startDate, $endDate])
-            ->sum('sai.quantity');
+            ->whereBetween('sa.created_at', [$startDate, $endDate]);
+
+        if ($warehouseUuid) {
+            $totalAvariesQuery->where('sa.warehouse_uuid', $warehouseUuid);
+        }
+
+        $totalAvaries = $totalAvariesQuery->sum('sai.quantity');
 
         // 🔹 Calcul du pourcentage d'avaries
         $percentAvaries = $totalSupplied > 0
@@ -858,6 +965,7 @@ class StatisticsController extends Controller
             ['label' => 'Quantité intacte', 'value' => 100 - $percentAvaries],
         ];
 
+        // 🔹 Retour JSON
         return response()->json([
             'product'   => $productName,
             'warehouse' => $warehouseName,
@@ -866,6 +974,134 @@ class StatisticsController extends Controller
             'data'      => $data,
         ]);
     }
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission StatisticsController::print_all_data_for_dashboard
+     * @permission_desc Imprimer le tableau de bord complet
+     */
+    public function print_all_data_for_dashboard(Request $request)
+    {
+        try {
+            // 🔹 Validation
+            $request->validate([
+                'start_date' => 'nullable|date',
+                'end_date'   => 'nullable|date',
+            ]);
+
+            // 🔹 Dates par défaut
+            $start = $request->start_date
+                ? Carbon::parse($request->start_date)->startOfDay()
+                : now()->startOfDay();
+
+            $end = $request->end_date
+                ? Carbon::parse($request->end_date)->endOfDay()
+                : now()->endOfDay();
+
+            // 🔹 Préparer les données (ton code existant ici)...
+            $adjustments = StockAdjustment::whereBetween('created_at', [$start, $end])->get();
+            $adjustmentsData = collect(\App\Enums\StockAdjustmentAction::TO_ARRAY())
+                ->mapWithKeys(function ($label, $action) use ($adjustments) {
+                    $group = $adjustments->where('action', $action);
+                    return [
+                        $action => [
+                            'total'      => $group->count(),
+                            'action'     => $action,
+                            'label'      => $label,
+                            'references' => $group->pluck('reference')->values(),
+                            'statuses'   => $group->pluck('status')->unique()->values(),
+                        ]
+                    ];
+                });
+
+            $supplies = Supply::whereBetween('created_at', [$start, $end])->get();
+            $suppliesData = collect(SupplyStatus::cases())->mapWithKeys(function ($status) use ($supplies) {
+                $group = $supplies->where('status', $status->value);
+                return [
+                    $status->value => [
+                        'total'      => $group->count(),
+                        'references' => $group->pluck('reference')->values(),
+                        'label'      => SupplyStatus::safeLabel($status->value),
+                    ]
+                ];
+            });
+
+            $orders = PurchaseOrder::whereBetween('created_at', [$start, $end])->get();
+            $ordersData = collect(PurchaseOrdersStatus::cases())->mapWithKeys(function ($status) use ($orders) {
+                $group = $orders->where('status', $status->value);
+                return [
+                    $status->value => [
+                        'total'      => $group->count(),
+                        'types'      => $group->pluck('type')->unique()->values(),
+                        'references' => $group->pluck('reference')->values(),
+                        'label'      => PurchaseOrdersStatus::safeLabel($status->value),
+                    ]
+                ];
+            });
+
+            $data = [
+                'stock_adjustments' => $adjustmentsData,
+                'supplies'          => $suppliesData,
+                'purchase_orders'   => $ordersData,
+                'summary'           => [
+                    'from' => $start->toDateString(),
+                    'to'   => $end->toDateString(),
+                ]
+            ];
+
+            $fileName   = 'RECAPITULATIFS-DU-DASHBOARD-' . now()->format('YmdHis') . '.pdf';
+            $folderPath = 'storage/dashboard';
+            $filePath   = $folderPath . '/' . $fileName;
+
+            if (!is_dir($folderPath)) {
+                if (!mkdir($folderPath, 0755, true) && !is_dir($folderPath)) {
+                    throw new \RuntimeException("Impossible de créer le répertoire : {$folderPath}");
+                }
+            }
+
+            $footer = 'pdfs.reports.factures.footer';
+
+            // 🔹 Génération PDF
+            save_browser_shot_pdf(
+                view: 'pdfs.dashboard.dashboard_statistics',
+                data: ['data' => $data],
+                folderPath: $folderPath,
+                path: $filePath,
+                margins: [10, 10, 10, 10],
+                footer: $footer
+            );
+
+            $base64 = base64_encode(file_get_contents($filePath));
+
+            return response()->json([
+                'status'   => 'success',
+                'data'     => $data,
+                'base64'   => $base64,
+                'url'      => $filePath,
+                'filename' => $fileName,
+            ], 200);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Erreur de validation',
+                'errors'  => $e->errors(),
+            ], 422);
+
+        } catch (\Throwable $e) {
+            // 🔹 Retourne l’erreur exacte pour debug
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Erreur interne lors de la génération du PDF',
+                'error'   => $e->getMessage(),
+                'trace'   => $e->getTraceAsString(), // optionnel
+            ], 500);
+        }
+    }
+
+
+
 
 
 

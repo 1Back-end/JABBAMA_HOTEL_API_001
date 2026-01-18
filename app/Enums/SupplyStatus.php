@@ -5,7 +5,6 @@ namespace App\Enums;
 enum SupplyStatus: string
 {
     case DRAFT               = 'draft';
-    case OPEN                = 'open';
     case CANCELLED           = 'cancelled';
     case REJECTED            = 'rejected';
     case VALIDATED           = 'validated';
@@ -20,7 +19,6 @@ enum SupplyStatus: string
     {
         return match ($this) {
             self::DRAFT               => 'En brouillon',
-            self::OPEN                => 'Ouvert',
             self::CANCELLED           => 'Annulé',
             self::REJECTED            => 'Rejetée',
             self::VALIDATED           => 'Validation complète',
@@ -37,7 +35,6 @@ enum SupplyStatus: string
     {
         return match ($this) {
             self::DRAFT               => 'secondary',
-            self::OPEN                => 'primary',
             self::CANCELLED           => 'danger',
             self::REJECTED            => 'danger',
             self::VALIDATED           => 'success',

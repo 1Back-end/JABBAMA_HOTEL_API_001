@@ -465,13 +465,26 @@ class WarehouseController extends Controller
      */
     public function export_inventory_by_warehouse(Request $request, ?string $pointUuid = null)
     {
-        // 🔹 Nom du fichier
-        $fileName = $pointUuid
-            ? 'INVENTAIRE_' . strtoupper(str_replace(' ', '_', Warehouse::findOrFail($pointUuid)->name)) . '_' . now()->format('Ymd_His') . '.xlsx'
-            : 'INVENTAIRE_TOUS_LES_ENTREPOTS_' . now()->format('Ymd_His') . '.xlsx';
+        // 🔹 Normalisation
+        $pointUuid = ($pointUuid === 'all' || empty($pointUuid)) ? null : $pointUuid;
 
+        // 🔹 Nom du fichier
+        if ($pointUuid) {
+            $warehouse = Warehouse::findOrFail($pointUuid);
+
+            $fileName = 'INVENTAIRE_'
+                . strtoupper(str_replace(' ', '_', $warehouse->name))
+                . '_' . now()->format('Ymd_His')
+                . '.xlsx';
+        } else {
+            $fileName = 'INVENTAIRE_TOUS_LES_ENTREPOTS_'
+                . now()->format('Ymd_His')
+                . '.xlsx';
+        }
+
+        // 🔹 Export Excel
         Excel::store(
-            new InventoryByPointExport($pointUuid ?? null),
+            new InventoryByPointExport($pointUuid),
             $fileName,
             'exportinventory',
             \Maatwebsite\Excel\Excel::XLSX
@@ -483,6 +496,7 @@ class WarehouseController extends Controller
             'url'      => Storage::disk('exportinventory')->url($fileName),
         ], 200);
     }
+
 
     /**
      * Display a listing of the resource.

@@ -85,8 +85,15 @@
 </p>
 
 <div class="d-flex justify-content-center mt-2">
-    <table class="table table-bordered table-striped text-center border-black" style="font-size: 13px;">
+    <table class="table table-bordered table-striped border-black" style="font-size: 11px;">
         <thead>
+        <tr>
+            <th colspan="12"
+                class="text-center fw-bold py-2"
+                style="border: 2px dotted black;">
+                REGULARISATIONS N° {{ $stock_adjustment->reference }} <br>
+            </th>
+        </tr>
         <tr>
             <th>N°</th>
             <th>Réference</th>
@@ -108,6 +115,16 @@
         @endforeach
         </tbody>
     </table>
+</div>
+<div class="d-flex align-content-center mb-3" style="font-size: 13px; gap: 2rem;">
+    <p class="m-0">
+        <strong>Action :</strong>
+        <span class="text-capitalize">{{ \App\Enums\StockAdjustmentAction::LABEL($stock_adjustment->action) }}</span>
+    </p>
+    <p class="m-0">
+        <strong>Statut :</strong>
+        <span class="text-capitalize">{{ \App\Enums\StocksAdjustmentStatus::safeLabel($stock_adjustment->status) }}</span>
+    </p>
 </div>
 
 

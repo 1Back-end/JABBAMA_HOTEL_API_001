@@ -49,7 +49,7 @@ class ProductController extends Controller
                 }
 
                 // 🏭 Filtrer SEULEMENT si un entrepôt est choisi
-                if ($pointUuid) {
+                if ($pointUuid && $pointUuid !== 'all') {
                     $q->where('warehouses.uuid', $pointUuid);
                 }
             }
@@ -65,12 +65,12 @@ class ProductController extends Controller
                     $m->where('warehouse_managers.user_id', $auth->id);
                 });
 
-                if ($pointUuid) {
+                if ($pointUuid && $pointUuid !== 'all') {
                     $q->where('warehouses.uuid', $pointUuid);
                 }
             });
         }
-        elseif ($pointUuid) {
+        elseif ($pointUuid && $pointUuid !== 'all') {
             // SUPER_ADMIN + entrepôt précis
             $query->whereHas('points', function ($q) use ($pointUuid) {
                 $q->where('warehouses.uuid', $pointUuid);
@@ -486,7 +486,7 @@ class ProductController extends Controller
             // ==========================
             // ✅ CAS 1 : UN ENTREPÔT
             // ==========================
-            if ($warehouse_uuid) {
+            if ($warehouse_uuid && $warehouse_uuid !== 'all') {
 
                 $warehouse = Warehouse::where('uuid', $warehouse_uuid)->first();
 
