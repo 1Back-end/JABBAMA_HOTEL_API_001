@@ -865,6 +865,8 @@ class PassationController extends Controller
             if ($startDate && $endDate) {
                 $query->whereBetween('created_at', [$startDate, $endDate]);
             }
+            $query->orderByDesc('created_at');
+
 
             // 🔹 Pagination (facultative)
             $passations = $query->skip(($filter->page - 1) * $filter->limit)

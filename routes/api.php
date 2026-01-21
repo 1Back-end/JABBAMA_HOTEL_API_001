@@ -80,6 +80,7 @@ Route::middleware(['activity'])->group(function () {
         Route::get('orders/{uuid}/print_orders', [PurchaseOrderController::class, 'print_orders']);
         Route::get('orders/{uuid}/show_parents_orders', [PurchaseOrderController::class, 'show_parents_orders']);
         Route::get('orders_actions', [\App\Http\Controllers\PurchaseOrderController::class, 'PurchaseOrdersStatus']);
+        Route::get('get_validated_and_partial_validated_orders', [\App\Http\Controllers\PurchaseOrderController::class, 'get_validated_and_partial_validated_orders']);
 
         Route::apiResource('supply_orders', SupplyController::class);
         Route::post('update_supplies/{uuid}/update_supplies', [SupplyController::class, 'update_supplies']);
@@ -124,6 +125,7 @@ Route::middleware(['activity'])->group(function () {
         Route::get('/products/{productUuid}/quantity_variation', [\App\Http\Controllers\StatisticsController::class, 'get_statitics_by_variation_quantity']);
         Route::get('/products/{productUuid}/avaries', [\App\Http\Controllers\StatisticsController::class, 'get_statistics_by_avaries_products']);
         Route::get('/dashboard/print_all_data', [\App\Http\Controllers\StatisticsController::class, 'print_all_data_for_dashboard']);
+        Route::get('/statistics/top_consumed_products',[\App\Http\Controllers\StatisticsController::class, 'topConsumedProducts']);
 
 
 

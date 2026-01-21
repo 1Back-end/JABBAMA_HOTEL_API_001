@@ -22,7 +22,7 @@ class StockAdjustmentFilterData
     public static function fromRequestStockAdjustmentFilterData(Request $request): self
     {
         return new self(
-            warehouse_uuid: $request->input('$warehouse_uuid'),
+            warehouse_uuid: $request->input('warehouse_uuid'),
             action: $request->input('action'),
             status: $request->input('status'),
             start_date: $request->input('start_date'),

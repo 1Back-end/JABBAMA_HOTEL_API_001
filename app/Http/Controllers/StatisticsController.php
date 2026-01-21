@@ -6,6 +6,7 @@ use App\Enums\PurchaseOrdersStatus;
 use App\Enums\StockAdjustmentAction;
 use App\Enums\SupplyStatus;
 use App\Models\PdfDocument;
+use App\Models\Product;
 use App\Models\PurchaseOrder;
 use App\Models\StockAdjustment;
 use App\Models\StockAdjustmentItem;
@@ -26,46 +27,51 @@ class StatisticsController extends Controller
      */
     public function topConsumedProducts(Request $request)
     {
-        $start_date     = $request->input('start_date');
-        $end_date       = $request->input('end_date');
-        $warehouse_uuid = $request->input('warehouse_uuid');
+        $start_date = $request->input('start_date');
+        $end_date   = $request->input('end_date');
 
-        $perPage = $request->input('limit', 25);
-        $page = $request->input('page', 1);
-
-        $query = DB::table('supply_items as si')
-            ->join('supplies as s', 'si.supply_uuid', '=', 's.uuid')
+        // Base query : seulement les commandes externes
+        $baseQuery = \App\Models\SupplyItem::query()
+            ->join('supplies as s', 'supply_items.supply_uuid', '=', 's.uuid')
             ->join('purchase_orders as po', 's.purchase_order_uuid', '=', 'po.uuid')
-            ->join('produits as p', 'si.product_uuid', '=', 'p.uuid')
-            ->join('warehouses as w', 'w.uuid', '=', 'po.warehouse_from') // Entrepôt source de la commande
-            ->selectRaw('
-            p.uuid,
-            p.code,
-            p.name,
-            w.name as warehouse,
-            COUNT(DISTINCT s.uuid) as frequency
-        ')
-            ->groupBy('p.uuid', 'p.code', 'p.name', 'w.name')
-            ->orderByDesc('frequency');
+            ->join('produits as p', 'supply_items.product_uuid', '=', 'p.uuid')
+            ->select('p.*', DB::raw('COUNT(DISTINCT s.uuid) as frequency'))
+            ->where('po.type', 'external') // 🔹 seulement commandes externes
+            ->groupBy('p.uuid');
 
-        // Filtrer par dates si fournies
+        // 🔹 Filtres dates (optionnels)
         if ($start_date && $end_date) {
-            $query->whereBetween('s.supply_date', [$start_date, $end_date]);
+            $baseQuery->whereBetween('s.created_at', [$start_date, $end_date]);
+        } elseif ($start_date) {
+            $baseQuery->where('s.created_at', '>=', $start_date);
+        } elseif ($end_date) {
+            $baseQuery->where('s.created_at', '<=', $end_date);
         }
 
-        // Filtrer par entrepôt si fourni
-        if ($warehouse_uuid) {
-            // Prendre en compte l’entrepôt principal ET les approvisionnements vers l’extérieur
-            $query->where(function($q) use ($warehouse_uuid) {
-                $q->where('po.warehouse_from', $warehouse_uuid)
-                    ->orWhere('po.warehouse_to', $warehouse_uuid);
-            });
-        }
+        $products = $baseQuery->get();
 
-        $data = $query->get();
+        // Ajouter l'URL de l'image
+        $products->map(function ($p) {
+            $productModel = \App\Models\Product::find($p->uuid);
+            $p->image_url = $productModel?->getProductImageAttribute();
+            return $p;
+        });
 
-        return response()->json($data);
+        // 🔝 Top 3
+        $top = $products->sortByDesc('frequency')->take(3)->values();
+
+        // 🔻 Bottom 3
+        $bottom = $products->sortBy('frequency')->take(3)->values();
+
+        return response()->json([
+            'top' => $top,
+            'separator' => '.............................................',
+            'bottom' => $bottom
+        ]);
     }
+
+
+
 
 
     public function get_statistics_by_products(Request $request)
@@ -822,6 +828,7 @@ class StatisticsController extends Controller
                     ->join('purchase_orders as po', 'po.uuid', '=', 's.purchase_order_uuid')
                     ->where('si.product_uuid', $productUuid)
                     ->whereNull('si.deleted_at')
+                    ->where('po.type', 'internal') // 🔹 seulement commandes internes
                     ->where('s.warehouse_uuid', $warehouseUuid) // filtre sur l’entrepôt principal
                     ->whereIn('s.status', [
                         SupplyStatus::VALIDATED,
@@ -830,7 +837,7 @@ class StatisticsController extends Controller
                     ->whereBetween('s.supply_date', [$startDate, $endDate])
                     ->select(
                         DB::raw('DATE(s.supply_date) as day'),
-                        DB::raw('SUM(si.quantity_supplied) as value') // 🔹 même que $items
+                        DB::raw('SUM(si.quantity_supplied) as value')
                     )
                     ->groupBy('day')
                     ->orderBy('day')
@@ -904,9 +911,8 @@ class StatisticsController extends Controller
     {
         // 🔹 Validation
         $request->validate([
-            'start_date'     => 'nullable|date',
-            'end_date'       => 'nullable|date',
-            'warehouse_uuid' => 'nullable|exists:warehouses,uuid',
+            'start_date' => 'nullable|date',
+            'end_date'   => 'nullable|date',
         ]);
 
         // 🔹 Dates par défaut
@@ -923,57 +929,48 @@ class StatisticsController extends Controller
             ->where('uuid', $productUuid)
             ->value('name') ?? 'Inconnu';
 
-        // 🔹 Entrepôt sélectionné ou "Tous" (pour les avaries seulement)
-        $warehouseUuid = $request->warehouse_uuid;
-        $warehouseName = $warehouseUuid
-            ? DB::table('warehouses')->where('uuid', $warehouseUuid)->value('name')
-            : 'Tous';
-
-        // 🔹 Total approvisionné pour le produit (TOUS entrepôts)
+        // 🔹 Total approvisionné (EXTERNAL uniquement, sans entrepôt)
         $totalSupplied = DB::table('supply_items as si')
             ->join('supplies as s', 's.uuid', '=', 'si.supply_uuid')
+            ->join('purchase_orders as po', 'po.uuid', '=', 's.purchase_order_uuid')
             ->where('si.product_uuid', $productUuid)
-            ->whereBetween('s.supply_date', [$startDate, $endDate])
             ->whereNull('si.deleted_at')
+            ->where('po.type', 'external')
+            ->whereBetween('s.supply_date', [$startDate, $endDate])
             ->whereIn('s.status', [
                 SupplyStatus::VALIDATED,
                 SupplyStatus::PARTIALLY_VALIDATED
             ])
-            ->sum('si.quantity_supplied'); // ✅ quantity_supplied
+            ->sum('si.quantity_supplied');
 
-        // 🔹 Total des avaries (action = 1), filtré par entrepôt si sélectionné
-        $totalAvariesQuery = DB::table('stock_adjustments_items as sai')
+        // 🔹 Total des avaries (tous entrepôts confondus)
+        $totalAvaries = DB::table('stock_adjustments_items as sai')
             ->join('stock_adjustments as sa', 'sa.uuid', '=', 'sai.stock_adjustment_uuid')
             ->where('sai.product_uuid', $productUuid)
-            ->where('sa.action', 1) // uniquement AVARIE
-            ->whereBetween('sa.created_at', [$startDate, $endDate]);
+            ->where('sa.action', 1) // AVARIE
+            ->whereBetween('sa.created_at', [$startDate, $endDate])
+            ->sum('sai.quantity');
 
-        if ($warehouseUuid) {
-            $totalAvariesQuery->where('sa.warehouse_uuid', $warehouseUuid);
-        }
-
-        $totalAvaries = $totalAvariesQuery->sum('sai.quantity');
-
-        // 🔹 Calcul du pourcentage d'avaries
+        // 🔹 Pourcentage d’avaries
         $percentAvaries = $totalSupplied > 0
             ? round(($totalAvaries / $totalSupplied) * 100, 2)
             : 0;
 
-        // 🔹 Préparer les données pour le camembert
+        // 🔹 Données pour le camembert
         $data = [
             ['label' => 'Avaries', 'value' => $percentAvaries],
-            ['label' => 'Quantité intacte', 'value' => 100 - $percentAvaries],
+            ['label' => 'Quantité intacte', 'value' => round(100 - $percentAvaries, 2)],
         ];
 
-        // 🔹 Retour JSON
+        // 🔹 Réponse JSON
         return response()->json([
-            'product'   => $productName,
-            'warehouse' => $warehouseName,
-            'from'      => $startDate->toDateString(),
-            'to'        => $endDate->toDateString(),
-            'data'      => $data,
+            'product' => $productName,
+            'from'    => $startDate->toDateString(),
+            'to'      => $endDate->toDateString(),
+            'data'    => $data,
         ]);
     }
+
 
 
     /**
@@ -1040,10 +1037,23 @@ class StatisticsController extends Controller
                 ];
             });
 
+            $productsQuery = \App\Models\SupplyItem::query()
+                ->join('supplies as s', 'supply_items.supply_uuid', '=', 's.uuid')
+                ->join('purchase_orders as po', 's.purchase_order_uuid', '=', 'po.uuid')
+                ->join('produits as p', 'supply_items.product_uuid', '=', 'p.uuid')
+                ->select('p.name', 'p.code', DB::raw('COUNT(DISTINCT s.uuid) as frequency'))
+                ->where('po.type', 'external')
+                ->whereBetween('s.created_at', [$start, $end])
+                ->groupBy('p.uuid', 'p.name', 'p.code')
+                ->orderByDesc('frequency')
+                ->take(5)
+                ->get();
+
             $data = [
                 'stock_adjustments' => $adjustmentsData,
                 'supplies'          => $suppliesData,
                 'purchase_orders'   => $ordersData,
+                'most_consumed'     => $productsQuery, // juste Top 3
                 'summary'           => [
                     'from' => $start->toDateString(),
                     'to'   => $end->toDateString(),
@@ -1068,8 +1078,10 @@ class StatisticsController extends Controller
                 data: ['data' => $data],
                 folderPath: $folderPath,
                 path: $filePath,
-                margins: [10, 10, 10, 10],
-                footer: $footer
+                margins: [15, 10, 15, 10],
+                footer: $footer,
+                format: 'A5',
+                direction: 'landscape'
             );
 
             $base64 = base64_encode(file_get_contents($filePath));

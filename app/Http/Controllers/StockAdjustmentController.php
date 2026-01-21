@@ -775,6 +775,7 @@ class StockAdjustmentController extends Controller
             if ($startDate && $endDate) {
                 $query->whereBetween('created_at', [$startDate, $endDate]);
             }
+            $query->orderByDesc('created_at');
 
             $stock_adjustments = $query->get();
 

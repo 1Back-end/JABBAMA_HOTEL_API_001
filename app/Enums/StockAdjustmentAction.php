@@ -11,21 +11,30 @@ enum StockAdjustmentAction: int
     public static function TO_ARRAY(): array
     {
         return [
-            self::AVARIE->value           => 'AVARIE',
-            self::AJUSTEMENT_PLUS->value  => 'AUGMENTATION',
-            self::AJUSTEMENT_MOINS->value => 'SUPPRESSION',
+            self::AVARIE->value           => 'Avarie',
+            self::AJUSTEMENT_PLUS->value  => 'Augmentation',
+            self::AJUSTEMENT_MOINS->value => 'Suppression',
         ];
     }
 
     public static function LABEL(int $value): string
     {
         return match ($value) {
-            self::AVARIE->value           => 'AVARIE',
-            self::AJUSTEMENT_PLUS->value  => 'AUGMENTATION',
-            self::AJUSTEMENT_MOINS->value => 'SUPPRESSION',
-            default => 'INCONNU',
+            self::AVARIE->value           => 'Avarie',
+            self::AJUSTEMENT_PLUS->value  => 'Augmentation',
+            self::AJUSTEMENT_MOINS->value => 'Suppression',
+            default => 'Inconnu',
         };
     }
+    public static function getBadgeClassAdjustment(string $label): string {
+        return match(strtoupper($label)) {
+            'AVARIE'       => 'badge-avaries',
+            'AUGMENTATION' => 'badge-augmentation',
+            'SUPPRESSION'  => 'badge-suppression',
+            default        => 'badge-secondary',
+        };
+    }
+
 
 
 

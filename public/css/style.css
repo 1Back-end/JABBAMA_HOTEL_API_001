@@ -1,0 +1,23 @@
+
+.badge-augmentation {
+    background-color: #22C55E;
+    color: #fff !important;
+    padding: 0.25em 0.5em;
+    border-radius: 0.25rem;
+}
+.badge-avaries {
+    background-color: #EF4444;
+    color: #fff !important;
+    padding: 0.25em 0.5em;
+    border-radius: 0.25rem;
+}
+.badge-suppression {
+    background-color: #F97316;
+    color: #fff !important;
+    padding: 0.25em 0.5em;
+    border-radius: 0.25rem;
+}
+.badge-secondary {
+    background-color: #6c757d;
+    color: #fff !important;
+}
