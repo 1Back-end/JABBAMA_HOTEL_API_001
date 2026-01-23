@@ -83,22 +83,25 @@ class SupplyController extends Controller
             $query->whereBetween('created_at', [$start_date, $end_date]);
         }
 
-        if ($auth->hasRole('SUPER_ADMIN')) {
-            // SUPER ADMIN voit tout → aucun filtre
-        } elseif ($auth->hasRole('GESTIONNAIRE_STOCK')) {
+        if (!$auth->hasRole('SUPER_ADMIN')) {
 
-            // ✅ GESTIONNAIRE_STOCK voit uniquement ce qu'il a approvisionné
-            $query->where('created_by', $auth->id);
+            $roleIds = $auth->roles->pluck('id');
 
-        } else {
+            $query->where(function ($q) use ($auth, $roleIds) {
 
-            //Tous les autres voient ce qu'ils ont approvisionné
-            // + ce dont la commande liée est créée par eux
-            $query->where(function ($q) use ($auth) {
-                $q->where('created_by', $auth->id)
-                    ->orWhereHas('purchaseOrder', function ($q2) use ($auth) {
-                        $q2->where('created_by', $auth->id);
-                    });
+                // 🔹 Utilisateurs avec la permission view_role_related_data
+                if ($auth->can('view_role_related_data')) {
+                    $q->whereHas('purchaseOrder.creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
+                }
+                // 🔹 Utilisateurs avec la permission view_transferred_orders
+                if ($auth->can('view_transferred_supplies')) {
+                    $q->orWhereHas('purchaseOrder', fn($po) => $po->whereNotNull('transfered_by'));
+                }
+                // 🔹 Utilisateurs sans aucune de ces permissions : seulement leurs propres commandes
+                if (!$auth->can('view_role_related_data') && !$auth->can('view_transferred_supplies')) {
+                    $q->orWhereHas('purchaseOrder', fn($po) => $po->where('created_by', $auth->id));
+                }
+
             });
         }
 

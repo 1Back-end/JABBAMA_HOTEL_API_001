@@ -82,16 +82,27 @@ class PurchaseOrderController extends Controller
             $query->whereBetween('created_at', [$start_date, $end_date]);
         }
 
-        // 🔹 Gestion des accès selon les rôles
-        if ($auth->hasRole('GESTIONNAIRE_STOCK')) {
-            // 👉 Le gestionnaire de stock voit uniquement les bons transférés par lui
-            $query->where('transfered_by', $auth->id);
+        if (!$auth->hasRole('SUPER_ADMIN')) {
 
-        } elseif (!$auth->hasRole('SUPER_ADMIN')) {
-            // 👉 Tous les autres utilisateurs (sauf Super Admin)
-            $query->where('created_by', $auth->id);
+            $roleIds = $auth->roles->pluck('id');
+
+            $query->where(function ($q) use ($auth, $roleIds) {
+
+                // 🔹 Utilisateurs avec la permission view_role_related_data
+                if ($auth->can('view_role_related_data')) {
+                    $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
+                }
+                // 🔹 Utilisateurs avec la permission view_transferred_orders
+                if ($auth->can('view_transferred_orders')) {
+                    $q->orWhereNotNull('transfered_by');
+                }
+                // 🔹 Utilisateurs sans aucune de ces permissions : seulement leurs propres commandes
+                if (!$auth->can('view_role_related_data') && !$auth->can('view_transferred_orders')) {
+                    $q->orWhere('created_by', $auth->id);
+                }
+
+            });
         }
-        // 👉 Le SUPER_ADMIN voit tout (aucune restriction)
 
         // 🔹 Recherche globale
         if ($search = trim($request->input('search'))) {
@@ -193,16 +204,27 @@ class PurchaseOrderController extends Controller
             $query->whereBetween('created_at', [$start_date, $end_date]);
         }
 
-        // 🔹 Gestion des accès selon les rôles
-        if ($auth->hasRole('GESTIONNAIRE_STOCK')) {
-            // 👉 Le gestionnaire de stock voit uniquement les bons transférés par lui
-            $query->where('transfered_by', $auth->id);
+        if (!$auth->hasRole('SUPER_ADMIN')) {
 
-        } elseif (!$auth->hasRole('SUPER_ADMIN')) {
-            // 👉 Tous les autres utilisateurs (sauf Super Admin)
-            $query->where('created_by', $auth->id);
+            $roleIds = $auth->roles->pluck('id');
+
+            $query->where(function ($q) use ($auth, $roleIds) {
+
+                // 🔹 Utilisateurs avec la permission view_role_related_data
+                if ($auth->can('view_role_related_data')) {
+                    $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
+                }
+                // 🔹 Utilisateurs avec la permission view_transferred_orders
+                if ($auth->can('view_transferred_orders')) {
+                    $q->orWhereNotNull('transfered_by');
+                }
+                // 🔹 Utilisateurs sans aucune de ces permissions : seulement leurs propres commandes
+                if (!$auth->can('view_role_related_data') && !$auth->can('view_transferred_orders')) {
+                    $q->orWhere('created_by', $auth->id);
+                }
+
+            });
         }
-        // 👉 Le SUPER_ADMIN voit tout (aucune restriction)
 
         // 🔹 Recherche globale
         if ($search = trim($request->input('search'))) {
@@ -292,10 +314,24 @@ class PurchaseOrderController extends Controller
                 }
 
                 // Vérifier que l'utilisateur est manager
-                $isManager = $warehouseFrom->managers()->where('user_id', $auth->id)->exists();
+                if (!$auth->can('view_role_related_data')) {
+                    // 👉 utilisateur classique : doit être manager de l'entrepôt
+                    $isManager = $warehouseFrom->managers()->where('user_id', $auth->id)->exists();
+
+                } else {
+                    // 👉 utilisateur avec view_role_related_data : peut créer si un manager du même rôle existe
+                    $roleIds = $auth->roles->pluck('id');
+                    $isManager = $warehouseFrom->managers()
+                        ->whereHas('roles', function ($q) use ($roleIds) {
+                            $q->whereIn('roles.id', $roleIds);
+                        })
+                        ->exists();
+                }
+
+                // 🔹 Bloquer si aucune permission
                 if (!$isManager) {
                     return response()->json([
-                        'message' => 'Vous ne pouvez créer une commande interne que depuis un entrepôt que vous gérez.'
+                        'message' => 'Vous ne pouvez créer une commande interne que depuis un entrepôt que vous gérez ou partagé avec votre rôle.'
                     ], 403);
                 }
 
@@ -460,10 +496,24 @@ class PurchaseOrderController extends Controller
                 }
 
                 // Vérifier que l'utilisateur est manager
-                $isManager = $warehouseFrom->managers()->where('user_id', $auth->id)->exists();
+                if (!$auth->can('view_role_related_data')) {
+                    // 👉 utilisateur classique : doit être manager de l'entrepôt
+                    $isManager = $warehouseFrom->managers()->where('user_id', $auth->id)->exists();
+
+                } else {
+                    // 👉 utilisateur avec view_role_related_data : peut créer si un manager du même rôle existe
+                    $roleIds = $auth->roles->pluck('id');
+                    $isManager = $warehouseFrom->managers()
+                        ->whereHas('roles', function ($q) use ($roleIds) {
+                            $q->whereIn('roles.id', $roleIds);
+                        })
+                        ->exists();
+                }
+
+                // 🔹 Bloquer si aucune permission
                 if (!$isManager) {
                     return response()->json([
-                        'message' => 'Vous ne pouvez créer une commande interne que depuis un entrepôt que vous gérez.'
+                        'message' => 'Vous ne pouvez créer une commande interne que depuis un entrepôt que vous gérez ou partagé avec votre rôle.'
                     ], 403);
                 }
 

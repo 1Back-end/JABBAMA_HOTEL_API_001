@@ -37,13 +37,30 @@ class WarehouseController extends Controller
         $auth = auth()->user();
         $perPage = $request->input('limit', 25);
         $page = $request->input('page', 1);
+        $roleIds = $auth->roles->pluck('id');
+
 
         $query = Warehouse::with(['creator', 'updater', 'natures', 'managers']);
 
         // 🔥 Filtrer selon le rôle
-        if (!$auth->hasRole(['SUPER_ADMIN']) && !$auth->can('view_all_warehouses')) {
-            $query->whereHas('managers', function ($q) use ($auth) {
-                $q->where('user_id', $auth->id);
+        if (!$auth->hasRole('SUPER_ADMIN') && !$auth->can('view_all_warehouses')) {
+
+            $query->where(function ($q) use ($auth, $roleIds) {
+
+                // 👉 Utilisateurs avec view_role_related_data : voient tous les entrepôts gérés par des utilisateurs ayant le même rôle
+                if ($auth->can('view_role_related_data')) {
+                    $q->whereHas('managers.roles', function ($qr) use ($roleIds) {
+                        $qr->whereIn('roles.id', $roleIds);
+                    });
+                }
+
+                // 👉 Autres utilisateurs : voir uniquement les entrepôts dont ils sont managers
+                else {
+                    $q->whereHas('managers', function ($qr) use ($auth) {
+                        $qr->where('user_id', $auth->id);
+                    });
+                }
+
             });
         }
 
@@ -339,19 +356,39 @@ class WarehouseController extends Controller
     public function get_all_warehouses_by_users(Request $request)
     {
         $auth = auth()->user();
+        $roleIds = $auth->roles->pluck('id');
 
-        $warehouses = Warehouse::whereHas('managers', function ($query) use ($auth) {
-            $query->where('users.id', $auth->id);
-        })
-            ->with([
-                'natures',
-                'managers',
-                'products' => function($query) {
-                    $query->wherePivot('is_active', true); // uniquement produits actifs
+        $query = Warehouse::with([
+            'natures',
+            'managers',
+            'products' => function ($query) {
+                $query->wherePivot('is_active', true); // uniquement produits actifs
+            }
+        ]);
+
+        // 🔹 Filtrer selon rôle et permissions
+        if (!$auth->hasRole('SUPER_ADMIN') && !$auth->can('view_all_warehouses')) {
+
+            $query->where(function ($q) use ($auth, $roleIds) {
+
+                // 👉 Utilisateurs avec view_role_related_data : voir entrepôts gérés par les utilisateurs du même rôle
+                if ($auth->can('view_role_related_data')) {
+                    $q->whereHas('managers.roles', function ($qr) use ($roleIds) {
+                        $qr->whereIn('roles.id', $roleIds);
+                    });
                 }
-            ])
-            ->orderBy('created_at', 'desc')
-            ->get();
+
+                // 👉 Autres utilisateurs : voir uniquement les entrepôts dont ils sont managers
+                else {
+                    $q->whereHas('managers', function ($qr) use ($auth) {
+                        $qr->where('user_id', $auth->id);
+                    });
+                }
+
+            });
+        }
+
+        $warehouses = $query->orderBy('created_at', 'desc')->get();
 
         return response()->json([
             'success' => true,
@@ -359,6 +396,7 @@ class WarehouseController extends Controller
             'data'    => $warehouses,
         ]);
     }
+
 
     /**
      * Display a listing of the resource.

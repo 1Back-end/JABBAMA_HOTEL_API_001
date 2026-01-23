@@ -49,6 +49,7 @@ Route::middleware(['activity'])->group(function () {
         Route::post('products/{uuid}/update_products', [ProductController::class, 'update_products']);
         Route::get('/products/inventory/print', [ProductController::class, 'export_products_by_points_uuid']);
         Route::get('/products/{warehouse_uuid}/inventory/print', [ProductController::class, 'export_products_by_points_uuid']);
+        Route::get('/inventories/print/{warehouse_uuid?}', [ProductController::class, 'print_inventory_by_day_and_warehouses']);
 
 
 
@@ -97,6 +98,7 @@ Route::middleware(['activity'])->group(function () {
         Route::apiResource('passations', \App\Http\Controllers\PassationController::class);
         Route::patch('passations/{uuid}/cancel_passations', [\App\Http\Controllers\PassationController::class, 'cancel_passations']);
         Route::patch('passations/{uuid}/validate_passations', [\App\Http\Controllers\PassationController::class, 'validate_passations']);
+        Route::patch('passations/{uuid}/update_validation', [\App\Http\Controllers\PassationController::class, 'update_passation_validation']);
         Route::patch('passations/{uuid}/reject_passations', [\App\Http\Controllers\PassationController::class, 'reject_passations']);
         Route::get('passations/{uuid}/print_passations', [\App\Http\Controllers\PassationController::class, 'print_passations']);
         Route::patch('passations/{uuid}/validate_passations_by_admin', [\App\Http\Controllers\PassationController::class, 'validate_passations_by_admin']);
