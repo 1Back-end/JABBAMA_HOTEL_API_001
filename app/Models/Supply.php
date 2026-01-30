@@ -45,12 +45,14 @@ class Supply extends Model
         'transferred_by',
         'receiver_by',
         'unit_price',
-        'sell_price'
+        'sell_price',
+        'validated_at'
     ];
 
     protected $casts = [
         'scanned_documents' => 'array',
         'supply_date' => 'datetime',
+        'validated_at' => 'datetime',
     ];
 
     protected $appends = ['scanned_documents_purchase_orders','status_label','type_label'];

@@ -30,45 +30,58 @@ class StatisticsController extends Controller
         $start_date = $request->input('start_date');
         $end_date   = $request->input('end_date');
 
-        // Base query : seulement les commandes externes
-        $baseQuery = \App\Models\SupplyItem::query()
+        // 🔹 Base query : seulement les commandes externes
+        $products = \App\Models\SupplyItem::query()
             ->join('supplies as s', 'supply_items.supply_uuid', '=', 's.uuid')
             ->join('purchase_orders as po', 's.purchase_order_uuid', '=', 'po.uuid')
             ->join('produits as p', 'supply_items.product_uuid', '=', 'p.uuid')
             ->select('p.*', DB::raw('COUNT(DISTINCT s.uuid) as frequency'))
-            ->where('po.type', 'external') // 🔹 seulement commandes externes
-            ->groupBy('p.uuid');
+            ->where('po.type', 'external')
+            ->when($start_date && $end_date, function ($q) use ($start_date, $end_date) {
+                $q->whereBetween('s.created_at', [$start_date, $end_date]);
+            })
+            ->when($start_date && !$end_date, function ($q) use ($start_date) {
+                $q->where('s.created_at', '>=', $start_date);
+            })
+            ->when(!$start_date && $end_date, function ($q) use ($end_date) {
+                $q->where('s.created_at', '<=', $end_date);
+            })
+            ->groupBy('p.uuid')
+            ->get();
 
-        // 🔹 Filtres dates (optionnels)
-        if ($start_date && $end_date) {
-            $baseQuery->whereBetween('s.created_at', [$start_date, $end_date]);
-        } elseif ($start_date) {
-            $baseQuery->where('s.created_at', '>=', $start_date);
-        } elseif ($end_date) {
-            $baseQuery->where('s.created_at', '<=', $end_date);
-        }
-
-        $products = $baseQuery->get();
-
-        // Ajouter l'URL de l'image
-        $products->map(function ($p) {
+        // 🔹 Ajouter l'URL de l'image
+        $products->transform(function ($p) {
             $productModel = \App\Models\Product::find($p->uuid);
             $p->image_url = $productModel?->getProductImageAttribute();
             return $p;
         });
 
-        // 🔝 Top 3
-        $top = $products->sortByDesc('frequency')->take(3)->values();
+        // 🔥 Classement GLOBAL + rank réel
+        $rankedProducts = $products
+            ->sortByDesc('frequency')
+            ->values()
+            ->map(function ($item, $index) {
+                $item->rank = $index + 1; // rang réel en base
+                return $item;
+            });
 
-        // 🔻 Bottom 3
-        $bottom = $products->sortBy('frequency')->take(3)->values();
+        // 🔝 Top 3
+        $top = $rankedProducts->take(3)->values();
+
+        // 🔻 Bottom 3 (les derniers du classement global)
+        $bottom = $rankedProducts
+            ->reverse()
+            ->take(3)
+            ->reverse()
+            ->values();
 
         return response()->json([
             'top' => $top,
-            'separator' => '.............................................',
+            'separator' => '.......................................................................',
             'bottom' => $bottom
         ]);
     }
+
 
 
 
@@ -693,7 +706,8 @@ class StatisticsController extends Controller
             ->whereBetween('s.supply_date', [$startDate, $endDate])
             ->select(
                 's.supply_date',
-                DB::raw('si.unit_price as value')
+                DB::raw('si.unit_price'),
+                DB::raw('si.quantity_supplied')
             )
             ->get();
 
@@ -701,21 +715,22 @@ class StatisticsController extends Controller
         $grouped = $items->groupBy(function ($item) {
             return Carbon::parse($item->supply_date)->format('Y-m-d');
         })->map(function ($dayItems, $day) {
-            $total = collect($dayItems)->sum('value');
-            return number_format($total, 3, '.', '');
+            $totalValue = collect($dayItems)->sum(fn($i) => $i->unit_price * $i->quantity_supplied);
+            $totalQty   = collect($dayItems)->sum('quantity_supplied');
+
+            $averagePrice = $totalQty > 0 ? $totalValue / $totalQty : 0;
+
+            return number_format($averagePrice, 3, '.', '');
         });
 
         // 🔹 Générer toutes les dates entre startDate et endDate
         $period = [];
         for ($date = $startDate->copy(); $date->lte($endDate); $date->addDay()) {
             $dayStr = $date->format('Y-m-d');
-            if (isset($grouped[$dayStr])) {
-                $period[] = [
-                    'period' => $dayStr,
-                    'value'  => $grouped[$dayStr]
-                ];
-            }
-
+            $period[] = [
+                'period' => $dayStr,
+                'value'  => $grouped[$dayStr] ?? 0,
+            ];
         }
 
         return response()->json([

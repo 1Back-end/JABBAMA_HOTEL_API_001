@@ -304,9 +304,13 @@ class PassationController extends Controller
      * @permission PassationController::show
      * @permission_desc Afficher les détails d'une passation de stocks
      */
-    public function show($uuid)
+    public function show(Request $request, $uuid)
     {
-        // Récupérer la passation avec ses relations
+        $auth = auth()->user();
+        $perPage = $request->input('limit', 10);
+        $page = $request->input('page', 1);
+
+        // 🔹 Récupérer la passation avec ses relations
         $passation = Passation::with([
             'items',
             'items.product',
@@ -316,23 +320,41 @@ class PassationController extends Controller
             'creator',
             'updater',
             'managers',
+            'validator',
+            'rejector',
+            'cancellor',
             'items.validated'
-        ])
-            ->where('uuid', $uuid)
-            ->firstOrFail();
+        ])->where('uuid', $uuid)->firstOrFail();
 
-        if (!$passation) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Passation introuvable.',
-            ], 404);
+        // 🔹 Pagination et recherche sur les items
+        $itemsQuery = $passation->items()->with('product');
+
+        if ($search = trim($request->input('search'))) {
+            $itemsQuery->where(function ($q) use ($search) {
+                $q->where('quantity_sent', 'like', "%{$search}%")
+                    ->orWhere('quantity_counted', 'like', "%{$search}%")
+                    ->orWhere('difference', 'like', "%{$search}%")
+                    ->orWhereHas('product', function ($qp) use ($search) {
+                        $qp->where('name', 'like', "%{$search}%")
+                            ->orWhere('code', 'like', "%{$search}%")
+                            ->orWhere('description', 'like', "%{$search}%")
+                            ->orWhere('uuid', 'like', "%{$search}%");
+                    });
+            });
         }
 
+        // 🔹 Paginer les items
+        $data = $itemsQuery->paginate($perPage, ['*'], 'page', $page);
+
         return response()->json([
-            'status' => 'success',
-            'passation' => $passation,
+            'data'         => $data->items(),
+            'current_page' => $data->currentPage(),
+            'last_page'    => $data->lastPage(),
+            'total'        => $data->total(),
+            'passation'    => $passation, // infos globales de la passation
         ]);
     }
+
 
     /**
      * Display a listing of the resource.
@@ -826,50 +848,52 @@ class PassationController extends Controller
 
         try {
             $agentFromId = $request->input('agent_from_id');
-
             if (!$agentFromId) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Agent initiateur non sélectionné.'
                 ], 422);
             }
+
             $start_date = \Illuminate\Support\Carbon::parse($request->input('start_date'))->startOfDay();
-            $end_date = Carbon::parse($request->input('end_date'))->endOfDay();
-            // Récupération des passations liées au manager et en discussion
-            $passations = Passation::with([
-                'agentFrom',
-                'agentTo',
-                'warehouse',
-                'creator',
-                'updater',
-                'validator',
-                'rejector',
-                'cancellor',
-                'managers',
-                'items' => function($q) {
-                    $q->where('status', 'in_discuss'); // ne récupérer que les items en discussion
-                }
-            ])
-                ->where('agent_from_id', $agentFromId)
-                ->whereHas('items', function ($q) {
-                    $q->where('status', 'in_discuss');
-                })
-                ->when($start_date && $end_date, function($q) use ($start_date, $end_date) {
-                    $q->whereBetween('created_at', [$start_date, $end_date]); // Filtre sur la passation
+            $end_date = \Illuminate\Support\Carbon::parse($request->input('end_date'))->endOfDay();
+
+            // Récupérer uniquement les items "in_discuss" liés à l'agent et à la période
+            $items = PassationItem::with('product')
+                ->where('status', 'in_discuss')
+                ->whereHas('passation', function($q) use ($agentFromId, $start_date, $end_date) {
+                    $q->where('agent_from_id', $agentFromId)
+                        ->when($start_date && $end_date, fn($q) => $q->whereBetween('created_at', [$start_date, $end_date]));
                 })
                 ->get();
 
-
-            if ($passations->isEmpty()) {
+            if ($items->isEmpty()) {
                 return response()->json([
-                    'message' => 'Aucune passation avec écart trouvée pour cet agent.'
+                    'message' => 'Aucune passation en discussion trouvée pour cet agent.'
                 ], 404);
             }
 
-            // Récupérer les infos du manager
+            // Grouper par produit et faire le cumul
+            $cumulativeItems = $items->groupBy('product_uuid')->map(function($group) {
+                return [
+                    'product' => $group->first()->product,
+                    'quantity_sent' => $group->sum('quantity_sent'),
+                    'quantity_counted' => $group->sum('quantity_counted'),
+                    'difference' => $group->sum('difference'),
+                    'status' => 'in_discuss', // forcer le statut pour l’affichage
+                ];
+            });
+
+
             $manager = User::find($agentFromId);
 
-            // Nom du fichier
+            \Log::info('Données cumulées pour PDF passations : ', [
+                'manager' => $manager,
+                'cumulativeItems' => $cumulativeItems->toArray(), // convertir en tableau pour bien loguer
+                'start_date' => $start_date->format('d/m/Y'),
+                'end_date' => $end_date->format('d/m/Y'),
+            ]);
+
             $fileName = 'ECARTS-PASSATIONS-' . strtoupper($manager->nom_utilisateur) . '-' . now()->format('YmdHis') . '.pdf';
             $folderPath = 'storage/passations-managers/' . $agentFromId;
             $filePath   = $folderPath . '/' . $fileName;
@@ -879,14 +903,11 @@ class PassationController extends Controller
             }
 
             $data = [
-                'manager'    => $manager,
-                'passations' => $passations,
-                'start_date' => $start_date ? $start_date->format('d/m/Y') : null,
-                'end_date'   => $end_date ? $end_date->format('d/m/Y') : null,
+                'manager' => $manager,
+                'cumulativeItems' => $cumulativeItems,
+                'start_date' => $start_date->format('d/m/Y'),
+                'end_date' => $end_date->format('d/m/Y'),
             ];
-
-            // Footer optionnel
-            $footer = 'pdfs.reports.factures.footer';
 
             save_browser_shot_pdf(
                 view: 'pdfs.passations.passations_by_managers',
@@ -894,27 +915,29 @@ class PassationController extends Controller
                 folderPath: $folderPath,
                 path: $filePath,
                 margins: [10, 10, 10, 10],
-                footer: $footer
+                footer: 'pdfs.reports.factures.footer'
             );
 
             $pdfContent = file_get_contents($filePath);
-            $base64     = base64_encode($pdfContent);
+            $base64 = base64_encode($pdfContent);
 
             return response()->json([
-                'data'     => $data,
-                'base64'   => $base64,
-                'url'      => $filePath,
+                'data' => $data,
+                'base64' => $base64,
+                'url' => $filePath,
                 'filename' => $fileName,
             ], 200);
 
         } catch (\Throwable $e) {
             return response()->json([
-                'status'  => 'error',
+                'status' => 'error',
                 'message' => 'Erreur lors de la génération du PDF',
                 'details' => $e->getMessage(),
             ], 500);
         }
     }
+
+
 
     /**
      * Display a listing of the resource.

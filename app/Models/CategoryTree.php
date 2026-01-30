@@ -23,6 +23,7 @@ class CategoryTree extends Model
         'children',
         'created_by',
         'updated_by',
+        'is_active'
     ];
 
     protected $casts = [
