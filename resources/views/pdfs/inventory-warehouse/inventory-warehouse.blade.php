@@ -80,6 +80,7 @@
 </header>
 
 
+
 <div class="mt-2 w-100" style="border-top: 1px double rgba(0,0,0,0.75); margin-bottom: 2px"></div>
 <div class="mb-2 w-100" style="border-top: 1px double rgba(0,0,0,0.75);"></div>
 
@@ -94,23 +95,34 @@
         <thead>
         <tr>
             <th>N°</th>
-            <th>Réference</th>
             <th>Article</th>
+            <th>Quantité</th>
+            <th>Réference</th>
             <th>Catégorie</th>
             <th>Unité</th>
-            <th>Quantité</th>
         </tr>
         </thead>
 
         <tbody>
         @foreach ($product_points as $index => $item)
+            @php
+                // Calculer les catégories **pour chaque produit**
+                $categories = $item->product->category_json ?? [];
+                $displayCategories = array_slice($categories, 0, 3); // 3 premières seulement
+            @endphp
             <tr>
                 <td>{{ $index + 1 }}</td>
                 <td>{{ $item->product->code ?? '-' }}</td>
-                <td>{{ $item->product->name ?? '-' }}</td>
-                <td>{{ $item->product->category->name ?? '-' }}</td>
-                <td>{{ $item->product->unitMeasure->name ?? '-' }}</td>
                 <td class="fw-bold">{{ $item->quantity }}</td>
+                <td>{{ $item->product->name ?? '-' }}</td>
+                <td>
+                    {{ implode(' | ', $displayCategories) }}
+                    @if(count($categories) > 3)
+                        ... ({{ count($categories) - 3 }} de plus)
+                    @endif
+                </td>
+                <td>{{ $item->product->unitMeasure->name ?? '-' }}</td>
+
             </tr>
         @endforeach
         </tbody>

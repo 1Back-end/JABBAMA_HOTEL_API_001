@@ -808,6 +808,7 @@ class SupplyController extends Controller
                 'status' => $supplyStatus,
                 'validated_by' => $auth->id,
                 'updated_by' => $auth->id,
+                'validated_at' => now()
             ]);
 
             // 🔹 Vérification si la commande peut être fermée

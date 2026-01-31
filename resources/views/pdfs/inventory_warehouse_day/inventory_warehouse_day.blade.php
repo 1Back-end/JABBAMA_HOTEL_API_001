@@ -78,16 +78,9 @@
         @endif
     </div>
 
-    @if(!empty($start_date) && !empty($end_date))
+    @if(!empty($end_date))
         <div class="mt-1 text-muted">
-            @if($start_date == $end_date)
-                Date : <strong>{{ \Carbon\Carbon::parse($start_date)->format('d/m/Y') }}</strong>
-            @else
-                Période :
-                <strong>{{ \Carbon\Carbon::parse($start_date)->format('d/m/Y') }}</strong>
-                au
-                <strong>{{ \Carbon\Carbon::parse($end_date)->format('d/m/Y') }}</strong>
-            @endif
+            Date : <strong>{{ \Carbon\Carbon::parse($end_date)->format('d/m/Y') }}</strong>
         </div>
     @endif
 </header>
@@ -103,28 +96,40 @@
     Date d'impression : {{ now()->format('d/m/Y H:i') }}
 </p>
 
+
+
 <div class="d-flex justify-content-center mt-2">
     <table class="table table-bordered table-striped border-black" style="font-size: 11px;">
         <thead>
         <tr>
             <th>N°</th>
-            <th>Réference</th>
             <th>Article</th>
+            <th>Quantité</th>
+            <th>Réference</th>
             <th>Catégorie</th>
             <th>Unité</th>
-            <th>Quantité</th>
         </tr>
         </thead>
-
         <tbody>
         @foreach ($product_points as $index => $item)
+            @php
+                // Calculer les catégories **pour chaque produit**
+                $categories = $item->product->category_json ?? [];
+                $displayCategories = array_slice($categories, 0, 3); // 3 premières seulement
+            @endphp
             <tr>
                 <td>{{ $index + 1 }}</td>
-                <td>{{ $item->product->code ?? '-' }}</td>
                 <td>{{ $item->product->name ?? '-' }}</td>
-                <td>{{ $item->product->category->name ?? '-' }}</td>
-                <td>{{ $item->product->unitMeasure->name ?? '-' }}</td>
                 <td class="fw-bold">{{ $item->quantity }}</td>
+                <td>{{ $item->product->code ?? '-' }}</td>
+
+                <td>
+                    {{ implode(' | ', $displayCategories) }}
+                    @if(count($categories) > 3)
+                        ... ({{ count($categories) - 3 }} de plus)
+                    @endif
+                </td>
+                <td>{{ $item->product->unitMeasure->name ?? '-' }}</td>
             </tr>
         @endforeach
         </tbody>

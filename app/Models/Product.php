@@ -33,7 +33,12 @@ class Product extends Model
         'is_active',
         'created_by',
         'updated_by',
-        'image_file'
+        'image_file',
+        'category_json'
+    ];
+
+    protected $casts = [
+        'category_json' => 'array',
     ];
 
     protected $appends = ['product_image'];

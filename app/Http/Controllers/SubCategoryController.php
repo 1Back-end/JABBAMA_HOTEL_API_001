@@ -131,7 +131,7 @@ class SubCategoryController extends Controller
      */
     public function show(string $uuid)
     {
-        $subcategory = SubCategory::with('category')
+        $subcategory = CategoryTree::with(['creator','category','updater'])
             ->where('uuid', $uuid)
             ->first();
 
@@ -144,7 +144,7 @@ class SubCategoryController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $subcategory
+            'subcategory' => $subcategory
         ], 200);
     }
 
@@ -188,48 +188,72 @@ class SubCategoryController extends Controller
      * @permission SubCategoryController::update
      * @permission_desc Mise à jour des sous-catégories d'articles
      */
-    public function update(Request $request, $uuid)
+    public function update(Request $request, string $uuid)
     {
-        $auth = auth()->user();
+        try {
+            $auth = auth()->user();
 
-        // Validation pour une seule sous-catégorie
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'description' => 'nullable|string|max:500',
-            'category_uuid' => 'required|exists:categories,uuid',
-        ], [
-            'name.required' => 'Le nom de la sous-catégorie est obligatoire.',
-            'category_uuid.required' => 'La catégorie est obligatoire.',
-            'category_uuid.exists' => 'La catégorie sélectionnée est invalide.',
-        ]);
+            // 🔹 Validation
+            $validated = $request->validate([
+                'sub_categories'            => 'required|array|min:1',
+                'sub_categories.*.name'     => 'required|string|max:255',
+                'sub_categories.*.children' => 'nullable|array',
+            ]);
 
-        $subcategory = SubCategory::where('uuid', $uuid)->first();
+            DB::beginTransaction();
 
-        if (!$subcategory) {
+            // 🔹 Normalisation récursive
+            $children = $this->normalizeSubCategories($validated['sub_categories']);
+
+            // 🔹 Récupérer l'arbre existant par UUID
+            $tree = CategoryTree::where('uuid', $uuid)->first();
+
+            if (!$tree) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Aucun arbre trouvé pour cet UUID',
+                ], 404);
+            }
+
+            // 🔹 Mise à jour
+            $tree->update([
+                'children'   => $children,
+                'updated_by' => $auth->id,
+            ]);
+
+            DB::commit();
+
             return response()->json([
-                'success' => false,
-                'message' => 'Sous-catégorie introuvable.'
-            ], 404);
+                'status'  => 'success',
+                'message' => 'Sous-catégories mises à jour avec succès',
+                'data'    => $tree,
+            ], 200);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Erreur de validation',
+                'errors'  => $e->errors(),
+            ], 422);
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            \Log::error('CategoryTree update error', [
+                'message' => $e->getMessage(),
+                'trace'   => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Erreur interne lors de la mise à jour',
+                'error'   => $e->getMessage(),
+            ], 500);
         }
-
-        $subcategory->update([
-            'name' => $validated['name'],
-            'description' => $validated['description'] ?? null,
-            'category_uuid' => $validated['category_uuid'],
-            'updated_by' => $auth->id,
-        ]);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Sous-catégorie mise à jour avec succès.'
-        ]);
     }
-
-
 
     /**
      * Display a listing of the resource.
-     * @permission SubCategoryController::updateStatus
+     * @permission SubCategoryController::destroy
      * @permission_desc Suppression des sous-catégories d'articles
      */
     public function destroy(Request $request, string $uuid)
@@ -248,7 +272,7 @@ class SubCategoryController extends Controller
             ], 422);
         }
 
-        $subcategory = SubCategory::where('uuid', $uuid)->first();
+        $subcategory = CategoryTree::where('uuid', $uuid)->first();
 
         if (!$subcategory) {
             return response()->json([

@@ -2,9 +2,16 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\PurchaseOrdersStatus;
 use App\Enums\StockAdjustmentAction;
+use App\Enums\StocksAdjustmentStatus;
+use App\Enums\StocksDeductionsStatus;
+use App\Enums\SupplyStatus;
 use App\Models\Product;
 use App\Models\ProductPoint;
+use App\Models\StockAdjustment;
+use App\Models\StockAdjustmentItem;
+use App\Models\StockDeductionItem;
 use App\Models\SupplyItem;
 use App\Models\Warehouse;
 use Illuminate\Http\Request;
@@ -146,6 +153,8 @@ class ProductController extends Controller
                 'points.*.uuid' => 'required|exists:warehouses,uuid',
                 'points.*.quantity' => 'nullable|integer|min:0',
                 'image_file' => 'nullable|file|max:2048|mimes:jpg,jpeg,png,svg',
+                'category_json' => 'nullable|array',
+                'category_json.*' => 'string',
             ], [
                 'name.required' => 'Le nom du produit est obligatoire.',
                 'name.unique' => 'Ce nom de produit existe déjà.',
@@ -338,11 +347,8 @@ class ProductController extends Controller
             $validated = $request->validate([
                 'name' => 'required|string|max:255|unique:produits,name,' . $product->uuid . ',uuid',
                 'description' => 'nullable|string',
-                'category_uuid' => 'required|exists:categories,uuid',
+                'category_uuid' => 'nullable|exists:categories,uuid',
                 'unit_uuid' => 'required|exists:units,uuid',
-                'purchase_price' => 'nullable|numeric|min:0',
-                'sale_price' => 'nullable|numeric|min:0',
-                'stock_quantity' => 'nullable|integer|min:0',
                 'minimum_stock' => 'required|integer|min:0',
                 'sub_categories' => 'nullable|array',
                 'sub_categories.*' => 'exists:sub_categories,uuid',
@@ -350,15 +356,13 @@ class ProductController extends Controller
                 'points.*.uuid' => 'required|exists:warehouses,uuid',
                 'points.*.quantity' => 'required|integer|min:0',
                 'points.*.stocks_minimal' => 'nullable|integer|min:0',
-                'image_file' => 'nullable|file|max:2048|mimes:jpg,jpeg,png,svg'
+                'image_file' => 'nullable|file|max:2048|mimes:jpg,jpeg,png,svg',
+                'category_json' => 'nullable|array',
+                'category_json.*' => 'string',
             ], [
                 'name.required' => 'Le nom du produit est obligatoire.',
                 'name.unique' => 'Ce nom de produit existe déjà.',
-                'category_uuid.required' => 'La catégorie est obligatoire.',
                 'unit_uuid.required' => 'L’unité de mesure est obligatoire.',
-                'purchase_price.required' => 'Le prix d’achat est obligatoire.',
-                'sale_price.required' => 'Le prix de vente est obligatoire.',
-                'stock_quantity.required' => 'La quantité en stock est obligatoire.',
                 'minimum_stock.required' => 'Le stock minimum est obligatoire.',
                 'points.*.uuid.required' => 'Le point de dépôt est obligatoire.',
                 'points.*.quantity.required' => 'La quantité pour chaque point est obligatoire.',
@@ -610,72 +614,28 @@ class ProductController extends Controller
      * @permission ProductController::print_inventory_by_day_and_warehouses
      * @permission_desc Imprimer l'inventaire des articles par entrepots en PDF par période
      */
-
     public function print_inventory_by_day_and_warehouses(Request $request, ?string $warehouse_uuid = null)
     {
         try {
 
-            // ==========================
-            // ✅ Récupérer warehouse_uuid depuis query si pas en paramètre de route
-            // ==========================
             $warehouse_uuid = $warehouse_uuid ?? $request->query('warehouse_uuid');
 
-            // ==========================
-            // ✅ Validation des dates
-            // ==========================
-            $start_date = $request->filled('start_date')
-                ? Carbon::parse($request->start_date)->startOfDay()
-                : null;
-
+            // 📅 Date de référence
             $end_date = $request->filled('end_date')
                 ? Carbon::parse($request->end_date)->endOfDay()
-                : null;
+                : now()->endOfDay();
 
-            // ==========================
-            // ✅ CAS 1 : UN ENTREPÔT
-            // ==========================
-            if ($warehouse_uuid && $warehouse_uuid !== 'all') {
+            // 🔹 Collection finale
+            $all_products_points = collect();
 
-                $warehouse = Warehouse::where('uuid', $warehouse_uuid)->first();
+            /*
+            |--------------------------------------------------------------------------
+            | ✅ CAS 1 : INVENTAIRE GLOBAL (TOUS LES ENTREPÔTS)
+            |--------------------------------------------------------------------------
+            */
+            if ($warehouse_uuid === 'all') {
 
-                if (!$warehouse) {
-                    return response()->json([
-                        'message' => 'Entrepôt introuvable'
-                    ], 404);
-                }
-
-                $product_points = ProductPoint::with([
-                    'product.unitMeasure',
-                    'product.category',
-                    'point',
-                    'creator',
-                    'updater'
-                ])
-                    ->where('point_uuid', $warehouse_uuid)
-                    ->when($start_date && $end_date, function ($query) use ($start_date, $end_date) {
-                        $query->whereBetween('created_at', [$start_date, $end_date]);
-                    })
-                    ->get();
-
-                if ($product_points->isEmpty()) {
-                    return response()->json([
-                        'message' => 'Aucun article trouvé pour cette période'
-                    ], 404);
-                }
-
-                $fileName = 'INVENTAIRE-ENTREPOT-'
-                    . strtoupper($warehouse->name) . '-'
-                    . now()->format('YmdHis') . '.pdf';
-
-                $folderPath = 'storage/inventory_warehouse_day/' . $warehouse->uuid;
-
-            }
-            // ==========================
-            // ✅ CAS 2 : TOUS LES ENTREPÔTS
-            // ==========================
-            else {
-
-                $product_points = ProductPoint::select(
+                $all_products_points = ProductPoint::select(
                     'produit_uuid',
                     DB::raw('SUM(quantity) as quantity'),
                     DB::raw('MAX(stocks_minimal) as stocks_minimal')
@@ -684,46 +644,142 @@ class ProductController extends Controller
                         'product.unitMeasure',
                         'product.category'
                     ])
-                    ->when($start_date && $end_date, function ($query) use ($start_date, $end_date) {
-                        $query->whereBetween('created_at', [$start_date, $end_date]);
-                    })
                     ->groupBy('produit_uuid')
                     ->get();
-
-                if ($product_points->isEmpty()) {
-                    return response()->json([
-                        'message' => 'Aucun article trouvé pour cette période'
-                    ], 404);
-                }
-
-                $warehouse = null;
-
-                $fileName = 'INVENTAIRE-TOUS-ENTREPOTS-'
-                    . now()->format('YmdHis') . '.pdf';
-
-                $folderPath = 'storage/inventory_warehouse_day/all';
             }
 
-            // ==========================
-            // ✅ Créer dossier si inexistant
-            // ==========================
+            /*
+            |--------------------------------------------------------------------------
+            | ✅ CAS 2 : INVENTAIRE PAR ENTREPÔT
+            |--------------------------------------------------------------------------
+            */
+            else {
+
+                // 🔹 Fonctions utilitaires
+                $calculateSupplies = function ($productPoints, $warehouse_uuid, $endDate) {
+                    $supplies = [];
+
+                    // 🔹 Vérifier si l'entrepôt est principal
+                    $warehouse = Warehouse::where('uuid', $warehouse_uuid)->first();
+                    $isPrimary = $warehouse?->is_primary ?? false;
+
+                    foreach ($productPoints as $item) {
+                        $productUuid = $item->product_uuid ?? $item->produit_uuid;
+
+                        $approvedQuery = SupplyItem::where('product_uuid', $productUuid)
+                            ->whereHas('supply', function ($q) use ($endDate) {
+                                $q->whereIn('status', [
+                                    SupplyStatus::VALIDATED,
+                                    SupplyStatus::PARTIALLY_VALIDATED
+                                ])
+                                    ->where('supply_date', '<=', $endDate);
+                            });
+
+                        // 🔹 Si l'entrepôt n'est pas principal, on filtre par warehouse_from
+                        if (!$isPrimary) {
+                            $approvedQuery->whereHas('supply.purchaseOrder', function ($q) use ($warehouse_uuid) {
+                                $q->where('warehouse_from', $warehouse_uuid);
+                            });
+                        }
+
+                        $approved = $approvedQuery->sum('quantity_supplied');
+                        $supplies[$productUuid] = $approved;
+                    }
+
+                    return $supplies;
+                };
+
+                $getAdjustments = function ($warehouse_uuid, array $actions, $endDate) {
+                    return StockAdjustmentItem::select(
+                        'product_uuid',
+                        DB::raw('SUM(quantity) as total')
+                    )
+                        ->whereHas('adjustment', function ($q) use ($warehouse_uuid, $actions, $endDate) {
+                            $q->where('warehouse_uuid', $warehouse_uuid)
+                                ->whereIn('action', $actions)
+                                ->where('status', StocksAdjustmentStatus::VALIDATED->value)
+                                ->where('created_at', '<=', $endDate);
+                        })
+                        ->groupBy('product_uuid')
+                        ->pluck('total', 'product_uuid');
+                };
+
+                $getDeductions = function ($warehouse_uuid, $endDate) {
+                    return StockDeductionItem::select(
+                        'product_uuid',
+                        DB::raw('SUM(quantity) as total')
+                    )
+                        ->whereHas('stockDeduction', function ($q) use ($warehouse_uuid, $endDate) {
+                            $q->where('warehouse_uuid', $warehouse_uuid)
+                                ->where('status', StocksDeductionsStatus::VALIDATED->value)
+                                ->where('created_at', '<=', $endDate);
+                        })
+                        ->groupBy('product_uuid')
+                        ->pluck('total', 'product_uuid');
+                };
+
+                $warehouse = Warehouse::where('uuid', $warehouse_uuid)->firstOrFail();
+
+                $productPoints = ProductPoint::with([
+                    'product.unitMeasure',
+                    'product.category'
+                ])
+                    ->where('point_uuid', $warehouse->uuid)
+                    ->get();
+
+                if ($productPoints->isNotEmpty()) {
+
+                    $supplies = $calculateSupplies($productPoints, $warehouse->uuid, $end_date);
+                    $plus     = $getAdjustments($warehouse->uuid, [StockAdjustmentAction::AJUSTEMENT_PLUS->value], $end_date);
+                    $moins    = $getAdjustments($warehouse->uuid, [StockAdjustmentAction::AJUSTEMENT_MOINS->value], $end_date);
+                    $avaries  = $getAdjustments($warehouse->uuid, [StockAdjustmentAction::AVARIE->value], $end_date);
+                    $deducted = $getDeductions($warehouse->uuid, $end_date);
+
+                    $all_products_points = $productPoints->map(function ($item) use (
+                        $supplies, $plus, $moins, $avaries, $deducted
+                    ) {
+                        $productUuid = $item->product_uuid ?? $item->produit_uuid;
+
+                        $approved    = $supplies[$productUuid] ?? 0;
+                        $adjustPlus  = $plus[$productUuid] ?? 0;
+                        $adjustMinus = $moins[$productUuid] ?? 0;
+                        $damaged     = $avaries[$productUuid] ?? 0;
+                        $deduct      = $deducted[$productUuid] ?? 0;
+
+                        $item->quantity = max(
+                            0,
+                            $approved + $adjustPlus - $adjustMinus - $damaged - $deduct
+                        );
+
+                        return $item;
+                    });
+                }
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | ✅ GÉNÉRATION DU PDF
+            |--------------------------------------------------------------------------
+            */
+            $fileName = $warehouse_uuid === 'all'
+                ? 'INVENTAIRE-GLOBAL-' . now()->format('YmdHis') . '.pdf'
+                : 'INVENTAIRE-ENTREPOT-' . strtoupper($warehouse->name) . '-' . now()->format('YmdHis') . '.pdf';
+
+            $folderPath = $warehouse_uuid === 'all'
+                ? 'storage/inventory_warehouses_day/'
+                : 'storage/inventory_warehouse_day/' . $warehouse->uuid;
+
             if (!is_dir($folderPath)) {
                 mkdir($folderPath, 0755, true);
             }
 
             $filePath = $folderPath . '/' . $fileName;
 
-            // ==========================
-            // ✅ Générer PDF
-            // ==========================
             $data = [
-                'warehouse'      => $warehouse,
-                'product_points' => $product_points,
-                'start_date'     => $start_date ? $start_date->format('Y-m-d') : null,
-                'end_date'       => $end_date ? $end_date->format('Y-m-d') : null,
+                'warehouse'      => $warehouse_uuid === 'all' ? null : $warehouse,
+                'product_points' => $all_products_points,
+                'end_date'       => $end_date,
             ];
-
-            $footer = 'pdfs.reports.factures.footer';
 
             save_browser_shot_pdf(
                 view: 'pdfs.inventory_warehouse_day.inventory_warehouse_day',
@@ -731,14 +787,17 @@ class ProductController extends Controller
                 folderPath: $folderPath,
                 path: $filePath,
                 margins: [10, 10, 10, 10],
-                footer: $footer
+                footer: 'pdfs.reports.factures.footer'
             );
 
             return response()->json([
+                'status'   => 'success',
                 'base64'   => base64_encode(file_get_contents($filePath)),
                 'filename' => $fileName,
                 'url'      => $filePath,
-            ], 200);
+                'data' => $data
+
+            ]);
 
         } catch (\Throwable $e) {
             return response()->json([
@@ -748,6 +807,15 @@ class ProductController extends Controller
             ], 500);
         }
     }
+
+
+
+
+
+
+
+
+
 
 
 
