@@ -806,7 +806,7 @@ class StatisticsController extends Controller
                 ->groupByRaw('DATE(sd.created_at)')
                 ->pluck('value', 'day'); // [jour => valeur]
 
-// 🔴 Régularisations (AVARIE uniquement)
+            // 🔴 Régularisations (AVARIE uniquement)
             $adjustments = DB::table('stock_adjustments_items as sai')
                 ->join('stock_adjustments as sa', 'sa.uuid', '=', 'sai.stock_adjustment_uuid')
                 ->join('warehouses as w', 'w.uuid', '=', 'sa.warehouse_uuid')
@@ -1081,7 +1081,7 @@ class StatisticsController extends Controller
                 ]
             ];
 
-            $fileName   = 'RECAPITULATIFS-DU-DASHBOARD-' . now()->format('YmdHis') . '.pdf';
+            $fileName   = strtoupper('RECAPITULATIFS-DU-DASHBOARD-' . now()->format('YmdHis') . '.pdf');
             $folderPath = 'storage/dashboard';
             $filePath   = $folderPath . '/' . $fileName;
 

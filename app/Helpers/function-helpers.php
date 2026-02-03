@@ -211,6 +211,12 @@ if (!function_exists('filter_stocks_adjustment')) {
             $query->where('warehouse_uuid', $filterData->warehouse_uuid);
         }
 
+        if (!empty($filterData->start_date) && !empty($filterData->end_date)) {
+            $start = Carbon::parse($filterData->start_date)->startOfDay();
+            $end = Carbon::parse($filterData->end_date)->endOfDay();
+            $query->whereBetween('created_at', [$start, $end]);
+        }
+
         // 🔹 Recherche globale
         if (!empty($filterData->search)) {
             $search = trim($filterData->search);
