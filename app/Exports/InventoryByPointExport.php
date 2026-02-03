@@ -81,10 +81,23 @@ class InventoryByPointExport implements FromCollection, WithHeadings, WithMappin
      */
     public function map($row): array
     {
+        $categories = $row->product->category_json ?? [];
+        $count = count($categories);
+
+        if ($count >= 4) {
+            // 3 premières + ... + dernière
+            $displayCategories = array_merge(
+                array_slice($categories, 0, 3),
+                ['...'],
+                [end($categories)]
+            );
+        } else {
+            $displayCategories = $categories;
+        }
         return [
             $row->product->code ?? '<UNK>',
             $row->product->name ?? '<UNK>',
-            $row->product->category->name ?? '<UNK>',
+            implode(' --> ', $displayCategories), // <-- ici
             $row->product->unitMeasure->name ?? '<UNK>',
             $row->quantity ?? 0,
             $row->point?->name ?? '<Tous>',

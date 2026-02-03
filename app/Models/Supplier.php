@@ -33,18 +33,32 @@ class Supplier extends Model
         'company_phone',
         'created_by',
         'updated_by',
+        'full_name'
     ];
 
     protected static function boot()
     {
         parent::boot();
 
-        // Générer uuid et ref avant l’insertion
+        // Avant création
         static::creating(function ($supplier) {
             $supplier->uuid = (string) Str::uuid();
             $supplier->ref = self::generateRef();
+
+            // 🔹 Génération du full_name
+            $supplier->full_name = trim(
+                ($supplier->first_name ?? '') . ' ' . ($supplier->last_name ?? '')
+            );
+        });
+
+        // Avant mise à jour
+        static::updating(function ($supplier) {
+            $supplier->full_name = trim(
+                ($supplier->first_name ?? '') . ' ' . ($supplier->last_name ?? '')
+            );
         });
     }
+
 
     public function creator()
     {
