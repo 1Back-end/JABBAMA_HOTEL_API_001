@@ -309,51 +309,39 @@ class PassationController extends Controller
         $auth = auth()->user();
         $perPage = $request->input('limit', 10);
         $page = $request->input('page', 1);
+        $search = trim($request->input('search'));
 
-        // 🔹 Récupérer la passation avec ses relations
-        $passation = Passation::with([
-            'items',
-            'items.product',
-            'agentFrom',
-            'agentTo',
-            'warehouse',
-            'creator',
-            'updater',
-            'managers',
-            'validator',
-            'rejector',
-            'cancellor',
-            'items.validated'
-        ])->where('uuid', $uuid)->firstOrFail();
+        // Récupérer la passation
+        $passation = Passation::with(['agentFrom', 'agentTo', 'warehouse', 'creator', 'updater'])
+            ->where('uuid', $uuid)
+            ->firstOrFail();
 
-        // 🔹 Pagination et recherche sur les items
+        // Items query
         $itemsQuery = $passation->items()->with('product');
 
-        if ($search = trim($request->input('search'))) {
+        if ($search) {
             $itemsQuery->where(function ($q) use ($search) {
                 $q->where('quantity_sent', 'like', "%{$search}%")
                     ->orWhere('quantity_counted', 'like', "%{$search}%")
                     ->orWhere('difference', 'like', "%{$search}%")
                     ->orWhereHas('product', function ($qp) use ($search) {
                         $qp->where('name', 'like', "%{$search}%")
-                            ->orWhere('code', 'like', "%{$search}%")
-                            ->orWhere('description', 'like', "%{$search}%")
-                            ->orWhere('uuid', 'like', "%{$search}%");
+                            ->orWhere('code', 'like', "%{$search}%");
                     });
             });
         }
 
-        // 🔹 Paginer les items
-        $data = $itemsQuery->paginate($perPage, ['*'], 'page', $page);
+        $paginated = $itemsQuery->paginate($perPage, ['*'], 'page', $page);
 
         return response()->json([
-            'data'         => $data->items(),
-            'current_page' => $data->currentPage(),
-            'last_page'    => $data->lastPage(),
-            'total'        => $data->total(),
-            'passation'    => $passation, // infos globales de la passation
+            'data'         => $paginated->items(),
+            'current_page' => $paginated->currentPage(),
+            'last_page'    => $paginated->lastPage(),
+            'total'        => $paginated->total(),
+            'passation'    => $passation,
         ]);
     }
+
 
 
     /**
