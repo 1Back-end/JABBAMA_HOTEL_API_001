@@ -614,7 +614,7 @@ class StockAdjustmentController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StockAdjustmentController::export_stock_adjustment
-     * @permission_desc Exporter la régularisation des stocks en Excel(En fonction du filtre)
+     * @permission_desc Exporter la régularisation des stocks en Excel
      */
     public function export_stock_adjustment(Request $request)
     {

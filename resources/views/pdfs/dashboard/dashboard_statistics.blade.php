@@ -94,77 +94,98 @@
 </p>
 <div class="mt-3">
 
-        <div class="col-lg-12 mb-3 pe-2 text-center">
-            <h5 class="fw-bold text-center"
-                style="border-bottom: 2px dotted black; padding-bottom: 5px;">
-                ÉTAT DES RÉGULARISATIONS DE STOCK
-            </h5>
+    <div class="col-lg-12 col-sm-12 mb-3">
+        <div class="row">
 
-            <div class="row g-3 align-items-center text-center">
-                @foreach($data['stock_adjustments'] as $adjustment)
-                    <div class="col-auto">
-                        <h5 class="fw-bold mb-2">{{ $adjustment['total'] }}</h5>
-                        <span class="badge px-3 py-2 rounded-pill text-white">
-                    {{ $adjustment['label'] }}
-                </span>
-                    </div>
-                @endforeach
+            <div class="col-lg-6 col-sm-12">
+                <div class="mb-2">
+                    <h4 class="text-primary text-center text-uppercase fw-bold">
+                        Statistiques sur les commandes
+                    </h4>
+                </div>
+
+                <div class="d-flex flex-wrap gap-3 mx-3">
+                    @foreach($data['purchase_orders'] as $order)
+                        <span class="fw-semibold">
+                    {{ $order['label'] }} ({{ $order['total'] }})
+                 </span>
+                    @endforeach
+                </div>
             </div>
-        </div>
 
-        <div class="col-lg-12 mb-3 pe-2">
-            <h5 class="fw-bold text-center"
-                style="border-bottom: 2px dotted black; padding-bottom: 5px;">
-                ÉTAT DES APPROVISIONNEMENTS
-            </h5>
 
-            <div class="row g-3 align-items-center text-center">
-                @foreach($data['supplies'] as $supply)
-                    <div class="col-auto">
-                        <h5 class="fw-bold mb-2">{{ $supply['total'] }}</h5>
-                        <span class="badge px-3 py-2 rounded-pill text-white">
-                    {{ $supply['label'] }}
-                </span>
-                    </div>
-                @endforeach
+            <div class="col-lg-6 col-sm-12 mt-5">
+                <div class="mb-2">
+                    <h4 class="text-primary text-center text-uppercase fw-bold">
+                        Statistiques sur les approvisionnements
+                    </h4>
+                </div>
+
+                <div class="d-flex flex-wrap gap-3 mx-3">
+                    @foreach($data['supplies'] as $supply)
+                        <span class="fw-semibold">
+                    {{ $supply['label'] }} ({{ $supply['total'] }})
+                 </span>
+                    @endforeach
+                </div>
             </div>
+
+
+            <div class="col-lg-6 col-sm-12 mt-5">
+                <div class="mb-2">
+                    <h4 class="text-primary text-center text-uppercase fw-bold">
+                        Statistiques sur les RÉGULARISATIONS DE STOCK
+                    </h4>
+                </div>
+
+                <div class="d-flex flex-wrap gap-3 mx-3 justify-content-center text-center">
+                    @foreach($data['stock_adjustments'] as $adjustment)
+                        <span class="fw-semibold">
+                    {{ $adjustment['label'] }} ({{ $adjustment['total'] }})
+                 </span>
+                    @endforeach
+                </div>
+            </div>
+
+
+            <div class="col-lg-6 col-sm-12 mt-5">
+                <div class="mb-2">
+                    <h4 class="text-primary text-center text-uppercase fw-bold">
+                        Statistiques sur les ARTICLES LES PLUS CONSOMMÉS
+                    </h4>
+                </div>
+
+                <div class="d-flex flex-wrap gap-3 justify-content-center text-center mx-5">
+
+                    @foreach($data['most_consumed']['top'] as $product)
+                        <span class="fw-semibold mx-3">
+                        {{ $product->name }} ({{ $product->frequency }})
+                    </span>
+                    @endforeach
+
+                    {{-- 🔹 SÉPARATEUR --}}
+                    <span class="w-100 text-muted text-center">
+                        ........................................................................
+                    </span>
+
+                    {{-- 🔻 BOTTOM 3 --}}
+                    @foreach($data['most_consumed']['bottom'] as $product)
+                        <span class="fw-semibold text-muted mx-3">
+                            {{ $product->name }} ({{ $product->frequency }})
+                        </span>
+                    @endforeach
+
+                </div>
+            </div>
+
+
+
         </div>
     </div>
 
 
-        <div class="col-lg-12 mb-3 pe-2">
-            <h5 class="fw-bold text-center"
-                style="border-bottom: 2px dotted black; padding-bottom: 5px;">
-                ÉTAT DES COMMANDES
-            </h5>
-            <div class="row g-3 align-items-center text-center">
-                @foreach($data['purchase_orders'] as $order)
-                    <div class="col-auto">
-                        <h5 class="fw-bold mb-2">{{ $order['total'] }}</h5>
-                        <span class="badge px-3 py-2 rounded-pill text-white">
-                        {{ $order['label'] }}
-                    </span>
-                    </div>
-                @endforeach
-            </div>
-        </div>
 
-        <!-- Bloc top 3 produits consommés -->
-        <div class="col-lg-12 mb-3 pe-2">
-            <h5 class="fw-bold text-center"
-                style="border-bottom: 2px dotted black; padding-bottom: 5px;">
-                ARTICLES LES PLUS CONSOMMÉS
-            </h5>
-            <div class="row g-3 align-items-center text-center mt-2">
-                @foreach($data['most_consumed'] as $product)
-                    <div class="col-auto">
-                        <h5 class="fw-bold mb-2">{{ $product->name ?? '' }}</h5>
-                        <span class="badge px-3 py-2 rounded-pill text-white">
-                        {{ $product->code }}
-                    </div>
-                @endforeach
-            </div>
-        </div>
+</div>
 
 
 
