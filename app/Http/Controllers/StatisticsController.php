@@ -1070,11 +1070,30 @@ class StatisticsController extends Controller
                 ->take(5)
                 ->get();
 
+            $rankedProducts = $productsQuery
+                ->sortByDesc('frequency')
+                ->values()
+                ->map(function ($item, $index) {
+                    $item->rank = $index + 1;
+                    return $item;
+                });
+
+            $top = $rankedProducts->take(3)->values();
+
+            $bottom = $rankedProducts
+                ->reverse()
+                ->take(3)
+                ->reverse()
+                ->values();
+
             $data = [
                 'stock_adjustments' => $adjustmentsData,
                 'supplies'          => $suppliesData,
                 'purchase_orders'   => $ordersData,
-                'most_consumed'     => $productsQuery, // juste Top 3
+                'most_consumed' => [
+                    'top'    => $top,
+                    'bottom' => $bottom,
+                ],
                 'summary'           => [
                     'from' => $start->toDateString(),
                     'to'   => $end->toDateString(),

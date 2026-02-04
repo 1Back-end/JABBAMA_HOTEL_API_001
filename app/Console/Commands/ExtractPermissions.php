@@ -34,15 +34,15 @@ class ExtractPermissions extends Command
             'category' => 'Permissions supplémentaires',
         ],
         'view_transferred_orders' => [
-            'description' => 'Permet aux gestionnaires de stock de voir toutes les commandes qui leur ont été transférées.',
+            'description' => 'Permettre aux gestionnaires de stock de voir toutes les commandes qui leur ont été transférées.',
             'category' => 'Gestion des commandes',
         ],
         'view_transferred_supplies' => [
-            'description' => 'Permet aux gestionnaires de stock de voir tous les approvisionnements qui leur ont été transférées.',
+            'description' => 'Permettre aux gestionnaires de stock de voir tous les approvisionnements qui leur ont été transférées.',
             'category' => 'Gestion des approvisionnements',
         ],
         'view_all_products_access' => [
-            'description' => 'Permet aux gestionnaires de stock de voir tous les articles du système au meme dégré que le SUPER ADMIN.',
+            'description' => 'Permettre aux gestionnaires de stock de voir tous les articles du système au meme dégré que le SUPER ADMIN.',
             'category' => 'Gestion des articles',
         ],
     ];

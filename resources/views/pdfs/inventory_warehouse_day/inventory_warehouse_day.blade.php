@@ -113,9 +113,20 @@
         <tbody>
         @foreach ($product_points as $index => $item)
             @php
-                // Calculer les catégories **pour chaque produit**
                 $categories = $item->product->category_json ?? [];
-                $displayCategories = array_slice($categories, 0, 3); // 3 premières seulement
+                $count = count($categories);
+
+                if ($count >= 4) {
+                    // Affiche les 3 premières + ... + dernière
+                    $displayCategories = array_merge(
+                        array_slice($categories, 0, 3),
+                        ['...'],
+                        [end($categories)]
+                    );
+                } else {
+                    // Affiche toutes les catégories
+                    $displayCategories = $categories;
+                }
             @endphp
             <tr>
                 <td>{{ $index + 1 }}</td>
@@ -124,10 +135,7 @@
                 <td>{{ $item->product->code ?? '-' }}</td>
 
                 <td>
-                    {{ implode(' | ', $displayCategories) }}
-                    @if(count($categories) > 3)
-                        ... ({{ count($categories) - 3 }} de plus)
-                    @endif
+                    {{ implode(' --> ', $displayCategories) }}
                 </td>
                 <td>{{ $item->product->unitMeasure->name ?? '-' }}</td>
             </tr>
