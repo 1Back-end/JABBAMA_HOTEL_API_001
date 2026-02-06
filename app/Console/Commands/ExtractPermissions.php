@@ -45,6 +45,34 @@ class ExtractPermissions extends Command
             'description' => 'Permettre aux gestionnaires de stock de voir tous les articles du système au meme dégré que le SUPER ADMIN.',
             'category' => 'Gestion des articles',
         ],
+        'view_all_menus_restaurants' => [
+            'description' => 'Accéder à tous les menus du restaurant, indépendamment de son rôle.',
+            'category' => 'Gestion des menus du restaurant',
+        ],
+        'view_all_restaurants_tables' => [
+            'description' => 'Accéder à toutes les tables du restaurant, indépendamment de son rôle.',
+            'category' => 'Gestion des tables du restaurant',
+        ],
+        'view_all_category_menus' => [
+            'description' => 'Accéder à toutes les catégories de menus du restaurant, indépendamment de son rôle.',
+            'category' => 'Gestion des catégories de menus',
+        ],
+        'view_access_setting' => [
+            'description' => 'Accéder aux paramètres d\'accès du système',
+            'category' => 'Permissions supplémentaires',
+        ],
+        'view_access_setting_stocks' => [
+            'description' => 'Accéder aux paramètres de stocks du système',
+            'category' => 'Permissions supplémentaires',
+        ],
+        'view_access_setting_restaurants' => [
+            'description' => 'Accéder aux paramètres du restaurant du système',
+            'category' => 'Permissions supplémentaires',
+        ],
+        'view_access_setting_others_transferts' => [
+            'description' => 'Accéder aux paramètres de transferts de stocks du système',
+            'category' => 'Permissions supplémentaires',
+        ]
     ];
 
     public function handle(): void

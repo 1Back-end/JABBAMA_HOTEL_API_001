@@ -142,7 +142,20 @@ Route::middleware(['activity'])->group(function () {
         Route::get('deductions_stocks/{uuid}/print_deductions_stocks', [\App\Http\Controllers\StockDeductionController::class, 'print_stocks_deductions']);
 
 
+        Route::apiResource('menus_restaurants', \App\Http\Controllers\MenuRestaurantController::class);
+        Route::patch('menus_restaurants/{uuid}/is_active', [\App\Http\Controllers\MenuRestaurantController::class, 'updateStatus']);
+        Route::post('menus_restaurants/{uuid}/update_menus_restaurants', [\App\Http\Controllers\MenuRestaurantController::class, 'update_menus']);
 
+        Route::apiResource('regulation_methods', \App\Http\Controllers\RegulationMethodController::class);
+        Route::patch('regulation_methods/{regulationMethod}/activate', [\App\Http\Controllers\RegulationMethodController::class, 'activate']);
+
+
+        Route::apiResource('restaurant_tables', \App\Http\Controllers\RestaurantTableController::class);
+        Route::patch('restaurant_tables/{uuid}/is_available', [\App\Http\Controllers\RestaurantTableController::class, 'update_status']);
+
+
+        Route::apiResource('menu_categories', \App\Http\Controllers\MenuCategoryController::class);
+        Route::patch('menu_categories/{uuid}/is_active', [\App\Http\Controllers\MenuCategoryController::class, 'update_status']);
 
 
     });
