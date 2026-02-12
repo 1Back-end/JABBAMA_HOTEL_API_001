@@ -100,6 +100,76 @@ class WarehouseController extends Controller
 
     /**
      * Display a listing of the resource.
+     * @permission WarehouseController::get_warehouses_is_used_for_restaurant
+     * @permission_desc Afficher la liste des entrepôts utilisés pour le restaurant
+     */
+    public function get_warehouses_is_used_for_restaurant(Request $request)
+    {
+        $auth = auth()->user();
+        $perPage = $request->input('limit', 25);
+        $page = $request->input('page', 1);
+        $roleIds = $auth->roles->pluck('id');
+
+        $query = Warehouse::with(['creator', 'updater', 'natures', 'managers'])->where('is_used_for_restaurant', true);;
+
+        // 🔥 Filtrer selon le rôle
+        if (!$auth->hasRole('SUPER_ADMIN') && !$auth->can('view_all_warehouses')) {
+
+            $query->where(function ($q) use ($auth, $roleIds) {
+
+                // 👉 Utilisateurs avec view_role_related_data : voient tous les entrepôts gérés par des utilisateurs ayant le même rôle
+                if ($auth->can('view_role_related_data')) {
+                    $q->whereHas('managers.roles', function ($qr) use ($roleIds) {
+                        $qr->whereIn('roles.id', $roleIds);
+                    });
+                }
+
+                // 👉 Autres utilisateurs : voir uniquement les entrepôts dont ils sont managers
+                else {
+                    $q->whereHas('managers', function ($qr) use ($auth) {
+                        $qr->where('user_id', $auth->id);
+                    });
+                }
+
+            });
+        }
+
+        if ($request->has('is_active')) {
+            $query->where('is_active', filter_var($request->input('is_active'), FILTER_VALIDATE_BOOLEAN));
+        }
+
+        if ($search = trim($request->input('search'))) {
+            $query->where(function ($q) use ($search) {
+                $q->where('ref', 'like', "%{$search}%")
+                    ->orWhere('name', 'like', "%{$search}%")
+                    ->orWhere('stock_type', 'like', "%{$search}%")
+                    ->orWhere('address', 'like', "%{$search}%")
+                    ->orWhere('total_stock', 'like', "%{$search}%"); // ✅ corrigé
+            })
+                ->orWhereHas('natures', function ($qw) use ($search) {
+                    $qw->where('code', 'like', "%{$search}%")
+                        ->orWhere('name', 'like', "%{$search}%")
+                        ->orWhere('abbreviation', 'like', "%{$search}%");
+                })
+                ->orWhereHas('managers', function ($ma) use ($search) {
+                    $ma->where('nom_utilisateur', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%");
+                });
+        }
+
+        $warehouses = $query->latest()->paginate($perPage, ['*'], 'page', $page);
+
+        return response()->json([
+            'data'         => $warehouses->items(),
+            'current_page' => $warehouses->currentPage(),
+            'last_page'    => $warehouses->lastPage(),
+            'total'        => $warehouses->total(),
+        ]);
+    }
+
+
+    /**
+     * Display a listing of the resource.
      * @permission WarehouseController::store
      * @permission_desc Créer des entrepôts
      */
@@ -118,6 +188,7 @@ class WarehouseController extends Controller
             'managers.*'  => 'required|exists:users,id',
             'natures'     => 'required|array|min:1',
             'natures.*'   => 'required|exists:nature_entrepots,uuid',
+            'is_used_for_restaurant' => 'nullable|boolean',
         ]);
 
         /**
@@ -226,6 +297,7 @@ class WarehouseController extends Controller
             'managers.*'  => 'required|exists:users,id',
             'natures'     => 'required|array|min:1',
             'natures.*'   => 'required|exists:nature_entrepots,uuid',
+            'is_used_for_restaurant' => 'nullable|boolean',
         ]);
 
         // 🔹 Règle entrepôt principal = 1 seul manager
@@ -406,6 +478,59 @@ class WarehouseController extends Controller
     public function get_products_by_warehouse($uuid, Request $request)
     {
         $perPage = $request->input('limit', 25);
+        $page = $request->input('page', 1);
+
+        // 🔹 Récupérer les produits liés aux points de cet entrepôt
+        $query = Product::with([
+            'creator',
+            'updater',
+            'category',
+            'unitMeasure',
+            'subCategories',
+            'medias',
+            'points' => function ($q) use ($uuid) {
+                $q->where('warehouses.uuid', $uuid);
+            }
+        ])->whereHas('points', function ($q) use ($uuid) {
+            $q->where('warehouses.uuid', $uuid);
+        });
+
+        // 🔹 Filtre catégorie
+        if ($request->filled('category_uuid')) {
+            $query->where('category_uuid', $request->category_uuid);
+        }
+
+        // 🔹 Filtre unité
+        if ($request->filled('unit_uuid')) {
+            $query->where('unit_uuid', $request->unit_uuid);
+        }
+
+        // 🔹 Recherche globale
+        if ($search = trim($request->input('search'))) {
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('code', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%")
+                    ->orWhereHas('unitMeasure', fn($u) => $u->where('name', 'like', "%{$search}%"))
+                    ->orWhereHas('category', fn($c) => $c->where('name', 'like', "%{$search}%"));
+            });
+        }
+
+        $products = $query->latest()->paginate($perPage, ['*'], 'page', $page);
+
+        return response()->json([
+            'data'         => $products->items(),
+            'current_page' => $products->currentPage(),
+            'last_page'    => $products->lastPage(),
+            'total'        => $products->total(),
+        ]);
+    }
+
+
+
+    public function get_products_by_warehouse_is_used_for_restaurant($uuid, Request $request)
+    {
+        $perPage = $request->input('limit', 10);
         $page = $request->input('page', 1);
 
         // 🔹 Récupérer les produits liés aux points de cet entrepôt

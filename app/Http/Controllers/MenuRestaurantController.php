@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\MenuTypeComplementBoisson;
 use App\Models\MenuRestaurant;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -28,48 +29,48 @@ class MenuRestaurantController extends Controller
 
         try {
 
+
+            if ($request->has('unit_price')) {
+                $request->merge([
+                    'unit_price' => json_decode($request->unit_price, true),
+                ]);
+            }
+
+            if ($request->has('special_price')) {
+                $request->merge([
+                    'special_price' => json_decode($request->special_price, true),
+                ]);
+            }
+
+            // ✅ LAISSER Laravel gérer la validation
             $validated = $request->validate([
-                'name'          => 'required|string|max:255|unique:menus_restaurants,name',
-                'category_uuid' => 'required|exists:menu_categories,uuid',
-                'image_file'    => 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
-                'unit_price'    => 'required|numeric|min:0',
-                'special_price' => 'required|numeric|min:0',
-                'description'   => 'nullable|string'
-            ], [
-                'name.required' => 'Le nom du menu est obligatoire.',
-                'name.string'   => 'Le nom du menu doit être une chaîne de caractères.',
-                'name.max'      => 'Le nom du menu ne doit pas dépasser 255 caractères.',
-                'name.unique'   => 'Un menu avec ce nom existe déjà.',
-
-                'image_file.image' => 'Le fichier doit être une image valide.',
-                'image_file.mimes' => 'L’image doit être au format jpeg, png, jpg, gif ou svg.',
-                'image_file.max'   => 'La taille de l’image ne doit pas dépasser 2 Mo.',
-
-                'unit_price.required' => 'Le prix unitaire est obligatoire.',
-                'unit_price.numeric'  => 'Le prix unitaire doit être un nombre.',
-                'unit_price.min'      => 'Le prix unitaire doit être supérieur ou égal à 0.',
-
-                'special_price.required' => 'Le prix spécial est obligatoire.',
-                'special_price.numeric'  => 'Le prix spécial doit être un nombre.',
-                'special_price.min'      => 'Le prix spécial doit être supérieur ou égal à 0.',
+                'name'            => 'required|string|max:255|unique:menus_restaurants,name',
+                'category_uuid'   => 'required|exists:menu_categories,uuid',
+                'image_file'      => 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
+                'unit_price'      => 'required|array|min:1',
+                'unit_price.*'    => 'required|numeric|min:0',
+                'special_price'   => 'nullable|array',
+                'special_price.*' => 'numeric|min:0',
+                'description'     => 'nullable|string',
+                'type_complement_boisson'  => ['nullable', 'string', function ($attribute, $value, $fail) {if (!is_null($value) && !MenuTypeComplementBoisson::tryFrom($value)) {$fail("Le champ {$attribute} doit être 'complement' ou 'boisson'.");
+                        }
+                    }
+                ],
             ]);
 
             $validated['created_by'] = $auth->id;
 
             $menu = MenuRestaurant::create($validated);
 
-            // 🖼️ Gestion image
             if ($request->hasFile('image_file')) {
-
                 $file = $request->file('image_file');
-                $filename = time() . '_' . $file->getClientOriginalName();
                 $path = $file->store('menus_restaurants', 'public');
 
                 $menu->medias()->create([
-                    'name'      => $filename,
+                    'name'      => $file->getClientOriginalName(),
                     'disk'      => 'public',
                     'path'      => $path,
-                    'filename'  => $filename,
+                    'filename'  => basename($path),
                     'mimetype'  => $file->getClientMimeType(),
                     'extension' => $file->getClientOriginalExtension(),
                 ]);
@@ -82,16 +83,24 @@ class MenuRestaurantController extends Controller
                 'data'    => $menu->fresh()
             ], 201);
 
-        } catch (\Exception $e) {
-
+        } catch (\Throwable $e) {
             DB::rollBack();
 
+            \Log::error('Erreur création menu:', [
+                'message' => $e->getMessage(),
+                'trace'   => $e->getTraceAsString()
+            ]);
+
             return response()->json([
-                'message' => 'Une erreur est survenue lors de la création du menu.',
-                'error'   => $e->getMessage()
+                'message' => 'Erreur serveur',
+                'error'   => $e->getMessage(),
+                'file'    => $e->getFile(),
+                'line'    => $e->getLine(),
             ], 500);
         }
     }
+
+
 
     /**
      * Display a listing of the resource.
@@ -105,58 +114,58 @@ class MenuRestaurantController extends Controller
         DB::beginTransaction();
 
         try {
-
+            // 🔹 Récupérer le menu à mettre à jour
             $menu = MenuRestaurant::where('uuid', $uuid)->firstOrFail();
 
+            // 🔹 Décoder les tableaux JSON envoyés depuis Angular
+            if ($request->has('unit_price')) {
+                $request->merge([
+                    'unit_price' => json_decode($request->unit_price, true),
+                ]);
+            }
+
+            if ($request->has('special_price')) {
+                $request->merge([
+                    'special_price' => json_decode($request->special_price, true),
+                ]);
+            }
+
+            // 🔹 Validation
             $validated = $request->validate([
-                'name'          => 'required|string|max:255|unique:menus_restaurants,name,' . $menu->uuid . ',uuid',
-                'category_uuid' => 'required|exists:menu_categories,uuid',
-                'image_file'    => 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
-                'unit_price'    => 'required|numeric|min:0',
-                'special_price' => 'required|numeric|min:0',
-                'description'   => 'nullable|string'
-            ], [
-                'name.required' => 'Le nom du menu est obligatoire.',
-                'name.string'   => 'Le nom du menu doit être une chaîne de caractères.',
-                'name.max'      => 'Le nom du menu ne doit pas dépasser 255 caractères.',
-                'name.unique'   => 'Un menu avec ce nom existe déjà.',
-
-                'image_file.image' => 'Le fichier doit être une image valide.',
-                'image_file.mimes' => 'L’image doit être au format jpeg, png, jpg, gif ou svg.',
-                'image_file.max'   => 'La taille de l’image ne doit pas dépasser 2 Mo.',
-
-                'unit_price.required' => 'Le prix unitaire est obligatoire.',
-                'unit_price.numeric'  => 'Le prix unitaire doit être un nombre.',
-                'unit_price.min'      => 'Le prix unitaire doit être supérieur ou égal à 0.',
-
-                'special_price.required' => 'Le prix spécial est obligatoire.',
-                'special_price.numeric'  => 'Le prix spécial doit être un nombre.',
-                'special_price.min'      => 'Le prix spécial doit être supérieur ou égal à 0.',
+                'name' => 'required|string|max:255|unique:menus_restaurants,name,' . $menu->uuid . ',uuid',
+                'category_uuid'   => 'required|exists:menu_categories,uuid',
+                'image_file'      => 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
+                'unit_price'      => 'required|array|min:1',
+                'unit_price.*'    => 'required|numeric|min:0',
+                'special_price'   => 'nullable|array',
+                'special_price.*' => 'numeric|min:0',
+                'description'     => 'nullable|string',
+                'type_complement_boisson'  => ['nullable', 'string', function ($attribute, $value, $fail) {if (!is_null($value) && !MenuTypeComplementBoisson::tryFrom($value)) {$fail("Le champ {$attribute} doit être 'complement' ou 'boisson'.");
+                }
+                }
+                ],
             ]);
 
-            // 👤 Audit
             $validated['updated_by'] = $auth->id;
 
+            // 🔹 Mise à jour des champs
             $menu->update($validated);
 
-            // 🖼️ Gestion image
+            // 🔹 Gestion de l'image
             if ($request->hasFile('image_file')) {
-
-                // Supprimer l’ancienne image
-                if ($media = $menu->medias()->first()) {
-                    Storage::disk($media->disk)->delete($media->path);
-                    $media->delete();
+                // Supprimer l'ancienne image si nécessaire
+                if ($menu->medias()->exists()) {
+                    $menu->medias()->delete();
                 }
 
                 $file = $request->file('image_file');
-                $filename = time() . '_' . $file->getClientOriginalName();
                 $path = $file->store('menus_restaurants', 'public');
 
                 $menu->medias()->create([
-                    'name'      => $filename,
+                    'name'      => $file->getClientOriginalName(),
                     'disk'      => 'public',
                     'path'      => $path,
-                    'filename'  => $filename,
+                    'filename'  => basename($path),
                     'mimetype'  => $file->getClientMimeType(),
                     'extension' => $file->getClientOriginalExtension(),
                 ]);
@@ -167,18 +176,26 @@ class MenuRestaurantController extends Controller
             return response()->json([
                 'message' => 'Menu restaurant mis à jour avec succès.',
                 'data'    => $menu->fresh()
-            ]);
+            ], 200);
 
-        } catch (\Exception $e) {
-
+        } catch (\Throwable $e) {
             DB::rollBack();
 
+            \Log::error('Erreur mise à jour menu:', [
+                'message' => $e->getMessage(),
+                'trace'   => $e->getTraceAsString()
+            ]);
+
             return response()->json([
-                'message' => 'Une erreur est survenue lors de la mise à jour du menu.',
-                'error'   => $e->getMessage()
+                'message' => 'Erreur serveur',
+                'error'   => $e->getMessage(),
+                'file'    => $e->getFile(),
+                'line'    => $e->getLine(),
             ], 500);
         }
     }
+
+
 
     /**
      * Display a listing of the resource.

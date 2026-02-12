@@ -54,6 +54,7 @@ Route::middleware(['activity'])->group(function () {
 
 
         Route::get('warehouses/{uuid}/products', [WarehouseController::class, 'get_products_by_warehouse']);
+        Route::get('warehouses/{uuid}/get_products_by_warehouse_is_used_for_restaurant', [WarehouseController::class, 'get_products_by_warehouse_is_used_for_restaurant']);
         Route::get('warehouses/{uuid}/get_managers_by_warehouse', [WarehouseController::class, 'get_managers_by_warehouse']);
         Route::get('/warehouses/{pointUuid}/inventory/export', [WarehouseController::class, 'export_inventory_by_warehouse']);
         Route::get('/warehouses/inventory/export', [WarehouseController::class, 'export_inventory_by_warehouse']);
@@ -66,6 +67,7 @@ Route::middleware(['activity'])->group(function () {
 
         Route::apiResource('natures_warehouses', NatureEntrepotController::class);
         Route::patch('natures_warehouses/{uuid}/is_active', [WarehouseController::class, 'update_status']);
+        Route::get('get_warehouses_is_used_for_restaurant', [WarehouseController::class, 'get_warehouses_is_used_for_restaurant']);
 
         Route::apiResource('orders', PurchaseOrderController::class);
         Route::post('orders/{uuid}/update_orders', [PurchaseOrderController::class, 'update_orders']);
@@ -156,6 +158,15 @@ Route::middleware(['activity'])->group(function () {
 
         Route::apiResource('menu_categories', \App\Http\Controllers\MenuCategoryController::class);
         Route::patch('menu_categories/{uuid}/is_active', [\App\Http\Controllers\MenuCategoryController::class, 'update_status']);
+
+
+        Route::apiResource('restaurant_partners', \App\Http\Controllers\PartenaireController::class);
+        Route::patch('restaurant_partners/{uuid}/is_active', [\App\Http\Controllers\PartenaireController::class, 'updateStatus']);
+
+        Route::get('/countries', [\App\Http\Controllers\CountryController::class, 'index']);
+
+        Route::get('menus_orders_actions', [\App\Http\Controllers\MenuOrdersController::class, 'MenuOrderStatus']);
+        Route::apiResource('compositions_menus_orders', \App\Http\Controllers\MenuOrdersController::class);
 
 
     });

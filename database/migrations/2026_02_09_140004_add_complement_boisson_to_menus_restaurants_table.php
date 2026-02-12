@@ -1,0 +1,29 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::table('menus_restaurants', function (Blueprint $table) {
+            $table->string('type_complement_boisson')->nullable()->after('free_price')
+                ->comment('Indique si le menu contient un complément ou une boisson');
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::table('menus_restaurants', function (Blueprint $table) {
+            $table->dropColumn('type_complement_boisson');
+        });
+    }
+};

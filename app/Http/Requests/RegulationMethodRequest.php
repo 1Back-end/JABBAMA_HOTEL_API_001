@@ -13,8 +13,8 @@ class RegulationMethodRequest extends FormRequest
         return [
             'name' => ['required'],
             'description' => ['nullable'],
-            'comment_required' => ['required', 'boolean'],
-            'phone_method' => ['required', 'boolean'],
+            'comment_required' => ['nullable', 'boolean'],
+            'phone_method' => ['nullable', 'boolean'],
         ];
     }
 }

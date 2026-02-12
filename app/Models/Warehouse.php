@@ -24,7 +24,8 @@ class Warehouse extends Model
         'created_by',
         'updated_by',
         'total_stock',
-        'is_primary'
+        'is_primary',
+        'is_used_for_restaurant'
     ];
 
     protected $appends = ['total_stock'];
