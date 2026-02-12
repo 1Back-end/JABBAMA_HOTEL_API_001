@@ -72,6 +72,14 @@ class ExtractPermissions extends Command
         'view_access_setting_others_transferts' => [
             'description' => 'Accéder aux paramètres de transferts de stocks du système',
             'category' => 'Permissions supplémentaires',
+        ],
+        'view_all_restaurant_partners' => [
+            'description' => 'Accéder à tous les partenaires du restaurant du système',
+            'category' => 'Gestion des partenaires',
+        ],
+        'view_all_menu_orders' => [
+            'description' => 'Accéder à toutes les compositions des menus du restaurant',
+            'category' => 'Composition des menus du restaurant',
         ]
     ];
 

@@ -18,6 +18,7 @@ class DatabaseSeeder extends Seeder
             InitBDForAllDataSeeder::class,
             NatureWarehouseSeeder::class,
             ProductSeeder::class,
+            CountriesTableSeeder::class,
 
         ]);
     }
