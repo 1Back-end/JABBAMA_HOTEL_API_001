@@ -33,12 +33,14 @@ class MenuRestaurant extends Model
         'updated_by',
         'description',
         'category_uuid',
-        'type_complement_boisson'
+        'type_complement_boisson',
+        'is_confectioned'
     ];
 
     protected $casts = [
         'unit_price'    => 'array',
         'special_price' => 'array',
+        'type_complement_boisson' => 'array',
     ];
 
 
@@ -100,4 +102,23 @@ class MenuRestaurant extends Model
     {
         return $this->morphMany(Medias::class, 'mediable');
     }
+
+    public function compositionItems()
+    {
+        return $this->hasMany(MenuOrderItem::class, 'menus_restaurant_uuid', 'uuid');
+    }
+    public function products()
+    {
+        return $this->belongsToMany(
+            Product::class,
+            'menu_restaurant_products',
+            'menus_restaurant_uuid',
+            'product_uuid'
+        )->withPivot('quantity_used'); // quantité utilisée par menu
+    }
+
+
+
+
+
 }

@@ -1,0 +1,402 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Enums\ConsumptionType;
+use App\Enums\TypeClientsForPaiment;
+use App\Models\MenuOrder;
+use App\Models\MenuOrderItem;
+use App\Models\MenuRestaurant;
+use App\Models\OrderMenuRestaurant;
+use App\Models\OrderMenuRestaurantItem;
+use App\Models\Product;
+use App\Models\ProductPoint;
+use App\Models\VirtualOrderMenuRestaurant;
+use App\Models\Warehouse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Enum;
+/**
+ * @permission_category Gestion des commandes du restaurant
+ */
+class OrderMenuRestaurantController extends Controller
+{
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission OrderMenuRestaurantController::store
+     * @permission_desc Créer les commandes du restaurant
+     */
+
+    public function store(Request $request)
+    {
+        $auth = auth()->user();
+        \Log::info('Store Order Request:', $request->all());
+
+        DB::beginTransaction();
+
+        try {
+            // 🔹 Validation
+            $validated = $request->validate([
+                'type_clients_for_payment' => ['required', 'string', new Enum(TypeClientsForPaiment::class)],
+                'restaurant_table_uuid' => ['nullable','uuid','required_if:type_clients_for_payment,' . ConsumptionType::DINE_IN->value, 'uuid', 'exists:restaurant_tables,uuid'],
+                'order_menu_restaurant_date' => ['required', 'date_format:Y-m-d H:i:s'],
+                'consumption_type' => ['required', 'string', new Enum(ConsumptionType::class)],
+                'partners_restaurant_uuid' => ['nullable', 'uuid', 'required_if:type_clients_for_payment,' . TypeClientsForPaiment::PARTNER->value, 'exists:restaurant_partners,uuid'],
+                'warehouse_uuid' => ['nullable', 'uuid', 'exists:warehouses,uuid'],
+                'restaurant_room_uuid' => ['nullable', 'uuid', 'exists:restaurant_rooms,uuid'],
+                'menus' => ['required', 'array', 'min:1'],
+                'menus.*.menus_restaurant_uuid' => ['required', 'uuid', 'exists:menus_restaurants,uuid'],
+                'menus.*.quantity' => ['required', 'numeric', 'min:1'],
+                'menus.*.unit_price' => ['required_if:type_clients_for_payment,' . TypeClientsForPaiment::PARTNER->value . ',' . TypeClientsForPaiment::DEBTOR->value, 'nullable', 'numeric', 'min:0',],
+                'remise' => ['nullable', 'numeric', 'min:0'],
+                'full_name' => ['nullable', 'string', 'max:255', 'required_if:type_clients_for_payment,' . TypeClientsForPaiment::DEBTOR->value, Rule::unique('orders_menu_restaurants', 'full_name')->where(function ($query) {$query->where('type_clients_for_payment', TypeClientsForPaiment::DEBTOR->value);}),],
+
+            ]);
+
+            // 🔹 Déterminer l’entrepôt pour la cuisine
+            $warehouseUuid = $validated['warehouse_uuid']
+                ?? Warehouse::where('is_used_for_restaurant', true)->firstOrFail()->uuid;
+
+            $isFree = $validated['type_clients_for_payment'] === TypeClientsForPaiment::FREE->value;
+
+            $results = [];
+
+            // 🔹 Étape 1 : Construire la composition des menus
+            foreach ($validated['menus'] as $menuInput) {
+                $menu = MenuRestaurant::find($menuInput['menus_restaurant_uuid']);
+
+                $menuItems = MenuOrderItem::with('product')
+                    ->where('menus_restaurant_uuid', $menuInput['menus_restaurant_uuid'])
+                    ->get();
+
+                $menuQuantity = $menuInput['quantity'] ?? 0;
+                $composition = [];
+
+                foreach ($menuItems as $item) {
+                    $productName = $item->product->name ?? 'Inconnu';
+                    $productUuid = $item->product_uuid ?? null;
+                    $quantityPerMenu = $item->quantity_used ?? 0;
+                    $totalQuantityUsed = $menuQuantity * $quantityPerMenu;
+
+                    $composition[] = [
+                        'product_uuid' => $productUuid,
+                        'product_name' => $productName,
+                        'quantity_per_menu' => $quantityPerMenu,
+                        'menu_quantity' => $menuQuantity,
+                        'total_quantity_used' => $totalQuantityUsed,
+                    ];
+                }
+
+                $unitPrice = $menuInput['unit_price'] ?? 0; // Si free ou absent, on met 0 par défaut
+                $menuQuantity = $menuInput['quantity'] ?? 0;
+
+                $results[] = [
+                    'menu' => [
+                        'uuid' => $menuInput['menus_restaurant_uuid'] ?? null,
+                        'name' => $menu->name ?? 'Menu inconnu',
+                        'quantity_ordered' => $menuQuantity,
+                        'unit_price' => $unitPrice,
+                        'total_price' => $menuQuantity * $unitPrice,
+                    ],
+                    'composition' => $composition,
+                ];
+            }
+
+            // 🔹 Étape 2 : Vérification des stocks
+            $stockErrors = [];
+            foreach ($results as $menuResult) {
+                foreach ($menuResult['composition'] as $product) {
+                    $pointStock = (float) ProductPoint::where('produit_uuid', $product['product_uuid'])
+                        ->where('point_uuid', $warehouseUuid)
+                        ->value('quantity') ?? 0;
+
+                    if ($product['total_quantity_used'] > $pointStock) {
+                        $stockErrors[] = [
+                            'menu_uuid' => $menuResult['menu']['uuid'],
+                            'menu_name' => $menuResult['menu']['name'],
+                            'product_uuid' => $product['product_uuid'],
+                            'product_name' => $product['product_name'],
+                            'quantity_required' => $product['total_quantity_used'],
+                            'quantity_in_stock' => $pointStock,
+                        ];
+                    }
+                }
+            }
+
+            // 🔹 Étape 3 : Si stock insuffisant, renvoyer erreur
+            if (!empty($stockErrors)) {
+                $messages = [];
+                $menusSeen = [];
+
+                foreach ($stockErrors as $err) {
+                    if (!in_array($err['menu_name'], $menusSeen)) {
+                        $messages[] = "Impossible de commander le menu {$err['menu_name']} : stock insuffisant.";
+                        $menusSeen[] = $err['menu_name'];
+                    }
+                }
+
+                return response()->json([
+                    'status' => 'error',
+                    // 👇 on met tous les messages sur la même ligne, séparés par un espace
+                    'message' => implode(' ', $messages),
+                    'details' => $stockErrors,
+                ], 422);
+            }
+
+
+
+            // 🔹 Étape 4 : Enregistrer la commande principale
+            $order = OrderMenuRestaurant::create([
+                'status' => 'pending',
+                'type_clients_for_payment' => $validated['type_clients_for_payment'],
+                'consumption_type' => $validated['consumption_type'],
+                'restaurant_table_uuid' => $validated['restaurant_table_uuid'] ?? null,
+                'warehouse_uuid' => $warehouseUuid,
+                'partners_restaurant_uuid' => $validated['partners_restaurant_uuid'] ?? null,
+                'restaurant_room_uuid' => $validated['restaurant_room_uuid'] ?? null,
+                'order_menu_restaurant_date' => $validated['order_menu_restaurant_date'],
+                'remise' => $validated['remise'],
+                'full_name' => $validated['full_name'] ?? null,
+                'created_by' => $auth->id,
+                'updated_by' => $auth->id,
+            ]);
+
+            // 🔹 Étape 5 : Enregistrer les menus commandés et virtual reserve
+            foreach ($results as $menuResult) {
+                $isFreeMenu = $validated['type_clients_for_payment'] === TypeClientsForPaiment::FREE->value;
+                $menuItem = OrderMenuRestaurantItem::create([
+                    'order_menu_restaurant_uuid' => $order->uuid,
+                    'menus_restaurant_uuid' => $menuResult['menu']['uuid'],
+                    'quantity' => $menuResult['menu']['quantity_ordered'],
+                    'unit_price' => $menuResult['menu']['unit_price'],
+                    'total_price' => $menuResult['menu']['total_price'],
+                    'is_free' => $isFreeMenu,
+                    'status' => 'pending',
+                    'created_by' => $auth->id,
+                    'updated_by' => $auth->id,
+                ]);
+
+                foreach ($menuResult['composition'] as $product) {
+                    VirtualOrderMenuRestaurant::create([
+                        'orders_menu_restaurant_uuid' => $order->uuid,
+                        'product_uuid' => $product['product_uuid'],
+                        'quantity_reserved' => $product['total_quantity_used'],
+                        'created_by' => $auth->id,
+                        'updated_by' => $auth->id,
+                    ]);
+                }
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Commande enregistrée avec succès',
+                'order_uuid' => $order->uuid,
+                'menus' => $results,
+                'menuItem' => $menuItem,
+            ]);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollBack();
+            \Log::error('Validation exception', $e->errors());
+            return response()->json([
+                'status' => 'validation_error',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Exception in store order', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'request' => $request->all()
+            ]);
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Une erreur est survenue lors de l’enregistrement de la commande.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+
+
+
+    public function index(Request $request)
+    {
+        $auth = auth()->user();
+
+        $perPage = $request->input('limit', 25);
+        $page = $request->input('page', 1);
+        $roleIds = $auth->roles->pluck('id');
+        $start_date = Carbon::parse($request->input('start_date'))->startOfDay();
+        $end_date = Carbon::parse($request->input('end_date'))->endOfDay();
+
+
+        $query = OrderMenuRestaurant::with([
+            'restaurantTable',
+            'creator',
+            'updater',
+            'validator',
+            'cancelor',
+            'partners_restaurant',
+            'warehouse',
+            'restaurant_room',
+            'menu_restaurant',
+            'items.menu',
+        ]);
+
+        if ($request->filled('restaurant_table_uuid')) {
+            $query->where('restaurant_table_uuid', $request->restaurant_table_uuid);
+        }
+        if ($request->filled('order_menu_restaurant_date')) {
+            $query->where('order_menu_restaurant_date', $request->order_menu_restaurant_date);
+        }
+        if ($request->filled('menu_restaurant_uuid')) {
+            $query->where('menu_restaurant_uuid', $request->menu_restaurant_uuid);
+        }
+        if ($request->filled('restaurant_room_uuid')) {
+            $query->where('restaurant_room_uuid', $request->restaurant_room_uuid);
+        }
+        if ($request->filled('partners_restaurant_uuid')) {
+            $query->where('partners_restaurant_uuid', $request->partners_restaurant_uuid);
+        }
+        if ($request->filled('type_clients_for_payment')) {
+            $query->where('type_clients_for_payment', $request->type_clients_for_payment);
+        }
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+        if ($request->filled('start_date') && $request->filled('end_date')) {
+            $query->whereBetween('created_at', [$start_date, $end_date]);
+        }
+
+        if (!$auth->hasRole('SUPER_ADMIN') && !$auth->can('view_all_orders_for_restaurant')) {
+            $query->where(function ($q) use ($auth, $roleIds) {
+                if ($auth->can('view_role_related_data')) {
+                    $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
+                }
+            });
+        }
+
+
+        if ($search = trim($request->input('search'))) {
+            $query->where(function ($q) use ($search) {
+                $q->where('uuid', 'like', "%{$search}%")
+                    ->orWhere('code', 'like', "%{$search}%")
+                    ->orWhere('status', 'like', "%{$search}%")
+                    ->orWhere('unit_price', 'like', "%{$search}%")
+                    ->orWhere('total_price', 'like', "%{$search}%")
+                    ->orWhere('is_for_sale_free', 'like', "%{$search}%")
+                    ->orWhere('consumption_type', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%")
+                    ->orWhere('reason_cancel', 'like', "%{$search}%")
+                    ->orWhere('validated_at', 'like', "%{$search}%")
+                    ->orWhere('cancelled_at', 'like', "%{$search}%")
+                    ->orWhere('restaurant_table_uuid', 'like', "%{$search}%")
+                    ->orWhere('created_by', 'like', "%{$search}%")
+                    ->orWhere('updated_by', 'like', "%{$search}%")
+                    ->orWhere('validated_by', 'like', "%{$search}%")
+                    ->orWhere('cancelled_by', 'like', "%{$search}%")
+                    ->orWhere('type_clients_for_payment', 'like', "%{$search}%")
+                    ->orWhere('order_menu_restaurant_date', 'like', "%{$search}%")
+                    ->orWhere('remise', 'like', "%{$search}%")
+                    ->orWhere('partners_restaurant_uuid', 'like', "%{$search}%")
+                    ->orWhere('warehouse_uuid', 'like', "%{$search}%")
+                    ->orWhere('restaurant_room_uuid', 'like', "%{$search}%")
+                    ->orWhere('menu_restaurant_uuid', 'like', "%{$search}%")
+                    ->orWhere('quantity', 'like', "%{$search}%")
+
+
+                    ->orWhereHas('warehouse', function ($qw) use ($search) {
+                        $qw->where('ref', 'like', "%{$search}%")
+                            ->orWhere('name', 'like', "%{$search}%")
+                            ->orWhere('stock_type', 'like', "%{$search}%")
+                            ->orWhere('address', 'like', "%{$search}%");
+                    })
+
+                    ->orWhereHas('restaurantTable', function ($rt) use ($search) {
+                        $rt->where('uuid', 'like', "%{$search}%")
+                            ->orWhere('code', 'like', "%{$search}%")
+                            ->orWhere('table_number', 'like', "%{$search}%")
+                            ->orWhere('capacity', 'like', "%{$search}%");
+                    })
+
+                    ->orWhereHas('partners_restaurant', function ($pr) use ($search) {
+                        $columns = ['uuid', 'code', 'first_name', 'last_name', 'full_name', 'email', 'phone_number',
+                            'second_phone_number', 'address', 'description', 'cni_number',];
+                        foreach ($columns as $column) {
+                            $pr->orWhere($column, 'like', "%{$search}%");
+                        }
+                    })
+
+                    ->orWhereHas('restaurant_room', function ($rr) use ($search) {
+                        $rr->where('uuid', 'like', "%{$search}%")
+                            ->orWhere('code', 'like', "%{$search}%")
+                            ->orWhere('rooms_number', 'like', "%{$search}%")
+                            ->orWhere('description', 'like', "%{$search}%")
+                            ->orWhere('type', 'like', "%{$search}%")
+                            ->orWhere('capacity', 'like', "%{$search}%");
+                    })
+
+                    ->orWhereHas('restaurant_room', function ($rr) use ($search) {
+                        $rr->where('uuid', 'like', "%{$search}%")
+                            ->orWhere('code', 'like', "%{$search}%")
+                            ->orWhere('rooms_number', 'like', "%{$search}%")
+                            ->orWhere('description', 'like', "%{$search}%")
+                            ->orWhere('type', 'like', "%{$search}%")
+                            ->orWhere('capacity', 'like', "%{$search}%");
+                    })
+
+                    ->orWhereHas('menu_restaurant', function ($mr) use ($search) {
+                        $mr->where('uuid', 'like', "%{$search}%")
+                            ->orWhere('code', 'like', "%{$search}%")
+                            ->orWhere('name', 'like', "%{$search}%")
+                            ->orWhere('description', 'like', "%{$search}%");
+                    })
+
+                    ->orWhereHas('creator', function ($qc) use ($search) {
+                        $qc->where('nom_utilisateur', 'like', "%{$search}%")
+                            ->orWhere('email', 'like', "%{$search}%");
+                    })
+
+                    ->orWhereHas('updater', function ($qu) use ($search) {
+                        $qu->where('nom_utilisateur', 'like', "%{$search}%")
+                            ->orWhere('email', 'like', "%{$search}%");
+                    })
+
+                    ->orWhereHas('validator', function ($qv) use ($search) {
+                        $qv->where('nom_utilisateur', 'like', "%{$search}%")
+                            ->orWhere('email', 'like', "%{$search}%");
+                    });
+
+
+            });
+        }
+        $data = $query->latest()->paginate($perPage, ['*'], 'page', $page);
+
+        return response()->json([
+            'data'         => $data->items(),
+            'current_page' => $data->currentPage(),
+            'last_page'    => $data->lastPage(),
+            'total'        => $data->total(),
+        ]);
+
+
+
+    }
+
+
+
+
+
+
+
+
+
+
+}

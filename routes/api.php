@@ -147,6 +147,7 @@ Route::middleware(['activity'])->group(function () {
         Route::apiResource('menus_restaurants', \App\Http\Controllers\MenuRestaurantController::class);
         Route::patch('menus_restaurants/{uuid}/is_active', [\App\Http\Controllers\MenuRestaurantController::class, 'updateStatus']);
         Route::post('menus_restaurants/{uuid}/update_menus_restaurants', [\App\Http\Controllers\MenuRestaurantController::class, 'update_menus']);
+        Route::get('/get_price', [\App\Http\Controllers\MenuRestaurantController::class, 'get_price_by_menus_and_clients']);
 
         Route::apiResource('regulation_methods', \App\Http\Controllers\RegulationMethodController::class);
         Route::patch('regulation_methods/{regulationMethod}/activate', [\App\Http\Controllers\RegulationMethodController::class, 'activate']);
@@ -162,12 +163,24 @@ Route::middleware(['activity'])->group(function () {
 
         Route::apiResource('restaurant_partners', \App\Http\Controllers\PartenaireController::class);
         Route::patch('restaurant_partners/{uuid}/is_active', [\App\Http\Controllers\PartenaireController::class, 'updateStatus']);
+        Route::post('restaurant_partners/{uuid}/update_partners', [\App\Http\Controllers\PartenaireController::class, 'update_partners']);
+
 
         Route::get('/countries', [\App\Http\Controllers\CountryController::class, 'index']);
 
         Route::get('menus_orders_actions', [\App\Http\Controllers\MenuOrdersController::class, 'MenuOrderStatus']);
         Route::apiResource('compositions_menus_orders', \App\Http\Controllers\MenuOrdersController::class);
+        Route::post('/compositions_menus_orders/{menus_restaurant_uuid}/store', [\App\Http\Controllers\MenuOrdersController::class, 'storeOrUpdateMenu']);
+        Route::get('/compositions_menus_orders/{menus_restaurant_uuid}/show', [\App\Http\Controllers\MenuOrdersController::class, 'showByMenu']);
+
+        Route::get('enums/consumption_type_status', [\App\Http\Controllers\EnumController::class, 'consumption_type_status']);
+        Route::get('enums/type_clients_for_payment', [\App\Http\Controllers\EnumController::class, 'type_clients_for_payment']);
+        Route::get('enums/room_type', [\App\Http\Controllers\EnumController::class, 'room_type']);
 
 
+        Route::apiResource('orders_menu_restaurants', \App\Http\Controllers\OrderMenuRestaurantController::class);
+
+        Route::apiResource('restaurant_rooms', \App\Http\Controllers\RestaurantRoomController::class);
+        Route::patch('restaurant_rooms/{uuid}/is_active', [\App\Http\Controllers\RestaurantRoomController::class, 'update_status']);
     });
 });

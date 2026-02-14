@@ -3,12 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Enums\MenuTypeComplementBoisson;
+use App\Enums\TypeClientsForPaiment;
 use App\Models\MenuRestaurant;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rules\Enum;
 
 /**
  * @permission_category Gestion des menus du restaurant
@@ -41,6 +43,11 @@ class MenuRestaurantController extends Controller
                     'special_price' => json_decode($request->special_price, true),
                 ]);
             }
+            if ($request->has('type_complement_boisson')) {
+                $request->merge([
+                    'type_complement_boisson' => json_decode($request->type_complement_boisson, true),
+                ]);
+            }
 
             // ✅ LAISSER Laravel gérer la validation
             $validated = $request->validate([
@@ -52,10 +59,7 @@ class MenuRestaurantController extends Controller
                 'special_price'   => 'nullable|array',
                 'special_price.*' => 'numeric|min:0',
                 'description'     => 'nullable|string',
-                'type_complement_boisson'  => ['nullable', 'string', function ($attribute, $value, $fail) {if (!is_null($value) && !MenuTypeComplementBoisson::tryFrom($value)) {$fail("Le champ {$attribute} doit être 'complement' ou 'boisson'.");
-                        }
-                    }
-                ],
+                'type_complement_boisson' => 'nullable', 'json',
             ]);
 
             $validated['created_by'] = $auth->id;
@@ -130,6 +134,12 @@ class MenuRestaurantController extends Controller
                 ]);
             }
 
+            if ($request->has('type_complement_boisson')) {
+                $request->merge([
+                    'type_complement_boisson' => json_decode($request->type_complement_boisson, true),
+                ]);
+            }
+
             // 🔹 Validation
             $validated = $request->validate([
                 'name' => 'required|string|max:255|unique:menus_restaurants,name,' . $menu->uuid . ',uuid',
@@ -140,10 +150,7 @@ class MenuRestaurantController extends Controller
                 'special_price'   => 'nullable|array',
                 'special_price.*' => 'numeric|min:0',
                 'description'     => 'nullable|string',
-                'type_complement_boisson'  => ['nullable', 'string', function ($attribute, $value, $fail) {if (!is_null($value) && !MenuTypeComplementBoisson::tryFrom($value)) {$fail("Le champ {$attribute} doit être 'complement' ou 'boisson'.");
-                }
-                }
-                ],
+                'type_complement_boisson' => 'nullable', 'json',
             ]);
 
             $validated['updated_by'] = $auth->id;
@@ -266,6 +273,12 @@ class MenuRestaurantController extends Controller
             $query->where('is_active', $isActive);
         }
 
+        if ($request->has('is_confectioned')) {
+            $isConfectioned = $request->input('is_confectioned') === 'true' ? true : false;
+            $query->where('is_confectioned', $isConfectioned);
+        }
+
+
         if ($request->filled('category_uuid')) {
             $query->where('category_uuid', $request->category_uuid);
         }
@@ -345,6 +358,44 @@ class MenuRestaurantController extends Controller
             'message' => 'Menu restaurant supprimé avec succès.'
         ]);
     }
+
+    public function get_price_by_menus_and_clients(Request $request)
+    {
+        $validated = $request->validate([
+            'menu_uuid'   => ['required', 'uuid', 'exists:menus_restaurants,uuid'],
+            'client_type' => ['required', 'string', new Enum(TypeClientsForPaiment::class)], // debtor, partner, free
+        ]);
+
+        $menu = MenuRestaurant::findOrFail($validated['menu_uuid']);
+        $clientType = $validated['client_type'];
+
+        // 🔹 Sélectionner le tableau de prix selon le type de client
+        $pricesArray = [];
+
+        if ($clientType === TypeClientsForPaiment::DEBTOR->value) {
+            $pricesArray = is_array($menu->unit_price) ? $menu->unit_price : [$menu->unit_price];
+        } elseif ($clientType === TypeClientsForPaiment::PARTNER->value) {
+            $pricesArray = is_array($menu->special_price) ? $menu->special_price : [$menu->special_price];
+        } elseif ($clientType === TypeClientsForPaiment::FREE->value) {
+            $pricesArray = is_array($menu->free_price) ? $menu->free_price : [$menu->free_price];
+        }
+
+        // 🔹 Nettoyer les valeurs nulles et convertir en int
+        $prices = array_map('intval', array_filter($pricesArray));
+
+        return response()->json([
+            'status'      => 'success',
+            'menu'        => $menu->name,
+            'client_type' => $clientType,
+            'prices'      => $prices,  // 🔹 retourne un tableau de prix
+            'min_price'   => count($prices) ? min($prices) : 0,  // optionnel : prix minimum
+            'max_price'   => count($prices) ? max($prices) : 0,  // optionnel : prix maximum
+        ]);
+    }
+
+
+
+
 
 
 }

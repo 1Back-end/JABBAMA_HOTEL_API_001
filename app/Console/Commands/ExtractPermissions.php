@@ -80,6 +80,14 @@ class ExtractPermissions extends Command
         'view_all_menu_orders' => [
             'description' => 'Accéder à toutes les compositions des menus du restaurant',
             'category' => 'Composition des menus du restaurant',
+        ],
+        'view_all_restaurant_rooms' => [
+            'description' => 'Accéder à toutes les chambres du restaurant',
+            'category' => 'Gestion des chambres',
+        ],
+        'view_all_orders_for_restaurant' => [
+            'description' => 'Accéder à toutes les commandes du restaurant',
+            'category' => 'Gestion des commandes du restaurant',
         ]
     ];
 

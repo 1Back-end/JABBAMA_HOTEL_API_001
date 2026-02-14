@@ -18,6 +18,7 @@ class MenuOrderItem extends Model
 
     protected $fillable = [
         'menu_order_uuid',
+        'menus_restaurant_uuid',
         'product_uuid',
         'quantity_used',
         'created_by',
@@ -40,5 +41,9 @@ class MenuOrderItem extends Model
     public function product()
     {
         return $this->belongsTo(Product::class, 'product_uuid', 'uuid');
+    }
+    public function menu_restaurant()
+    {
+        return $this->belongsTo(MenuRestaurant::class, 'menus_restaurant_uuid', 'uuid');
     }
 }
