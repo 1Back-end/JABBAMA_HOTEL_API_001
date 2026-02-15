@@ -7,6 +7,7 @@ use App\Models\RestaurantPartner;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 /**
@@ -35,7 +36,7 @@ class PartenaireController extends Controller
                 'phone_number'        => 'required|string|max:255|unique:restaurant_partners,phone_number',
                 'second_phone_number' => 'nullable|string|max:255|unique:restaurant_partners,second_phone_number',
                 'address'             => 'nullable|string|max:255',
-                'logo'                => 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
+                'logo' => 'nullable|file|mimes:jpeg,png,jpg,gif,svg,pdf|max:2048',
                 'description'         => 'nullable|string',
                 'cni_number'          => 'nullable|string|max:255|unique:restaurant_partners,cni_number',
                 'is_whatsapp'         => 'nullable|boolean',
@@ -93,7 +94,7 @@ class PartenaireController extends Controller
      * @permission PartenaireController::update
      * @permission_desc Modifier les partenaires du restaurant
      */
-    public function update(Request $request, string $uuid)
+    public function update_partners(Request $request, string $uuid)
     {
         $auth = auth()->user();
 
@@ -107,18 +108,17 @@ class PartenaireController extends Controller
             $validated = $request->validate([
                 'first_name' => ['required', 'string', 'max:255'],
                 'last_name'  => ['nullable', 'string', 'max:255'],
-                'email' => ['nullable', 'email', 'max:255', Rule::unique('restaurant_partners', 'email')->ignore($partner->uuid, 'uuid'),],
-                'phone_number' => ['required', 'string', 'max:255', Rule::unique('restaurant_partners', 'phone_number')->ignore($partner->uuid, 'uuid'),],
-                'second_phone_number' => ['nullable', 'string', 'max:255', Rule::unique('restaurant_partners', 'second_phone_number')->ignore($partner->uuid, 'uuid'),],
-                'cni_number' => ['nullable', 'string', Rule::unique('restaurant_partners', 'cni_number')->ignore($partner->uuid, 'uuid'),],
+                'email' => ['nullable', 'email', 'max:255', Rule::unique('restaurant_partners', 'email')->ignore($partner->uuid, 'uuid')],
+                'phone_number' => ['required', 'string', 'max:255', Rule::unique('restaurant_partners', 'phone_number')->ignore($partner->uuid, 'uuid')],
+                'second_phone_number' => ['nullable', 'string', 'max:255', Rule::unique('restaurant_partners', 'second_phone_number')->ignore($partner->uuid, 'uuid')],
+                'cni_number' => ['nullable', 'string', Rule::unique('restaurant_partners', 'cni_number')->ignore($partner->uuid, 'uuid')],
                 'address'     => ['nullable', 'string', 'max:255'],
                 'description' => ['nullable', 'string'],
                 'active'      => ['nullable', 'boolean'],
-                'logo'        => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,svg', 'max:2048'],
+                'logo' => ['nullable', 'file', 'mimes:jpeg,png,jpg,gif,svg,pdf', 'max:2048'],
                 'is_whatsapp' => ['nullable', 'boolean'],
                 'is_second_whatsapp' => ['nullable', 'boolean'],
             ]);
-
 
             $validated['updated_by'] = $auth->id;
 
@@ -128,6 +128,16 @@ class PartenaireController extends Controller
             // 🔹 Gestion du nouveau logo
             if ($request->hasFile('logo')) {
                 $file = $request->file('logo');
+
+                // 1️⃣ Supprimer les anciens médias du disque et de la base
+                foreach ($partner->medias as $media) {
+                    if (Storage::disk($media->disk)->exists($media->path)) {
+                        Storage::disk($media->disk)->delete($media->path);
+                    }
+                    $media->delete();
+                }
+
+                // 2️⃣ Stocker le nouveau fichier
                 $path = $file->store('logo_partners', 'public');
 
                 $partner->medias()->create([
@@ -149,21 +159,20 @@ class PartenaireController extends Controller
             ], 200);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
-            // ✅ Gestion propre des erreurs de validation
             return response()->json([
                 'status' => 'validation_error',
                 'errors' => $e->errors(),
             ], 422);
 
         } catch (\Exception $e) {
-            // ✅ Gestion des autres exceptions
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Une erreur est survenue lors de la création du fournisseur.',
+                'message' => 'Une erreur est survenue lors de la mise à jour du partenaire.',
                 'error'   => $e->getMessage(),
             ], 500);
         }
     }
+
 
 
     /**

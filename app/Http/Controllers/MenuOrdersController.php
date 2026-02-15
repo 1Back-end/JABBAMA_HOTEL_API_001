@@ -3,14 +3,19 @@
 namespace App\Http\Controllers;
 
 use App\Enums\MenuOrderStatus;
+use App\Enums\TypeClientsForPaiment;
 use App\Models\MenuOrder;
 use App\Models\MenuOrderItem;
+use App\Models\MenuRestaurant;
 use App\Models\ProductPoint;
 use App\Models\Supply;
 use App\Models\Warehouse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rules\Enum;
+
 /**
  * @permission_category Composition des menus du restaurant
  */
@@ -28,194 +33,118 @@ class MenuOrdersController extends Controller
 
     /**
      * Display a listing of the resource.
-     * @permission MenuOrdersController::store
-     * @permission_desc Créer la composition d'un menu du restaurant
+     * @permission MenuOrdersController::storeOrUpdateMenu
+     * @permission_desc Effectuer la composition des plats des menus du restaurant
      */
-    public function store(Request $request)
+    public function storeOrUpdateMenu(Request $request, string $menus_restaurant_uuid)
     {
         $auth = auth()->user();
 
-        DB::beginTransaction();
+        // 🔹 Vérification du mot de passe avant tout
+        $request->validate([
+            'password' => 'required|string'
+        ], [
+            'password.required' => 'Le mot de passe est obligatoire.',
+            'password.string'   => 'Le mot de passe doit être une chaîne de caractères.'
+        ]);
 
-        try {
-            // 🔹 Validation de base
-            $validated = $request->validate([
-                'menus_restaurant_uuid' => 'required|exists:menus_restaurants,uuid',
-                'warehouse_uuid'        => 'nullable|exists:warehouses,uuid',
-                'items'                 => 'required|array',
-                'items.*.product_uuid'  => 'required|exists:produits,uuid',
-                'items.*.quantity_used' => 'required|numeric|min:1',
-                'description' => 'nullable|string',
-            ]);
-
-            // 🔹 Récupérer l'entrepôt utilisé pour la cuisine
-            $warehouseUuid = $validated['warehouse_uuid'] ?? Warehouse::where('is_used_for_restaurant', true)->firstOrFail()->uuid;
-            $stockErrors = [];
-            // 🔹 Vérification des stocks pour chaque article
-            foreach ($validated['items'] as $index => $item) {
-                $pointStock = (float) ProductPoint::where('produit_uuid', $item['product_uuid'])
-                    ->where('point_uuid', $warehouseUuid)
-                    ->value('quantity') ?? 0;
-
-                $quantitySupplied = (float) $item['quantity_used'];
-
-                if ($quantitySupplied > $pointStock) {
-                    $stockErrors[$index]['quantity_used'][] = "La quantité demandée ({$quantitySupplied}) dépasse le stock disponible ({$pointStock}).";
-                }
-            }
-
-            if (!empty($stockErrors)) {
-                return response()->json([
-                    'status' => 'validation_error',
-                    'errors' => [
-                        'items' => $stockErrors
-                    ]
-                ], 422);
-            }
-
-            $menuOrder = MenuOrder::create([
-                'menus_restaurant_uuid' => $validated['menus_restaurant_uuid'],
-                'warehouse_uuid'        => $warehouseUuid,
-                'status'                => \App\Enums\MenuOrderStatus::PENDING->value,
-                'created_by'            => $auth->id,
-                'description'           => $validated['description'],
-            ]);
-
-            // 🔹 Création des items du MenuOrder
-            foreach ($validated['items'] as $item) {
-                MenuOrderItem::create([
-                    'menu_order_uuid' => $menuOrder->uuid,
-                    'product_uuid'    => $item['product_uuid'],
-                    'quantity_used'   => $item['quantity_used'],
-                    'created_by'      => $auth->id,
-                    'updated_by'      => $auth->id,
-                ]);
-
-            }
-
-            DB::commit();
-
-            return response()->json([
-                'status'  => 'success',
-                'message' => 'Composition de menu créée avec succès.',
-                'data'    => $menuOrder->load('items')
-            ], 201);
-
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            \Log::error('Erreur creation approvisionnement : ' . $e->getMessage());
-            // ✅ Gestion propre des erreurs de validation
-            return response()->json([
-                'status' => 'validation_error',
-                'errors' => $e->errors(),
-            ], 422);
-
-        } catch (\Exception $e) {
-            // ✅ Gestion des autres exceptions
+        // 🔹 Vérification du mot de passe
+        if (!Hash::check($request->password, $auth->password)) {
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Une erreur est survenue lors de la création.',
-                'error'   => $e->getMessage(),
-            ], 500);
+                'message' => 'Mot de passe incorrect.'
+            ], 422);
         }
-    }
 
-
-    /**
-     * Display a listing of the resource.
-     * @permission MenuOrdersController::update
-     * @permission_desc Modifier la composition d'un menu du restaurant
-     */
-    public function update(Request $request, string $uuid)
-    {
-        $auth = auth()->user();
+        // 🔹 Vérifier que le menu existe
+        $menu_restaurant = MenuRestaurant::where('uuid', $menus_restaurant_uuid)->first();
+        if (!$menu_restaurant) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Menu restaurant non trouvé.'
+            ], 404);
+        }
 
         DB::beginTransaction();
 
         try {
-            \Log::info("Début update MenuOrder UUID: {$uuid}");
-
-            $menuOrder = MenuOrder::where('uuid', $uuid)->firstOrFail();
-            \Log::info("MenuOrder trouvé:", ['menuOrder' => $menuOrder->toArray()]);
-
             // 🔹 Validation
             $validated = $request->validate([
-                'menus_restaurant_uuid' => 'required|exists:menus_restaurants,uuid',
                 'warehouse_uuid'        => 'nullable|exists:warehouses,uuid',
-                'items'                 => 'required|array',
+                'items'                 => 'required|array|min:1',
+                'items.*.uuid'          => 'nullable|exists:menu_order_items,uuid', // pour mise à jour
                 'items.*.product_uuid'  => 'required|exists:produits,uuid',
                 'items.*.quantity_used' => 'required|numeric|min:1',
                 'description'           => 'nullable|string',
             ]);
-            \Log::info("Données validées:", ['validated' => $validated]);
 
-            $warehouseUuid = $validated['warehouse_uuid'] ?? $menuOrder->warehouse_uuid;
-            \Log::info("Entrepôt utilisé:", ['warehouseUuid' => $warehouseUuid]);
+            // 🔹 Entrepôt par défaut si non fourni
+            $warehouseUuid = $validated['warehouse_uuid'] ?? Warehouse::where('is_used_for_restaurant', true)->firstOrFail()->uuid;
 
-            // 🔹 Vérification des stocks
-            $stockErrors = [];
-            foreach ($validated['items'] as $index => $item) {
-                $pointStock = (float) ProductPoint::where('produit_uuid', $item['product_uuid'])
-                    ->where('point_uuid', $warehouseUuid)
-                    ->value('quantity') ?? 0;
+            // 🔹 Vérifier si une composition existe déjà pour ce menu
+            $menuOrder = MenuOrder::firstOrCreate(
+                ['menus_restaurant_uuid' => $menus_restaurant_uuid],
+                [
+                    'warehouse_uuid' => $warehouseUuid,
+                    'status'         => \App\Enums\MenuOrderStatus::PENDING->value,
+                    'created_by'     => $auth->id,
+                    'description' => $validated['description'] ?? 'Confection du menu ' . trim($menu_restaurant->name),
+                ]
+            );
 
-                $quantitySupplied = (float) $item['quantity_used'];
+            // 🔹 Mise à jour du menuOrder si déjà existant
+            $menuOrder->update([
+                'warehouse_uuid' => $warehouseUuid,
+                'description'   => $validated['description'] ?? $menuOrder->description ?? 'Confection du menu ' . trim($menu_restaurant->name),
+                'status'        => \App\Enums\MenuOrderStatus::PENDING->value,
+                'updated_by'    => $auth->id,
+            ]);
 
-                \Log::info("Vérification stock:", [
-                    'product_uuid' => $item['product_uuid'],
-                    'requested'    => $quantitySupplied,
-                    'available'    => $pointStock
-                ]);
+            // 🔹 Gestion des items
+            $existingItems = $menuOrder->items()->pluck('uuid')->toArray();
+            $submittedItemUuids = [];
 
-                if ($quantitySupplied > $pointStock) {
-                    $stockErrors[$index]['quantity_used'][] = "La quantité demandée ({$quantitySupplied}) dépasse le stock disponible ({$pointStock}).";
+            foreach ($validated['items'] as $item) {
+                if (!empty($item['uuid']) && in_array($item['uuid'], $existingItems)) {
+                    // Mise à jour item existant
+                    $menuOrderItem = MenuOrderItem::find($item['uuid']);
+                    $menuOrderItem->update([
+                        'product_uuid'  => $item['product_uuid'],
+                        'quantity_used' => $item['quantity_used'],
+                        'menus_restaurant_uuid'=> $menus_restaurant_uuid, // 🔹 ajout ici
+                        'updated_by'    => $auth->id,
+                    ]);
+                    $submittedItemUuids[] = $item['uuid'];
+                } else {
+                    // Création nouveau item
+                    $newItem = MenuOrderItem::create([
+                        'menu_order_uuid' => $menuOrder->uuid,
+                        'product_uuid'    => $item['product_uuid'],
+                        'quantity_used'   => $item['quantity_used'],
+                        'menus_restaurant_uuid'=> $menus_restaurant_uuid,
+                        'created_by'      => $auth->id,
+                        'updated_by'      => $auth->id,
+                    ]);
+                    $submittedItemUuids[] = $newItem->uuid;
                 }
             }
 
-            if (!empty($stockErrors)) {
-                \Log::warning("Erreur stock:", ['stockErrors' => $stockErrors]);
-                return response()->json([
-                    'status' => 'validation_error',
-                    'errors' => ['items' => $stockErrors]
-                ], 422);
-            }
+            // 🔹 Supprimer les items qui n'ont pas été soumis
+            $menuOrder->items()->whereNotIn('uuid', $submittedItemUuids)->delete();
 
-            // 🔹 Mettre à jour le MenuOrder
-            $menuOrder->update([
-                'menus_restaurant_uuid' => $validated['menus_restaurant_uuid'],
-                'warehouse_uuid'        => $warehouseUuid,
-                'description'           => $validated['description'],
-                'updated_by'            => $auth->id,
-            ]);
-            \Log::info("MenuOrder mis à jour:", ['menuOrder' => $menuOrder->toArray()]);
-
-            // 🔹 Supprimer les anciens items
-            $deleted = $menuOrder->items()->delete();
-            \Log::info("Items supprimés:", ['count' => $deleted]);
-
-            // 🔹 Créer les nouveaux items
-            foreach ($validated['items'] as $item) {
-                $newItem = MenuOrderItem::create([
-                    'menu_order_uuid' => $menuOrder->uuid,
-                    'product_uuid'    => $item['product_uuid'],
-                    'quantity_used'   => $item['quantity_used'],
-                    'created_by'      => $auth->id,
-                    'updated_by'      => $auth->id,
-                ]);
-                \Log::info("Item créé:", ['item' => $newItem->toArray()]);
-            }
+            // 🔹 Mettre à jour le menu comme confectionné
+            $menu_restaurant->update(['is_confectioned' => true]);
 
             DB::commit();
-            \Log::info("Mise à jour terminée avec succès");
 
             return response()->json([
                 'status'  => 'success',
-                'message' => 'Composition de menu mise à jour avec succès.',
+                'message' => 'Composition de menu enregistrée avec succès.',
                 'data'    => $menuOrder->load('items')
-            ], 200);
+            ], 201);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
             DB::rollBack();
-            \Log::error('Erreur validation update composition menu : ' . $e->getMessage(), ['errors' => $e->errors()]);
             return response()->json([
                 'status' => 'validation_error',
                 'errors' => $e->errors(),
@@ -223,17 +152,13 @@ class MenuOrdersController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Exception update composition menu : ' . $e->getMessage(), [
-                'stack' => $e->getTraceAsString()
-            ]);
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Une erreur est survenue lors de la mise à jour.',
+                'message' => 'Une erreur est survenue lors de la création/mise à jour.',
                 'error'   => $e->getMessage(),
             ], 500);
         }
     }
-
 
 
 
@@ -242,35 +167,31 @@ class MenuOrdersController extends Controller
      * @permission MenuOrdersController::show
      * @permission_desc Afficher les détails de la composition d'un menu du restaurant
      */
-    public function show(string $uuid)
+    public function showByMenu(string $menus_restaurant_uuid)
     {
-        $menu_orders = MenuOrder::with([
+        $menuOrder = MenuOrder::with([
             'menus_restaurant',
             'warehouse',
-            'validator',
             'items.product',
-            'rejector',
-            'bufferItems',
             'creator',
             'updater',
+        ])->where('menus_restaurant_uuid', $menus_restaurant_uuid)->first();
 
-        ])
-            ->where('uuid', $uuid)->firstOrFail();
-
-        if (!$menu_orders) {
+        if (!$menuOrder) {
             return response()->json([
                 'success' => false,
-                'message' => 'Composition de menus non trouvée.'
+                'message' => 'Aucune confection trouvée pour ce menu.'
             ], 404);
         }
 
         return response()->json([
             'success' => true,
-            'menu_orders' => $menu_orders,
-            'message' => 'Composition de menus récupérée avec succès.'
+            'menu_orders' => $menuOrder,
+            'message' => 'Composition de menu récupérée avec succès.'
         ]);
-
     }
+
+
 
     /**
      * Display a listing of the resource.
@@ -391,6 +312,8 @@ class MenuOrdersController extends Controller
         ]);
 
     }
+
+
 
 
 
