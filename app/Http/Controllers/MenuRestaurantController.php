@@ -249,6 +249,80 @@ class MenuRestaurantController extends Controller
         ]);
     }
 
+
+    /**
+     * Display a listing of the resource.
+     * @permission MenuRestaurantController::get_menu_is_confectioned
+     * @permission_desc Afficher la liste des menus du restaurant deja confectionné
+     */
+    public function get_menu_is_confectioned(Request $request)
+    {
+        $auth = auth()->user();
+        $roleIds = $auth->roles->pluck('id');
+        $perPage = $request->input('limit', 5);
+        $page = $request->input('page', 1);
+
+        $query = MenuRestaurant::with([
+            'creator',
+            'updater',
+            'medias',
+            'category'
+        ])
+            ->where('is_confectioned', true);
+
+        if ($request->has('is_active')) {
+            $isActive = $request->input('is_active') === 'true' ? true : false;
+            $query->where('is_active', $isActive);
+        }
+
+        if ($request->has('is_confectioned')) {
+            $isConfectioned = $request->input('is_confectioned') === 'true' ? true : false;
+            $query->where('is_confectioned', $isConfectioned);
+        }
+
+
+        if ($request->filled('category_uuid')) {
+            $query->where('category_uuid', $request->category_uuid);
+        }
+
+        if ($request->filled('start_date') && $request->filled('end_date')) {
+            $start = \Illuminate\Support\Carbon::parse($request->start_date)->startOfDay();
+            $end = Carbon::parse($request->end_date)->endOfDay();
+
+            $query->whereBetween('created_at', [$start, $end]);
+        }
+
+        if (!$auth->hasRole('SUPER_ADMIN') && !$auth->can('view_all_menus_restaurants')) {
+            $query->where(function ($q) use ($auth, $roleIds) {
+                if ($auth->can('view_role_related_data')) {
+                    $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
+                }
+            });
+        }
+
+        if ($search = trim($request->input('search'))) {
+            $query->where(function ($q) use ($search) {
+                $q->where('uuid', 'like', "%{$search}%")
+                    ->orWhere('name', 'like', "%{$search}%")
+                    ->orWhere('code', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%")
+                    ->orWhereHas('creator', function ($qc) use ($search) {
+                        $qc->where('nom_utilisateur', 'like', "%{$search}%")
+                            ->orWhere('email', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        // 🔹 Pagination
+        $data = $query->latest()->paginate($perPage, ['*'], 'page', $page);
+        return response()->json([
+            'data'         => $data->items(),
+            'current_page' => $data->currentPage(),
+            'last_page'    => $data->lastPage(),
+            'total'        => $data->total(),
+        ]);
+    }
+
     /**
      * Display a listing of the resource.
      * @permission MenuRestaurantController::index
@@ -320,6 +394,7 @@ class MenuRestaurantController extends Controller
             'total'        => $data->total(),
         ]);
     }
+
 
 
     /**

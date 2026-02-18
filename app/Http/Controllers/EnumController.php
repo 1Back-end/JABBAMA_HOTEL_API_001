@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\ConsumptionType;
+use App\Enums\MenuOrderStatus;
 use App\Enums\PurchaseOrdersStatus;
 use App\Enums\RoomType;
 use App\Enums\TypeClientsForPaiment;
@@ -32,6 +33,14 @@ class EnumController extends Controller
         return response()->json([
             'status' => 'success',
             'data'   => RoomType::toArray(),
+        ]);
+    }
+
+    public function menu_orders_status()
+    {
+        return response()->json([
+            'status' => 'success',
+            'data'   => MenuOrderStatus::toArray(),
         ]);
     }
     //

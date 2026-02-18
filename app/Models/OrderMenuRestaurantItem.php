@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\OrderMenuRestaurantItemStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -40,6 +41,15 @@ class OrderMenuRestaurantItem extends Model
         'total_price' => 'integer',
         'is_free'     => 'boolean',
     ];
+
+    protected $appends = ['status_item_order_label'];
+
+    public function getStatusItemOrderLabelAttribute(): string
+    {
+        return OrderMenuRestaurantItemStatus::safeLabel($this->status);
+    }
+
+
 
     protected static function boot()
     {

@@ -132,6 +132,54 @@ class UserController extends Controller
 
 
 
+    public function get_users_where_role_is_cuisinier(Request $request): JsonResponse
+    {
+        $users = User::query()
+            // Filtre uniquement les utilisateurs ayant le rôle GESTIONNAIRE STOCK
+            ->whereHas('roles', function ($q) {
+                $q->where('name', 'CUISINIER');
+            })
+            // Filtre par permissions si fourni
+            ->when($request->input('permissions'), function ($query) use ($request) {
+                $query->whereHas('permissions', function ($q) use ($request) {
+                    $q->whereIn('id', $request->input('permissions'));
+                });
+            })
+            // Filtre par recherche texte
+            ->when($request->input('search'), function ($query) use ($request) {
+                $search = $request->input('search');
+                $query->where(function ($q) use ($search) {
+                    $q->where('login', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%")
+                        ->orWhere('nom_utilisateur', 'like', "%{$search}%")
+                        ->orWhere('prenom', 'like', "%{$search}%");
+                });
+            })
+            // Filtre par statut si fourni (boolean)
+            ->when($request->has('status'), function ($query) use ($request) {
+                $query->where('status', $request->boolean('status'));
+            })
+            // Exclure SYSTEM et admin
+            ->whereNot('login', ['SYSTEM', 'admin'])
+            ->with([
+                'roles:id,name',
+                'permissions:id,name',
+                'createdBy',
+                'updatedBy',
+            ])
+            ->latest()
+            ->paginate(
+                perPage: $request->input('per_page', 5),
+                page: $request->input('page', 1)
+            );
+
+        return response()->json([
+            'users' => $users,
+        ]);
+    }
+
+
+
     /**
      * @param UserRequest $request
      * @return JsonResponse

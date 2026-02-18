@@ -45,11 +45,12 @@ class PermissionController extends Controller
                     ->orWhere('description', 'like', "%{$search}%");
             });
         }
+        $query->orderBy('name', 'asc');
         // Si la pagination est demandée
         if ($perPage && $page) {
             $permissions = $query->paginate(perPage: $perPage, page: $page);
         } else {
-            $permissions = $query->orderBy('name', 'asc')->latest()->get();
+            $permissions = $query->get();
         }
 
         return response()->json([
