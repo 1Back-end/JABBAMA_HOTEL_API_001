@@ -47,7 +47,13 @@ class OrderMenuRestaurant extends Model
         'restaurant_room_uuid',
         'menu_restaurant_uuid',
         'quantity',
-        'full_name'
+        'full_name',
+        'transfered_at',
+        'received_by',
+        'transfered_by',
+        'rejected_at',
+        'rejected_by',
+        'reason_rejected'
     ];
 
     /**
@@ -62,7 +68,7 @@ class OrderMenuRestaurant extends Model
         'order_menu_restaurant_date' => 'datetime',
     ];
 
-    protected $appends = ['consumption_type_label','clients_for_payment_label','status_label',];
+    protected $appends = ['consumption_type_label','clients_for_payment_label','status_label','total_items'];
 
     public function getConsumptionTypeLabelAttribute(): string
     {
@@ -75,6 +81,11 @@ class OrderMenuRestaurant extends Model
     public function getStatusLabelAttribute(): string
     {
         return MenuOrderStatus::safeLabel($this->status);
+    }
+
+    public function getTotalItemsAttribute(): int
+    {
+        return $this->items->sum(fn($item) => $item->total_price ?? 0);
     }
 
 
@@ -154,6 +165,20 @@ class OrderMenuRestaurant extends Model
     public function items()
     {
         return $this->hasMany(OrderMenuRestaurantItem::class, 'order_menu_restaurant_uuid', 'uuid');
+    }
+
+    public function received()
+    {
+        return $this->belongsTo(User::class, 'received_by', 'id');
+    }
+    public function transfered()
+    {
+        return $this->belongsTo(User::class, 'transfered_by', 'id');
+    }
+
+    public function rejected()
+    {
+        return $this->belongsTo(User::class, 'rejected_by', 'id');
     }
 
 }

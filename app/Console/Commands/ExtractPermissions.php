@@ -88,6 +88,10 @@ class ExtractPermissions extends Command
         'view_all_orders_for_restaurant' => [
             'description' => 'Accéder à toutes les commandes du restaurant',
             'category' => 'Gestion des commandes du restaurant',
+        ],
+        'view_all_orders_module_applications' => [
+            'description' => 'Accéder à tous les modules de l\'application',
+            'category' => 'Gestion des modules de l\'application',
         ]
     ];
 

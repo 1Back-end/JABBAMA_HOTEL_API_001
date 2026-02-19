@@ -5,6 +5,7 @@ namespace App\Enums;
 enum MenuOrderStatus : string
 {
     case PENDING    = 'pending';
+    case TRANSFERED = 'transfered';
     case VALIDATED  = 'validated';
     case CANCELLED  = 'cancelled';
     case REJECTED   = 'rejected';
@@ -14,10 +15,11 @@ enum MenuOrderStatus : string
     {
         return match ($this) {
             self::PENDING   => 'En attente',
-            self::VALIDATED => 'Validé',
-            self::CANCELLED => 'Annulé',
-            self::REJECTED  => 'Rejeté',
-            self::COMPLETED => 'Terminé',
+            self::VALIDATED => 'Validée',
+            self::CANCELLED => 'Annulée',
+            self::REJECTED  => 'Rejetée',
+            self::COMPLETED => 'Terminée',
+            self::TRANSFERED => 'Transférée',
         };
     }
 
