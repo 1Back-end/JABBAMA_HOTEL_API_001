@@ -23,6 +23,8 @@ class OrderMenuRestaurantItem extends Model
         'order_menu_restaurant_uuid',
         'menus_restaurant_uuid',
         'quantity',
+        'quantity_delivered',
+        'has_been_validated',
         'unit_price',
         'total_price',
         'is_free',
@@ -30,6 +32,7 @@ class OrderMenuRestaurantItem extends Model
         'status',
         'created_by',
         'updated_by',
+        'quantity_exactly'
     ];
 
     /**

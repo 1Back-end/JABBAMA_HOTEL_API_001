@@ -13,6 +13,7 @@ use Illuminate\Validation\Rules\Enum;
 
 /**
  * @permission_category Gestion des chambres
+ * @permission_module Gestion du restaurant
  */
 class RestaurantRoomController extends Controller
 {
@@ -36,6 +37,7 @@ class RestaurantRoomController extends Controller
                 'description'  => ['nullable', 'string', 'max:255'],
                 'type'         => ['required', new Enum(RoomType::class)],
                 'capacity'     => ['required', 'integer', 'min:1'],
+                'floor_uuid'   => ['required', 'string', 'max:255','exists:floors,uuid'],
             ]);
 
             // 🔹 Ajout de l'utilisateur créateur
@@ -103,6 +105,7 @@ class RestaurantRoomController extends Controller
                 'type'         => ['required', new Enum(RoomType::class)],
                 'capacity'     => ['required', 'integer', 'min:1'],
                 'is_active'    => ['nullable', 'boolean'],
+                'floor_uuid'   => ['required', 'string', 'max:255','exists:floors,uuid'],
             ]);
 
             // 🔹 Ajout de l'utilisateur qui met à jour
@@ -210,7 +213,7 @@ class RestaurantRoomController extends Controller
     {
         try {
             // 🔹 Récupérer la chambre
-            $room = RestaurantRoom::with(['creator', 'updater'])->findOrFail($uuid);
+            $room = RestaurantRoom::with(['creator', 'updater','floor'])->findOrFail($uuid);
 
             return response()->json([
                 'status' => 'success',
@@ -254,6 +257,7 @@ class RestaurantRoomController extends Controller
         $query = RestaurantRoom::with([
             'creator',
             'updater',
+            'floor'
         ]);
 
         if ($request->has('is_active')) {

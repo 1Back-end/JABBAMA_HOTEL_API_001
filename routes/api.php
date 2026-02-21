@@ -145,6 +145,9 @@ Route::middleware(['activity'])->group(function () {
         Route::get('deductions_stocks/{uuid}/print_deductions_stocks', [\App\Http\Controllers\StockDeductionController::class, 'print_stocks_deductions']);
 
 
+        Route::apiResource('floors_services', \App\Http\Controllers\FloorController::class);
+        Route::patch('floors_services/{uuid}/is_active', [\App\Http\Controllers\FloorController::class, 'updateStatus']);
+
         Route::apiResource('menus_restaurants', \App\Http\Controllers\MenuRestaurantController::class);
         Route::patch('menus_restaurants/{uuid}/is_active', [\App\Http\Controllers\MenuRestaurantController::class, 'updateStatus']);
         Route::post('menus_restaurants/{uuid}/update_menus_restaurants', [\App\Http\Controllers\MenuRestaurantController::class, 'update_menus']);
@@ -170,15 +173,17 @@ Route::middleware(['activity'])->group(function () {
 
         Route::get('/countries', [\App\Http\Controllers\CountryController::class, 'index']);
 
-        Route::get('menus_orders_actions', [\App\Http\Controllers\MenuOrdersController::class, 'MenuOrderStatus']);
-        Route::apiResource('compositions_menus_orders', \App\Http\Controllers\MenuOrdersController::class);
-        Route::post('/compositions_menus_orders/{menus_restaurant_uuid}/store', [\App\Http\Controllers\MenuOrdersController::class, 'storeOrUpdateMenu']);
-        Route::get('/compositions_menus_orders/{menus_restaurant_uuid}/show', [\App\Http\Controllers\MenuOrdersController::class, 'showByMenu']);
 
         Route::get('enums/consumption_type_status', [\App\Http\Controllers\EnumController::class, 'consumption_type_status']);
         Route::get('enums/type_clients_for_payment', [\App\Http\Controllers\EnumController::class, 'type_clients_for_payment']);
         Route::get('enums/room_type', [\App\Http\Controllers\EnumController::class, 'room_type']);
         Route::get('enums/menu_orders_status', [\App\Http\Controllers\EnumController::class, 'menu_orders_status']);
+        Route::get('menus_orders_actions', [\App\Http\Controllers\MenuOrdersController::class, 'MenuOrderStatus']);
+
+
+        Route::apiResource('compositions_menus_orders', \App\Http\Controllers\MenuOrdersController::class);
+        Route::post('/compositions_menus_orders/{menus_restaurant_uuid}/store', [\App\Http\Controllers\MenuOrdersController::class, 'storeOrUpdateMenu']);
+        Route::get('/compositions_menus_orders/{menus_restaurant_uuid}/show', [\App\Http\Controllers\MenuOrdersController::class, 'showByMenu']);
 
 
         Route::apiResource('orders_menu_restaurants', \App\Http\Controllers\OrderMenuRestaurantController::class);
@@ -186,6 +191,8 @@ Route::middleware(['activity'])->group(function () {
         Route::patch('orders_menu_restaurants/{uuid}/transfer', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'transferOrderMenuRestaurant']);
         Route::patch('orders_menu_restaurants/{uuid}/reject', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'RejectOrderMenuRestaurant']);
         Route::patch('orders_menu_restaurants/{uuid}/cancel', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'CancelOrderMenuRestaurant']);
+        Route::patch('orders_menu_restaurants/{uuid}/cancel_by_super_admin', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'CancelOrderMenuRestaurantBySuperAdmin']);
+        Route::patch('orders_menu_restaurants/{uuid}/validate_item', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'validateItemForOrderMenuRestaurant']);
 
 
 

@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\Hash;
 
 /**
  * @permission_category Gestion de la migrations de la base de données
+ * @permission_module Gestion du restaurant
+ * @permission_module Gestion des stocks
  */
 class MigrationController extends Controller
 {

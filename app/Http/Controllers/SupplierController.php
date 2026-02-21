@@ -19,6 +19,7 @@ use Maatwebsite\Excel\Facades\Excel;
 
 /**
  * @permission_category Gestion des fournisseurs
+ * @permission_module Gestion des stocks
  */
 
 class SupplierController extends Controller

@@ -12,6 +12,7 @@ use Illuminate\Validation\Rule;
 
 /**
  * @permission_category Gestion des partenaires
+ * @permission_module Gestion du restaurant
  */
 class PartenaireController extends Controller
 {

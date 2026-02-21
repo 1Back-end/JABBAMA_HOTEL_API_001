@@ -16,6 +16,8 @@ use Symfony\Component\HttpFoundation\Response;
 
 /**
  * @permission_category Gestion des roles
+ * @permission_module Gestion des stocks
+ * @permission_module Gestion du restaurant
  */
 class RoleController extends Controller
 {

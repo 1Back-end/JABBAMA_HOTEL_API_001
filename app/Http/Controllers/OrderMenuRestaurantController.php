@@ -4,29 +4,33 @@ namespace App\Http\Controllers;
 
 use App\Enums\ConsumptionType;
 use App\Enums\MenuOrderStatus;
+use App\Enums\OrderMenuRestaurantItemStatus;
 use App\Enums\TypeClientsForPaiment;
+use App\Models\InvoiceForMenuOrder;
 use App\Models\MenuOrder;
 use App\Models\MenuOrderItem;
 use App\Models\MenuRestaurant;
 use App\Models\OrderMenuRestaurant;
 use App\Models\OrderMenuRestaurantItem;
+use App\Models\PdfDocument;
 use App\Models\Product;
 use App\Models\ProductPoint;
+use App\Models\Role;
 use App\Models\User;
 use App\Models\VirtualOrderMenuRestaurant;
 use App\Models\Warehouse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Enum;
 /**
  * @permission_category Gestion des commandes du restaurant
+ * @permission_module Gestion du restaurant
  */
 class OrderMenuRestaurantController extends Controller
 {
-
-
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::store
@@ -152,6 +156,14 @@ class OrderMenuRestaurantController extends Controller
                     ],
                     'composition' => $composition,
                 ];
+
+                // 🔹 Log après chaque menu, même si composition vide
+                \Log::info('Menu et composition', [
+                    'menu_uuid' => $menuInput['menus_restaurant_uuid'],
+                    'menu_name' => $menu->name ?? 'Menu inconnu',
+                    'composition_count' => count($composition),
+                    'composition' => $composition,
+                ]);
             }
 
             // 🔹 Étape 2 : Vérification des stocks
@@ -174,6 +186,7 @@ class OrderMenuRestaurantController extends Controller
                     }
                 }
             }
+
 
             // 🔹 Étape 3 : Si stock insuffisant, renvoyer erreur
             if (!empty($stockErrors)) {
@@ -215,11 +228,15 @@ class OrderMenuRestaurantController extends Controller
 
             // 🔹 Étape 5 : Enregistrer les menus commandés et virtual reserve
             foreach ($results as $menuResult) {
+                $menuQuantity = $menuResult['menu']['quantity_ordered'];
                 $isFreeMenu = $validated['type_clients_for_payment'] === TypeClientsForPaiment::FREE->value;
+
+                // Enregistrer le menu commandé
                 $menuItem = OrderMenuRestaurantItem::create([
                     'order_menu_restaurant_uuid' => $order->uuid,
                     'menus_restaurant_uuid' => $menuResult['menu']['uuid'],
-                    'quantity' => $menuResult['menu']['quantity_ordered'],
+                    'quantity' => $menuQuantity,
+                    'quantity_exactly' => $menuQuantity,
                     'unit_price' => $menuResult['menu']['unit_price'],
                     'total_price' => $menuResult['menu']['total_price'],
                     'is_free' => $isFreeMenu,
@@ -228,16 +245,37 @@ class OrderMenuRestaurantController extends Controller
                     'updated_by' => $auth->id,
                 ]);
 
+                // Enregistrer les produits virtuels du menu
                 foreach ($menuResult['composition'] as $product) {
+                    $quantityReserved = $menuQuantity * $product['quantity_per_menu'];
+
+                    // Enregistrement dans la table virtuelle
                     VirtualOrderMenuRestaurant::create([
                         'orders_menu_restaurant_uuid' => $order->uuid,
+                        'item_uuid' => $menuItem->uuid,
                         'product_uuid' => $product['product_uuid'],
-                        'quantity_reserved' => $product['total_quantity_used'],
+                        'quantity_reserved' => $quantityReserved,
                         'created_by' => $auth->id,
                         'updated_by' => $auth->id,
                     ]);
                 }
             }
+
+            $cuisinierRole = Role::where('name', 'CUISINIER')->firstOrFail();
+
+            // On prend le premier utilisateur avec ce rôle disponible
+            $recipient = $cuisinierRole->users()->firstOrFail();
+
+            // Mettre à jour la commande
+            $order->update([
+                'status' => MenuOrderStatus::TRANSFERED->value, // commande transférée
+                'received_by' => $recipient->id,
+                'transfered_at' => now(),
+                'transfered_by' => $auth->id,
+                'updated_by' => $auth->id,
+            ]);
+
+            \Log::info("Commande {$order->uuid} transférée automatiquement à l'utilisateur CUISINIER {$recipient->id}");
 
             DB::commit();
 
@@ -350,7 +388,8 @@ class OrderMenuRestaurantController extends Controller
                     ];
                 }
 
-                $unitPrice = $menuInput['unit_price'] ?? 0;
+                $unitPrice = $menuInput['unit_price'] ?? 0; // Si free ou absent, on met 0 par défaut
+                $menuQuantity = $menuInput['quantity'] ?? 0;
 
                 $results[] = [
                     'menu' => [
@@ -362,6 +401,14 @@ class OrderMenuRestaurantController extends Controller
                     ],
                     'composition' => $composition,
                 ];
+
+                // 🔹 Log après chaque menu, même si composition vide
+                \Log::info('Menu et composition', [
+                    'menu_uuid' => $menuInput['menus_restaurant_uuid'],
+                    'menu_name' => $menu->name ?? 'Menu inconnu',
+                    'composition_count' => count($composition),
+                    'composition' => $composition,
+                ]);
             }
 
             // 🔹 Vérification du stock
@@ -429,6 +476,7 @@ class OrderMenuRestaurantController extends Controller
                     'order_menu_restaurant_uuid' => $order->uuid,
                     'menus_restaurant_uuid' => $menuResult['menu']['uuid'],
                     'quantity' => $menuResult['menu']['quantity_ordered'],
+                    'quantity_exactly' => $menuResult['menu']['quantity_ordered'],
                     'unit_price' => $menuResult['menu']['unit_price'],
                     'total_price' => $menuResult['menu']['total_price'],
                     'is_free' => $isFreeMenu,
@@ -437,16 +485,45 @@ class OrderMenuRestaurantController extends Controller
                     'updated_by' => $auth->id,
                 ]);
 
+                // Enregistrer les produits virtuels du menu
                 foreach ($menuResult['composition'] as $product) {
+                    $quantityReserved = $menuQuantity * $product['quantity_per_menu'];
+
+                    // Enregistrement dans la table virtuelle
                     VirtualOrderMenuRestaurant::create([
                         'orders_menu_restaurant_uuid' => $order->uuid,
+                        'item_uuid' => $menuItem->uuid,
                         'product_uuid' => $product['product_uuid'],
-                        'quantity_reserved' => $product['total_quantity_used'],
+                        'quantity_reserved' => $quantityReserved,
                         'created_by' => $auth->id,
                         'updated_by' => $auth->id,
                     ]);
+
+                    // 🔹 Log pour vérifier
+//                    \Log::info('Produit virtuel enregistré', [
+//                        'order_uuid' => $order->uuid,
+//                        'menu_uuid' => $menuResult['menu']['uuid'],
+//                        'product_uuid' => $product['product_uuid'],
+//                        'product_name' => $product['product_name'],
+//                        'menu_quantity' => $menuQuantity,
+//                        'quantity_per_menu' => $product['quantity_per_menu'],
+//                        'quantity_reserved' => $quantityReserved,
+//                    ]);
                 }
             }
+
+            $cuisinierRole = Role::where('name', 'CUISINIER')->firstOrFail();
+            $recipient = $cuisinierRole->users()->firstOrFail();
+
+            $order->update([
+                'status' => MenuOrderStatus::TRANSFERED->value,
+                'received_by' => $recipient->id,
+                'transfered_at' => now(),
+                'transfered_by' => $auth->id,
+                'updated_by' => $auth->id,
+            ]);
+
+            \Log::info("Commande {$order->uuid} transférée automatiquement à CUISINIER {$recipient->id}");
 
             DB::commit();
 
@@ -541,6 +618,28 @@ class OrderMenuRestaurantController extends Controller
         }
         if ($request->filled('start_date') && $request->filled('end_date')) {
             $query->whereBetween('created_at', [$start_date, $end_date]);
+        }
+
+        if (!$auth->hasRole('SUPER_ADMIN')) {
+
+            $roleIds = $auth->roles->pluck('id');
+
+            $query->where(function ($q) use ($auth, $roleIds) {
+
+                // 🔹 Utilisateurs avec la permission view_role_related_data
+                if ($auth->can('view_role_related_data')) {
+                    $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
+                }
+                // 🔹 Utilisateurs avec la permission view_transferred_orders
+                if ($auth->can('view_transferred_orders_for_restaurant')) {
+                    $q->orWhereNotNull('received_by');
+                }
+                // 🔹 Utilisateurs sans aucune de ces permissions : seulement leurs propres commandes
+                if (!$auth->can('view_role_related_data') && !$auth->can('view_transferred_orders_for_restaurant')) {
+                    $q->orWhere('created_by', $auth->id);
+                }
+
+            });
         }
 
         if (!$auth->hasRole('SUPER_ADMIN') && !$auth->can('view_all_orders_for_restaurant')) {
@@ -960,11 +1059,337 @@ class OrderMenuRestaurantController extends Controller
     }
 
 
+    /**
+     * Display a listing of the resource.
+     * @permission OrderMenuRestaurantController::CancelOrderMenuRestaurantBySuperAdmin
+     * @permission_desc Annuler une commande du restaurant par le SUPER ADMIN
+     */
+    public function CancelOrderMenuRestaurantBySuperAdmin(Request $request, string $uuid)
+    {
+        $auth = auth()->user();
+
+        $validated = $request->validate([
+            'reason_cancel' => 'required|string|max:1000',
+        ], [
+            'reason_cancel.required' => "La raison de l'annulation est obligatoire.",
+            'reason_cancel.string'   => "La raison doit être une chaîne de caractères.",
+            'reason_cancel.max'      => "La raison ne doit pas dépasser 1000 caractères.",
+        ]);
+
+        $order = OrderMenuRestaurant::where('uuid', $uuid)->firstOrFail();
+
+        try {
+            $order->update([
+                'status'          => MenuOrderStatus::CANCELLED->value,
+                'reason_cancel' => $validated['reason_cancel'],
+                'cancelled_at'     => now(),
+                'cancelled_by'     => $auth->id,
+                'updated_by'      => $auth->id,
+            ]);
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Commande annulée avec succès.',
+                'data'    => $order,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Erreur lors de l\'annulation de la commande.',
+                'error'   => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission OrderMenuRestaurantController::validateItemForOrderMenuRestaurant
+     * @permission_desc Marquer un ou plusieurs menus d'une commande comme livrés
+     */
+    public function validateItemForOrderMenuRestaurant(Request $request, string $uuid)
+    {
+        $request->validate([
+            '*.item_uuid' => ['required', 'uuid'],
+            '*.quantity_to_deliver' => ['required', 'integer', 'min:1'],
+        ]);
+
+        DB::beginTransaction();
+        try {
+            // Charger la commande avec TOUS ses items pour vérifier l'état global à la fin
+            $order = OrderMenuRestaurant::where('uuid', $uuid)
+                ->with('items')
+                ->firstOrFail();
+
+            $payloadItems = collect($request->all());
+            $itemsRemainingLogs = [];
+            $virtualLogs = [];
+
+            /*
+            |--------------------------------------------------------------------------
+            | 1️⃣ TRAITEMENT DES ITEMS PRINCIPAUX
+            |--------------------------------------------------------------------------
+            */
+            foreach ($payloadItems as $pItem) {
+                $item = $order->items->firstWhere('uuid', $pItem['item_uuid']);
+                if (!$item) continue;
+
+                $remainingQty = $item->quantity; // Dans ton schéma, quantity semble être le RESTE à livrer
+
+                if ($remainingQty <= 0) {
+                    throw new \Exception("L'item {$item->menu->name} est déjà totalement livré.");
+                }
+
+                if ($pItem['quantity_to_deliver'] > $remainingQty) {
+                    throw new \Exception("Quantité demandée ({$pItem['quantity_to_deliver']}) supérieure au restant ({$remainingQty}) pour {$item->menu->name}");
+                }
+
+                $deliveredThisRound = $pItem['quantity_to_deliver'];
+
+                // Calcul de la proportion AVANT de modifier l'item
+                // Proportion = (ce qu'on livre maintenant) / (ce qu'il restait à livrer)
+                $proportion = $deliveredThisRound / $remainingQty;
+
+                // Mise à jour de l'item principal
+                $item->has_been_validated = true;
+                $item->quantity_delivered += $deliveredThisRound;
+                $item->quantity -= $deliveredThisRound;
+                $item->status = ($item->quantity <= 0)
+                    ? OrderMenuRestaurantItemStatus::DELIVERED->value
+                    : OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value;
+                $item->save();
+
+                /*
+                |--------------------------------------------------------------------------
+                | 2️⃣ TRAITEMENT DES VIRTUALS (STOCKS) LIÉS A CET ITEM
+                |--------------------------------------------------------------------------
+                */
+                $virtuals = VirtualOrderMenuRestaurant::where('orders_menu_restaurant_uuid', $order->uuid)
+                    ->where('item_uuid', $item->uuid)
+                    ->get();
+
+                foreach ($virtuals as $v) {
+                    // On applique la proportion sur ce qu'il RESTE dans le virtual
+                    $toDeliverFromVirtual = (int) round($v->quantity_reserved * $proportion);
+
+                    // Sécurité : ne pas livrer plus que ce qui est réservé
+                    $toDeliverFromVirtual = min($toDeliverFromVirtual, $v->quantity_reserved);
+
+                    $v->quantity_reserved -= $toDeliverFromVirtual;
+                    // Si tu as une colonne quantity_delivered dans virtuals, incrémente-la ici
+                    // $v->quantity_delivered += $toDeliverFromVirtual;
+
+                    $v->status = ($v->quantity_reserved <= 0)
+                        ? OrderMenuRestaurantItemStatus::DELIVERED->value
+                        : OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value;
+
+                    $v->save();
+
+                    $virtualLogs[] = [
+                        'product_uuid' => $v->product_uuid,
+                        'delivered' => $toDeliverFromVirtual,
+                    ];
+                }
+
+                $itemsRemainingLogs[] = [
+                    'item_uuid' => $item->uuid,
+                    'delivered_this_round' => $deliveredThisRound,
+                    'remaining_quantity' => $item->quantity,
+                    'status' => $item->status,
+                ];
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | 3️⃣ DÉDUCTION DES STOCKS (Basé sur les virtuals calculés)
+            |--------------------------------------------------------------------------
+            */
+            $warehouse = Warehouse::where('is_used_for_restaurant', true)->first();
+            $deductions = [];
+
+            foreach ($virtualLogs as $log) {
+                if ($log['delivered'] <= 0) continue;
+
+                $produitPoint = ProductPoint::where('produit_uuid', $log['product_uuid'])
+                    ->where('point_uuid', $warehouse->uuid)
+                    ->first();
+
+                if ($produitPoint) {
+                    $produitPoint->quantity -= $log['delivered'];
+                    if ($produitPoint->quantity < 0) $produitPoint->quantity = 0;
+                    $produitPoint->save();
+
+                    $deductions[] = [
+                        'product_uuid' => $log['product_uuid'],
+                        'deducted' => $log['delivered']
+                    ];
+                }
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | 4️⃣ STATUT DE LA COMMANDE (Basé sur TOUS les items)
+            |--------------------------------------------------------------------------
+            */
+            $order->refresh(); // Recharger les relations pour avoir les status à jour
+            $allItemStatus = $order->items->pluck('status')->toArray();
+
+            $isAllDelivered = collect($allItemStatus)->every(fn($s) => $s === OrderMenuRestaurantItemStatus::DELIVERED->value);
+            $isAnyDelivered = collect($allItemStatus)->contains(fn($s) => $s !== OrderMenuRestaurantItemStatus::NOT_DELIVERED->value);
+
+            $order->status = $isAllDelivered
+                ? MenuOrderStatus::COMPLETED->value
+                : ($isAnyDelivered ? MenuOrderStatus::PARTIAL_COMPLETED->value : MenuOrderStatus::PENDING->value);
+
+            $order->save();
+
+            DB::commit();
+            return response()->json([
+                'success' => true,
+                'order_status' => $order->status,
+                'items' => $itemsRemainingLogs,
+                'stock_deductions' => $deductions
+            ]);
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+    }
+
+    public function save_facture(Request $request,string $uuid)
+    {
+        $auth = auth()->user();
+        $order = OrderMenuRestaurant::where('uuid', $uuid)->firstOrFail();
+        $invoice = InvoiceForMenuOrder::where('order_menu_restaurant_uuid', $order->uuid)->first();
+
+        if($invoice) {
+            $invoice->amount = $request->input('amount', $invoice->amount);
+            $invoice->type = $request->input('type', $invoice->type);
+            $invoice->updated_by = $auth->id;
+            $invoice->save();
+        } else {
+
+            $invoice = InvoiceForMenuOrder::create([
+                'order_menu_restaurant_uuid' => $order->uuid,
+                'amount' => $request->input('amount', 0),
+                'type' => $request->input('type', 1),
+                'created_by' => $auth->id,
+                'updated_by' => $auth->id,
+                'date_fact' => now(),
+            ]);
+        }
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Facture enregistrée avec succès',
+            'invoice' => $invoice
+        ]);
+
+    }
 
 
 
+    /**
+     * Display a listing of the resource.
+     * @permission OrderMenuRestaurantController::PrintFactureForOrderMenuRestaurant
+     * @permission_desc Imprimer la facture du client
+     */
+    public static function PrintFactureForOrderMenuRestaurant(Request $request, string $uuid)
+    {
+        $auth = auth()->user();
+        try {
+            DB::beginTransaction();
 
+            $order_menu_restaurant = OrderMenuRestaurant::with([
+                'restaurantTable',
+                'creator',
+                'updater',
+                'validator',
+                'cancelor',
+                'partners_restaurant',
+                'warehouse',
+                'restaurant_room',
+                'menu_restaurant',
+                'items.menu',
+            ])->findOrFail($uuid);
 
+            $fileName   = strtoupper('FACTURE-N°-' . strtoupper($order_menu_restaurant->code) . '-'. '.pdf');
+            $folderPath = 'storage/details-facture-orders-menus-restaurant/' . $order_menu_restaurant->uuid;
+            $filePath   = $folderPath . '/' . $fileName;
+
+            if (!is_dir($folderPath)) {
+                if (!mkdir($folderPath, 0755, true) && !is_dir($folderPath)) {
+                    throw new \RuntimeException("Impossible de créer le répertoire : {$folderPath}");
+                }
+            }
+
+            $data = ['order' => $order_menu_restaurant];
+
+            $footer = 'pdfs.reports.factures.footer';
+
+            save_browser_shot_pdf(
+                view: 'pdfs.facture-client.facture-client',
+                data: $data,
+                folderPath: $folderPath,
+                path: $filePath,
+                margins: [10, 10, 10, 10],
+                footer: $footer
+            );
+            DB::commit();
+
+            if (!file_exists($filePath)) {
+                return response()->json(['message' => "Le fichier PDF n'a pas été généré."], 500);
+            }
+
+            $pdf = PdfDocument::where('order_menu_restaurant', $order_menu_restaurant->uuid)
+                ->where('name', 'FACTURE-ORDERS-RESTAURANT')
+                ->first();
+
+            // S'il existe → on met à jour le fichier
+            if ($pdf) {
+                $pdf->update([
+                    'path'       => $filePath,
+                    'filename'   => $fileName,
+                    'updated_by' => $auth->id,
+                ]);
+            }
+            // Sinon → on crée un nouvel enregistrement
+            else {
+                $pdf = PdfDocument::create([
+                    'name'       => 'FACTURE-ORDERS-RESTAURANT',
+                    'order_uuid' => $order_menu_restaurant->uuid,
+                    'disk'       => 'public',
+                    'path'       => $filePath,
+                    'filename'   => $fileName,
+                    'mimetype'   => 'application/pdf',
+                    'extension'  => 'pdf',
+                    'created_by' => auth()->id(),
+                ]);
+            }
+
+            $pdfContent = file_get_contents($filePath);
+            $base64     = base64_encode($pdfContent);
+
+            return response()->json([
+                'data'     => $data,
+                'base64'   => $base64,
+                'url'      => $filePath,
+                'filename' => $fileName,
+                'document' => $pdf,
+            ], 200);
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            \Log::error("Erreur génération PDF commande : " . $e->getMessage());
+
+            return response()->json([
+                'status'  => 'error',
+                'message' => "Erreur lors de la génération du fichier PDF.",
+                'details' => $e->getMessage()
+            ], 500);
+        }
+    }
 
 
 

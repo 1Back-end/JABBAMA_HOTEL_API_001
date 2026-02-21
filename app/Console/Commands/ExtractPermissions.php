@@ -14,84 +14,125 @@ class ExtractPermissions extends Command
 {
     protected $signature = 'permissions:extract';
     protected $description = 'Synchronise les permissions avec les annotations des contrôleurs et les catégorise par menu.';
+    protected string $defaultManualModule = 'Autres Modules';
+
 
     // 🔹 Permissions manuelles
     protected array $manualPermissions = [
         'view_all_products' => [
             'description' => 'Accéder à tous les produits, indépendamment de son rôle.',
             'category' => 'Permissions supplémentaires',
+            'modules' => ['Gestion des stocks', 'Gestion du restaurant','Autres Modules'],
         ],
         'view_all_warehouses' => [
             'description' => 'Accéder à tous les entrepôts, indépendamment de son rôle.',
             'category' => 'Permissions supplémentaires',
+            'modules' => ['Gestion des stocks', 'Gestion du restaurant','Autres Modules'],
         ],
         'view_all_passations' => [
             'description' => "Accéder à toutes les passations de stocks, indépendamment de son rôle.",
             'category' => 'Permissions supplémentaires',
+            'modules' => ['Gestion des stocks','Autres Modules'],
         ],
         'view_role_related_data' => [
             'description' => 'Partager les mêmes informations entre utilisateurs ayant le même rôle.',
             'category' => 'Permissions supplémentaires',
+            'modules' => ['Gestion des stocks', 'Gestion du restaurant','Autres Modules'],
         ],
         'view_transferred_orders' => [
             'description' => 'Permettre aux gestionnaires de stock de voir toutes les commandes qui leur ont été transférées.',
             'category' => 'Gestion des commandes',
+            'modules' => ['Gestion des stocks','Autres Modules'],
+        ],
+        'view_transferred_orders_for_restaurant' => [
+            'description' => 'Permettre aux cuisiniers  de voir toutes les commandes du restaurant qui leur ont été transférées.',
+            'category' => 'Gestion des commandes du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
         'view_transferred_supplies' => [
             'description' => 'Permettre aux gestionnaires de stock de voir tous les approvisionnements qui leur ont été transférées.',
             'category' => 'Gestion des approvisionnements',
+            'modules' => ['Gestion des stocks','Autres Modules'],
         ],
         'view_all_products_access' => [
             'description' => 'Permettre aux gestionnaires de stock de voir tous les articles du système au meme dégré que le SUPER ADMIN.',
             'category' => 'Gestion des articles',
+            'modules' => ['Gestion des stocks', 'Gestion du restaurant','Autres Modules'],
         ],
         'view_all_menus_restaurants' => [
             'description' => 'Accéder à tous les menus du restaurant, indépendamment de son rôle.',
             'category' => 'Gestion des menus du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
         'view_all_restaurants_tables' => [
             'description' => 'Accéder à toutes les tables du restaurant, indépendamment de son rôle.',
             'category' => 'Gestion des tables du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
         'view_all_category_menus' => [
             'description' => 'Accéder à toutes les catégories de menus du restaurant, indépendamment de son rôle.',
             'category' => 'Gestion des catégories de menus',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
         'view_access_setting' => [
             'description' => 'Accéder aux paramètres d\'accès du système',
             'category' => 'Permissions supplémentaires',
+            'modules' => ['Gestion des stocks', 'Gestion du restaurant','Autres Modules'],
         ],
         'view_access_setting_stocks' => [
             'description' => 'Accéder aux paramètres de stocks du système',
             'category' => 'Permissions supplémentaires',
+            'modules' => ['Gestion des stocks','Autres Modules','Gestion du restaurant'],
         ],
         'view_access_setting_restaurants' => [
             'description' => 'Accéder aux paramètres du restaurant du système',
             'category' => 'Permissions supplémentaires',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
         'view_access_setting_others_transferts' => [
             'description' => 'Accéder aux paramètres de transferts de stocks du système',
             'category' => 'Permissions supplémentaires',
+            'modules' => ['Gestion des stocks','Autres Modules'],
         ],
         'view_all_restaurant_partners' => [
             'description' => 'Accéder à tous les partenaires du restaurant du système',
             'category' => 'Gestion des partenaires',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
         'view_all_menu_orders' => [
             'description' => 'Accéder à toutes les compositions des menus du restaurant',
             'category' => 'Composition des menus du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
         'view_all_restaurant_rooms' => [
             'description' => 'Accéder à toutes les chambres du restaurant',
             'category' => 'Gestion des chambres',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
         'view_all_orders_for_restaurant' => [
             'description' => 'Accéder à toutes les commandes du restaurant',
             'category' => 'Gestion des commandes du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
         'view_all_orders_module_applications' => [
             'description' => 'Accéder à tous les modules de l\'application',
             'category' => 'Gestion des modules de l\'application',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'view_access_for_dashboard' => [
+            'description' => 'Accéder au dashboard',
+            'category' => 'Gestion des statistiques',
+            'modules' => ['Gestion des stocks', 'Gestion du restaurant','Autres Modules'],
+        ],
+        'view_access_for_modules_applications' => [
+            'description' => 'Accéder aux modules de l\'application',
+            'category' => 'Gestion des modules de l\'application',
+            'modules' => ['Gestion des stocks', 'Gestion du restaurant','Autres Modules'],
+        ],
+        'view_access_for_floor_room_services' => [
+            'description' => 'Accéder aux services des étages',
+            'category' => 'Gestion du service des étages',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
         ]
     ];
 
@@ -102,43 +143,34 @@ class ExtractPermissions extends Command
 
         $systemUser = User::where('login', 'SYSTEM')->first();
         $systemId = $systemUser?->id ?? 1;
-
         $superAdminRole = Role::find(1);
 
-        // -----------------------
         // 1️⃣ Extraction des permissions depuis les contrôleurs
-        // -----------------------
         foreach ($this->getControllers($controllersPath) as $controller) {
             $this->extractPermissionsFromController($controller, $permissions);
         }
 
-        $this->info("\n--- Synchronisation des permissions ---");
+        $this->info("\n--- Synchronisation des permissions et modules ---");
 
-        $controllerPermissionNames = collect($permissions)
-            ->flatMap(fn ($methods) => collect($methods)->pluck('permission'))
-            ->filter()
-            ->values()
-            ->toArray();
+        $validPermissions = [];
 
-        // -----------------------
-        // 2️⃣ Création / mise à jour des permissions issues des contrôleurs
-        // -----------------------
+        // ----------------------- Permissions des contrôleurs -----------------------
         foreach ($permissions as $controller => $methods) {
-
-            $categoryName = $this->extractControllerCategory($controller) ?? 'Autres';
-
-            $category = PermissionCategory::firstOrCreate(
-                ['libelle' => $categoryName],
-                [
-                    'description' => $categoryName,
-                    'created_by' => $systemId,
-                    'updated_by' => $systemId,
-                ]
-            );
-
             foreach ($methods as $perm) {
-                if (empty($perm['permission'])) continue;
+                $categoryName = $perm['category'] ?? 'Autres';
+                $modules = $perm['modules'] ?? [$this->defaultManualModule];
 
+                // ✅ Catégorie
+                $category = PermissionCategory::firstOrCreate(
+                    ['libelle' => $categoryName],
+                    [
+                        'description' => $categoryName,
+                        'created_by' => $systemId,
+                        'updated_by' => $systemId,
+                    ]
+                );
+
+                // ✅ Permission
                 $permission = Permission::updateOrCreate(
                     ['name' => $perm['permission']],
                     [
@@ -151,30 +183,58 @@ class ExtractPermissions extends Command
                     ]
                 );
 
-                $this->info(
-                    $permission->wasRecentlyCreated
-                        ? "✅ Créée : {$permission->name}"
-                        : "🔁 Mise à jour : {$permission->name}"
-                );
+                $validPermissions[] = $permission->name;
 
-                if ($superAdminRole && !$superAdminRole->permissions->contains($permission->id)) {
+                // ✅ Attachement à tous les modules
+                foreach ($modules as $moduleName) {
+                    $moduleSlug = \Str::slug($moduleName);
+
+                    $module = \App\Models\ModuleApplications::firstOrCreate(
+                        ['slug' => $moduleSlug],
+                        [
+                            'name' => $moduleName,
+                            'description' => $moduleName,
+                            'is_active' => true,
+                            'created_by' => $systemId,
+                            'updated_by' => $systemId,
+                        ]
+                    );
+
+                    $this->info("📦 Module synchronisé : {$module->name}");
+
+                    if (!$module->permissions()->where('permission_id', $permission->id)->exists()) {
+                        $module->permissions()->attach($permission->id, [
+                            'created_by' => $systemId,
+                            'updated_by' => $systemId,
+                        ]);
+                    }
+
+                    // ✅ Optionnel : remplir module_uuid si tu veux le lien direct
+                    $permission->module_uuid = $module->uuid;
+                    $permission->save();
+                }
+
+                // ✅ Attachement au super admin
+                if ($superAdminRole && !$superAdminRole->permissions()->where('permission_id', $permission->id)->exists()) {
                     $superAdminRole->permissions()->attach($permission->id, [
                         'created_by' => $systemId,
                         'updated_by' => $systemId,
                     ]);
                 }
+
+                $this->info("✅ Permission synchronisée : {$permission->name}");
             }
         }
 
-        // -----------------------
-        // 3️⃣ Création / mise à jour des permissions manuelles
-        // -----------------------
+        // ----------------------- Permissions manuelles -----------------------
         foreach ($this->manualPermissions as $name => $data) {
+            $categoryName = $data['category'] ?? 'Autres';
+            $modules = $data['modules'] ?? [$this->defaultManualModule];
 
             $category = PermissionCategory::firstOrCreate(
-                ['libelle' => $data['category']],
+                ['libelle' => $categoryName],
                 [
-                    'description' => $data['category'],
+                    'description' => $categoryName,
                     'created_by' => $systemId,
                     'updated_by' => $systemId,
                 ]
@@ -183,7 +243,7 @@ class ExtractPermissions extends Command
             $permission = Permission::updateOrCreate(
                 ['name' => $name],
                 [
-                    'description' => $data['description'],
+                    'description' => $data['description'] ?? '',
                     'category_id' => $category->id,
                     'system' => true,
                     'active' => true,
@@ -192,100 +252,166 @@ class ExtractPermissions extends Command
                 ]
             );
 
-            $this->info(
-                $permission->wasRecentlyCreated
-                    ? "✅ Créée : {$name}"
-                    : "🔁 Mise à jour : {$name}"
-            );
+            $validPermissions[] = $permission->name;
 
-            if ($superAdminRole && !$superAdminRole->permissions->contains($permission->id)) {
+            foreach ($modules as $moduleName) {
+                $moduleSlug = \Str::slug($moduleName);
+
+                $module = \App\Models\ModuleApplications::firstOrCreate(
+                    ['slug' => $moduleSlug],
+                    [
+                        'name' => $moduleName,
+                        'description' => $moduleName,
+                        'is_active' => true,
+                        'created_by' => $systemId,
+                        'updated_by' => $systemId,
+                    ]
+                );
+
+                $this->info("📦 Module synchronisé : {$module->name}");
+
+                if (!$module->permissions()->where('permission_id', $permission->id)->exists()) {
+                    $module->permissions()->attach($permission->id, [
+                        'created_by' => $systemId,
+                        'updated_by' => $systemId,
+                    ]);
+                }
+
+                // Optionnel : module_uuid
+                $permission->module_uuid = $module->uuid;
+                $permission->save();
+            }
+
+            if ($superAdminRole && !$superAdminRole->permissions()->where('permission_id', $permission->id)->exists()) {
                 $superAdminRole->permissions()->attach($permission->id, [
                     'created_by' => $systemId,
                     'updated_by' => $systemId,
                 ]);
             }
+
+            $this->info("✅ Permission manuelle synchronisée : {$permission->name}");
         }
 
-        // -----------------------
-        // 4️⃣ Suppression des permissions système obsolètes
-        // -----------------------
-        $validPermissions = array_merge(
-            $controllerPermissionNames,
-            array_keys($this->manualPermissions)
-        );
-
-        $obsoletePermissions = Permission::where('system', true)
+        // ----------------------- Nettoyage -----------------------
+        Permission::where('system', true)
             ->whereNotIn('name', $validPermissions)
-            ->get();
-
-        foreach ($obsoletePermissions as $permission) {
-            $permission->delete();
-            $this->warn("🗑️ Permission supprimée : {$permission->name}");
-        }
-
-        // -----------------------
-        // 5️⃣ Suppression des catégories vides
-        // -----------------------
-        $usedCategoryIds = Permission::pluck('category_id')->unique()->filter();
-
-        PermissionCategory::whereNotIn('id', $usedCategoryIds)
-            ->each(function ($category) {
-                $category->delete();
-                $this->warn("🗑️ Catégorie supprimée : {$category->libelle}");
+            ->get()
+            ->each(function ($permission) {
+                $permission->delete();
+                $this->warn("🗑️ Permission supprimée : {$permission->name}");
             });
 
-        $this->info("\n✅ Synchronisation terminée avec succès !");
+        $usedCategoryIds = Permission::pluck('category_id')->unique()->filter();
+        PermissionCategory::whereNotIn('id', $usedCategoryIds)->each(function ($category) {
+            $category->delete();
+            $this->warn("🗑️ Catégorie supprimée : {$category->libelle}");
+        });
+
+        $usedModuleIds = \DB::table('module_permission')->pluck('module_uuid')->unique()->filter();
+        \App\Models\ModuleApplications::whereNotIn('uuid', $usedModuleIds)
+            ->get()
+            ->each(function ($module) {
+                $module->delete();
+                $this->warn("🗑️ Module supprimé : {$module->name}");
+            });
+
+        $this->info("\n✅ Synchronisation complète terminée !");
     }
 
-
-    private function getControllers($directory, $namespace = 'App\\Http\\Controllers'): array
-    {
-        $controllers = [];
-        foreach (scandir($directory) as $file) {
-            if (in_array($file, ['.', '..'])) continue;
-            $fullPath = $directory . DIRECTORY_SEPARATOR . $file;
-
-            if (is_dir($fullPath)) {
-                $controllers = array_merge($controllers, $this->getControllers($fullPath, $namespace . '\\' . $file));
-            } elseif (pathinfo($file, PATHINFO_EXTENSION) === 'php') {
-                $controllers[] = $namespace . '\\' . pathinfo($file, PATHINFO_FILENAME);
-            }
-        }
-        return $controllers;
-    }
-
-    private function extractPermissionsFromController($controller, &$permissions): void
+    /**
+     * Extraction des permissions depuis un contrôleur avec catégorie et modules multiples
+     */
+    private function extractPermissionsFromController(string $controller, array &$permissions): void
     {
         if (!class_exists($controller)) return;
 
-        $reflection = new ReflectionClass($controller);
-        foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
+        $reflection = new \ReflectionClass($controller);
+
+        // Docblock du contrôleur
+        $doc = $reflection->getDocComment() ?: '';
+
+        // Récupère la catégorie (une seule)
+        $category = $this->extractTagValue($doc, '@permission_category') ?: 'Autres';
+
+        // Récupère tous les modules (peut être plusieurs)
+        $modules = $this->extractTagValues($doc, '@permission_module');
+        if (empty($modules)) {
+            $modules = ['Autres Modules']; // fallback
+        }
+
+        // Parcours des méthodes publiques
+        foreach ($reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
             $docComment = $method->getDocComment();
             if (!$docComment) continue;
 
-            $permission = $this->extractTagValue($docComment, '@permission');
-            $permissionDesc = $this->extractTagValue($docComment, '@permission_desc');
+            $permission     = $this->extractTagValue($docComment, '@permission');
+            $permissionDesc = $this->extractTagValue($docComment, '@permission_desc') ?? '';
 
             if ($permission) {
                 $permissions[$controller][$method->getName()] = [
-                    'permission' => $permission,
-                    'permission_desc' => $permissionDesc ?? ''
+                    'permission'      => $permission,
+                    'permission_desc' => $permissionDesc,
+                    'category'        => $category,
+                    'modules'         => $modules, // tableau de modules
                 ];
             }
         }
     }
 
-    private function extractControllerCategory($controller): ?string
+    /**
+     * Récupère toutes les valeurs d'un tag dans un docblock
+     * Permet de gérer plusieurs modules
+     */
+    private function extractTagValues(string $doc, string $tag): array
     {
-        $reflection = new ReflectionClass($controller);
-        $docComment = $reflection->getDocComment();
-        return $docComment ? $this->extractTagValue($docComment, '@permission_category') : null;
+        preg_match_all('/' . preg_quote($tag, '/') . '\s+(.+)/', $doc, $matches);
+        return isset($matches[1]) ? array_map('trim', $matches[1]) : [];
     }
 
-    private function extractTagValue($doc, $tag): ?string
+    /**
+     * Récupère tous les contrôleurs d'un répertoire récursivement
+     */
+    private function getControllers(string $directory, string $namespace = 'App\\Http\\Controllers'): array
     {
-        return preg_match('/' . preg_quote($tag) . '\s+(.+)/', $doc, $matches)
+        $controllers = [];
+
+        foreach (scandir($directory) as $file) {
+            if (in_array($file, ['.', '..'])) continue;
+
+            $fullPath = $directory . DIRECTORY_SEPARATOR . $file;
+
+            if (is_dir($fullPath)) {
+                $controllers = array_merge(
+                    $controllers,
+                    $this->getControllers($fullPath, $namespace . '\\' . $file)
+                );
+            } elseif (pathinfo($file, PATHINFO_EXTENSION) === 'php') {
+                $controllers[] = $namespace . '\\' . pathinfo($file, PATHINFO_FILENAME);
+            }
+        }
+
+        return $controllers;
+    }
+
+    /**
+     * Récupère la catégorie définie dans le contrôleur via @permission_category
+     */
+    private function extractControllerCategory(string $controller): ?string
+    {
+        $reflection = new \ReflectionClass($controller);
+        return $reflection->getDocComment()
+            ? $this->extractTagValue($reflection->getDocComment(), '@permission_category')
+            : null;
+    }
+
+    /**
+     * Extrait une seule valeur d’un tag dans un docblock
+     */
+    private function extractTagValue(string $doc, string $tag): ?string
+    {
+        return preg_match('/' . preg_quote($tag, '/') . '\s+(.+)/', $doc, $matches)
             ? trim($matches[1])
             : null;
     }
+
 }

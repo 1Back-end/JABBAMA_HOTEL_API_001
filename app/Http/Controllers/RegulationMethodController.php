@@ -8,6 +8,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 /**
  *  @permission_category Gestion des modes de règlements
+ * @permission_module Gestion du restaurant
  * /
  */
 class RegulationMethodController extends Controller

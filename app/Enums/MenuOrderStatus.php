@@ -10,6 +10,7 @@ enum MenuOrderStatus : string
     case CANCELLED  = 'cancelled';
     case REJECTED   = 'rejected';
     case COMPLETED  = 'completed';
+    case PARTIAL_COMPLETED = 'partial_completed';
 
     public function label(): string
     {
@@ -18,8 +19,9 @@ enum MenuOrderStatus : string
             self::VALIDATED => 'Validée',
             self::CANCELLED => 'Annulée',
             self::REJECTED  => 'Rejetée',
-            self::COMPLETED => 'Terminée',
+            self::COMPLETED => 'Livrée totalement',
             self::TRANSFERED => 'Transférée',
+            self::PARTIAL_COMPLETED => 'Livrée partiellement',
         };
     }
 

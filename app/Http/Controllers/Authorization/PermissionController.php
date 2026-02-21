@@ -15,6 +15,8 @@ use Symfony\Component\HttpFoundation\Response;
 
 /**
  * @permission_category Gestion des permissions
+ * @permission_module Gestion des stocks
+ * @permission_module Gestion du restaurant
  */
 class PermissionController extends Controller
 {

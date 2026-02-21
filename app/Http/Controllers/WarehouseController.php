@@ -24,6 +24,7 @@ use Maatwebsite\Excel\Facades\Excel;
 
 /**
  * @permission_category Gestion des entrepôts
+ * @permission_module Gestion des stocks
  */
 class WarehouseController extends Controller
 {
