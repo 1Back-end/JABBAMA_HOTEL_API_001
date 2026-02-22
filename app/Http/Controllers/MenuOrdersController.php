@@ -18,6 +18,7 @@ use Illuminate\Validation\Rules\Enum;
 
 /**
  * @permission_category Composition des menus du restaurant
+ * @permission_module Gestion du restaurant
  */
 class MenuOrdersController extends Controller
 {
@@ -310,6 +311,39 @@ class MenuOrdersController extends Controller
             'last_page'    => $data->lastPage(),
             'total'        => $data->total(),
         ]);
+
+    }
+
+    public function show(string $uuid)
+    {
+        try {
+            $menu_order = MenuOrder::with([
+                'creator',
+                'updater',
+                'menus_restaurant',
+                'warehouse',
+                'validator',
+                'cancelor',
+                'rejector',
+                'items.product',
+                'bufferItems',
+
+            ])->where('uuid', $uuid)->firstOrFail();
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Composition du menu récupéré avec succès.',
+                'menu_order'    => $menu_order
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Composition du menu introuvable.',
+                'details' => $e->getMessage()
+            ], 404);
+        }
+
 
     }
 

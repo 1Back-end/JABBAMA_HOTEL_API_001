@@ -18,6 +18,7 @@ use Maatwebsite\Excel\Facades\Excel;
 
 /**
  * @permission_category Gestion des déductions de stocks
+ * @permission_module Gestion des stocks
  */
 class StockDeductionController extends Controller
 {

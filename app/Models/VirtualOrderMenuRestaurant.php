@@ -20,10 +20,13 @@ class VirtualOrderMenuRestaurant extends Model
     protected $fillable = [
         'uuid',
         'orders_menu_restaurant_uuid',
+        'item_uuid',
         'product_uuid',
         'quantity_reserved',
+        'quantity_delivered',
         'created_by',
         'updated_by',
+        'status'
     ];
 
     protected static function boot()

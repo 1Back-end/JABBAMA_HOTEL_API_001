@@ -21,6 +21,8 @@ use Illuminate\Support\Facades\Hash;
 
 /**
  * @permission_category Gestion des articles
+ * @permission_module Gestion des stocks
+ * @permission_module Gestion du restaurant
  */
 
 class ProductController extends Controller

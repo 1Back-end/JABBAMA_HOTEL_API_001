@@ -30,6 +30,7 @@ use Maatwebsite\Excel\Facades\Excel;
 
 /**
  * @permission_category Gestion des approvisionnements
+ * @permission_module Gestion des stocks
  */
 class SupplyController extends Controller
 {

@@ -9,6 +9,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 /**
  * @permission_category Gestion des catégories d'articles
+ * @permission_module Gestion des stocks
+ * @permission_module Gestion du restaurant
  */
 class CategoryProductsController extends Controller
 {

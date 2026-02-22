@@ -9,11 +9,15 @@ use Illuminate\Support\Str;
 
 /**
  * @permission_category Gestion des modules de l'application
+ * @permission_module Gestion des stocks
+ * @permission_module Gestion du restaurant
  */
 class ModuleApplicationsController extends Controller
 {
     /**
      * Display a listing of the resource.
+     * @permission ModuleApplicationsController::index
+     * @permission_desc Afficher la liste des modules d'applications
      */
     public function index(Request $request)
     {
@@ -26,7 +30,8 @@ class ModuleApplicationsController extends Controller
             'permissions',
             'creator',
             'updater',
-        ]);
+        ])
+            ->whereNotIn('name', ['Autres Modules']);
 
         if ($request->has('is_active')) {
             $isActive = $request->input('is_active') === 'true' ? true : false;

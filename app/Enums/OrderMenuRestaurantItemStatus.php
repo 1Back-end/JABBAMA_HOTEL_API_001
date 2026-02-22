@@ -8,12 +8,15 @@ enum OrderMenuRestaurantItemStatus: string
     case DELIVERED = 'delivered';
     case NOT_DELIVERED = 'not_delivered';
 
+    case PARTIAL_DELIVERED = 'partial_delivered';
+
     public function label(): string
     {
         return match ($this) {
             self::PENDING => 'En attente',
-            self::DELIVERED => 'Livré',
-            self::NOT_DELIVERED => 'Non livré',
+            self::DELIVERED => 'Livrée',
+            self::NOT_DELIVERED => 'Non livrée',
+            self::PARTIAL_DELIVERED => 'Livrée partiellement',
         };
     }
 

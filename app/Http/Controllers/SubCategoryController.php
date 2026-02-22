@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * @permission_category Gestion des sous catégories d'articles
+ * @permission_module Gestion des stocks
  */
 class SubCategoryController extends Controller
 {

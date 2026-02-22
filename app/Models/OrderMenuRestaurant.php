@@ -53,7 +53,8 @@ class OrderMenuRestaurant extends Model
         'transfered_by',
         'rejected_at',
         'rejected_by',
-        'reason_rejected'
+        'reason_rejected',
+        'quantity_exactly'
     ];
 
     /**

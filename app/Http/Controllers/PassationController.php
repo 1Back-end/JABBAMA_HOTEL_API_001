@@ -22,6 +22,7 @@ use Mockery\Generator\StringManipulation\Pass\Pass;
 
 /**
  * @permission_category Gestion des passations de stocks entre agents
+ * @permission_module Gestion des stocks
  */
 class PassationController extends Controller
 {

@@ -11,6 +11,8 @@ use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 /**
  * @permission_category Gestion des menus
+ * @permission_module Gestion des stocks
+ * @permission_module Gestion du restaurant
  */
 class MenuController extends Controller
 {

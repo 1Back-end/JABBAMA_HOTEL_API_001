@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Hash;
 
 /**
  * @permission_category Gestion des tables du restaurant
+ * @permission_module Gestion du restaurant
  */
 class RestaurantTableController extends Controller
 {

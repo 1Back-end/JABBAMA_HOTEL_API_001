@@ -13,6 +13,7 @@ use Illuminate\Support\Str;
 
 /**
  * @permission_category Gestion des catégories de menus
+ * @permission_module Gestion du restaurant
  */
 class MenuCategoryController extends Controller
 {

@@ -7,32 +7,33 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
-class RestaurantRoom extends Model
+class InvoiceForMenuOrder extends Model
 {
-    use HasFactory,SoftDeletes;
+    use HasFactory, SoftDeletes;
+    protected $table = 'invoices_for_menu_orders';
 
     protected $primaryKey = 'uuid';
     public $incrementing = false;
     protected $keyType = 'string';
 
-
+    // Champs remplissables en masse
     protected $fillable = [
         'uuid',
         'code',
-        'rooms_number',
-        'description',
+        'sequence',
+        'date_fact',
+        'amount',
         'type',
-        'capacity',
-        'is_active',
         'created_by',
         'updated_by',
-        'floor_uuid'
+        'order_menu_restaurant_uuid',
     ];
 
-
+    // Casts
     protected $casts = [
-        'capacity' => 'integer',
-        'is_active' => 'boolean',
+        'date_fact' => 'datetime',
+        'amount' => 'integer',
+        'type' => 'integer',
     ];
 
     protected static function boot()
@@ -40,18 +41,18 @@ class RestaurantRoom extends Model
         parent::boot();
 
         static::creating(function ($model) {
-            if (!$model->uuid) {
-                $model->uuid = (string) Str::uuid();
-                $model->code = self::generateCode();
-            }
+            $model->uuid = (string) Str::uuid();
+            $model->code = self::generateCode();
+            $model->sequence = self::generateSequence();
         });
     }
 
     public static function generateCode(): string
     {
         $datePart = now()->format('Ydm');
-        $prefix = 'ROOM' . $datePart;
+        $prefix = '#' . $datePart;
 
+        // Chercher le dernier code global (pas par jour)
         $last = self::withTrashed()->orderBy('created_at', 'desc')->first();
 
         if ($last && preg_match('/(\d{6})$/', $last->code, $matches)) {
@@ -63,6 +64,22 @@ class RestaurantRoom extends Model
         return $prefix . str_pad($number, 6, '0', STR_PAD_LEFT);
     }
 
+    public static function generateSequence(): int
+    {
+        $last = self::withTrashed()->orderBy('sequence', 'desc')->first();
+
+        if ($last) {
+            return $last->sequence + 1;
+        }
+
+        return 1;
+    }
+
+    public function orderMenu()
+    {
+        return $this->belongsTo(OrderMenuRestaurant::class, 'order_menu_restaurant_uuid', 'uuid');
+    }
+
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
@@ -72,8 +89,9 @@ class RestaurantRoom extends Model
     {
         return $this->belongsTo(User::class, 'updated_by');
     }
-    public function floor()
-    {
-        return $this->belongsTo(Floor::class, 'floor_uuid');
-    }
+
+//    public function regulations()
+//    {
+//        return $this->hasMany(RegulationForOrderMenu::class, 'invoice_uuid', 'uuid');
+//    }
 }

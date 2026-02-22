@@ -14,6 +14,7 @@ use Illuminate\Validation\Rules\Enum;
 
 /**
  * @permission_category Gestion des menus du restaurant
+ * @permission_module Gestion du restaurant
  */
 class MenuRestaurantController extends Controller
 {

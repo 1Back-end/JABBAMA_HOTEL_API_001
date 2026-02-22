@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Hash;
 
 /**
  * @permission_category Gestion des unités d'articles
+ * @permission_module Gestion des stocks
  */
 class UnitController extends Controller
 {

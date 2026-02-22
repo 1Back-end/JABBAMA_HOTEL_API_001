@@ -19,6 +19,8 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * @permission_category Gestion des statistiques
+ * @permission_module Gestion des stocks
+ * @permission_module Gestion du restaurant
  */
 class StatisticsController extends Controller
 {

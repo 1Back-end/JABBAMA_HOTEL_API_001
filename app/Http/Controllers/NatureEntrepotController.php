@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 /**
  * @permission_category Gestion des natures d'entrepôts
+ * @permission_module Gestion des stocks
  */
 class NatureEntrepotController extends Controller
 {

@@ -55,4 +55,10 @@ class Permission extends \Spatie\Permission\Models\Permission
         return $this->belongsTo(PermissionCategory::class, 'category_id');
     }
 
+    public function module()
+    {
+        return $this->belongsTo(ModuleApplications::class, 'module_uuid');
+
+    }
+
 }

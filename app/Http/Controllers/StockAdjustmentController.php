@@ -28,6 +28,7 @@ use Maatwebsite\Excel\Facades\Excel;
 
 /**
  * @permission_category Gestion des régularisations de stocks
+ * @permission_module Gestion des stocks
  */
 class StockAdjustmentController extends Controller
 {

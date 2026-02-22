@@ -2,21 +2,24 @@
 
 namespace App\Enums;
 
-enum TypeClientsForPaiment : string
-{
 
-    case DEBTOR     = 'debtor';
-    case PARTNER    = 'partner';
-    case FREE       = 'free';
+enum StateFacture: int
+{
+    case CREATE = 1;
+    case IN_PROGRESS = 2;
+    case PAID = 3;
+    case CANCELLED = 4;
 
     public function label(): string
-    {
-        return match ($this) {
-            self::DEBTOR  => 'Clients divers',
-            self::PARTNER => 'Clients débiteurs',
-            self::FREE    => 'Gratuit',
-        };
-    }
+     {
+         return match ($this) {
+             self::CREATE => 'Créer',
+             self::IN_PROGRESS => 'En cours',
+             self::PAID => 'Soldé',
+             self::CANCELLED => 'Annulé',
+         };
+     }
+
     public static function safeLabel(?string $value): string
     {
         return self::tryFrom($value)?->label() ?? 'Inconnu';
@@ -28,4 +31,5 @@ enum TypeClientsForPaiment : string
             ->mapWithKeys(fn($case) => [$case->value => $case->label()])
             ->toArray();
     }
+
 }
