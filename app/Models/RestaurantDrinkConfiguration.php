@@ -7,51 +7,45 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
-class RestaurantRoom extends Model
+class RestaurantDrinkConfiguration extends Model
 {
-    use HasFactory,SoftDeletes;
+    use HasFactory, SoftDeletes;
+
+    protected $table = 'restaurant_drink_configurations';
 
     protected $primaryKey = 'uuid';
     public $incrementing = false;
     protected $keyType = 'string';
 
-
     protected $fillable = [
         'uuid',
         'code',
-        'rooms_number',
+        'prices_for_clients_debtor',
+        'prices_for_clients_partner',
+        'prices_for_clients_free',
+        'product_uuid',
         'description',
-        'type',
-        'capacity',
         'is_active',
         'created_by',
         'updated_by',
-        'floor_uuid'
+        'has_prices',
+        'default_price'
     ];
-
 
     protected $casts = [
-        'capacity' => 'integer',
+        'prices_for_clients_debtor' => 'array',
+        'prices_for_clients_partner' => 'array',
+        'prices_for_clients_free' => 'array',
         'is_active' => 'boolean',
+        'default_price' => 'decimal:2',
     ];
-
-    protected static function boot()
-    {
-        parent::boot();
-
-        static::creating(function ($model) {
-            if (!$model->uuid) {
-                $model->uuid = (string) Str::uuid();
-                $model->code = self::generateCode();
-            }
-        });
-    }
 
     public static function generateCode(): string
     {
-        $datePart = now()->format('Ydm');
+        $datePart = now()->format('Ydm'); // Année, jour, mois → ex: 20252611
         $prefix = '#' . $datePart;
 
+        // Chercher le dernier code global (pas par jour)
         $last = self::withTrashed()->orderBy('created_at', 'desc')->first();
 
         if ($last && preg_match('/(\d{6})$/', $last->code, $matches)) {
@@ -61,6 +55,15 @@ class RestaurantRoom extends Model
         }
 
         return $prefix . str_pad($number, 6, '0', STR_PAD_LEFT);
+    }
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::creating(function ($model) {
+            $model->uuid = (string) Str::uuid();
+            $model->code = self::generateCode();
+        });
     }
 
     public function creator()
@@ -72,8 +75,9 @@ class RestaurantRoom extends Model
     {
         return $this->belongsTo(User::class, 'updated_by');
     }
-    public function floor()
+
+    public function product()
     {
-        return $this->belongsTo(Floor::class, 'floor_uuid');
+        return $this->belongsTo(Product::class, 'product_uuid');
     }
 }

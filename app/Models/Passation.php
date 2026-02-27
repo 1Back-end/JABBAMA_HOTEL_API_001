@@ -55,7 +55,7 @@ class Passation extends Model
     {
         parent::boot();
         static::creating(function ($model) {
-            $prefix = 'PASS_';
+            $prefix = '#';
             $timestamp = now()->format('dYmd');
 
             $random = strtoupper(Str::random(5));

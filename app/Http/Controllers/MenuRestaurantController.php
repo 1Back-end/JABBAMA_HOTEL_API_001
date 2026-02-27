@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\MenuTypeComplementBoisson;
 use App\Enums\TypeClientsForPaiment;
 use App\Models\MenuRestaurant;
+use App\Models\RestaurantDrinkConfiguration;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -466,6 +467,47 @@ class MenuRestaurantController extends Controller
             'prices'      => $prices,  // 🔹 retourne un tableau de prix
             'min_price'   => count($prices) ? min($prices) : 0,  // optionnel : prix minimum
             'max_price'   => count($prices) ? max($prices) : 0,  // optionnel : prix maximum
+        ]);
+    }
+
+    public function get_price_by_product_and_client(Request $request)
+    {
+        // 🔹 Validation
+        $validated = $request->validate([
+            'product_uuid' => ['required', 'uuid', 'exists:produits,uuid'],
+            'client_type'  => ['required', 'string', new Enum(TypeClientsForPaiment::class)], // debtor, partner, free
+        ]);
+
+        $productConfig = RestaurantDrinkConfiguration::where('product_uuid', $validated['product_uuid'])->firstOrFail();
+        $clientType = $validated['client_type'];
+
+        // 🔹 Sélectionner le tableau de prix selon le type de client
+        $pricesArray = [];
+
+        if ($clientType === TypeClientsForPaiment::DEBTOR->value) {
+            $pricesArray = is_array($productConfig->prices_for_clients_debtor)
+                ? $productConfig->prices_for_clients_debtor
+                : [$productConfig->prices_for_clients_debtor];
+        } elseif ($clientType === TypeClientsForPaiment::PARTNER->value) {
+            $pricesArray = is_array($productConfig->prices_for_clients_partner)
+                ? $productConfig->prices_for_clients_partner
+                : [$productConfig->prices_for_clients_partner];
+        } elseif ($clientType === TypeClientsForPaiment::FREE->value) {
+            $pricesArray = is_array($productConfig->prices_for_clients_free)
+                ? $productConfig->prices_for_clients_free
+                : [$productConfig->prices_for_clients_free];
+        }
+
+        // 🔹 Nettoyer les valeurs nulles et convertir en int
+        $prices = array_map('intval', array_filter($pricesArray));
+
+        return response()->json([
+            'status'       => 'success',
+            'product_name' => $productConfig->product->name ?? null,
+            'client_type'  => $clientType,
+            'prices'       => $prices,               // tableau complet
+            'min_price'    => count($prices) ? min($prices) : 0,
+            'max_price'    => count($prices) ? max($prices) : 0,
         ]);
     }
 

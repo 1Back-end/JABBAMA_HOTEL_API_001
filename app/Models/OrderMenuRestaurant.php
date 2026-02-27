@@ -54,7 +54,8 @@ class OrderMenuRestaurant extends Model
         'rejected_at',
         'rejected_by',
         'reason_rejected',
-        'quantity_exactly'
+        'quantity_exactly',
+        'full_name_for_client_free'
     ];
 
     /**
@@ -69,7 +70,7 @@ class OrderMenuRestaurant extends Model
         'order_menu_restaurant_date' => 'datetime',
     ];
 
-    protected $appends = ['consumption_type_label','clients_for_payment_label','status_label','total_items'];
+    protected $appends = ['consumption_type_label','clients_for_payment_label','status_label','total_items','total_drinks','total_order'];
 
     public function getConsumptionTypeLabelAttribute(): string
     {
@@ -89,6 +90,16 @@ class OrderMenuRestaurant extends Model
         return $this->items->sum(fn($item) => $item->total_price ?? 0);
     }
 
+    public function getTotalDrinksAttribute(): int
+    {
+        return $this->drinks->sum(fn($drink) => $drink->total_price ?? 0);
+    }
+
+    public function getTotalOrderAttribute(): int
+    {
+        return $this->total_items + $this->total_drinks;
+    }
+
 
     protected static function boot()
     {
@@ -105,7 +116,7 @@ class OrderMenuRestaurant extends Model
     public static function generateCode(): string
     {
         $datePart = now()->format('Ydm'); // Année, jour, mois → ex: 20252611
-        $prefix = 'ORDER' . $datePart;
+        $prefix = '#' . $datePart;
 
         // Chercher le dernier code global (pas par jour)
         $last = self::withTrashed()->orderBy('created_at', 'desc')->first();
@@ -180,6 +191,11 @@ class OrderMenuRestaurant extends Model
     public function rejected()
     {
         return $this->belongsTo(User::class, 'rejected_by', 'id');
+    }
+
+    public function drinks()
+    {
+        return $this->hasMany(OrderRestaurantDrink::class, 'order_menu_restaurant_uuid', 'uuid');
     }
 
 }

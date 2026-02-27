@@ -67,7 +67,7 @@ class RestaurantPartner extends Model
     public static function generateCode(): string
     {
         $datePart = now()->format('Ydm'); // Année, jour, mois → ex: 20252611
-        $prefix = 'PART' . $datePart;
+        $prefix = '#' . $datePart;
 
         $last = self::withTrashed()->orderBy('created_at', 'desc')->first();
 

@@ -39,11 +39,6 @@ Route::middleware(['activity'])->group(function () {
         Route::apiResource('category_products', CategoryProductsController::class);
         Route::patch('category_products/{uuid}/is_active', [CategoryProductsController::class, 'update_status']);
 
-        Route::apiResource('warehouses', WarehouseController::class);
-        Route::patch('warehouses/{uuid}/is_active', [WarehouseController::class, 'update_status']);
-        Route::get('get_all_warehouses_by_users', [WarehouseController::class, 'get_all_warehouses_by_users']);
-        Route::get('/exports/warehouse', [WarehouseController::class, 'export_warehouse']);
-
 
         Route::apiResource('products', ProductController::class);
         Route::patch('products/{uuid}/is_active', [ProductController::class, 'update_status']);
@@ -51,24 +46,34 @@ Route::middleware(['activity'])->group(function () {
         Route::get('/products/inventory/print', [ProductController::class, 'export_products_by_points_uuid']);
         Route::get('/products/{warehouse_uuid}/inventory/print', [ProductController::class, 'export_products_by_points_uuid']);
         Route::get('/inventories/print/{warehouse_uuid?}', [ProductController::class, 'print_inventory_by_day_and_warehouses']);
+        Route::get('/products/{product_uuid}/last_sell_price', [ProductController::class, 'getLastSellPriceForProduct']);
 
 
 
+        Route::apiResource('warehouses', WarehouseController::class);
+        Route::patch('warehouses/{uuid}/is_active', [WarehouseController::class, 'update_status']);
+        Route::get('get_all_warehouses_by_users', [WarehouseController::class, 'get_all_warehouses_by_users']);
+        Route::get('/exports/warehouse', [WarehouseController::class, 'export_warehouse']);
         Route::get('warehouses/{uuid}/products', [WarehouseController::class, 'get_products_by_warehouse']);
         Route::get('warehouses/{uuid}/get_products_by_warehouse_is_used_for_restaurant', [WarehouseController::class, 'get_products_by_warehouse_is_used_for_restaurant']);
+        Route::get('product_used_for_warehouse_bar', [WarehouseController::class, 'get_products_bar_points']);
+        Route::get('warehouses/{uuid}/get_products_by_warehouse_is_bar_warehouse', [WarehouseController::class, 'get_products_by_warehouse_is_bar_warehouse']);
         Route::get('warehouses/{uuid}/get_managers_by_warehouse', [WarehouseController::class, 'get_managers_by_warehouse']);
         Route::get('/warehouses/{pointUuid}/inventory/export', [WarehouseController::class, 'export_inventory_by_warehouse']);
         Route::get('/warehouses/inventory/export', [WarehouseController::class, 'export_inventory_by_warehouse']);
         Route::get('/warehouses/{point_uuid}/inventory/print', [WarehouseController::class, 'print_inventory_by_warehouse']);
         Route::get("/exports/warehouses", [WarehouseController::class, 'export_warehouses']);
+        Route::patch('natures_warehouses/{uuid}/is_active', [WarehouseController::class, 'update_status']);
+        Route::get('get_warehouses_is_used_for_restaurant', [WarehouseController::class, 'get_warehouses_is_used_for_restaurant']);
+        Route::get('get_warehouses_is_bar_warehouse', [WarehouseController::class, 'get_warehouses_is_bar_warehouse']);
+
+
 
         Route::apiResource('subcategories', SubCategoryController::class);
         Route::patch('subcategories/{uuid}/is_active', [SubCategoryController::class, 'update_status']);
         Route::get('subcategories/by_category/{category_uuid}', [CategoryProductsController::class, 'get_by_category']);
 
         Route::apiResource('natures_warehouses', NatureEntrepotController::class);
-        Route::patch('natures_warehouses/{uuid}/is_active', [WarehouseController::class, 'update_status']);
-        Route::get('get_warehouses_is_used_for_restaurant', [WarehouseController::class, 'get_warehouses_is_used_for_restaurant']);
 
         Route::apiResource('orders', PurchaseOrderController::class);
         Route::post('orders/{uuid}/update_orders', [PurchaseOrderController::class, 'update_orders']);
@@ -152,7 +157,11 @@ Route::middleware(['activity'])->group(function () {
         Route::patch('menus_restaurants/{uuid}/is_active', [\App\Http\Controllers\MenuRestaurantController::class, 'updateStatus']);
         Route::post('menus_restaurants/{uuid}/update_menus_restaurants', [\App\Http\Controllers\MenuRestaurantController::class, 'update_menus']);
         Route::get('/get_price', [\App\Http\Controllers\MenuRestaurantController::class, 'get_price_by_menus_and_clients']);
+        Route::get('/get_price_product', [\App\Http\Controllers\MenuRestaurantController::class, 'get_price_by_product_and_client']);
         Route::get('/get_menu_is_confectioned', [\App\Http\Controllers\MenuRestaurantController::class, 'get_menu_is_confectioned']);
+
+        Route::apiResource('restaurant_drink_configurations', \App\Http\Controllers\RestaurantDrinkConfigurationController::class);
+        Route::patch('restaurant_drink_configurations/{uuid}/is_active', [\App\Http\Controllers\RestaurantDrinkConfigurationController::class, 'update_status']);
 
         Route::apiResource('regulation_methods', \App\Http\Controllers\RegulationMethodController::class);
         Route::patch('regulation_methods/{regulationMethod}/activate', [\App\Http\Controllers\RegulationMethodController::class, 'activate']);
@@ -160,7 +169,6 @@ Route::middleware(['activity'])->group(function () {
 
         Route::apiResource('restaurant_tables', \App\Http\Controllers\RestaurantTableController::class);
         Route::patch('restaurant_tables/{uuid}/is_available', [\App\Http\Controllers\RestaurantTableController::class, 'update_status']);
-
 
         Route::apiResource('menu_categories', \App\Http\Controllers\MenuCategoryController::class);
         Route::patch('menu_categories/{uuid}/is_active', [\App\Http\Controllers\MenuCategoryController::class, 'update_status']);
@@ -188,12 +196,16 @@ Route::middleware(['activity'])->group(function () {
 
         Route::apiResource('orders_menu_restaurants', \App\Http\Controllers\OrderMenuRestaurantController::class);
         Route::post('orders_menu_restaurants/check_stock', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'checkStockOnly']);
+        Route::post('orders_menu_restaurants/check_stock_bar', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'checkBarStockOnly']);
+        Route::patch('orders_menu_restaurants/{uuid}/change_in_preparation', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'ChangeOrderMenuRestaurantInPreparation']);
         Route::patch('orders_menu_restaurants/{uuid}/transfer', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'transferOrderMenuRestaurant']);
         Route::patch('orders_menu_restaurants/{uuid}/reject', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'RejectOrderMenuRestaurant']);
         Route::patch('orders_menu_restaurants/{uuid}/cancel', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'CancelOrderMenuRestaurant']);
         Route::patch('orders_menu_restaurants/{uuid}/cancel_by_super_admin', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'CancelOrderMenuRestaurantBySuperAdmin']);
         Route::patch('orders_menu_restaurants/{uuid}/validate_item', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'validateItemForOrderMenuRestaurant']);
-
+        Route::patch('orders_menu_restaurants/{uuid}/deliver', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'validateAndDeductStock']);
+        Route::post('orders_menu_restaurants/{uuid}/cancel_delivery', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'cancelDelivery']);
+        Route::get('orders_menu_restaurants/{uuid}/quantity_delivered', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'get_quantity_delivered']);
 
 
         Route::apiResource('restaurant_rooms', \App\Http\Controllers\RestaurantRoomController::class);
@@ -203,5 +215,9 @@ Route::middleware(['activity'])->group(function () {
         Route::apiResource('module_applications', \App\Http\Controllers\ModuleApplicationsController::class);
         Route::get('/modules/{uuid}/permissions', [\App\Http\Controllers\ModuleApplicationsController::class, 'get_permissions_by_module']);
         Route::patch('module_applications/{uuid}/is_active', [\App\Http\Controllers\ModuleApplicationsController::class, 'toggleActive']);
+
+        Route::apiResource('settings_restaurants', \App\Http\Controllers\SettingRestaurantController::class);
+        Route::patch('settings_restaurants/{uuid}/is_active', [\App\Http\Controllers\SettingRestaurantController::class, 'toggleActive']);
+        Route::get('/get_all_settings_restaurants', [\App\Http\Controllers\SettingRestaurantController::class, 'get_all_settings_restaurants']);
     });
 });

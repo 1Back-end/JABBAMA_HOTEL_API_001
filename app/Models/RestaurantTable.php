@@ -37,7 +37,7 @@ class RestaurantTable extends Model
     public static function generateCode(): string
     {
         $datePart = now()->format('Ydm'); // Année, jour, mois → ex: 20252611
-        $prefix = 'TABLE' . $datePart;
+        $prefix = '#' . $datePart;
 
         // Chercher le dernier code global (pas par jour)
         $last = self::withTrashed()->orderBy('created_at', 'desc')->first();

@@ -25,7 +25,8 @@ class Warehouse extends Model
         'updated_by',
         'total_stock',
         'is_primary',
-        'is_used_for_restaurant'
+        'is_used_for_restaurant',
+        'is_bar_warehouse'
     ];
 
     protected $appends = ['total_stock'];
@@ -52,7 +53,7 @@ class Warehouse extends Model
             $number = 1;
         }
 
-        return 'ENT-' . date('Ymd') . str_pad($number, 4, '0', STR_PAD_LEFT);
+        return '#' . date('Ymd') . str_pad($number, 4, '0', STR_PAD_LEFT);
     }
 
     /** Relations **/

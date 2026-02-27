@@ -48,7 +48,7 @@ class Category extends Model
             $number = 1;
         }
 
-        return 'CAT-' . str_pad($number, 4, '0', STR_PAD_LEFT);
+        return '#' . str_pad($number, 4, '0', STR_PAD_LEFT);
     }
 
     public function creator()

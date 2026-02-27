@@ -70,7 +70,7 @@ class Supply extends Model
     {
         parent::boot();
         static::creating(function ($model) {
-            $prefix = 'APP';
+            $prefix = '#';
             $timestamp = now()->format('ymdHi');
 
             $random = strtoupper(Str::random(7));

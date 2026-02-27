@@ -740,7 +740,6 @@ class SupplyController extends Controller
                     // Récupérer l'entrepôt principal
                     $warehousePrimary = Warehouse::where('is_primary', true)->firstOrFail();
 
-                    // Récupérer uniquement le ProductPoint correspondant à l'entrepôt principal
                     $productPoint = ProductPoint::where('produit_uuid', $item->product_uuid)
                         ->where('point_uuid', $warehousePrimary->uuid)
                         ->first();

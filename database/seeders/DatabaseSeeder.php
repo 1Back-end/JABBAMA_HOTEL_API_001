@@ -19,6 +19,7 @@ class DatabaseSeeder extends Seeder
             NatureWarehouseSeeder::class,
             ProductSeeder::class,
             CountriesTableSeeder::class,
+            AddDefaultParametersSeeder::class,
 
         ]);
     }
