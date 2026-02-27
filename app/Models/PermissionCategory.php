@@ -40,6 +40,6 @@ class PermissionCategory extends Model
      */
     public function permissions()
     {
-        return $this->hasMany(Permission::class, 'category_id'); // Assure-toi que la table permissions a une colonne category_id
+        return $this->hasMany(Permission::class, 'category_id');
     }
 }

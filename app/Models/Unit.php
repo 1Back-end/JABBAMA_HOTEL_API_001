@@ -64,7 +64,7 @@ class Unit extends Model
             $number = 1;
         }
 
-        return 'UN-' . str_pad($number, 4, '0', STR_PAD_LEFT);
+        return '#' . str_pad($number, 4, '0', STR_PAD_LEFT);
     }
     //
 }

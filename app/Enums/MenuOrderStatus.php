@@ -12,6 +12,10 @@ enum MenuOrderStatus : string
     case COMPLETED  = 'completed';
     case PARTIAL_COMPLETED = 'partial_completed';
 
+    CASE IN_PREPARATION = 'in_preparation';
+
+    CASE PENDING_VALIDATION = 'pending_validation';
+
     public function label(): string
     {
         return match ($this) {
@@ -22,6 +26,8 @@ enum MenuOrderStatus : string
             self::COMPLETED => 'Livrée totalement',
             self::TRANSFERED => 'Transférée',
             self::PARTIAL_COMPLETED => 'Livrée partiellement',
+            self::PENDING_VALIDATION => 'En attente validation',
+            self::IN_PREPARATION => 'En cours de préparation',
         };
     }
 

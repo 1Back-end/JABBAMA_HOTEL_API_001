@@ -35,7 +35,7 @@ class NatureEntrepot extends Model
         parent::boot();
 
         static::creating(function ($nature) {
-            $prefix = 'NAT-ENT-';
+            $prefix = '#';
             $timestamp = now()->format('ymdHi');
 
             $random = strtoupper(Str::random(7));

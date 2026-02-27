@@ -59,7 +59,7 @@ class PurchaseOrder extends Model
     {
         parent::boot();
         static::creating(function ($model) {
-            $prefix = 'CMD';
+            $prefix = '#';
             $timestamp = now()->format('ymdHi');
 
             $random = strtoupper(Str::random(7));

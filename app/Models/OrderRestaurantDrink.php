@@ -2,18 +2,17 @@
 
 namespace App\Models;
 
+use App\Enums\MenuOrderStatus;
 use App\Enums\OrderMenuRestaurantItemStatus;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Support\Str;
 
-class OrderMenuRestaurantItem extends Model
+class OrderRestaurantDrink extends Model
 {
     use HasFactory, SoftDeletes;
 
-    protected $table = 'orders_menu_restaurant_items';
-
+    protected $table = 'order_restaurannts_drinks';
     protected $primaryKey = 'uuid';
     public $incrementing = false;
     protected $keyType = 'string';
@@ -21,39 +20,31 @@ class OrderMenuRestaurantItem extends Model
     protected $fillable = [
         'uuid',
         'order_menu_restaurant_uuid',
-        'menus_restaurant_uuid',
+        'product_uuid',
         'quantity',
-        'quantity_delivered',
-        'has_been_validated',
         'unit_price',
         'total_price',
-        'is_free',
-        'description',
         'status',
         'created_by',
         'updated_by',
+        'quantity_delivered',
         'quantity_exactly',
+        'has_been_validated',
         'quantity_final_used'
     ];
 
-    /**
-     * Casts
-     */
+
     protected $casts = [
-        'quantity'    => 'integer',
-        'unit_price'  => 'integer',
+        'quantity' => 'integer',
+        'unit_price' => 'integer',
         'total_price' => 'integer',
-        'is_free'     => 'boolean',
     ];
 
-    protected $appends = ['status_item_order_label'];
-
-    public function getStatusItemOrderLabelAttribute(): string
+    protected $appends = ['status_label'];
+    public function getStatusLabelAttribute(): string
     {
         return OrderMenuRestaurantItemStatus::safeLabel($this->status);
     }
-
-
 
     protected static function boot()
     {
@@ -61,35 +52,34 @@ class OrderMenuRestaurantItem extends Model
 
         static::creating(function ($model) {
             if (!$model->uuid) {
-                $model->uuid = (string) Str::uuid();
+                $model->uuid = (string) \Str::uuid();
             }
+
+            $model->total_price = $model->quantity * $model->unit_price;
+        });
+
+        static::updating(function ($model) {
+            $model->total_price = $model->quantity * $model->unit_price;
         });
     }
 
-    /**
-     * Relations
-     */
     public function order()
     {
         return $this->belongsTo(OrderMenuRestaurant::class, 'order_menu_restaurant_uuid', 'uuid');
     }
 
-    public function menu()
+    public function product()
     {
-        return $this->belongsTo(MenuRestaurant::class, 'menus_restaurant_uuid', 'uuid');
+        return $this->belongsTo(Product::class, 'product_uuid', 'uuid');
     }
 
     public function creator()
     {
-        return $this->belongsTo(User::class, 'created_by');
+        return $this->belongsTo(User::class, 'created_by', 'id');
     }
 
     public function updater()
     {
-        return $this->belongsTo(User::class, 'updated_by');
-    }
-    public function virtuals()
-    {
-        return $this->hasMany(VirtualOrderMenuRestaurant::class, 'item_uuid', 'uuid');
+        return $this->belongsTo(User::class, 'updated_by', 'id');
     }
 }

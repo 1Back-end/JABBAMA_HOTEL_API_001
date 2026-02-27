@@ -24,9 +24,12 @@ class VirtualOrderMenuRestaurant extends Model
         'product_uuid',
         'quantity_reserved',
         'quantity_delivered',
+        'quantity_exactly',
+        'quantity_delivered_exactly',
         'created_by',
         'updated_by',
-        'status'
+        'status',
+        'item_type'
     ];
 
     protected static function boot()

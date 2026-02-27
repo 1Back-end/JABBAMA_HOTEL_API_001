@@ -7,43 +7,33 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
-class RestaurantRoom extends Model
+class SettingRestaurant extends Model
 {
-    use HasFactory,SoftDeletes;
+    use HasFactory, SoftDeletes;
 
+    protected $table = 'settings_restaurants';
     protected $primaryKey = 'uuid';
     public $incrementing = false;
     protected $keyType = 'string';
 
-
     protected $fillable = [
         'uuid',
+        'key',
         'code',
-        'rooms_number',
-        'description',
-        'type',
-        'capacity',
         'is_active',
+        'description',
+        'value',
         'created_by',
         'updated_by',
-        'floor_uuid'
     ];
 
 
-    protected $casts = [
-        'capacity' => 'integer',
-        'is_active' => 'boolean',
-    ];
-
-    protected static function boot()
+    public static function boot()
     {
         parent::boot();
-
         static::creating(function ($model) {
-            if (!$model->uuid) {
-                $model->uuid = (string) Str::uuid();
-                $model->code = self::generateCode();
-            }
+            $model->uuid = (string) Str::uuid();
+            $model->code = self::generateCode();
         });
     }
 
@@ -65,15 +55,12 @@ class RestaurantRoom extends Model
 
     public function creator()
     {
-        return $this->belongsTo(User::class, 'created_by');
+        return $this->belongsTo(User::class, 'created_by', 'id');
     }
 
     public function updater()
     {
-        return $this->belongsTo(User::class, 'updated_by');
+        return $this->belongsTo(User::class, 'updated_by', 'id');
     }
-    public function floor()
-    {
-        return $this->belongsTo(Floor::class, 'floor_uuid');
-    }
+
 }

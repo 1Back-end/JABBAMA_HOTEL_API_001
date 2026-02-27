@@ -43,9 +43,9 @@ class SupplyInvoice extends Model
      */
     public static function generateInvoiceNumber()
     {
-        $prefix = 'INV'; // tu peux changer le préfixe
-        $date = date('Ymd'); // format AAAAMMJJ
-        $random = mt_rand(1000, 9999); // nombre aléatoire pour l'unicité
+        $prefix = '#';
+        $date = date('Ymd');
+        $random = mt_rand(1000, 9999);
         return "{$prefix}-{$date}-{$random}";
     }
 

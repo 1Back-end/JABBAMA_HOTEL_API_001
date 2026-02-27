@@ -48,7 +48,7 @@ class SubCategory extends Model
         parent::boot();
 
         static::creating(function ($sub_category) {
-            $prefix = 'SCT-';
+            $prefix = '#';
             $timestamp = now()->format('ymdHi');
 
             $random = strtoupper(Str::random(7));

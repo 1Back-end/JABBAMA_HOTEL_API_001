@@ -133,6 +133,36 @@ class ExtractPermissions extends Command
             'description' => 'Accéder aux services des étages',
             'category' => 'Gestion du service des étages',
             'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'view_access_for_applied_remise' => [
+            'description' => 'Appliquer une remise lors de la prise d\'une commande' ,
+            'category' => 'Gestion des commandes du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'view_access_for_date_orders' => [
+            'description' => 'Accéder à la date lors de la prise d\'une commande' ,
+            'category' => 'Gestion des commandes du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'definied_warehouses_is_used_for_restaurant' => [
+            'description' => 'Définir l\'entrepôt cuisine utilisée pour le restaurant' ,
+            'category' => 'Gestion des entrepôts',
+            'modules' => ['Gestion du restaurant','Autres Modules','Gestion des stocks'],
+        ],
+        'definied_warehouses_is_bar_warehouse' => [
+            'description' => 'Définir l\'entrepôt bar utilisé pour le restaurant' ,
+            'category' => 'Gestion des entrepôts',
+            'modules' => ['Gestion du restaurant','Autres Modules','Gestion des stocks'],
+        ],
+        'validated_and_see_drinks_for_order_restaurant' => [
+            'description' => 'Afficher et valider les boissons d\'une commande du restaurant',
+            'category' => 'Gestion des commandes du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'validated_and_see_menus_for_order_restaurant' => [
+            'description' => 'Afficher et valider les menus d\'une commande du restaurant',
+            'category' => 'Gestion des commandes du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
         ]
     ];
 

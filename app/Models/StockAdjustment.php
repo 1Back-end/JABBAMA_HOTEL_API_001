@@ -48,7 +48,7 @@ class StockAdjustment extends Model
     {
         parent::boot();
         static::creating(function ($model) {
-            $prefix = 'REG_';
+            $prefix = '#';
             $timestamp = now()->format('ymdHi');
 
             $random = strtoupper(Str::random(7));

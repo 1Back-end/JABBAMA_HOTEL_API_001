@@ -769,6 +769,33 @@ class ProductController extends Controller
     }
 
 
+    public function getLastSellPriceForProduct($product_uuid)
+    {
+        $item = SupplyItem::where('product_uuid', $product_uuid)
+            ->whereNull('deleted_at')
+            ->orderByDesc('created_at')
+            ->with('product')
+            ->first();
+
+        if (!$item) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Aucun enregistrement trouvé pour ce produit.'
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'product_uuid' => $item->product_uuid,
+                'product_name' => $item->product?->name,
+                'sell_price'   => $item->sell_price,
+                'date'         => $item->created_at,
+            ]
+        ]);
+    }
+
+
 
 
 
