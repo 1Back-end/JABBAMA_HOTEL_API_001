@@ -178,6 +178,10 @@ Route::middleware(['activity'])->group(function () {
         Route::patch('restaurant_partners/{uuid}/is_active', [\App\Http\Controllers\PartenaireController::class, 'updateStatus']);
         Route::post('restaurant_partners/{uuid}/update_partners', [\App\Http\Controllers\PartenaireController::class, 'update_partners']);
 
+        Route::apiResource('free_clients_restaurants', \App\Http\Controllers\FreeClientRestaurantController::class);
+        Route::patch('free_clients_restaurants/{uuid}/is_active', [\App\Http\Controllers\FreeClientRestaurantController::class, 'updateStatus']);
+        Route::post('free_clients_restaurants/{uuid}/update_free_clients_restaurants', [\App\Http\Controllers\FreeClientRestaurantController::class, 'update_free_clients_restaurants']);
+
 
         Route::get('/countries', [\App\Http\Controllers\CountryController::class, 'index']);
 
@@ -202,10 +206,15 @@ Route::middleware(['activity'])->group(function () {
         Route::patch('orders_menu_restaurants/{uuid}/reject', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'RejectOrderMenuRestaurant']);
         Route::patch('orders_menu_restaurants/{uuid}/cancel', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'CancelOrderMenuRestaurant']);
         Route::patch('orders_menu_restaurants/{uuid}/cancel_by_super_admin', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'CancelOrderMenuRestaurantBySuperAdmin']);
-        Route::patch('orders_menu_restaurants/{uuid}/validate_item', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'validateItemForOrderMenuRestaurant']);
-        Route::patch('orders_menu_restaurants/{uuid}/deliver', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'validateAndDeductStock']);
-        Route::post('orders_menu_restaurants/{uuid}/cancel_delivery', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'cancelDelivery']);
-        Route::get('orders_menu_restaurants/{uuid}/quantity_delivered', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'get_quantity_delivered']);
+        Route::patch('orders_menu_restaurants/{uuid}/validate_item_menus', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'validateMenusForOrder']);
+        Route::patch('orders_menu_restaurants/{uuid}/validate_item_drinks', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'validateDrinksForOrder']);
+        Route::patch('orders_menu_restaurants/{uuid}/deliver_menus_selected', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'validateAndDeductStockMenus']);
+        Route::patch('orders_menu_restaurants/{uuid}/deliver_drink_selected', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'validateAndDeductStockDrinks']);
+        Route::patch('orders_menu_restaurants/{uuid}/cancel_menus_selected', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'cancelMenuValidation']);
+        Route::patch('orders_menu_restaurants/{uuid}/cancel_drinks_selected', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'cancelDrinkValidation']);
+        Route::delete('orders_menu_restaurants/{orderUuid}/delete_menus_not_delivered', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'DeleteOrderMenuRestaurantNotDelivered']);
+        Route::patch('orders_menu_restaurants/{orderUuid}/update_quantity_for_menus', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'updateMenuItemQuantity']);
+        Route::delete('orders_menu_restaurants/{orderUuid}/delete_drinks_not_delivered', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'DeleteOrderDrinksNotDelivered']);
 
 
         Route::apiResource('restaurant_rooms', \App\Http\Controllers\RestaurantRoomController::class);

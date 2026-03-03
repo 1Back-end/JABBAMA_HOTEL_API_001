@@ -79,13 +79,21 @@ class PermissionController extends Controller
                             ->orWhere('description', 'like', "%{$search}%");
                     });
                 }
-                $q->orderBy('name', 'asc');
+                $q->orderBy('name', 'asc'); // 🔹 Tri alphabétique
             }])
             ->when($search, function($q) use ($search) {
                 $q->where('libelle', 'like', "%{$search}%")
                     ->orWhere('description', 'like', "%{$search}%");
             })
-            ->orderBy('created_at', 'desc')->get();
+            ->orderBy('libelle', 'asc') // 🔹 Tri catégories A → Z
+            ->get();
+
+        // 🔹 S'assurer que les permissions sont bien triées après récupération
+        $categories->each(function ($category) {
+            $category->permissions = $category->permissions
+                ->sortBy('name')
+                ->values();
+        });
 
         return response()->json([
             'categories' => $categories,

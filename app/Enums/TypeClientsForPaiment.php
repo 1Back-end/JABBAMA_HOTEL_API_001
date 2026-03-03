@@ -14,7 +14,7 @@ enum TypeClientsForPaiment : string
         return match ($this) {
             self::DEBTOR  => 'Clients divers',
             self::PARTNER => 'Clients débiteurs',
-            self::FREE    => 'Gratuit',
+            self::FREE    => 'Client gratuit',
         };
     }
     public static function safeLabel(?string $value): string

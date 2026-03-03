@@ -163,7 +163,27 @@ class ExtractPermissions extends Command
             'description' => 'Afficher et valider les menus d\'une commande du restaurant',
             'category' => 'Gestion des commandes du restaurant',
             'modules' => ['Gestion du restaurant','Autres Modules'],
-        ]
+        ],
+        'see_menus_for_order_restaurant' => [
+            'description' => 'Voir les menus d\'une commande',
+            'category' => 'Gestion des commandes du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'see_drinks_for_order_restaurant' => [
+            'description' => 'Voir les boissons d\'une commande',
+            'category' => 'Gestion des commandes du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'change_status_for_all_items' => [
+            'description' => 'Mise en prêt des menus et boissons d\'une commande du restaurant',
+            'category' => 'Gestion des commandes du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'update_items_for_facture' => [
+            'description' => 'Modifier la facture d\'une commande du restaurant',
+            'category' => 'Gestion des commandes du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
     ];
 
     public function handle(): void

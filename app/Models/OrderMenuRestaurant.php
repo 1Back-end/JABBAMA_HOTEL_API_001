@@ -46,6 +46,7 @@ class OrderMenuRestaurant extends Model
         'warehouse_uuid',
         'restaurant_room_uuid',
         'menu_restaurant_uuid',
+        'free_client_for_restaurant_uuid',
         'quantity',
         'full_name',
         'transfered_at',
@@ -196,6 +197,11 @@ class OrderMenuRestaurant extends Model
     public function drinks()
     {
         return $this->hasMany(OrderRestaurantDrink::class, 'order_menu_restaurant_uuid', 'uuid');
+    }
+
+    public function free_client_for_restaurant()
+    {
+        return $this->belongsTo(FreeClientRestaurant::class, 'free_client_for_restaurant_uuid', 'uuid');
     }
 
 }
