@@ -499,7 +499,8 @@ class MenuRestaurantController extends Controller
         }
 
         // 🔹 Nettoyer les valeurs nulles et convertir en int
-        $prices = array_map('intval', array_filter($pricesArray));
+        // 🔹 Nettoyer les valeurs nulles et convertir en int
+        $prices = array_map('intval', array_filter($pricesArray, fn($v) => $v !== null));
 
         return response()->json([
             'status'       => 'success',

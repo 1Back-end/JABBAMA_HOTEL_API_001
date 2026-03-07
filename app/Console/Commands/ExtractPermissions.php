@@ -154,33 +154,28 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des entrepôts',
             'modules' => ['Gestion du restaurant','Autres Modules','Gestion des stocks'],
         ],
-        'validated_and_see_drinks_for_order_restaurant' => [
-            'description' => 'Afficher et valider les boissons d\'une commande du restaurant',
-            'category' => 'Gestion des commandes du restaurant',
-            'modules' => ['Gestion du restaurant','Autres Modules'],
-        ],
-        'validated_and_see_menus_for_order_restaurant' => [
-            'description' => 'Afficher et valider les menus d\'une commande du restaurant',
-            'category' => 'Gestion des commandes du restaurant',
-            'modules' => ['Gestion du restaurant','Autres Modules'],
-        ],
         'see_menus_for_order_restaurant' => [
-            'description' => 'Voir les menus d\'une commande',
+            'description' => 'Afficher les plats d\'une commande',
             'category' => 'Gestion des commandes du restaurant',
             'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
         'see_drinks_for_order_restaurant' => [
-            'description' => 'Voir les boissons d\'une commande',
+            'description' => 'Afficher les boissons d\'une commande',
             'category' => 'Gestion des commandes du restaurant',
             'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
         'change_status_for_all_items' => [
-            'description' => 'Mise en prêt des menus et boissons d\'une commande du restaurant',
+            'description' => 'Afficher le bouton de mise en prêt  d\'une commande',
             'category' => 'Gestion des commandes du restaurant',
             'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
         'update_items_for_facture' => [
-            'description' => 'Modifier la facture d\'une commande du restaurant',
+            'description' => 'Afficher le bouton de modification d\'une commande',
+            'category' => 'Gestion des commandes du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'update_order_for_delivered' => [
+            'description' => 'Afficher le bouton de mise en servie  d\'une commande',
             'category' => 'Gestion des commandes du restaurant',
             'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
@@ -206,6 +201,8 @@ class ExtractPermissions extends Command
 
         // ----------------------- Permissions des contrôleurs -----------------------
         foreach ($permissions as $controller => $methods) {
+            ksort($methods);
+            usort($methods, fn($a, $b) => strcmp($a['permission'], $b['permission']));
             foreach ($methods as $perm) {
                 $categoryName = $perm['category'] ?? 'Autres';
                 $modules = $perm['modules'] ?? [$this->defaultManualModule];
@@ -277,6 +274,8 @@ class ExtractPermissions extends Command
         }
 
         // ----------------------- Permissions manuelles -----------------------
+        $manualPermissions = $this->manualPermissions;
+        uksort($manualPermissions, fn($a, $b) => strcmp($a['description'] ?? '', $b['description'] ?? ''));
         foreach ($this->manualPermissions as $name => $data) {
             $categoryName = $data['category'] ?? 'Autres';
             $modules = $data['modules'] ?? [$this->defaultManualModule];
