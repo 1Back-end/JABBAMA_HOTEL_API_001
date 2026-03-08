@@ -72,28 +72,25 @@ class PermissionController extends Controller
         $search = $request->input('search');
 
         $categories = PermissionCategory::where('libelle', '!=', 'Autres')
-            ->with(['permissions' => function($q) use ($search) {
+            ->with(['permissions' => function($query) use ($search) {
+                // Tri des permissions par nom au niveau de la base de données
+                $query->orderBy('name', 'asc');
+
                 if ($search) {
-                    $q->where(function($query) use ($search) {
-                        $query->where('name', 'like', "%{$search}%")
+                    $query->where(function($q) use ($search) {
+                        $q->where('name', 'like', "%{$search}%")
                             ->orWhere('description', 'like', "%{$search}%");
                     });
                 }
-                $q->orderBy('name', 'asc'); // 🔹 Tri alphabétique
             }])
-            ->when($search, function($q) use ($search) {
-                $q->where('libelle', 'like', "%{$search}%")
-                    ->orWhere('description', 'like', "%{$search}%");
+            ->when($search, function($query) use ($search) {
+                $query->where(function($q) use ($search) {
+                    $q->where('libelle', 'like', "%{$search}%")
+                        ->orWhere('description', 'like', "%{$search}%");
+                });
             })
-            ->orderBy('libelle', 'asc') // 🔹 Tri catégories A → Z
+            ->orderBy('libelle', 'asc') // Tri des catégories par libelle
             ->get();
-
-        // 🔹 S'assurer que les permissions sont bien triées après récupération
-        $categories->each(function ($category) {
-            $category->permissions = $category->permissions
-                ->sortBy('name')
-                ->values();
-        });
 
         return response()->json([
             'categories' => $categories,
