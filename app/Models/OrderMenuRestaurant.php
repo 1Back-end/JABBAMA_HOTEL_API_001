@@ -56,7 +56,8 @@ class OrderMenuRestaurant extends Model
         'rejected_by',
         'reason_rejected',
         'quantity_exactly',
-        'full_name_for_client_free'
+        'full_name_for_client_free',
+        'is_adjustment'
     ];
 
     /**
@@ -71,7 +72,7 @@ class OrderMenuRestaurant extends Model
         'order_menu_restaurant_date' => 'datetime',
     ];
 
-    protected $appends = ['consumption_type_label','clients_for_payment_label','status_label','total_items','total_drinks','total_order'];
+    protected $appends = ['consumption_type_label','clients_for_payment_label','status_label','total_items','total_drinks','total_order','summary_items'];
 
     public function getConsumptionTypeLabelAttribute(): string
     {
@@ -99,6 +100,20 @@ class OrderMenuRestaurant extends Model
     public function getTotalOrderAttribute(): int
     {
         return $this->total_items + $this->total_drinks;
+    }
+
+    public function getSummaryItemsAttribute(): string
+    {
+        // Compter le nombre de menus différents
+        $menusCount = $this->items()->count();
+
+        // Compter le nombre de boissons différentes
+        $drinksCount = $this->drinks()->count();
+
+        $menusLabel = $menusCount > 1 ? 'plats' : 'plat';
+        $drinksLabel = $drinksCount > 1 ? 'boissons' : 'boisson';
+
+        return "{$menusCount} {$menusLabel} et {$drinksCount} {$drinksLabel}";
     }
 
 

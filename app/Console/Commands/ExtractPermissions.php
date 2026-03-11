@@ -179,6 +179,12 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des commandes du restaurant',
             'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
+        'view_total_price_for_order_restaurant' => [
+            'description' => 'Afficher le montant total d\'une commande',
+            'category' => 'Gestion des commandes du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+
     ];
 
     public function handle(): void

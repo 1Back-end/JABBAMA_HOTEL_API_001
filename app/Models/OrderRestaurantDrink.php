@@ -30,14 +30,21 @@ class OrderRestaurantDrink extends Model
         'quantity_delivered',
         'quantity_exactly',
         'has_been_validated',
-        'quantity_final_used'
+        'quantity_final_used',
+        'rejected_by',
+        'rejected_at',
+        'is_rejected',
+        'reason',
+        'is_new_items',
+        'is_last_items'
     ];
-
 
     protected $casts = [
         'quantity' => 'integer',
         'unit_price' => 'integer',
         'total_price' => 'integer',
+        'is_last_items' => 'boolean',
+        'is_new_items' => 'boolean',
     ];
 
     protected $appends = ['status_label'];
@@ -81,5 +88,9 @@ class OrderRestaurantDrink extends Model
     public function updater()
     {
         return $this->belongsTo(User::class, 'updated_by', 'id');
+    }
+    public function rejector()
+    {
+        return $this->belongsTo(User::class, 'rejected_by');
     }
 }

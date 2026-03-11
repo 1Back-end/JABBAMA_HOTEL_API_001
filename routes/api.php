@@ -216,6 +216,8 @@ Route::middleware(['activity'])->group(function () {
         Route::patch('orders_menu_restaurants/{orderUuid}/update_quantity_for_menus', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'updateMenuItemQuantity']);
         Route::delete('orders_menu_restaurants/{orderUuid}/delete_drinks_not_delivered', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'DeleteOrderDrinksNotDelivered']);
         Route::patch('orders_menu_restaurants/{orderUuid}/update_quantity_for_drinks', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'updateDrinksQuantity']);
+        Route::patch('orders_menu_restaurants/{uuid}/rejected_selected_items', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'RejectItemForOrder']);
+        Route::patch('orders_menu_restaurants/{uuid}/add_new_items', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'addItemsToOrder']);
 
 
         Route::apiResource('restaurant_rooms', \App\Http\Controllers\RestaurantRoomController::class);

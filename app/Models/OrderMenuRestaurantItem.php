@@ -33,7 +33,13 @@ class OrderMenuRestaurantItem extends Model
         'created_by',
         'updated_by',
         'quantity_exactly',
-        'quantity_final_used'
+        'quantity_final_used',
+        'rejected_by',
+        'rejected_at',
+        'is_rejected',
+        'reason',
+        'is_new_items',
+        'is_last_items'
     ];
 
     /**
@@ -44,6 +50,9 @@ class OrderMenuRestaurantItem extends Model
         'unit_price'  => 'integer',
         'total_price' => 'integer',
         'is_free'     => 'boolean',
+        'is_last_items' => 'boolean',
+        'is_new_items' => 'boolean',
+
     ];
 
     protected $appends = ['status_item_order_label'];
@@ -91,5 +100,10 @@ class OrderMenuRestaurantItem extends Model
     public function virtuals()
     {
         return $this->hasMany(VirtualOrderMenuRestaurant::class, 'item_uuid', 'uuid');
+    }
+
+    public function rejector()
+    {
+        return $this->belongsTo(User::class, 'rejected_by');
     }
 }

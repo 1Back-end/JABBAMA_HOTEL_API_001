@@ -194,6 +194,7 @@ class OrderMenuRestaurantController extends Controller
                     'status' => \App\Enums\OrderMenuRestaurantItemStatus::NOT_DELIVERED->value,
                     'created_by' => $auth->id,
                     'updated_by' => $auth->id,
+                    'is_last_items' => true
                 ]);
 
                 // Réserve virtuelle basée sur la composition du menu
@@ -209,6 +210,7 @@ class OrderMenuRestaurantController extends Controller
                         'quantity_delivered_exactly' => $mInput['quantity'] * $comp->quantity_used,
                         'created_by' => $auth->id,
                         'updated_by' => $auth->id,
+                        'is_last_items' => true
                     ]);
                 }
             }
@@ -229,6 +231,7 @@ class OrderMenuRestaurantController extends Controller
                         'status' => \App\Enums\OrderMenuRestaurantItemStatus::NOT_DELIVERED->value,
                         'created_by' => $auth->id,
                         'updated_by' => $auth->id,
+                        'is_last_items' => true
                     ]);
 
                     // AJOUT : Enregistrement de la boisson dans la table virtuelle
@@ -242,6 +245,7 @@ class OrderMenuRestaurantController extends Controller
                         'quantity_delivered_exactly' => $drinkInput['quantity'],
                         'created_by' => $auth->id,
                         'updated_by' => $auth->id,
+                        'is_last_items' => true
                     ]);
                 }
             }
@@ -378,6 +382,7 @@ class OrderMenuRestaurantController extends Controller
                     'status' => OrderMenuRestaurantItemStatus::NOT_DELIVERED->value,
                     'created_by' => $auth->id,
                     'updated_by' => $auth->id,
+                    'is_last_items' => true
                 ]);
 
                 foreach (MenuOrderItem::where('menus_restaurant_uuid', $menu->uuid)->get() as $comp) {
@@ -390,6 +395,7 @@ class OrderMenuRestaurantController extends Controller
                         'quantity_delivered_exactly' => $m['quantity'] * $comp->quantity_used,
                         'created_by' => $auth->id,
                         'updated_by' => $auth->id,
+                        'is_last_items' => true
                     ]);
                 }
             }
@@ -406,6 +412,7 @@ class OrderMenuRestaurantController extends Controller
                     'status' => \App\Enums\OrderMenuRestaurantItemStatus::NOT_DELIVERED->value,
                     'created_by' => $auth->id,
                     'updated_by' => $auth->id,
+                    'is_last_items' => true
                 ]);
 
                 VirtualOrderMenuRestaurant::create([
@@ -417,6 +424,7 @@ class OrderMenuRestaurantController extends Controller
                     'quantity_delivered_exactly' => $d['quantity'],
                     'created_by' => $auth->id,
                     'updated_by' => $auth->id,
+                    'is_last_items' => true
                 ]);
             }
 
@@ -448,6 +456,194 @@ class OrderMenuRestaurantController extends Controller
             ], 500);
         }
     }
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission OrderMenuRestaurantController::addItemsToOrder
+     * @permission_desc Ajuster une commandes
+     */
+    public function addItemsToOrder(Request $request, string $uuid)
+    {
+        $auth = auth()->user();
+        DB::beginTransaction();
+
+        try {
+
+            $order = OrderMenuRestaurant::where('uuid', $uuid)->firstOrFail();
+
+            $validated = $request->validate([
+                'menus' => ['nullable', 'array'],
+                'menus.*.menus_restaurant_uuid' => ['required', 'uuid', 'exists:menus_restaurants,uuid'],
+                'menus.*.quantity' => ['required', 'numeric', 'min:1'],
+                'menus.*.unit_price' => ['nullable', 'numeric', 'min:0'],
+
+                'drinks' => ['nullable', 'array'],
+                'drinks.*.product_uuid' => ['required', 'uuid', 'exists:produits,uuid'],
+                'drinks.*.quantity' => ['required', 'numeric', 'min:1'],
+                'drinks.*.unit_price' => ['nullable', 'numeric', 'min:0'],
+            ]);
+
+            $warehouseUuid = $validated['warehouse_uuid']
+                ?? Warehouse::where('is_used_for_restaurant', true)->firstOrFail()->uuid;
+
+            /*
+            |--------------------------------------------------------------------------
+            | Vérification stock
+            |--------------------------------------------------------------------------
+            */
+
+            $menuErrors = $this->verifyMenuStock($validated['menus'] ?? [], $warehouseUuid);
+            if ($menuErrors) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Stock insuffisant pour certains menus.',
+                    'details' => $menuErrors,
+                ], 422);
+            }
+
+            if (!empty($validated['drinks'])) {
+                $drinkErrors = $this->verifyBarStock($validated['drinks']);
+                if ($drinkErrors) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Stock insuffisant pour certaines boissons.',
+                        'details' => $drinkErrors,
+                    ], 422);
+                }
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | MENUS
+            |--------------------------------------------------------------------------
+            */
+
+            foreach ($validated['menus'] ?? [] as $m) {
+
+                $menu = MenuRestaurant::findOrFail($m['menus_restaurant_uuid']);
+                $unitPrice = $m['unit_price'] ?? $menu->price ?? 0;
+
+                $isLastItem = $m['is_last_items'] ?? false;
+
+                if ($isLastItem) {
+                    continue;
+                }
+
+                // Vérifier si ce menu existe déjà dans la commande
+                $existingItem = OrderMenuRestaurantItem::where('order_menu_restaurant_uuid', $order->uuid)
+                    ->where('menus_restaurant_uuid', $menu->uuid)
+                    ->first();
+
+                if ($existingItem) {
+                    continue;
+                }
+
+                $item = OrderMenuRestaurantItem::create([
+                    'order_menu_restaurant_uuid' => $order->uuid,
+                    'menus_restaurant_uuid' => $menu->uuid,
+                    'quantity' => $m['quantity'],
+                    'quantity_exactly' => $m['quantity'],
+                    'unit_price' => $unitPrice,
+                    'total_price' => $unitPrice * $m['quantity'],
+                    'status' => OrderMenuRestaurantItemStatus::NOT_DELIVERED->value,
+                    'created_by' => $auth->id,
+                    'updated_by' => $auth->id,
+                    'is_new_items' => true,
+                    'is_last_items' => false
+                ]);
+
+                $components = MenuOrderItem::where('menus_restaurant_uuid', $menu->uuid)->get();
+
+                foreach ($components as $comp) {
+
+                    VirtualOrderMenuRestaurant::create([
+                        'orders_menu_restaurant_uuid' => $order->uuid,
+                        'item_uuid' => $item->uuid,
+                        'product_uuid' => $comp->product_uuid,
+                        'quantity_reserved' => $m['quantity'] * $comp->quantity_used,
+                        'quantity_exactly' => $m['quantity'] * $comp->quantity_used,
+                        'quantity_delivered_exactly' => $m['quantity'] * $comp->quantity_used,
+                        'created_by' => $auth->id,
+                        'updated_by' => $auth->id,
+                        'is_new_items' => true,
+                        'is_last_items' => false
+                    ]);
+                }
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | DRINKS
+            |--------------------------------------------------------------------------
+            */
+
+            foreach ($validated['drinks'] ?? [] as $d) {
+
+                $isLastItem = $d['is_last_items'] ?? false;
+
+                if ($isLastItem) {
+                    continue;
+                }
+
+                // vérifier si la boisson existe déjà
+                $existingDrink = OrderRestaurantDrink::where('order_menu_restaurant_uuid', $order->uuid)
+                    ->where('product_uuid', $d['product_uuid'])
+                    ->first();
+
+                if ($existingDrink) {
+                    continue;
+                }
+
+                $unitPrice = $d['unit_price'] ?? 0;
+
+                $drink = OrderRestaurantDrink::create([
+                    'order_menu_restaurant_uuid' => $order->uuid,
+                    'product_uuid' => $d['product_uuid'],
+                    'quantity' => $d['quantity'],
+                    'quantity_exactly' => $d['quantity'],
+                    'unit_price' => $unitPrice,
+                    'total_price' => $unitPrice * $d['quantity'],
+                    'status' => OrderMenuRestaurantItemStatus::NOT_DELIVERED->value,
+                    'created_by' => $auth->id,
+                    'updated_by' => $auth->id,
+                    'is_new_items' => true,
+                    'is_last_items' => false
+                ]);
+
+                VirtualOrderMenuRestaurant::create([
+                    'orders_menu_restaurant_uuid' => $order->uuid,
+                    'item_uuid' => $drink->uuid,
+                    'product_uuid' => $d['product_uuid'],
+                    'quantity_reserved' => $d['quantity'],
+                    'quantity_exactly' => $d['quantity'],
+                    'quantity_delivered_exactly' => $d['quantity'],
+                    'created_by' => $auth->id,
+                    'updated_by' => $auth->id,
+                    'is_new_items' => true,
+                    'is_last_items' => false
+                ]);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Nouveaux éléments ajoutés à la commande'
+            ]);
+
+        } catch (\Throwable $e) {
+
+            DB::rollBack();
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Erreur lors de l’ajout des éléments'
+            ], 500);
+        }
+    }
+
+
 
 
     /**
@@ -512,7 +708,7 @@ class OrderMenuRestaurantController extends Controller
             $query->whereBetween('created_at', [$start_date, $end_date]);
         }
 
-        if (!$auth->hasRole('SUPER_ADMIN')) {
+        if (!$auth->hasRole('SUPER_ADMIN') && !$auth->can('view_all_orders_for_restaurant')) {
 
             $roleIds = $auth->roles->pluck('id');
 
@@ -522,10 +718,12 @@ class OrderMenuRestaurantController extends Controller
                 if ($auth->can('view_role_related_data')) {
                     $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
                 }
+
                 // 🔹 Utilisateurs avec la permission view_transferred_orders
                 if ($auth->can('view_transferred_orders_for_restaurant')) {
                     $q->orWhereNotNull('received_by');
                 }
+
                 // 🔹 Utilisateurs sans aucune de ces permissions : seulement leurs propres commandes
                 if (!$auth->can('view_role_related_data') && !$auth->can('view_transferred_orders_for_restaurant')) {
                     $q->orWhere('created_by', $auth->id);
@@ -533,15 +731,6 @@ class OrderMenuRestaurantController extends Controller
 
             });
         }
-
-        if (!$auth->hasRole('SUPER_ADMIN') && !$auth->can('view_all_orders_for_restaurant')) {
-            $query->where(function ($q) use ($auth, $roleIds) {
-                if ($auth->can('view_role_related_data')) {
-                    $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
-                }
-            });
-        }
-
 
         if ($search = trim($request->input('search'))) {
             $query->where(function ($q) use ($search) {
@@ -742,7 +931,7 @@ class OrderMenuRestaurantController extends Controller
 
                 foreach ($stockErrors as $err) {
                     // Message détaillé pour chaque produit manquant
-                    $messages[] = "Menu « {$err['menu_name']} » : produit « {$err['product_name']} » insuffisant (en stock : {$err['quantity_in_stock']})";
+                    $messages[] = "Menu « {$err['menu_name']} » : article « {$err['product_name']} » insuffisant (en stock : {$err['quantity_in_stock']})";
                 }
 
                 return response()->json([
@@ -870,10 +1059,22 @@ class OrderMenuRestaurantController extends Controller
                 'warehouse',
                 'restaurant_room',
                 'menu_restaurant',
+                'free_client_for_restaurant',
+
+                // items : dernier ajouté en premier
+                'items' => function ($query) {
+                    $query->orderByDesc('created_at');
+                },
+
                 'items.menu',
+
+                // drinks : dernier ajouté en premier
+                'drinks' => function ($query) {
+                    $query->orderByDesc('created_at');
+                },
+
                 'drinks.product',
-                'items.virtuals.product',
-                'free_client_for_restaurant'
+                'items.virtuals.product'
             ])
                 ->where('uuid', $uuid)
                 ->firstOrFail();
@@ -1026,6 +1227,72 @@ class OrderMenuRestaurantController extends Controller
 
     /**
      * Display a listing of the resource.
+     * @permission OrderMenuRestaurantController::RejectItemForOrder
+     * @permission_desc Rejetter les plats et les boissons selectionnées d'une commande
+     */
+    public function RejectItemForOrder(Request $request, $uuid)
+    {
+        $auth = auth()->user();
+
+        // 🔹 Validation
+        $validated = $request->validate([
+            'reason_rejected' => 'required|string|max:1000',
+            'selected_items'  => 'required|array', // uuid des items à rejeter
+        ], [
+            'reason_rejected.required' => "La raison du rejet est obligatoire.",
+            'reason_rejected.string'   => "La raison doit être une chaîne de caractères.",
+            'reason_rejected.max'      => "La raison ne doit pas dépasser 1000 caractères.",
+            'selected_items.required'  => "Vous devez sélectionner au moins un élément.",
+            'selected_items.array'     => "Les éléments sélectionnés doivent être un tableau.",
+        ]);
+
+        // 🔹 Récupérer la commande
+        $order = OrderMenuRestaurant::where('uuid', $uuid)->with(['items', 'drinks'])->firstOrFail();
+
+        $now = now();
+
+        $order->items->whereIn('uuid', $validated['selected_items'])
+            ->each(function($item) use ($auth, $now, $validated) {
+                $item->update([
+                    'is_rejected'   => true,
+                    'rejected_by'   => $auth->id,
+                    'rejected_at'   => $now,
+                    'reason'        => $validated['reason_rejected'],
+                    'status'        => OrderMenuRestaurantItemStatus::REJECTED->value,
+                ]);
+            });
+
+        // 🔹 Mettre à jour les boissons
+        $order->drinks->whereIn('uuid', $validated['selected_items'])
+            ->each(function($drink) use ($auth, $now, $validated) {
+                $drink->update([
+                    'is_rejected'   => true,
+                    'rejected_by'   => $auth->id,
+                    'rejected_at'   => $now,
+                    'reason'        => $validated['reason_rejected'],
+                    'status'        => OrderMenuRestaurantItemStatus::REJECTED->value,
+                ]);
+            });
+
+
+        $order->update([
+            'status' => MenuOrderStatus::REJECTED->value,
+            'reason_rejected' => $validated['reason_rejected'],
+            'rejected_at'     => now(),
+            'rejected_by'     => $auth->id,
+            'updated_by'      => $auth->id,
+        ]);
+
+        return response()->json([
+            'status'  => 'success',
+            'message' => 'Les éléments sélectionnés ont été rejetés avec succès.',
+            'order'   => $order,
+        ]);
+    }
+
+
+    /**
+     * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::CancelOrderMenuRestaurant
      * @permission_desc Annuler une commande
      */
@@ -1121,6 +1388,12 @@ class OrderMenuRestaurantController extends Controller
         $request->validate([
             '*.item_uuid' => ['required', 'uuid'],
             '*.quantity_to_deliver' => ['required', 'integer', 'min:1'],
+        ], [
+            '*.item_uuid.required' => "L'identifiant de l'élément est obligatoire.",
+            '*.item_uuid.uuid' => "L'identifiant de l'élément doit être un UUID valide.",
+            '*.quantity_to_deliver.required' => "La quantité à livrer est obligatoire.",
+            '*.quantity_to_deliver.integer' => "La quantité à livrer doit être un nombre entier.",
+            '*.quantity_to_deliver.min' => "La quantité à livrer doit être au moins 1.",
         ]);
 
         DB::beginTransaction();
@@ -1276,6 +1549,12 @@ class OrderMenuRestaurantController extends Controller
         $request->validate([
             '*.item_uuid' => ['required', 'uuid'],
             '*.quantity_to_deliver' => ['required', 'integer', 'min:1'],
+        ], [
+            '*.item_uuid.required' => "L'identifiant de l'élément est obligatoire.",
+            '*.item_uuid.uuid' => "L'identifiant de l'élément doit être un UUID valide.",
+            '*.quantity_to_deliver.required' => "La quantité à livrer est obligatoire.",
+            '*.quantity_to_deliver.integer' => "La quantité à livrer doit être un nombre entier.",
+            '*.quantity_to_deliver.min' => "La quantité à livrer doit être au moins 1.",
         ]);
 
         DB::beginTransaction();
@@ -1325,11 +1604,15 @@ class OrderMenuRestaurantController extends Controller
                 $newDeliveredTotal = $item->quantity_delivered + $qtyToDeliver;
                 $newRemaining = max(0, $totalOrdered - $newDeliveredTotal);
 
+
                 if ($newRemaining <= 0) {
                     $itemStatus = OrderMenuRestaurantItemStatus::DELIVERED_IN_PREPARATION->value;
                     $hasBeenValidated = true;
                 } else {
-                    $itemStatus = OrderMenuRestaurantItemStatus::DELIVERED_IN_PREPARATION->value;
+                    $itemStatus = $item->status === OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value
+                        ? OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value
+                        : OrderMenuRestaurantItemStatus::DELIVERED_IN_PREPARATION->value;
+
                     $hasBeenValidated = false;
                 }
 
@@ -1338,6 +1621,7 @@ class OrderMenuRestaurantController extends Controller
                 $item->quantity = $newRemaining;
                 $item->status = $itemStatus;
                 $item->has_been_validated = $hasBeenValidated;
+
                 $item->save();
 
                 $allDeliveryLogs[] = [
@@ -1822,7 +2106,14 @@ class OrderMenuRestaurantController extends Controller
         $request->validate([
             'password' => ['required', 'string'],
             'items' => ['required', 'array'],
-            'items.*' => ['required', 'uuid']
+            'items.*' => ['required', 'uuid'],
+        ], [
+            'password.required' => "Le mot de passe est obligatoire.",
+            'password.string' => "Le mot de passe doit être une chaîne de caractères.",
+            'items.required' => "La liste des éléments est obligatoire.",
+            'items.array' => "Les éléments doivent être envoyés sous forme de tableau.",
+            'items.*.required' => "Chaque élément sélectionné est obligatoire.",
+            'items.*.uuid' => "Chaque élément sélectionné doit être un UUID valide.",
         ]);
 
         if (!Hash::check($request->password, $auth->password)) {
@@ -1919,7 +2210,14 @@ class OrderMenuRestaurantController extends Controller
         $request->validate([
             'password' => ['required', 'string'],
             'items' => ['required', 'array'],
-            'items.*' => ['required', 'uuid']
+            'items.*' => ['required', 'uuid'],
+        ], [
+            'password.required' => "Le mot de passe est obligatoire.",
+            'password.string' => "Le mot de passe doit être une chaîne de caractères.",
+            'items.required' => "La liste des éléments est obligatoire.",
+            'items.array' => "Les éléments doivent être envoyés sous forme de tableau.",
+            'items.*.required' => "Chaque élément sélectionné est obligatoire.",
+            'items.*.uuid' => "Chaque élément sélectionné doit être un UUID valide.",
         ]);
 
         if (!Hash::check($request->password, $auth->password)) {
@@ -2008,6 +2306,14 @@ class OrderMenuRestaurantController extends Controller
             'items' => ['required', 'array'],
             'items.*.uuid' => ['required', 'exists:orders_menu_restaurant_items,uuid'],
             'items.*.new_quantity' => ['required', 'integer', 'min:1'],
+        ], [
+            'items.required' => "La liste des éléments est obligatoire.",
+            'items.array' => "Les éléments doivent être envoyés sous forme de tableau.",
+            'items.*.uuid.required' => "Chaque élément doit être sélectionné.",
+            'items.*.uuid.exists' => "L'élément sélectionné n'existe pas.",
+            'items.*.new_quantity.required' => "La quantité est obligatoire pour chaque élément.",
+            'items.*.new_quantity.integer' => "La quantité doit être un nombre entier.",
+            'items.*.new_quantity.min' => "La quantité doit être au moins de 1.",
         ]);
 
         $order = OrderMenuRestaurant::where('uuid', $orderUuid)
@@ -2088,8 +2394,16 @@ class OrderMenuRestaurantController extends Controller
     {
         $request->validate([
             'items' => ['required', 'array'],
-            'items.*.uuid' => ['required', 'exists:order_restaurannts_drinks,uuid'],
+            'items.*.uuid' => ['required', 'exists:orders_menu_restaurant_items,uuid'],
             'items.*.new_quantity' => ['required', 'integer', 'min:1'],
+        ], [
+            'items.required' => "La liste des éléments est obligatoire.",
+            'items.array' => "Les éléments doivent être envoyés sous forme de tableau.",
+            'items.*.uuid.required' => "Chaque élément doit être sélectionné.",
+            'items.*.uuid.exists' => "L'élément sélectionné n'existe pas.",
+            'items.*.new_quantity.required' => "La quantité est obligatoire pour chaque élément.",
+            'items.*.new_quantity.integer' => "La quantité doit être un nombre entier.",
+            'items.*.new_quantity.min' => "La quantité doit être au moins de 1.",
         ]);
 
         $order = OrderMenuRestaurant::where('uuid', $orderUuid)
@@ -2212,7 +2526,7 @@ class OrderMenuRestaurantController extends Controller
 
         } elseif ($allReady) {
 
-            $order->status = MenuOrderStatus::COMPLETED->value;
+            $order->status = MenuOrderStatus::PARTIAL_COMPLETED->value;
 
         } elseif ($anyReady) {
 
