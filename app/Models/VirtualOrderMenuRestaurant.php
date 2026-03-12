@@ -29,7 +29,9 @@ class VirtualOrderMenuRestaurant extends Model
         'created_by',
         'updated_by',
         'status',
-        'item_type'
+        'item_type',
+        'is_new_items',
+        'is_last_items'
     ];
 
     protected static function boot()
@@ -48,7 +50,11 @@ class VirtualOrderMenuRestaurant extends Model
      */
     protected $casts = [
         'quantity_reserved' => 'integer',
+        'is_last_items' => 'boolean',
+        'is_new_items' => 'boolean',
     ];
+
+
 
     /**
      * Relations

@@ -23,9 +23,9 @@ enum MenuOrderStatus : string
             self::VALIDATED => 'Validée',
             self::CANCELLED => 'Annulée',
             self::REJECTED  => 'Rejetée',
-            self::COMPLETED => 'Prêt totalement',
+            self::COMPLETED => 'Servie totalement',
             self::TRANSFERED => 'Transférée',
-            self::PARTIAL_COMPLETED => 'Prêt partiellement',
+            self::PARTIAL_COMPLETED => 'Servie partiellement',
             self::PENDING_VALIDATION => 'En attente validation',
             self::IN_PREPARATION => 'En cours de préparation',
         };

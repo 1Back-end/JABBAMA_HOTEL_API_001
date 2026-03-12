@@ -5,6 +5,8 @@ namespace App\Enums;
 enum OrderMenuRestaurantItemStatus: string
 {
     case PENDING = 'pending';
+
+    CASE REJECTED = 'rejected';
     case DELIVERED = 'delivered';
     case NOT_DELIVERED = 'not_delivered';
 
@@ -16,10 +18,11 @@ enum OrderMenuRestaurantItemStatus: string
     {
         return match ($this) {
             self::PENDING => 'En attente',
-            self::DELIVERED => 'Servie totalement',
+            self::DELIVERED => 'Prêt totalement',
             self::NOT_DELIVERED => 'Non servie',
-            self::PARTIAL_DELIVERED => 'Servie partiellement',
-            self::DELIVERED_IN_PREPARATION => 'Prêt pour service'
+            self::PARTIAL_DELIVERED => 'Prêt partiellement',
+            self::DELIVERED_IN_PREPARATION => 'Prêt pour service',
+            self::REJECTED => 'Rejetté',
         };
     }
 
