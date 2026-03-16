@@ -14,15 +14,23 @@ enum OrderMenuRestaurantItemStatus: string
 
     CASE DELIVERED_IN_PREPARATION = 'delivered_in_preparation';
 
+    case TRANSFERRED = 'transferred';
+    CASE REJECTED_FOR_NEW_UPDATE = 'cancel_for_new_update';
+
+    CASE IN_PREPARATION = 'in_preparation';
+
     public function label(): string
     {
         return match ($this) {
             self::PENDING => 'En attente',
-            self::DELIVERED => 'Prêt totalement',
+            self::DELIVERED => 'Servie totalement',
             self::NOT_DELIVERED => 'Non servie',
-            self::PARTIAL_DELIVERED => 'Prêt partiellement',
+            self::PARTIAL_DELIVERED => 'Servie partiellement',
             self::DELIVERED_IN_PREPARATION => 'Prêt pour service',
             self::REJECTED => 'Rejetté',
+            self::TRANSFERRED => 'Transférée',
+            self::REJECTED_FOR_NEW_UPDATE => 'Rejetée pour ajustement',
+            self::IN_PREPARATION => 'En cours de préparation',
         };
     }
 

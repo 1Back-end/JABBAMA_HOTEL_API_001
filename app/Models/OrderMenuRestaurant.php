@@ -143,7 +143,7 @@ class OrderMenuRestaurant extends Model
             $number = 1;
         }
 
-        return $prefix . str_pad($number, 6, '0', STR_PAD_LEFT);
+        return $prefix . str_pad($number, 8, '0', STR_PAD_LEFT);
     }
 
     /**
