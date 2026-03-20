@@ -19,6 +19,7 @@ enum MenuOrderStatus : string
     case PARTIAL_DELIVERED = 'partial_delivered';
 
     CASE PENDING_VALIDATION = 'pending_validation';
+    case NEW_REJECTED = 'new_rejected';
 
     public function label(): string
     {
@@ -32,9 +33,10 @@ enum MenuOrderStatus : string
             self::PARTIAL_COMPLETED => 'Prêt partiellement',
             self::PENDING_VALIDATION => 'En attente validation',
             self::IN_PREPARATION => 'En cours de préparation',
-            self::REJECTED_FOR_NEW_UPDATE => 'Rejetée pour ajustement',
+            self::REJECTED_FOR_NEW_UPDATE => 'Rejet du prêt',
             self::DELIVERED => 'Servie totalement',
             self::PARTIAL_DELIVERED => 'Servie partiellement',
+            self::NEW_REJECTED => 'Rejettée'
 
         };
     }

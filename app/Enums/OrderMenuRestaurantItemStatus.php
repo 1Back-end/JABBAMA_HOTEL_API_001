@@ -18,6 +18,8 @@ enum OrderMenuRestaurantItemStatus: string
     CASE REJECTED_FOR_NEW_UPDATE = 'cancel_for_new_update';
 
     CASE IN_PREPARATION = 'in_preparation';
+    case PARTIAL_COMPLETED = 'partial_completed';
+     case NEW_REJECTED = 'new_rejected';
 
     public function label(): string
     {
@@ -29,8 +31,10 @@ enum OrderMenuRestaurantItemStatus: string
             self::DELIVERED_IN_PREPARATION => 'Prêt pour service',
             self::REJECTED => 'Rejetté',
             self::TRANSFERRED => 'Transférée',
-            self::REJECTED_FOR_NEW_UPDATE => 'Rejetée pour ajustement',
+            self::REJECTED_FOR_NEW_UPDATE => 'Rejet du prêt',
             self::IN_PREPARATION => 'En cours de préparation',
+            self::PARTIAL_COMPLETED => 'Prêt partiellement',
+            self::NEW_REJECTED => 'Rejettée'
         };
     }
 

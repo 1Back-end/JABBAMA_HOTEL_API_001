@@ -201,7 +201,6 @@ Route::middleware(['activity'])->group(function () {
         Route::apiResource('orders_menu_restaurants', \App\Http\Controllers\OrderMenuRestaurantController::class);
         Route::post('orders_menu_restaurants/check_stock', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'checkStockOnly']);
         Route::post('orders_menu_restaurants/check_stock_bar', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'checkBarStockOnly']);
-        Route::patch('orders_menu_restaurants/{uuid}/change_in_preparation', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'ChangeOrderMenuRestaurantInPreparation']);
         Route::patch('orders_menu_restaurants/{uuid}/transfer', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'transferOrderMenuRestaurant']);
         Route::patch('orders_menu_restaurants/{uuid}/reject', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'RejectOrderMenuRestaurant']);
         Route::patch('orders_menu_restaurants/{uuid}/cancel', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'CancelOrderMenuRestaurant']);
@@ -220,6 +219,7 @@ Route::middleware(['activity'])->group(function () {
         Route::patch('orders_menu_restaurants/{uuid}/add_new_items', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'addItemsToOrder']);
         Route::patch('orders_menu_restaurants/{orderUuid}/add_quantity_for_menus', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'increaseMenuItemQuantity']);
         Route::patch('orders_menu_restaurants/{orderUuid}/add_quantity_for_drinks', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'increaseDrinksQuantity']);
+        Route::patch('orders_menu_restaurants/{uuid}/change_in_preparation_selected_items', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'SetItemsInPreparation']);
 
 
 
