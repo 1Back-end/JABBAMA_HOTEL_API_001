@@ -170,7 +170,7 @@ class ExtractPermissions extends Command
             'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
         'update_items_for_facture' => [
-            'description' => 'Afficher le bouton de modification d\'une commande',
+            'description' => 'Afficher le bouton d\'ajustement d\'une commande',
             'category' => 'Gestion des commandes du restaurant',
             'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
@@ -253,7 +253,7 @@ class ExtractPermissions extends Command
                         ]
                     );
 
-                    $this->info("📦 Module synchronisé : {$module->name}");
+                    $this->info("✅ Module synchronisé : {$module->name}");
 
                     if (!$module->permissions()->where('permission_id', $permission->id)->exists()) {
                         $module->permissions()->attach($permission->id, [
@@ -323,7 +323,7 @@ class ExtractPermissions extends Command
                     ]
                 );
 
-                $this->info("📦 Module synchronisé : {$module->name}");
+                $this->info("✅ Module synchronisé : {$module->name}");
 
                 if (!$module->permissions()->where('permission_id', $permission->id)->exists()) {
                     $module->permissions()->attach($permission->id, [
