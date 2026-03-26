@@ -21,6 +21,8 @@ enum MenuOrderStatus : string
     CASE PENDING_VALIDATION = 'pending_validation';
     case NEW_REJECTED = 'new_rejected';
 
+    case TOTAL_DELIVERED = 'total_delivered';
+
     public function label(): string
     {
         return match ($this) {
@@ -36,7 +38,8 @@ enum MenuOrderStatus : string
             self::REJECTED_FOR_NEW_UPDATE => 'Rejet du prêt',
             self::DELIVERED => 'Servie totalement',
             self::PARTIAL_DELIVERED => 'Servie partiellement',
-            self::NEW_REJECTED => 'Rejettée'
+            self::NEW_REJECTED => 'Rejettée',
+            self::TOTAL_DELIVERED => 'Prête',
 
         };
     }

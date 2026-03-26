@@ -8,6 +8,8 @@ enum OrderMenuRestaurantItemStatus: string
 
     CASE REJECTED = 'rejected';
     case DELIVERED = 'delivered';
+
+    case TOTAL_DELIVERED = 'total_delivered';
     case NOT_DELIVERED = 'not_delivered';
 
     case PARTIAL_DELIVERED = 'partial_delivered';
@@ -29,6 +31,7 @@ enum OrderMenuRestaurantItemStatus: string
             self::NOT_DELIVERED => 'Non servie',
             self::PARTIAL_DELIVERED => 'Servie partiellement',
             self::DELIVERED_IN_PREPARATION => 'Prêt pour service',
+            self::TOTAL_DELIVERED => 'Prêt',
             self::REJECTED => 'Rejetté',
             self::TRANSFERRED => 'Transférée',
             self::REJECTED_FOR_NEW_UPDATE => 'Rejet du prêt',

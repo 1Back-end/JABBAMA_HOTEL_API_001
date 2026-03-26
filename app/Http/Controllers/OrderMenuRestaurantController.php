@@ -1645,36 +1645,40 @@ class OrderMenuRestaurantController extends Controller
             ->with(['items'])
             ->firstOrFail();
 
+
+        $items = $order->items()
+            ->whereIn('uuid', $validated['selected_items'])
+            ->get();
+
+        $hasInvalidItem = $items->contains(function ($item) {
+            return $item->status === OrderMenuRestaurantItemStatus::PARTIAL_COMPLETED->value;
+        });
+        if ($hasInvalidItem) {
+
+            $statusLabel = OrderMenuRestaurantItemStatus::safeLabel(
+                OrderMenuRestaurantItemStatus::PARTIAL_COMPLETED->value
+            );
+            return response()->json([
+                'status'  => 'error',
+                'message' => "Impossible de rejeter un item avec le statut : {$statusLabel}.",
+            ], 422);
+        }
+
         $now = now();
 
-        $order->items()
-            ->whereIn('uuid', $validated['selected_items'])
-            ->each(function ($el) use ($validated, $auth, $now) {
+        $items->each(function ($el) use ($validated, $auth, $now) {
+            $status = $el->status === OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value
+                ? OrderMenuRestaurantItemStatus::NEW_REJECTED->value
+                : OrderMenuRestaurantItemStatus::REJECTED->value;
 
-                // 🔥 RESTAURATION AVANT UPDATE DU STATUT
-                if (
-                    $el->status === OrderMenuRestaurantItemStatus::PARTIAL_COMPLETED->value &&
-                    !is_null($el->quantity_final_used) &&
-                    $el->quantity_final_used > 0
-                ) {
-                    $el->quantity = $el->quantity_final_used;
-                }
-
-                $status = $el->status === OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value
-                    ? OrderMenuRestaurantItemStatus::NEW_REJECTED->value
-                    : OrderMenuRestaurantItemStatus::REJECTED->value;
-
-                $el->update([
-                    'quantity'     => $el->quantity, // valeur déjà modifiée au-dessus
-                    'quantity_delivered'     => 0,
-                    'quantity_final_used' => 0,
-                    'is_rejected'   => true,
-                    'rejected_by'   => $auth->id,
-                    'rejected_at'   => $now,
-                    'reason'        => $validated['reason_rejected'],
-                    'status'        => $status,
-                ]);
-            });
+            $el->update([
+                'is_rejected' => true,
+                'rejected_by' => $auth->id,
+                'rejected_at' => $now,
+                'reason'      => $validated['reason_rejected'],
+                'status'      => $status,
+            ]);
+        });
 
 
         $this->refreshOrderStatus($order);
@@ -1707,41 +1711,47 @@ class OrderMenuRestaurantController extends Controller
             ->with(['drinks'])
             ->firstOrFail();
 
+        // 🔥 Récupérer les drinks sélectionnés
+        $drinks = $order->drinks()
+            ->whereIn('uuid', $validated['selected_items'])
+            ->get();
+
+        // 🔥 Vérification blocage
+        $hasInvalidItem = $drinks->contains(function ($drink) {
+            return $drink->status === OrderMenuRestaurantItemStatus::PARTIAL_COMPLETED->value;
+        });
+
+        if ($hasInvalidItem) {
+
+            $statusLabel = OrderMenuRestaurantItemStatus::safeLabel(
+                OrderMenuRestaurantItemStatus::PARTIAL_COMPLETED->value
+            );
+
+            return response()->json([
+                'status'  => 'error',
+                'message' => "Impossible de rejeter une boisson avec le statut : {$statusLabel}.",
+            ], 422);
+        }
+
         $now = now();
 
-        $order->drinks()
-            ->whereIn('uuid', $validated['selected_items'])
-            ->each(function ($el) use ($validated, $auth, $now) {
+        $drinks->each(function ($el) use ($validated, $auth, $now) {
 
-                $status = $el->status === OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value
-                    ? OrderMenuRestaurantItemStatus::NEW_REJECTED->value
-                    : OrderMenuRestaurantItemStatus::REJECTED->value;
+            $status = $el->status === OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value
+                ? OrderMenuRestaurantItemStatus::NEW_REJECTED->value
+                : OrderMenuRestaurantItemStatus::REJECTED->value;
 
-                // 🔥 restauration de la quantité AVANT update
-                if (
-                    $el->status === OrderMenuRestaurantItemStatus::PARTIAL_COMPLETED->value &&
-                    !is_null($el->quantity_final_used) &&
-                    $el->quantity_final_used > 0
-                ) {
-                    $el->quantity = $el->quantity_final_used;
-                }
-
-                $el->update([
-                    'quantity'     => $el->quantity,
-                    'quantity_delivered'     => 0,
-                    'quantity_final_used' => 0,
-                    'is_rejected'   => true,
-                    'rejected_by'   => $auth->id,
-                    'rejected_at'   => $now,
-                    'reason'        => $validated['reason_rejected'],
-                    'status'        => $status,
-                ]);
-            });
-
+            $el->update([
+                'is_rejected' => true,
+                'rejected_by' => $auth->id,
+                'rejected_at' => $now,
+                'reason'      => $validated['reason_rejected'],
+                'status'      => $status,
+            ]);
+        });
 
         $this->refreshOrderStatus($order);
 
-        // 🔹 Update order
         $order->update([
             'updated_by' => $auth->id,
         ]);
@@ -2043,7 +2053,7 @@ class OrderMenuRestaurantController extends Controller
                 $newRemaining = max(0, $totalOrdered - $newDeliveredTotal);
 
                 if ($newRemaining <= 0) {
-                    $itemStatus = OrderMenuRestaurantItemStatus::PARTIAL_COMPLETED->value;
+                    $itemStatus = OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value;
                     $hasBeenValidated = true;
                 } else {
                     $itemStatus = $item->status === OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value
@@ -2211,7 +2221,7 @@ class OrderMenuRestaurantController extends Controller
 
 
                 if ($newRemaining <= 0) {
-                    $itemStatus = OrderMenuRestaurantItemStatus::PARTIAL_COMPLETED->value;
+                    $itemStatus = OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value;
                     $hasBeenValidated = true;
                 } else {
                     $itemStatus = $item->status === OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value
@@ -3388,6 +3398,11 @@ class OrderMenuRestaurantController extends Controller
                     $order->save();
                     return;
 
+                case OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value:
+                    $order->status = MenuOrderStatus::PARTIAL_COMPLETED->value;
+                    $order->save();
+                    return;
+
                 case OrderMenuRestaurantItemStatus::NEW_REJECTED->value:
                     $order->status = MenuOrderStatus::NEW_REJECTED->value;
                     $order->save();
@@ -3407,6 +3422,7 @@ class OrderMenuRestaurantController extends Controller
                     $order->status = MenuOrderStatus::IN_PREPARATION->value;
                     $order->save();
                     return;
+
             }
         }
 
