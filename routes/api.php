@@ -224,6 +224,8 @@ Route::middleware(['activity'])->group(function () {
         Route::patch('orders_menu_restaurants/{uuid}/change_in_preparation_selected_items_drinks', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'SetDrinksInPreparation']);
         Route::delete('orders_menu_restaurants/{order_uuid}/items/{item_uuid}/verify_delete_items_menus', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'verify_to_delete_items_menu']);
         Route::delete('orders_menu_restaurants/{order_uuid}/drinks/{item_uuid}/verify_delete_items_drinks', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'verify_to_delete_items_drink']);
+        Route::post('/orders_menu_restaurants/{uuid}/check_status_items', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'checkStatusForMenus']);
+        Route::post('/orders_menu_restaurants/{uuid}/check_status_drinks', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'checkStatusForDrinks']);
 
 
 

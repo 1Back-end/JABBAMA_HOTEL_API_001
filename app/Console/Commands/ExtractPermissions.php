@@ -164,11 +164,7 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des commandes du restaurant',
             'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
-        'change_status_for_all_items' => [
-            'description' => 'Afficher le bouton de mise en prêt  d\'une commande',
-            'category' => 'Gestion des commandes du restaurant',
-            'modules' => ['Gestion du restaurant','Autres Modules'],
-        ],
+
         'update_items_for_facture' => [
             'description' => 'Afficher le bouton d\'ajustement d\'une commande',
             'category' => 'Gestion des commandes du restaurant',
