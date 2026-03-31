@@ -5,3 +5,421 @@
 #GET http://127.0.0.1:9000/api/products
 #GET http://127.0.0.1:9000/api/orders
 GET http://127.0.0.1:9000/api/orders/export_orders
+
+
+public function addItemsToOrder(Request $request, string $uuid)
+    {
+        $auth = auth()->user();
+        DB::beginTransaction();
+
+        try {
+            $order = OrderMenuRestaurant::where('uuid', $uuid)->lockForUpdate()->firstOrFail();
+
+            $validated = $request->validate([
+                'warehouse_uuid' => ['nullable', 'uuid', 'exists:warehouses,uuid'],
+                'menus' => ['nullable', 'array'],
+                'menus.*.menus_restaurant_uuid' => ['required', 'uuid', 'exists:menus_restaurants,uuid'],
+                'menus.*.quantity' => ['required', 'numeric', 'min:0'],
+                'menus.*.unit_price' => ['nullable', 'numeric', 'min:0'],
+
+                'drinks' => ['nullable', 'array'],
+                'drinks.*.product_uuid' => ['required', 'uuid', 'exists:produits,uuid'],
+                'drinks.*.quantity' => ['required', 'numeric', 'min:0'],
+                'drinks.*.unit_price' => ['nullable', 'numeric', 'min:0'],
+            ]);
+
+            $warehouseUuid = $validated['warehouse_uuid']
+                ?? Warehouse::where('is_used_for_restaurant', true)->firstOrFail()->uuid;
+
+            // --- VERIFICATION STOCK ---
+            $menuErrors = $this->verifyMenuStock($validated['menus'] ?? [], $warehouseUuid);
+            $drinkErrors = !empty($validated['drinks']) ? $this->verifyBarStock($validated['drinks']) : null;
+
+            if ($menuErrors || $drinkErrors) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Stock insuffisant.',
+                    'details' => array_merge((array)$menuErrors, (array)$drinkErrors),
+                ], 422);
+            }
+
+            // --- TRAITEMENT DES MENUS ---
+            foreach ($validated['menus'] ?? [] as $m) {
+                $this->processOrderItem(
+                    $order,
+                    OrderMenuRestaurantItem::class,
+                    'menus_restaurant_uuid',
+                    $m['menus_restaurant_uuid'],
+                    $m,
+                    $auth->id
+                );
+            }
+
+            // --- TRAITEMENT DES BOISSONS ---
+            foreach ($validated['drinks'] ?? [] as $d) {
+                $this->processOrderItem(
+                    $order,
+                    OrderRestaurantDrink::class,
+                    'product_uuid',
+                    $d['product_uuid'],
+                    $d,
+                    $auth->id
+                );
+            }
+
+            $this->refreshOrderStatus($order);
+            $order->update(['updated_by' => $auth->id]);
+
+            DB::commit();
+            return response()->json(['status' => 'success', 'message' => 'Commande mise à jour']);
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            Log::error("Erreur addItemsToOrder: {$e->getMessage()}", ['trace' => $e->getTraceAsString()]);
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+        }
+    }
+
+
+
+    private function processOrderItem($order, $modelClass, $fkField, $fkValue, $data, $userId)
+    {
+        if ($data['is_last_items'] ?? false) return;
+
+        $existingItem = $modelClass::where('order_menu_restaurant_uuid', $order->uuid)
+            ->where($fkField, $fkValue)
+            ->first();
+
+        $newQty = $data['quantity'];
+        $unitPrice = $data['unit_price'] ?? ($modelClass === OrderMenuRestaurantItem::class ? MenuRestaurant::where('uuid', $fkValue)->first()->price : 0);
+
+        if ($existingItem) {
+            $oldQty = $existingItem->quantity;
+            if ($newQty == $oldQty) return;
+
+            // --- GESTION DES RESTRICTIONS SELON STATUT ---
+            $isLocked = in_array($existingItem->status, [
+                OrderMenuRestaurantItemStatus::IN_PREPARATION->value,
+                OrderMenuRestaurantItemStatus::DELIVERED->value,
+                OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value,
+                OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value
+            ]);
+
+            if ($newQty == $oldQty && !$isRejected) {
+                return;
+            }
+
+            if ($isLocked && $newQty < $oldQty) {
+                throw new \Exception("Impossible de réduire la quantité de l'item ({$existingItem->status})");
+            }
+
+            $isRejected = in_array($existingItem->status, [
+                OrderMenuRestaurantItemStatus::REJECTED->value,
+                OrderMenuRestaurantItemStatus::NEW_REJECTED->value
+            ]);
+
+            if ($isRejected && $newQty > $oldQty) {
+                throw new \Exception("Impossible d'augmenter un item rejeté.");
+            }
+
+            // --- CALCUL DIFFÉRENCE ET MISE À JOUR ---
+            $diff = $newQty - $oldQty;
+
+            $existingItem->update([
+                'quantity' => $newQty,
+                'quantity_exactly' => ($isLocked) ? $existingItem->quantity_exactly + $diff : $newQty,
+                'total_price' => $unitPrice * $newQty,
+                'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
+                'updated_by' => $userId,
+            ]);
+
+            $this->createVirtualItems($order->uuid, $existingItem, $fkField, $fkValue, $diff, $userId);
+
+        } else {
+            // --- NOUVEL ITEM ---
+            $newItem = $modelClass::create([
+                'order_menu_restaurant_uuid' => $order->uuid,
+                $fkField => $fkValue,
+                'quantity' => $newQty,
+                'quantity_exactly' => $newQty,
+                'unit_price' => $unitPrice,
+                'total_price' => $unitPrice * $newQty,
+                'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
+                'created_by' => $userId,
+                'updated_by' => $userId,
+            ]);
+
+            $this->createVirtualItems($order->uuid, $newItem, $fkField, $fkValue, $newQty, $userId);
+        }
+    }
+
+    /**
+     * Création des items virtuels pour le stock
+     */
+    private function createVirtualItems($orderUuid, $item, $type, $uuidValue, $quantity, $userId)
+    {
+        if ($quantity == 0) return;
+
+        if ($type === 'menus_restaurant_uuid') {
+            $components = MenuOrderItem::where('menus_restaurant_uuid', $uuidValue)->get();
+            foreach ($components as $comp) {
+                $this->saveVirtual($orderUuid, $item->uuid, $comp->product_uuid, $quantity * $comp->quantity_used, $userId);
+            }
+        } else {
+            $this->saveVirtual($orderUuid, $item->uuid, $uuidValue, $quantity, $userId);
+        }
+    }
+
+    private function saveVirtual($orderUuid, $itemUuid, $productUuid, $finalQty, $userId)
+    {
+        VirtualOrderMenuRestaurant::create([
+            'orders_menu_restaurant_uuid' => $orderUuid,
+            'item_uuid' => $itemUuid,
+            'product_uuid' => $productUuid,
+            'quantity_reserved' => $finalQty,
+            'quantity_exactly' => $finalQty,
+            'quantity_delivered_exactly' => $finalQty,
+            'created_by' => $userId,
+            'updated_by' => $userId,
+            'is_new_items' => $finalQty > 0,
+        ]);
+    }
+
+
+public function addItemsToOrder(Request $request, string $uuid)
+    {
+        $auth = auth()->user();
+        DB::beginTransaction();
+
+        try {
+            $order = OrderMenuRestaurant::where('uuid', $uuid)->firstOrFail();
+
+            $validated = $request->validate([
+                'menus' => ['nullable', 'array'],
+                'menus.*.menus_restaurant_uuid' => ['required', 'uuid', 'exists:menus_restaurants,uuid'],
+                'menus.*.quantity' => ['required', 'numeric', 'min:0'],
+                'menus.*.unit_price' => ['nullable', 'numeric', 'min:0'],
+                'drinks' => ['nullable', 'array'],
+                'drinks.*.product_uuid' => ['required', 'uuid', 'exists:produits,uuid'],
+                'drinks.*.quantity' => ['required', 'numeric', 'min:0'],
+                'drinks.*.unit_price' => ['nullable', 'numeric', 'min:0'],
+            ]);
+
+            $warehouseUuid = $validated['warehouse_uuid']
+                ?? Warehouse::where('is_used_for_restaurant', true)->firstOrFail()->uuid;
+
+            // 1. Vérification des stocks
+            $this->checkStocks($validated, $warehouseUuid);
+
+            // 2. Traitement des Menus
+            if (!empty($validated['menus'])) {
+                $this->processMenus($order, $validated['menus'], $auth->id);
+            }
+
+            // 3. Traitement des Boissons
+            if (!empty($validated['drinks'])) {
+                $this->processDrinks($order, $validated['drinks'], $auth->id);
+            }
+
+            // 4. Finalisation
+            $this->refreshOrderStatus($order);
+            $order->update(['updated_by' => $auth->id]);
+
+            DB::commit();
+            return response()->json(['status' => 'success', 'message' => 'Commande mise à jour avec succès']);
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            Log::error('Erreur addItemsToOrder', ['order' => $uuid, 'error' => $e->getMessage()]);
+            return response()->json(['status' => 'error', 'message' => 'Erreur : ' . $e->getMessage()], 500);
+        }
+    }
+
+    private function checkStocks(array $validated, string $warehouseUuid)
+    {
+        $menuErrors = $this->verifyMenuStock($validated['menus'] ?? [], $warehouseUuid);
+        if ($menuErrors) {
+            throw new \Exception('Stock insuffisant pour certains menus. ' . json_encode($menuErrors));
+        }
+
+        if (!empty($validated['drinks'])) {
+            $drinkErrors = $this->verifyBarStock($validated['drinks']);
+            if ($drinkErrors) {
+                throw new \Exception('Stock insuffisant pour certaines boissons. ' . json_encode($drinkErrors));
+            }
+        }
+    }
+
+
+    private function processMenus($order, array $menus, int $userId)
+    {
+        foreach ($menus as $m) {
+            if ($m['is_last_items'] ?? false) continue;
+
+            $menu = MenuRestaurant::findOrFail($m['menus_restaurant_uuid']);
+            $unitPrice = $m['unit_price'] ?? $menu->price ?? 0;
+            $newQty = (float)$m['quantity'];
+
+            $existingItem = OrderMenuRestaurantItem::where('order_menu_restaurant_uuid', $order->uuid)
+                ->where('menus_restaurant_uuid', $menu->uuid)
+                ->first();
+
+            if ($existingItem) {
+                $this->handleExistingOrderItem($order, $existingItem, $menu, $newQty, $unitPrice, $userId);
+            } else {
+                $this->createNewOrderItem($order, $menu, $newQty, $unitPrice, $userId);
+            }
+        }
+    }
+
+    private function processDrinks($order, array $drinks, int $userId)
+    {
+        foreach ($drinks as $d) {
+            if ($d['is_last_items'] ?? false) continue;
+
+            $product = Product::findOrFail($d['product_uuid']);
+            $unitPrice = $d['unit_price'] ?? 0;
+            $newQty = (float)$d['quantity'];
+
+            $existingDrink = OrderRestaurantDrink::where('order_menu_restaurant_uuid', $order->uuid)
+                ->where('product_uuid', $product->uuid)
+                ->first();
+
+            if ($existingDrink) {
+                $this->handleExistingDrinkItem($order, $existingDrink, $product, $newQty, $unitPrice, $userId);
+            } else {
+                $this->createNewDrinkItem($order, $product, $newQty, $unitPrice, $userId);
+            }
+        }
+    }
+
+    private function handleExistingOrderItem($order, $item, $menu, $newQty, $unitPrice, $userId)
+    {
+        $oldQty = (float)$item->quantity;
+        $isRejected = in_array($item->status, [OrderMenuRestaurantItemStatus::REJECTED->value, OrderMenuRestaurantItemStatus::NEW_REJECTED->value]);
+        $isPreparation = $item->status === OrderMenuRestaurantItemStatus::IN_PREPARATION->value;
+        $isDelivered = in_array($item->status, [OrderMenuRestaurantItemStatus::DELIVERED->value, OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value]);
+
+        // Validation des changements de quantité selon le statut
+        if (($isPreparation || $isDelivered) && $newQty < $oldQty) {
+            throw new \Exception("Impossible de réduire \"{$menu->name}\" car il est déjà en préparation ou servi.");
+        }
+        if ($isRejected && $newQty > $oldQty) {
+            throw new \Exception("Impossible d'augmenter \"{$menu->name}\" car il a été rejeté.");
+        }
+
+        $diff = $newQty - $oldQty;
+
+        // Mise à jour de l'item
+        $item->update([
+            'quantity' => $isRejected ? ($item->quantity - $newQty) : $newQty,
+            'quantity_exactly' => $isDelivered ? ($item->quantity_exactly + $diff) : $newQty,
+            'total_price' => $unitPrice * $newQty,
+            'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
+            'updated_by' => $userId,
+        ]);
+
+        // Gestion du stock virtuel si diff != 0
+        if ($diff != 0) {
+            $components = MenuOrderItem::where('menus_restaurant_uuid', $menu->uuid)->get();
+            foreach ($components as $comp) {
+                $this->createVirtualEntry($order->uuid, $item->uuid, $comp->product_uuid, $diff * $comp->quantity_used, $userId, $diff > 0);
+            }
+        }
+    }
+
+    private function createVirtualEntry($orderUuid, $itemUuid, $productUuid, $qty, $userId, $isNew = true)
+    {
+        VirtualOrderMenuRestaurant::create([
+            'orders_menu_restaurant_uuid' => $orderUuid,
+            'item_uuid' => $itemUuid,
+            'product_uuid' => $productUuid,
+            'quantity_reserved' => $qty,
+            'quantity_exactly' => $qty,
+            'quantity_delivered_exactly' => $qty,
+            'created_by' => $userId,
+            'updated_by' => $userId,
+            'is_new_items' => $isNew,
+            'is_last_items' => false
+        ]);
+    }
+
+    private function handleExistingDrinkItem($order, $item, $product, $newQty, $unitPrice, $userId)
+    {
+        $oldQty = (float)$item->quantity;
+
+        // Définition des états pour les boissons
+        $isRejected = in_array($item->status, [
+            OrderMenuRestaurantItemStatus::REJECTED->value,
+            OrderMenuRestaurantItemStatus::NEW_REJECTED->value
+        ]);
+
+        $isLocked = in_array($item->status, [
+            OrderMenuRestaurantItemStatus::IN_PREPARATION->value,
+            OrderMenuRestaurantItemStatus::DELIVERED->value,
+            OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value,
+            OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value
+        ]);
+
+        // 🔥 Sortie précoce si rien n'a changé (et pas en rejet)
+        if ($newQty == $oldQty && !$isRejected) {
+            return;
+        }
+
+        // Validation des quantités
+        if ($isLocked && $newQty < $oldQty) {
+            throw new \Exception("Impossible de réduire \"{$product->name}\" car la boisson est déjà en préparation ou servie.");
+        }
+
+        if ($isRejected && $newQty > $oldQty) {
+            throw new \Exception("Impossible d'augmenter \"{$product->name}\" car elle a été rejetée.");
+        }
+
+        $diff = $newQty - $oldQty;
+
+        // Mise à jour de la boisson
+        $item->update([
+            'quantity' => $newQty,
+            'quantity_exactly' => $isLocked ? ($item->quantity_exactly + $diff) : $newQty,
+            'total_price' => $unitPrice * $newQty,
+            'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
+            'updated_by' => $userId,
+        ]);
+
+        // Création du mouvement de stock virtuel (si diff != 0)
+        if ($diff != 0) {
+            $this->createVirtualEntry(
+                $order->uuid,
+                $item->uuid,
+                $product->uuid,
+                $diff,
+                $userId,
+                $diff > 0
+            );
+        }
+    }
+
+    private function createNewDrinkItem($order, $product, $qty, $unitPrice, $userId)
+    {
+        $drink = OrderRestaurantDrink::create([
+            'order_menu_restaurant_uuid' => $order->uuid,
+            'product_uuid' => $product->uuid,
+            'quantity' => $qty,
+            'quantity_exactly' => $qty,
+            'unit_price' => $unitPrice,
+            'total_price' => $unitPrice * $qty,
+            'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
+            'created_by' => $userId,
+            'updated_by' => $userId,
+        ]);
+
+        // Stock virtuel immédiat pour la totalité de la quantité
+        $this->createVirtualEntry(
+            $order->uuid,
+            $drink->uuid,
+            $product->uuid,
+            $qty,
+            $userId,
+            true
+        );
+    }
