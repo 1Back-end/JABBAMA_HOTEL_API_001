@@ -39,7 +39,8 @@ class OrderMenuRestaurantItem extends Model
         'is_rejected',
         'reason',
         'is_new_items',
-        'is_last_items'
+        'is_last_items',
+        'make_in_preparation_at'
     ];
 
     /**

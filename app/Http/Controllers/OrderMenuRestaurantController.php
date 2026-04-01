@@ -632,12 +632,6 @@ class OrderMenuRestaurantController extends Controller
             $warehouseUuid = $validated['warehouse_uuid']
                 ?? Warehouse::where('is_used_for_restaurant', true)->firstOrFail()->uuid;
 
-            /*
-            |--------------------------------------------------------------------------
-            | Vérification stock
-            |--------------------------------------------------------------------------
-            */
-
             $menuErrors = $this->verifyMenuStock($validated['menus'] ?? [], $warehouseUuid);
             if ($menuErrors) {
                 return response()->json([
@@ -658,11 +652,6 @@ class OrderMenuRestaurantController extends Controller
                 }
             }
 
-            /*
-            |--------------------------------------------------------------------------
-            | MENUS
-            |--------------------------------------------------------------------------
-            */
 
             foreach ($validated['menus'] ?? [] as $m) {
 
@@ -674,7 +663,8 @@ class OrderMenuRestaurantController extends Controller
                     continue;
                 }
 
-                $existingItem = OrderMenuRestaurantItem::where('order_menu_restaurant_uuid', $order->uuid)->where('menus_restaurant_uuid', $menu->uuid)
+                $existingItem = OrderMenuRestaurantItem::where('order_menu_restaurant_uuid', $order->uuid)
+                    ->where('menus_restaurant_uuid', $menu->uuid)
                     ->first();
 
                 /*
@@ -683,7 +673,6 @@ class OrderMenuRestaurantController extends Controller
                 |--------------------------------------------------------------------------
                 */
                 if ($existingItem) {
-
                     $newQty = $m['quantity'];
                     $oldQty = $existingItem->quantity;
 
@@ -700,281 +689,62 @@ class OrderMenuRestaurantController extends Controller
                         OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value,
                     ]);
 
-                    // ⚡ évite traitement inutile
-                    if ($newQty == $oldQty && !$isRejected && !$isRejectedForUpdate && !$statusesToTransfer) {
+                    $isTransferred = $existingItem->status === OrderMenuRestaurantItemStatus::TRANSFERRED->value;
+
+                    // ⚡ Évite traitement inutile si quantité identique et pas de cas spéciaux
+                    if ($newQty == $oldQty && !$isRejected && !$isRejectedForUpdate && !$statusesToTransfer && !$isTransferred) {
                         continue;
                     }
 
-                    /*
-                    |--------------------------------------------------------------------------
-                    | 🔸 CAS : IN_PREPARATION
-                    |--------------------------------------------------------------------------
-                    */
+                    // 🔹 Gestion des différents cas selon le statut
+                    if ($isTransferred) {
+                        $response = $this->handleTransferred($existingItem, $m, $menu, $order, $unitPrice, $auth);
+                        if ($response) return $response;
+                        continue;
+                    }
+
                     if ($existingItem->status === OrderMenuRestaurantItemStatus::IN_PREPARATION->value) {
-
-                        // ❌ réduire interdit
-                        if ($newQty < $oldQty) {
-                            return response()->json([
-                                'status' => 'error',
-                                'message' => "Impossible de réduire \"{$menu->name}\" en préparation. Vous ne pouvez que augmenter la quantité.",
-                            ], 422);
-                        }
-
-                        // ✅ augmenter
-                        $diff = $newQty - $oldQty;
-
-                        $existingItem->update([
-                            'quantity' => $newQty,
-                            'quantity_exactly' => $newQty,
-                            'total_price' => $unitPrice * $newQty,
-                            'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
-                            'updated_by' => $auth->id,
-                        ]);
-
-                        if ($diff > 0) {
-                            $components = MenuOrderItem::where('menus_restaurant_uuid', $menu->uuid)->get();
-                            foreach ($components as $comp) {
-                                VirtualOrderMenuRestaurant::create([
-                                    'orders_menu_restaurant_uuid' => $order->uuid,
-                                    'item_uuid' => $existingItem->uuid,
-                                    'product_uuid' => $comp->product_uuid,
-                                    'quantity_reserved' => $diff * $comp->quantity_used,
-                                    'quantity_exactly' => $diff * $comp->quantity_used,
-                                    'quantity_delivered_exactly' => $diff * $comp->quantity_used,
-                                    'created_by' => $auth->id,
-                                    'updated_by' => $auth->id,
-                                    'is_new_items' => true,
-                                    'is_last_items' => false
-                                ]);
-                            }
-                        }
-
+                        $response = $this->handleInPreparation($existingItem, $m, $menu, $order, $unitPrice, $auth);
+                        if ($response) return $response;
                         continue;
                     }
 
-
-                    if (in_array($existingItem->status, [
-                        OrderMenuRestaurantItemStatus::DELIVERED->value,
-                        OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value,
-                    ])) {
-                        // calcul de la différence réelle
-                        $diff = $newQty - $oldQty;
-
-                        if ($diff < 0) {
-                            return response()->json([
-                                'status' => 'error',
-                                'message' => "Impossible de réduire \"{$menu->name}\" déjà servie ou partiellement servie. Vous ne pouvez que augmenter la quantité.",
-                            ], 422);
-                        }
-
-                        // ✅ diff > 0 → augmentation autorisée
-                        if ($diff > 0) {
-                            $existingItem->update([
-                                'quantity' => $newQty,
-                                'quantity_exactly' => $existingItem->quantity_exactly + $diff,
-                                'total_price' => $unitPrice * $newQty,
-                                'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
-                                'updated_by' => $auth->id,
-                            ]);
-
-                            // 🔥 recréer les virtual items uniquement pour cet item
-                            $components = MenuOrderItem::where('menus_restaurant_uuid', $menu->uuid)->get();
-                            foreach ($components as $comp) {
-                                VirtualOrderMenuRestaurant::create([
-                                    'orders_menu_restaurant_uuid' => $order->uuid,
-                                    'item_uuid' => $existingItem->uuid,
-                                    'product_uuid' => $comp->product_uuid,
-                                    'quantity_reserved' => $diff * $comp->quantity_used,
-                                    'quantity_exactly' => $diff * $comp->quantity_used,
-                                    'quantity_delivered_exactly' => $diff * $comp->quantity_used,
-                                    'created_by' => $auth->id,
-                                    'updated_by' => $auth->id,
-                                    'is_new_items' => true,
-                                    'is_last_items' => false,
-                                ]);
-                            }
-                        }
-
-                        // ✅ si diff = 0 → on ne touche pas à l’item
-                        continue; // passe au prochain item
+                    if ($statusesToTransfer) {
+                        $response = $this->handleDeliveredOrPartial($existingItem, $m, $menu, $order, $unitPrice, $auth);
+                        if ($response) return $response;
+                        continue;
                     }
 
                     if ($isRejectedForUpdate) {
-
-                        // ❌ réduire interdit
-                        if ($newQty < $oldQty) {
-                            return response()->json([
-                                'status' => 'error',
-                                'message' => "Impossible de réduire \"{$menu->name}\" (rejet du prêt). Vous ne pouvez qu’augmenter la quantité.",
-                            ], 422);
-                        }
-
-                        // ✅ augmenter ou égal
-                        $diff = $newQty - $oldQty;
-
-                        $existingItem->update([
-                            'quantity' => $newQty,
-                            'quantity_exactly' => $newQty,
-                            'total_price' => $unitPrice * $newQty,
-                            'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
-                            'updated_by' => $auth->id,
-                        ]);
-
-                        if ($diff > 0) {
-                            $components = MenuOrderItem::where('menus_restaurant_uuid', $menu->uuid)->get();
-
-                            foreach ($components as $comp) {
-                                VirtualOrderMenuRestaurant::create([
-                                    'orders_menu_restaurant_uuid' => $order->uuid,
-                                    'item_uuid' => $existingItem->uuid,
-                                    'product_uuid' => $comp->product_uuid,
-                                    'quantity_reserved' => $diff * $comp->quantity_used,
-                                    'quantity_exactly' => $diff * $comp->quantity_used,
-                                    'quantity_delivered_exactly' => $diff * $comp->quantity_used,
-                                    'created_by' => $auth->id,
-                                    'updated_by' => $auth->id,
-                                    'is_new_items' => true,
-                                    'is_last_items' => false
-                                ]);
-                            }
-                        }
-
+                        $response = $this->handleRejectedForUpdate($existingItem, $m, $menu, $order, $unitPrice, $auth);
+                        if ($response) return $response;
                         continue;
                     }
 
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | 🔸 CAS : REJECTED / NEW_REJECTED
-                    |--------------------------------------------------------------------------
-                    */
                     if ($isRejected) {
-
-                        // ❌ augmenter interdit
-                        if ($newQty > $oldQty) {
-                            return response()->json([
-                                'status' => 'error',
-                                'message' => "Impossible d’augmenter \"{$menu->name}\" rejeté. Vous ne pouvez que réduire la quantité.",
-                            ], 422);
-                        }
-
-                        // ✅ réduire
-                        $diff = $oldQty - $newQty;
-
-                        $existingItem->update([
-                            'quantity' => $newQty,
-                            'quantity_exactly' => $newQty,
-                            'total_price' => $unitPrice * $newQty,
-                            'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
-                            'updated_by' => $auth->id,
-                        ]);
-
-                        if ($diff > 0) {
-                            $components = MenuOrderItem::where('menus_restaurant_uuid', $menu->uuid)->get();
-
-                            foreach ($components as $comp) {
-                                VirtualOrderMenuRestaurant::create([
-                                    'orders_menu_restaurant_uuid' => $order->uuid,
-                                    'item_uuid' => $existingItem->uuid,
-                                    'product_uuid' => $comp->product_uuid,
-                                    'quantity_reserved' => -($diff * $comp->quantity_used),
-                                    'quantity_exactly' => -($diff * $comp->quantity_used),
-                                    'quantity_delivered_exactly' => -($diff * $comp->quantity_used),
-                                    'created_by' => $auth->id,
-                                    'updated_by' => $auth->id,
-                                    'is_new_items' => false,
-                                    'is_last_items' => false
-                                ]);
-                            }
-                        }
-
+                        $response = $this->handleRejected($existingItem, $m, $menu, $order, $unitPrice, $auth);
+                        if ($response) return $response;
                         continue;
                     }
 
-                    /*
-                    |--------------------------------------------------------------------------
-                    | 🔸 AUTRES STATUTS
-                    |--------------------------------------------------------------------------
-                    */
-                    $existingItem->update([
-                        'quantity' => $newQty,
-                        'quantity_exactly' => $newQty,
-                        'total_price' => $unitPrice * $newQty,
-                        'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
-                        'updated_by' => $auth->id,
-                    ]);
-
+                    $this->updateExistingMenuItem($existingItem, $menu, $order, $newQty, $unitPrice, $auth);
                     continue;
                 }
 
-                /*
-                |--------------------------------------------------------------------------
-                | 🆕 CAS 2 : NOUVEL ITEM
-                |--------------------------------------------------------------------------
-                */
-                $item = OrderMenuRestaurantItem::create([
-                    'order_menu_restaurant_uuid' => $order->uuid,
-                    'menus_restaurant_uuid' => $menu->uuid,
-                    'quantity' => $m['quantity'],
-                    'quantity_exactly' => $m['quantity'],
-                    'unit_price' => $unitPrice,
-                    'total_price' => $unitPrice * $m['quantity'],
-                    'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
-                    'created_by' => $auth->id,
-                    'updated_by' => $auth->id,
-                    'is_new_items' => true,
-                    'is_last_items' => false
-                ]);
-
-                $components = MenuOrderItem::where('menus_restaurant_uuid', $menu->uuid)->get();
-
-                foreach ($components as $comp) {
-                    VirtualOrderMenuRestaurant::create([
-                        'orders_menu_restaurant_uuid' => $order->uuid,
-                        'item_uuid' => $item->uuid,
-                        'product_uuid' => $comp->product_uuid,
-                        'quantity_reserved' => $m['quantity'] * $comp->quantity_used,
-                        'quantity_exactly' => $m['quantity'] * $comp->quantity_used,
-                        'quantity_delivered_exactly' => $m['quantity'] * $comp->quantity_used,
-                        'created_by' => $auth->id,
-                        'updated_by' => $auth->id,
-                        'is_new_items' => true,
-                        'is_last_items' => false
-                    ]);
-                }
+                $this->createNewMenuItem($m, $menu, $order, $unitPrice, $auth);
             }
 
 
 
-
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | DRINKS
-            |--------------------------------------------------------------------------
-            */
-
             foreach ($validated['drinks'] ?? [] as $d) {
 
-                $isLastItem = $d['is_last_items'] ?? false;
-
-                if ($isLastItem) {
-                    continue;
-                }
+                if ($d['is_last_items'] ?? false) continue;
 
                 $unitPrice = $d['unit_price'] ?? 0;
                 $product = Product::findOrFail($d['product_uuid']);
 
-                $existingDrink = OrderRestaurantDrink::where('order_menu_restaurant_uuid', $order->uuid)
-                    ->where('product_uuid', $d['product_uuid'])
-                    ->first();
+                $existingDrink = OrderRestaurantDrink::where('order_menu_restaurant_uuid', $order->uuid)->where('product_uuid', $d['product_uuid'])->first();
 
-                /*
-                |--------------------------------------------------------------------------
-                | 🔥 CAS 1 : DRINK EXISTE
-                |--------------------------------------------------------------------------
-                */
                 if ($existingDrink) {
 
                     $newQty = $d['quantity'];
@@ -985,237 +755,55 @@ class OrderMenuRestaurantController extends Controller
                         OrderMenuRestaurantItemStatus::NEW_REJECTED->value
                     ]);
 
-                    $isRejectedForUpdate = $existingDrink->status ===
-                        OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value;
+                    $isRejectedForUpdate = $existingDrink->status === OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value;
 
                     $statusesToTransferDrinks = in_array($existingDrink->status, [
                         OrderMenuRestaurantItemStatus::DELIVERED->value,
                         OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value,
                     ]);
 
+                    $isTransferredDrinks = $existingDrink->status === OrderMenuRestaurantItemStatus::TRANSFERRED->value;
+
                     // ⚡ éviter traitement inutile
-                    if ($newQty == $oldQty && !$isRejected && !$isRejectedForUpdate && !$statusesToTransferDrinks) {
+                    if ($newQty == $oldQty && !$isRejected && !$isRejectedForUpdate && !$statusesToTransferDrinks && !$isTransferredDrinks) {
                         continue;
                     }
 
-                    /*
-                    |--------------------------------------------------------------------------
-                    | 🔸 CAS : IN_PREPARATION
-                    |--------------------------------------------------------------------------
-                    */
-                    if ($existingDrink->status === OrderMenuRestaurantItemStatus::IN_PREPARATION->value) {
-
-                        // ❌ réduire interdit
-                        if ($newQty < $oldQty) {
-                            return response()->json([
-                                'status' => 'error',
-                                'message' => "Impossible de réduire \"{$product->name}\" (en préparation). Vous ne pouvez que augmenter la quantité.",
-                            ], 422);
-                        }
-
-                        // ✅ augmenter
-                        $diff = $newQty - $oldQty;
-
-                        $existingDrink->update([
-                            'quantity' => $newQty,
-                            'quantity_exactly' => $newQty,
-                            'total_price' => $unitPrice * $newQty,
-                            'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
-                            'updated_by' => $auth->id,
-                        ]);
-
-                        VirtualOrderMenuRestaurant::create([
-                            'orders_menu_restaurant_uuid' => $order->uuid,
-                            'item_uuid' => $existingDrink->uuid,
-                            'product_uuid' => $d['product_uuid'],
-                            'quantity_reserved' => $diff,
-                            'quantity_exactly' => $diff,
-                            'quantity_delivered_exactly' => $diff,
-                            'created_by' => $auth->id,
-                            'updated_by' => $auth->id,
-                            'is_new_items' => true,
-                            'is_last_items' => false
-                        ]);
-
+                    if ($isRejected) {
+                        $response = $this->handleRejectedDrink($existingDrink, $d, $unitPrice, $auth);
+                        if ($response) return $response;
                         continue;
                     }
-
-
-                    if (in_array($existingDrink->status, [
-                        OrderMenuRestaurantItemStatus::DELIVERED->value,
-                        OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value,
-                    ])) {
-                        // calculer la différence réelle
-                        $diff = $newQty - $oldQty;
-
-                        // ❌ réduire interdit
-                        if ($diff < 0) {
-                            return response()->json([
-                                'status' => 'error',
-                                'message' => "Impossible de réduire \"{$product->name}\" déjà livré ou partiellement livré. Vous ne pouvez qu’augmenter la quantité.",
-                            ], 422);
-                        }
-
-                        // ✅ si diff > 0 → seulement alors on repasse à TRANSFERRED
-                        if ($diff > 0) {
-                            $existingDrink->update([
-                                'quantity' => $newQty,
-                                'quantity_exactly' => $existingDrink->quantity_exactly + $diff, // accumuler correctement
-                                'total_price' => $unitPrice * $newQty,
-                                'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
-                                'updated_by' => $auth->id,
-                            ]);
-
-                            // 🔥 recréer les virtual items seulement si on a augmenté
-                            VirtualOrderMenuRestaurant::create([
-                                'orders_menu_restaurant_uuid' => $order->uuid,
-                                'item_uuid' => $existingDrink->uuid,
-                                'product_uuid' => $d['product_uuid'],
-                                'quantity_reserved' => $diff,
-                                'quantity_exactly' => $diff,
-                                'quantity_delivered_exactly' => $diff,
-                                'created_by' => $auth->id,
-                                'updated_by' => $auth->id,
-                                'is_new_items' => true,
-                                'is_last_items' => false,
-                            ]);
-                        }
-
-                        continue; // passe au prochain drink
-                    }
-
 
                     if ($isRejectedForUpdate) {
-
-                        // ❌ réduire interdit
-                        if ($newQty < $oldQty) {
-                            return response()->json([
-                                'status' => 'error',
-                                'message' => "Impossible de réduire \"{$product->name}\" (rejet du prêt). Vous ne pouvez qu’augmenter la quantité.",
-                            ], 422);
-                        }
-
-                        // ✅ augmenter ou égal
-                        $diff = $newQty - $oldQty;
-
-                        $existingDrink->update([
-                            'quantity' => $newQty,
-                            'quantity_exactly' => $newQty,
-                            'total_price' => $unitPrice * $newQty,
-                            'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
-                            'updated_by' => $auth->id,
-                        ]);
-
-                        if ($diff > 0) {
-                            VirtualOrderMenuRestaurant::create([
-                                'orders_menu_restaurant_uuid' => $order->uuid,
-                                'item_uuid' => $existingDrink->uuid,
-                                'product_uuid' => $d['product_uuid'],
-                                'quantity_reserved' => $diff,
-                                'quantity_exactly' => $diff,
-                                'quantity_delivered_exactly' => $diff,
-                                'created_by' => $auth->id,
-                                'updated_by' => $auth->id,
-                                'is_new_items' => true,
-                                'is_last_items' => false
-                            ]);
-                        }
-
+                        $response = $this->handleRejectedForUpdateDrink($existingDrink, $d, $unitPrice, $auth);
+                        if ($response) return $response;
                         continue;
                     }
 
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | 🔸 CAS : REJECTED / NEW_REJECTED
-                    |--------------------------------------------------------------------------
-                    */
-                    if ($isRejected) {
-
-                        // ❌ augmenter interdit
-                        if ($newQty > $oldQty) {
-                            return response()->json([
-                                'status' => 'error',
-                                'message' => "Impossible d’augmenter \"{$product->name}\" (rejeté). Vous ne pouvez que réduire la quantité.",
-                            ], 422);
-                        }
-
-                        // ✅ réduire
-                        $diff = $oldQty - $newQty;
-
-                        $existingDrink->update([
-                            'quantity' => $newQty,
-                            'quantity_exactly' => $newQty,
-                            'total_price' => $unitPrice * $newQty,
-                            'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
-                            'updated_by' => $auth->id,
-                        ]);
-
-                        if ($diff > 0) {
-                            VirtualOrderMenuRestaurant::create([
-                                'orders_menu_restaurant_uuid' => $order->uuid,
-                                'item_uuid' => $existingDrink->uuid,
-                                'product_uuid' => $d['product_uuid'],
-                                'quantity_reserved' => -$diff,
-                                'quantity_exactly' => -$diff,
-                                'quantity_delivered_exactly' => -$diff,
-                                'created_by' => $auth->id,
-                                'updated_by' => $auth->id,
-                                'is_new_items' => false,
-                                'is_last_items' => false
-                            ]);
-                        }
-
+                    if($statusesToTransferDrinks){
+                        $response = $this->handleDeliveredOrPartialDrink($existingDrink, $d, $unitPrice, $auth);
+                        if ($response) return $response;
                         continue;
                     }
 
+                    if($existingDrink->status === OrderMenuRestaurantItemStatus::IN_PREPARATION->value){
+                        $response = $this->handleInPreparationDrink($existingDrink, $d, $unitPrice, $auth);
+                        if ($response) return $response;
+                        continue;
+                    }
 
-                    /*
-                    |--------------------------------------------------------------------------
-                    | 🔸 AUTRES STATUTS
-                    |--------------------------------------------------------------------------
-                    */
-                    $existingDrink->update([
-                        'quantity' => $newQty,
-                        'quantity_exactly' => $newQty,
-                        'total_price' => $unitPrice * $newQty,
-                        'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
-                        'updated_by' => $auth->id,
-                    ]);
+                    if($isTransferredDrinks){
+                        $response = $this->handleTransferredDrink($existingDrink, $d, $unitPrice, $auth);
+                        if ($response) return $response;
+                        continue;
+                    }
 
-                    continue;
+                    $this->updateExistingDrink($existingDrink, $d, $product, $unitPrice, $auth);
                 }
-                /*
-                |--------------------------------------------------------------------------
-                | 🆕 CAS 2 : NOUVEAU DRINK
-                |--------------------------------------------------------------------------
-                */
-                $drink = OrderRestaurantDrink::create([
-                    'order_menu_restaurant_uuid' => $order->uuid,
-                    'product_uuid' => $d['product_uuid'],
-                    'quantity' => $d['quantity'],
-                    'quantity_exactly' => $d['quantity'],
-                    'unit_price' => $unitPrice,
-                    'total_price' => $unitPrice * $d['quantity'],
-                    'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
-                    'created_by' => $auth->id,
-                    'updated_by' => $auth->id,
-                    'is_new_items' => true,
-                    'is_last_items' => false
-                ]);
 
-                VirtualOrderMenuRestaurant::create([
-                    'orders_menu_restaurant_uuid' => $order->uuid,
-                    'item_uuid' => $drink->uuid,
-                    'product_uuid' => $d['product_uuid'],
-                    'quantity_reserved' => $d['quantity'],
-                    'quantity_exactly' => $d['quantity'],
-                    'quantity_delivered_exactly' => $d['quantity'],
-                    'created_by' => $auth->id,
-                    'updated_by' => $auth->id,
-                    'is_new_items' => true,
-                    'is_last_items' => false
-                ]);
+                // ⚡ Création d’un nouveau drink
+                $this->createNewDrink($d, $product, $unitPrice, $auth);
             }
 
             $this->refreshOrderStatus($order);
@@ -1229,13 +817,12 @@ class OrderMenuRestaurantController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Commande mise à jour avec succès'
+                'message' => 'La commande a été mise à jour correctement'
             ]);
 
         } catch (\Throwable $e) {
 
             DB::rollBack();
-
             // 🔹 Loguer l'erreur complète dans le fichier de logs Laravel
             Log::error('Erreur lors de l’ajout des éléments à la commande', [
                 'order_uuid' => $uuid,
@@ -1243,7 +830,6 @@ class OrderMenuRestaurantController extends Controller
                 'error_message' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
-
             // 🔹 Retourner le message exact au frontend (optionnel, attention aux données sensibles)
             return response()->json([
                 'status' => 'error',
@@ -1252,9 +838,518 @@ class OrderMenuRestaurantController extends Controller
         }
     }
 
+    private function updateExistingDrink(OrderRestaurantDrink $drink, array $data, Product $product, float $unitPrice, $auth) {
+        $oldQty = (int) $drink->quantity;
+        $newQty = (int) $data['quantity'];
+
+        // ⚡ rien à faire si même quantité
+        if ($newQty === $oldQty) {
+            return $drink;
+        }
+
+        // 🔥 calcul diff
+        $diffQty = $newQty - $oldQty;
+
+        // 🔹 update drink
+        $drink->update([
+            'quantity' => $newQty,
+            'quantity_exactly' => $newQty,
+            'total_price' => $unitPrice * $newQty,
+            'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
+            'updated_by' => $auth->id,
+        ]);
+
+        // 🔥 virtual basé sur PRODUCT
+        $this->createVirtualDrinkItems($product, $drink, $diffQty, $auth);
+
+        return $drink;
+    }
+    private function createNewDrink(array $data, OrderMenuRestaurant $order, float $unitPrice, $auth): OrderRestaurantDrink
+    {
+        // 🔥 récupérer le produit
+        $product = Product::findOrFail($data['product_uuid']);
+
+        $drink = OrderRestaurantDrink::create([
+            'order_menu_restaurant_uuid' => $order->uuid,
+            'product_uuid' => $product->uuid,
+            'quantity' => $data['quantity'],
+            'quantity_exactly' => $data['quantity'],
+            'unit_price' => $unitPrice,
+            'total_price' => $unitPrice * $data['quantity'],
+            'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
+            'created_by' => $auth->id,
+            'updated_by' => $auth->id,
+            'is_new_items' => true,
+            'is_last_items' => false,
+        ]);
+
+        // 🔥 créer automatiquement le virtual item (version corrigée)
+        $this->createVirtualDrinkItems($product, $drink, $data['quantity'], $auth, true, false);
+
+        return $drink;
+    }
+    private function handleRejectedDrink(OrderRestaurantDrink $drink, array $data, float $unitPrice, $auth)
+    {
+        $newQty = $data['quantity'];
+        $oldQty = $drink->quantity;
+
+        $product = $drink->product;
+
+        if ($newQty > $oldQty) {
+            return response()->json([
+                'status' => 'error',
+                'message' => "Impossible d’augmenter une boisson rejetée.",
+            ], 422);
+        }
+
+        if ($newQty == $oldQty) {
+            $drink->update([
+                'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
+                'updated_by' => $auth->id,
+            ]);
+            return null;
+        }
+
+
+        $deliveredQty = (int) $drink->quantity_final_used;
+        $currentQty   = (int) $drink->quantity_exactly;
+        $reduceQty    = (int) $drink->quantity;
+
+        $maxReducible = $currentQty - $deliveredQty;
+
+        if ($reduceQty > $maxReducible) {
+            throw new \Exception(
+                "Action impossible. Quantité trop élevée."
+            );
+        }
+
+        $diff = $currentQty - $newQty;
+        $diff_rest = $reduceQty - $newQty;
+
+        $newStatus = $newQty === $deliveredQty
+            ? OrderMenuRestaurantItemStatus::DELIVERED->value
+            : OrderMenuRestaurantItemStatus::TRANSFERRED->value;
+
+        // 6. 📝 MISE À JOUR
+        $drink->update([
+            'quantity' => $diff_rest,
+            'quantity_exactly' => $diff,
+            'total_price' => $diff * $drink->unit_price,
+            'status' => $newStatus,
+            'updated_by' => $auth->id,
+        ]);
+        $this->createVirtualDrinkItems($product, $drink, $diff, $auth, true, false);
+
+        return null;
+    }
+
+    private function handleRejectedForUpdateDrink(OrderRestaurantDrink $drink, array $data, float $unitPrice, $auth)
+    {
+        $newQty = (int) $data['quantity'];
+        $oldQty = (int) $drink->quantity;
+
+        // 🔥 récupérer le produit
+        $product = $drink->product;
+
+        // ❌ réduction interdite
+        if ($newQty < $oldQty) {
+            return response()->json([
+                'status' => 'error',
+                'message' => "Impossible de réduire \"{$product->name}\" (rejet pour mise à jour). Vous ne pouvez qu’augmenter la quantité.",
+            ], 422);
+        }
+
+        // ⚡ aucune modification → juste changer statut
+        if ($newQty === $oldQty) {
+            $drink->update([
+                'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
+                'updated_by' => $auth->id,
+            ]);
+            return null;
+        }
+
+        // 🔹 différence à ajouter
+        $diffQty = $newQty - $oldQty;
+
+        // 🔹 update drink
+        $drink->update([
+            'quantity' => $newQty,
+            'quantity_exactly' => $newQty,
+            'total_price' => $unitPrice * $newQty,
+            'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
+            'updated_by' => $auth->id,
+        ]);
+
+        // 🔥 création / mise à jour virtual drinks
+        $this->createVirtualDrinkItems($product, $drink, $diffQty, $auth, true, false);
+
+        return null;
+    }
+
+    private function handleDeliveredOrPartialDrink(OrderRestaurantDrink $drink, array $data, float $unitPrice, $auth)
+    {
+        $newQty = (int) $data['quantity'];
+        $oldQty = (int) $drink->quantity;
+        $diffQty = $newQty - $oldQty;
+
+        $product = $drink->product;
+
+        // ❌ réduction interdite
+        if ($diffQty < 0) {
+            return response()->json([
+                'status' => 'error',
+                'message' => "Impossible de réduire \"{$product->name}\" déjà servi ou partiellement servi.",
+            ], 422);
+        }
+
+        // ⚡ aucune modification → rien à faire
+        if ($diffQty === 0) {
+            return null;
+        }
+
+        // 🔹 mettre à jour le drink
+        $drink->update([
+            'quantity' => $newQty,
+            'quantity_exactly' => $drink->quantity_exactly + $diffQty,
+            'total_price' => $unitPrice * $newQty,
+            'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
+            'updated_by' => $auth->id,
+        ]);
+
+        // 🔥 créer / mettre à jour virtual drinks
+        $this->createVirtualDrinkItems($product, $drink, $diffQty, $auth, true, false);
+
+        return null;
+    }
+
+    private function handleInPreparationDrink(OrderRestaurantDrink $drink, array $data, float $unitPrice, $auth)
+    {
+        $newQty = (int) $data['quantity'];
+        $oldQty = (int) $drink->quantity;
+        $product = $drink->product;
+
+        // ❌ réduction interdite
+        if ($newQty < $oldQty) {
+            return response()->json([
+                'status' => 'error',
+                'message' => "Impossible de réduire \"{$product->name}\" en préparation.",
+            ], 422);
+        }
+
+        // ⚡ aucune modification
+        if ($newQty === $oldQty) return null;
+
+        $diffQty = $newQty - $oldQty;
+
+        // 🔹 mise à jour du drink
+        $drink->update([
+            'quantity' => $newQty,
+            'quantity_exactly' => $newQty,
+            'total_price' => $unitPrice * $newQty,
+            'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
+            'updated_by' => $auth->id,
+        ]);
+
+        // 🔥 créer / mettre à jour virtual drinks
+        $this->createVirtualDrinkItems($product, $drink, $diffQty, $auth, true, false);
+
+        return null;
+    }
+
+    private function handleTransferredDrink(OrderRestaurantDrink $drink, array $data, float $unitPrice, $auth)
+    {
+        $newQty = (int) $data['quantity'];
+        $oldQty = (int) $drink->quantity;
+        $product = $drink->product;
+
+        if ($newQty === $oldQty) return null;
+
+        $diffQty = $newQty - $oldQty;
+
+        // 🔹 mise à jour du drink
+        $drink->update([
+            'quantity' => $newQty,
+            'quantity_exactly' => $newQty,
+            'total_price' => $unitPrice * $newQty,
+            'updated_by' => $auth->id,
+        ]);
+
+        // 🔥 créer / mettre à jour virtual drinks
+        $this->createVirtualDrinkItems($product, $drink, $diffQty, $auth, true, false);
+
+        return null;
+    }
+    private function createVirtualDrinkItems(Product $product, OrderRestaurantDrink $drink, int $quantity, $auth, bool $isNew = true, bool $isReturn = false)
+    {
+        // 🔹 gérer le signe (retour stock)
+        $qty = $isReturn ? -$quantity : $quantity;
+
+        VirtualOrderMenuRestaurant::create([
+            'orders_menu_restaurant_uuid' => $drink->order_menu_restaurant_uuid,
+            'item_uuid' => $drink->uuid,
+            'product_uuid' => $product->uuid, // 🔥 maintenant on utilise product
+            'quantity_reserved' => $qty,
+            'quantity_exactly' => $qty,
+            'quantity_delivered_exactly' => $qty,
+            'created_by' => $auth->id,
+            'updated_by' => $auth->id,
+            'is_new_items' => $isNew,
+            'is_last_items' => false,
+        ]);
+    }
 
 
 
+
+
+    private function updateExistingMenuItem(OrderMenuRestaurantItem $item, MenuRestaurant $menu, OrderMenuRestaurant $order, int $newQty, float $unitPrice, $auth) {
+        $oldQty = $item->quantity;
+
+        // ⚡ mettre à jour l'item existant
+        $item->update([
+            'quantity' => $newQty,
+            'quantity_exactly' => $newQty,
+            'total_price' => $unitPrice * $newQty,
+            'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
+            'updated_by' => $auth->id,
+        ]);
+
+        // 🔥 créer / mettre à jour virtual items
+        $diffQty = $newQty - $oldQty;
+        $this->createVirtualItems($menu, $order, $item, $diffQty, $auth);
+
+        return $item;
+    }
+
+    private function createNewMenuItem(array $m, MenuRestaurant $menu, OrderMenuRestaurant $order, float $unitPrice, $auth): OrderMenuRestaurantItem
+    {
+        $item = OrderMenuRestaurantItem::create([
+            'order_menu_restaurant_uuid' => $order->uuid,
+            'menus_restaurant_uuid' => $menu->uuid,
+            'quantity' => $m['quantity'],
+            'quantity_exactly' => $m['quantity'],
+            'unit_price' => $unitPrice,
+            'total_price' => $unitPrice * $m['quantity'],
+            'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
+            'created_by' => $auth->id,
+            'updated_by' => $auth->id,
+            'is_new_items' => true,
+            'is_last_items' => false,
+        ]);
+
+        // 🔹 Appel à la fonction pour créer les virtual items
+        $this->createVirtualItems($menu, $order, $item, $m['quantity'], $auth);
+
+        return $item;
+    }
+    private function createVirtualItems($menu, $order, $item, $quantity, $auth, $isNew = true, $isReturn = false) {
+        $components = MenuOrderItem::where('menus_restaurant_uuid', $menu->uuid)->get();
+
+        foreach ($components as $comp) {
+
+            $qty = $quantity * $comp->quantity_used;
+
+            if ($isReturn) {
+                $qty = -$qty;
+            }
+
+            VirtualOrderMenuRestaurant::create([
+                'orders_menu_restaurant_uuid' => $order->uuid,
+                'item_uuid' => $item->uuid,
+                'product_uuid' => $comp->product_uuid,
+                'quantity_reserved' => $qty,
+                'quantity_exactly' => $qty,
+                'quantity_delivered_exactly' => $qty,
+                'created_by' => $auth->id,
+                'updated_by' => $auth->id,
+                'is_new_items' => $isNew,
+                'is_last_items' => false
+            ]);
+        }
+    }
+
+    private function handleRejected(OrderMenuRestaurantItem $item, array $data, MenuRestaurant $menu, OrderMenuRestaurant $order, float $unitPrice, $auth) {
+        $newQty = $data['quantity'];
+        $oldQty = $item->quantity;
+
+
+        if ($newQty > $oldQty) {
+            return response()->json([
+                'status' => 'error',
+                'message' => "Impossible d’augmenter \"{$menu->name}\" rejeté. Vous ne pouvez que réduire la quantité.",
+            ], 422);
+        }
+
+        if ($newQty == $oldQty) {
+            $item->update([
+                'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
+                'updated_by' => $auth->id,
+            ]);
+            return null;
+        }
+
+        $deliveredQty = (int) $item->quantity_final_used;
+        $currentQty   = (int) $item->quantity_exactly;
+        $reduceQty    = (int) $item->quantity;
+
+        $maxReducible = $currentQty - $deliveredQty;
+
+        if ($reduceQty > $maxReducible) {
+            throw new \Exception(
+                "Impossible : vous ne pouvez retirer que {$maxReducible} quantité(s) pour le menu {$item->menu->name}."
+            );
+        }
+
+        $diff = $currentQty - $newQty;
+        $diff_rest = $reduceQty - $newQty;
+
+        $newStatus = $newQty === $deliveredQty
+            ? OrderMenuRestaurantItemStatus::DELIVERED->value
+            : OrderMenuRestaurantItemStatus::TRANSFERRED->value;
+
+        $item->update([
+            'quantity' => $diff_rest,
+            'quantity_exactly' => $diff,
+            'total_price' => $diff * $item->unit_price,
+            'status' => $newStatus,
+            'updated_by' => $auth->id,
+        ]);
+
+        // 🔥 RESTITUTION STOCK (logique propre)
+        $this->createVirtualItems($menu, $order, $item, $diff, $auth, false, true);
+
+        return null;
+    }
+    private function handleRejectedForUpdate(OrderMenuRestaurantItem $item, array $data, MenuRestaurant $menu, OrderMenuRestaurant $order, float $unitPrice, $auth) {
+        $newQty = $data['quantity'];
+        $oldQty = $item->quantity;
+
+        // ❌ réduction interdite
+        if ($newQty < $oldQty) {
+            return response()->json([
+                'status' => 'error',
+                'message' => "Impossible de réduire \"{$menu->name}\" (rejet du prêt). Vous ne pouvez qu’augmenter la quantité.",
+            ], 422);
+        }
+
+        // ⚡ rien à faire
+        if ($newQty == $oldQty) {
+            // ⚡ On met à jour le statut même si la quantité n’a pas changé
+            $item->update([
+                'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
+                'updated_by' => $auth->id,
+            ]);
+            return null;
+        }
+
+        // ✅ augmentation
+        $diff = $newQty - $oldQty;
+
+        $item->update([
+            'quantity' => $newQty,
+            'quantity_exactly' => $newQty,
+            'total_price' => $unitPrice * $newQty,
+            'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
+            'updated_by' => $auth->id,
+        ]);
+
+        // 🔥 créer virtual items
+        $this->createVirtualItems($menu, $order, $item, $diff, $auth, false, true);
+
+        return null;
+    }
+    private function handleDeliveredOrPartial(OrderMenuRestaurantItem $item, array $data, MenuRestaurant $menu, OrderMenuRestaurant $order, float $unitPrice,$auth) {
+        $newQty = $data['quantity'];
+        $oldQty = $item->quantity;
+
+        $diff = $newQty - $oldQty;
+
+        if ($diff < 0) {
+            return response()->json([
+                'status' => 'error',
+                'message' => "Impossible de réduire \"{$menu->name}\" déjà servie ou partiellement servie. Vous ne pouvez que augmenter la quantité.",
+            ], 422);
+        }
+
+        // ⚡ rien à faire
+        if ($diff == 0) {
+            return null;
+        }
+
+        // ✅ augmentation
+        $item->update([
+            'quantity' => $newQty,
+            'quantity_exactly' => $item->quantity_exactly + $diff,
+            'total_price' => $unitPrice * $newQty,
+            'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
+            'updated_by' => $auth->id,
+        ]);
+
+        // 🔥 créer virtual items
+        $this->createVirtualItems($menu, $order, $item, $diff, $auth, false, true);
+
+        return null;
+    }
+
+    private function handleInPreparation(OrderMenuRestaurantItem $item, array $data, MenuRestaurant $menu, OrderMenuRestaurant $order, float $unitPrice, $auth) {
+        $newQty = $data['quantity'];
+        $oldQty = $item->quantity;
+
+        // ❌ Réduction interdite
+        if ($newQty < $oldQty) {
+            return response()->json([
+                'status' => 'error',
+                'message' => "Impossible de réduire \"{$menu->name}\" en préparation. Vous ne pouvez que augmenter la quantité.",
+            ], 422);
+        }
+
+        // ⚡ Rien à faire si quantité identique
+        if ($newQty == $oldQty) {
+            return null;
+        }
+
+        // ✅ Calcul de la différence
+        $diff = $newQty - $oldQty;
+
+        // 🔹 Mise à jour de l'item
+        $item->update([
+            'quantity' => $newQty,
+            'quantity_exactly' => $newQty,
+            'total_price' => $unitPrice * $newQty,
+            'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
+            'updated_by' => $auth->id,
+        ]);
+
+        // 🔹 Création des virtual items pour la quantité supplémentaire
+        $this->createVirtualItems($menu, $order, $item, $diff, $auth, true, false);
+
+        return null;
+    }
+    private function handleTransferred(OrderMenuRestaurantItem $item, array $data, MenuRestaurant $menu, OrderMenuRestaurant $order, float $unitPrice, $auth) {
+        $newQty = $data['quantity'];
+        $oldQty = $item->quantity;
+
+        // ⚡ Rien à faire si quantité identique
+        if ($newQty == $oldQty) {
+            return null;
+        }
+
+        // ✅ Calcul de la différence
+        $diff = $newQty - $oldQty;
+
+        // 🔹 Mise à jour de l'item
+        $item->update([
+            'quantity' => $newQty,
+            'quantity_exactly' => $newQty,
+            'total_price' => $unitPrice * $newQty,
+            'updated_by' => $auth->id,
+        ]);
+
+        // 🔹 Créer ou ajuster les virtual items pour la différence
+        $this->createVirtualItems($menu, $order, $item, $diff, $auth, true, false);
+
+        return null;
+    }
 
 
 
@@ -2171,16 +2266,7 @@ class OrderMenuRestaurantController extends Controller
                 'status'     => OrderMenuRestaurantItemStatus::IN_PREPARATION->value,
                 'updated_by' => $auth->id,
                 'updated_at' => $now,
-            ]);
-
-        // 🔹 2. BOISSONS (drinks)
-        $order->drinks()
-            ->whereIn('uuid', $selected)
-            ->where('status', '!=', OrderMenuRestaurantItemStatus::IN_PREPARATION->value)
-            ->update([
-                'status'     => OrderMenuRestaurantItemStatus::IN_PREPARATION->value,
-                'updated_by' => $auth->id,
-                'updated_at' => $now,
+                'make_in_preparation_at' => $now,
             ]);
 
         // 🔄 Refresh statut global
@@ -2242,6 +2328,7 @@ class OrderMenuRestaurantController extends Controller
                 'status'     => OrderMenuRestaurantItemStatus::IN_PREPARATION->value,
                 'updated_by' => $auth->id,
                 'updated_at' => $now,
+                'make_in_preparation_at' => $now,
             ]);
 
         // 🔄 Refresh statut global
