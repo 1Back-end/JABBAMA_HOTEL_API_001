@@ -64,7 +64,6 @@ class OrderMenuRestaurantItem extends Model
     }
 
 
-
     protected static function boot()
     {
         parent::boot();
@@ -106,5 +105,9 @@ class OrderMenuRestaurantItem extends Model
     public function rejector()
     {
         return $this->belongsTo(User::class, 'rejected_by');
+    }
+    public function statuses()
+    {
+        return $this->hasMany(OrderMenuItemStatus::class, 'order_menu_restaurant_item_uuid', 'uuid');
     }
 }
