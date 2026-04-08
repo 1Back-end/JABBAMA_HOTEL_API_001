@@ -23,7 +23,8 @@ class OrderMenuItemStatus extends Model
         'quantity',
         'created_by',
         'updated_by',
-        'quantity_exactly'
+        'quantity_exactly',
+        'quantity_accumulated'
     ];
 
     protected $appends = ['quantities_by_status'];
