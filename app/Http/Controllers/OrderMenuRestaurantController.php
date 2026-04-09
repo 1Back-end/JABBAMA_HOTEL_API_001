@@ -195,9 +195,10 @@ class OrderMenuRestaurantController extends Controller
 
                 \App\Models\OrderMenuItemStatus::create([
                     'order_menu_restaurant_item_uuid' => $orderItem->uuid,
-                    'status' => \App\Enums\OrderMenuRestaurantItemStatus::TRANSFERRED->value, // seulement TRANSFERRED
+                    'status' => \App\Enums\OrderMenuRestaurantItemStatus::TRANSFERRED->value,
                     'quantity' => $orderItem->quantity,
                     'quantity_exactly' => $orderItem->quantity,
+                    'quantity_accumulated' => $orderItem->quantity,
                     'created_by' => $auth->id,
                     'updated_by' => $auth->id,
                 ]);
@@ -259,7 +260,7 @@ class OrderMenuRestaurantController extends Controller
             $cuisinierRole = Role::where('name', 'CUISINIER')->first();
             if ($cuisinierRole && $recipient = $cuisinierRole->users()->first()) {
                 $order->update([
-                    'status' => MenuOrderStatus::TRANSFERED->value,
+                    'status' => MenuOrderStatus::TRANSFERRED->value,
                     'received_by' => $recipient->id,
                     'transfered_at' => now(),
                     'transfered_by' => $auth->id,
@@ -447,7 +448,7 @@ class OrderMenuRestaurantController extends Controller
             $cuisinierRole = Role::where('name', 'CUISINIER')->first();
             if ($cuisinierRole && $recipient = $cuisinierRole->users()->first()) {
                 $order->update([
-                    'status' => MenuOrderStatus::TRANSFERED->value,
+                    'status' => MenuOrderStatus::TRANSFERRED->value,
                     'received_by' => $recipient->id,
                     'transfered_at' => now(),
                     'transfered_by' => $auth->id,
@@ -490,7 +491,7 @@ class OrderMenuRestaurantController extends Controller
 
             $menu = MenuRestaurant::findOrFail($m['menus_restaurant_uuid']);
 
-            // 🔸 IN_PREPARATION
+
             if ($existingItem->status === OrderMenuRestaurantItemStatus::IN_PREPARATION->value) {
                 if ($m['quantity'] < $existingItem->quantity) {
                     return response()->json([
@@ -500,7 +501,6 @@ class OrderMenuRestaurantController extends Controller
                 }
             }
 
-            // 🔸 REJECTED_FOR_NEW_UPDATE
             if ($existingItem->status === OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value) {
                 if ($m['quantity'] < $existingItem->quantity) {
                     return response()->json([
@@ -510,16 +510,11 @@ class OrderMenuRestaurantController extends Controller
                 }
             }
 
-            // DELIVERED / PARTIAL_DELIVERED → on ne peut que augmenter
-            if (in_array($existingItem->status, [
-                OrderMenuRestaurantItemStatus::DELIVERED->value,
-                OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value,
-            ])) {
-                // 🔥 bloquer la réduction
+            if ($existingItem->status === OrderMenuRestaurantItemStatus::DELIVERED->value) {
                 if ($m['quantity'] < $existingItem->quantity) {
                     return response()->json([
                         'status' => 'error',
-                        'message' => "Réduction impossible : \"{$menu->name}\" est déjà servie ou partiellement servie. Vous ne pouvez qu'augmenter la quantité.",
+                        'message' => "Réduction impossible : \"{$menu->name}\" est déjà servi. Vous ne pouvez qu'augmenter la quantité.",
                     ], 422);
                 }
             }
@@ -568,10 +563,8 @@ class OrderMenuRestaurantController extends Controller
                 }
             }
 
-            // DELIVERED / PARTIAL_DELIVERED → on ne peut que augmenter
             if (in_array($existingDrink->status, [
                 OrderMenuRestaurantItemStatus::DELIVERED->value,
-                OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value,
             ])) {
                 if ($d['quantity'] < $existingDrink->quantity) {
                     return response()->json([
@@ -672,23 +665,26 @@ class OrderMenuRestaurantController extends Controller
                     $newQty = $m['quantity'];
                     $oldQty = $existingItem->quantity;
 
-                    $isRejected = in_array($existingItem->status, [
+                    $isRejectedGroup = in_array($existingItem->status, [
                         OrderMenuRestaurantItemStatus::REJECTED->value,
-                        OrderMenuRestaurantItemStatus::NEW_REJECTED->value
-                    ]);
-
-                    $isRejectedForUpdate = $existingItem->status ===
-                        OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value;
-
-                    $statusesToTransfer = in_array($existingItem->status, [
-                        OrderMenuRestaurantItemStatus::DELIVERED->value,
+                        OrderMenuRestaurantItemStatus::NEW_REJECTED->value,
+                        OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value,
                         OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value,
                     ]);
 
                     $isTransferred = $existingItem->status === OrderMenuRestaurantItemStatus::TRANSFERRED->value;
+                    $IsInpreparation  = $existingItem->status === OrderMenuRestaurantItemStatus::IN_PREPARATION->value;
+                    $statusesToTransfer = $existingItem->status === OrderMenuRestaurantItemStatus::DELIVERED->value;
+
 
                     // ⚡ Évite traitement inutile si quantité identique et pas de cas spéciaux
-                    if ($newQty == $oldQty && !$isRejected && !$isRejectedForUpdate && !$statusesToTransfer && !$isTransferred) {
+                    if ($newQty == $oldQty && !$isRejectedGroup && !$statusesToTransfer && !$isTransferred && !$IsInpreparation) {
+                        continue;
+                    }
+
+                    if ($isRejectedGroup) {
+                        $response = $this->handleRejected($existingItem, $m, $menu, $order, $unitPrice, $auth);
+                        if ($response) return $response;
                         continue;
                     }
 
@@ -699,7 +695,7 @@ class OrderMenuRestaurantController extends Controller
                         continue;
                     }
 
-                    if ($existingItem->status === OrderMenuRestaurantItemStatus::IN_PREPARATION->value) {
+                    if ($IsInpreparation) {
                         $response = $this->handleInPreparation($existingItem, $m, $menu, $order, $unitPrice, $auth);
                         if ($response) return $response;
                         continue;
@@ -711,17 +707,6 @@ class OrderMenuRestaurantController extends Controller
                         continue;
                     }
 
-                    if ($isRejectedForUpdate) {
-                        $response = $this->handleRejectedForUpdate($existingItem, $m, $menu, $order, $unitPrice, $auth);
-                        if ($response) return $response;
-                        continue;
-                    }
-
-                    if ($isRejected) {
-                        $response = $this->handleRejected($existingItem, $m, $menu, $order, $unitPrice, $auth);
-                        if ($response) return $response;
-                        continue;
-                    }
 
                     $this->updateExistingMenuItem($existingItem, $menu, $order, $newQty, $unitPrice, $auth);
                     continue;
@@ -1093,9 +1078,6 @@ class OrderMenuRestaurantController extends Controller
     }
 
 
-
-
-
     private function updateExistingMenuItem(OrderMenuRestaurantItem $item, MenuRestaurant $menu, OrderMenuRestaurant $order, int $newQty, float $unitPrice, $auth) {
         $oldQty = $item->quantity;
 
@@ -1229,6 +1211,7 @@ class OrderMenuRestaurantController extends Controller
 
         return null;
     }
+
     /**
      * Helper central pour ajouter de la quantité à un statut en gérant le cumul historique
      */
@@ -1239,6 +1222,7 @@ class OrderMenuRestaurantController extends Controller
             ['quantity' => 0, 'quantity_accumulated' => 0, 'created_by' => $auth->id]
         );
 
+        // Ajout à quantity et quantity_accumulated
         $statusModel->update([
             'quantity'             => $statusModel->quantity + $qty,
             'quantity_accumulated' => $statusModel->quantity_accumulated + $qty,
@@ -1252,8 +1236,11 @@ class OrderMenuRestaurantController extends Controller
 
         $source = $item->statuses()->where('status', $fromStatus)->first();
         if ($source && $source->quantity >= $qty) {
+            // On retire la quantité et ajuste quantity_accumulated si plus de stock restant
             $source->decrement('quantity', $qty);
-            // On ne supprime pas la source pour garder quantity_accumulated
+            if ($source->fresh()->quantity <= 0) {
+                $source->update(['quantity_accumulated' => 0]);
+            }
 
             $this->incrementStatusWithHistory($item, $toStatus, $qty, $auth);
         }
@@ -1264,7 +1251,12 @@ class OrderMenuRestaurantController extends Controller
         $remainingToRemove = $qtyToRemove;
         $reductionOrder = [
             OrderMenuRestaurantItemStatus::REJECTED->value,
-            OrderMenuRestaurantItemStatus::TRANSFERRED->value
+            OrderMenuRestaurantItemStatus::NEW_REJECTED->value,
+            OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value,
+            OrderMenuRestaurantItemStatus::TRANSFERRED->value,
+            OrderMenuRestaurantItemStatus::IN_PREPARATION->value,
+            OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value,
+            OrderMenuRestaurantItemStatus::DELIVERED->value
         ];
 
         foreach ($reductionOrder as $statusType) {
@@ -1273,9 +1265,14 @@ class OrderMenuRestaurantController extends Controller
             $statusModel = $item->statuses()->where('status', $statusType)->first();
             if ($statusModel && $statusModel->quantity > 0) {
                 $take = min($remainingToRemove, (int)$statusModel->quantity);
+
                 $statusModel->decrement('quantity', $take);
                 $remainingToRemove -= $take;
-                // Pas de delete() ici non plus
+
+                // 🔹 Ajuster quantity_accumulated : si tout est consommé, remettre à 0
+                if ($statusModel->fresh()->quantity <= 0) {
+                    $statusModel->update(['quantity_accumulated' => 0]);
+                }
             }
         }
 
@@ -1424,46 +1421,43 @@ class OrderMenuRestaurantController extends Controller
 
         return null;
     }
-    private function handleTransferred(OrderMenuRestaurantItem $item, array $data, MenuRestaurant $menu, OrderMenuRestaurant $order, float $unitPrice, $auth) {
-        $newQty = $data['quantity'];
-        $oldQty = $item->quantity;
+    private function handleTransferred(OrderMenuRestaurantItem $item, array $data, MenuRestaurant $menu, OrderMenuRestaurant $order, float $unitPrice, $auth)
+    {
+        $newQty = (int) $data['quantity'];
+        $oldQty = (int) $item->quantity;
 
         // ⚡ Rien à faire si quantité identique
-        if ($newQty == $oldQty) {
+        if ($newQty === $oldQty) {
             return null;
         }
 
-        // ✅ Calcul de la différence
         $diff = $newQty - $oldQty;
 
-        $status = $item->statuses()->firstOrCreate(['status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value], [
+        $status = $item->statuses()->firstOrCreate(
+            ['status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value],
+            [
                 'quantity' => 0,
+                'quantity_accumulated' => 0,
                 'quantity_exactly' => 0,
                 'created_by' => $auth->id,
                 'updated_by' => $auth->id,
             ]
         );
 
-        $status->quantity += $diff;
-        $status->quantity_exactly += $diff;
-
-        if ($status->quantity < 0) {
-            $status->quantity = 0;
-            $status->quantity_exactly = 0;
-        }
+        $status->quantity = max(0, $status->quantity + $diff);
+        $status->quantity_exactly = max(0, $status->quantity_exactly + $diff);
+        $status->quantity_accumulated = max(0, $status->quantity_accumulated + $diff);
 
         $status->updated_by = $auth->id;
         $status->save();
 
-        // 🔹 Mise à jour de l'item
+        // 🔹 Mise à jour de l'item parent
         $item->update([
             'quantity' => $newQty,
             'quantity_exactly' => $newQty,
             'total_price' => $unitPrice * $newQty,
             'updated_by' => $auth->id,
         ]);
-
-
 
         $this->createVirtualItems($menu, $order, $item, $diff, $auth, true, false);
 
@@ -2113,7 +2107,7 @@ class OrderMenuRestaurantController extends Controller
             $recipient = User::findOrFail($validated['received_by']);
 
             $orderMenu->update([
-                'status'         => MenuOrderStatus::TRANSFERED->value,
+                'status'         => MenuOrderStatus::TRANSFERRED->value,
                 'received_by'    => $recipient->id,
                 'transfered_at'  => now(),
                 'transfered_by'  => $auth->id,
@@ -2209,6 +2203,7 @@ class OrderMenuRestaurantController extends Controller
     public function rejectMenuItems(Request $request, $uuid)
     {
         $auth = auth()->user();
+
         $validatedItems = $request->validate([
             '*.item_uuid' => 'required|uuid|exists:orders_menu_restaurant_items,uuid',
             '*.quantity_to_deliver' => 'required|integer|min:1',
@@ -2225,80 +2220,41 @@ class OrderMenuRestaurantController extends Controller
                 if (!$item) continue;
 
                 $qtyToReject = (int) $selection['quantity_to_deliver'];
+                $originalQtyToReject = $qtyToReject;
 
-                // 1. BLOCUS DE SÉCURITÉ
-                $availableToReject = $item->statuses()
-                    ->whereIn('status', [
-                        OrderMenuRestaurantItemStatus::TRANSFERRED->value,
-                        OrderMenuRestaurantItemStatus::IN_PREPARATION->value,
-                        OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value,
-                    ])
-                    ->sum('quantity');
-
-                if ($qtyToReject > $availableToReject) {
-                    throw new \Exception(
-                        "Erreur sur {$item->menu->name} : Impossible de rejeter {$qtyToReject} portion(s). Il n'y en a que {$availableToReject} en cours."
-                    );
+                // 1. Déduction en cascade : d'abord TRANSFERRED, puis IN_PREPARATION
+                $this->deductFromStatus($item, OrderMenuRestaurantItemStatus::TRANSFERRED->value, $qtyToReject);
+                if ($qtyToReject > 0) {
+                    $this->deductFromStatus($item, OrderMenuRestaurantItemStatus::IN_PREPARATION->value, $qtyToReject);
                 }
 
-                // 2. DÉDUCTION EN CASCADE (Flux physique)
-                $remainingToDeduct = $qtyToReject;
-                $sourceStatuses = [
-                    OrderMenuRestaurantItemStatus::TRANSFERRED->value,
-                    OrderMenuRestaurantItemStatus::IN_PREPARATION->value,
-                    OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value,
-                ];
-
-                foreach ($sourceStatuses as $statusType) {
-                    if ($remainingToDeduct <= 0) break;
-
-                    $statusModel = $item->statuses()->where('status', $statusType)->first();
-                    if ($statusModel && $statusModel->quantity > 0) {
-                        $take = min($remainingToDeduct, $statusModel->quantity);
-                        $statusModel->decrement('quantity', $take);
-                        $remainingToDeduct -= $take;
-
-//                        if ($statusModel->fresh()->quantity <= 0) {
-//                            $statusModel->delete();
-//                        }
-                    }
-                }
-
-                // 3. ENREGISTREMENT DU REJET AVEC ACCUMULATION
+                // 2. Enregistrement du rejet dans la table des statuts
                 $rejectedStatus = $item->statuses()->firstOrCreate(
                     ['status' => OrderMenuRestaurantItemStatus::REJECTED->value],
                     [
-                        'quantity' => 0,
+                        'quantity'             => 0,
                         'quantity_accumulated' => 0,
-                        'created_by' => $auth->id
+                        'created_by'           => $auth->id
                     ]
                 );
 
-                // Mise à jour des deux compteurs
-                $rejectedStatus->update([
-                    'quantity'             => $rejectedStatus->quantity + $qtyToReject,
-                    'quantity_accumulated' => $rejectedStatus->quantity_accumulated + $qtyToReject,
-                    'updated_by'           => $auth->id
-                ]);
+                $rejectedStatus->increment('quantity', $originalQtyToReject);
+                $rejectedStatus->increment('quantity_accumulated', $originalQtyToReject);
 
-                // 4. MISE À JOUR DE L'ITEM PRINCIPAL
+                // Mise à jour de l'item principal
                 $item->update([
                     'is_rejected' => true,
                     'rejected_by' => $auth->id,
                     'rejected_at' => now(),
                     'status'      => OrderMenuRestaurantItemStatus::REJECTED->value,
-                    'updated_by'  => $auth->id
                 ]);
             }
 
             $this->refreshOrderStatus($order);
-            DB::commit();
+            $order->update(['updated_by' => $auth->id]);
 
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Rejet traité avec succès.',
-                'order' => $order->fresh(['items.statuses'])
-            ]);
+            DB::commit();
+            return response()->json(['status' => 'success', 'message' => 'Rejet traité avec succès.']);
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -2306,23 +2262,24 @@ class OrderMenuRestaurantController extends Controller
         }
     }
 
-    /**
-     * Fonction helper pour déduire une quantité d'un statut spécifique
-     */
     private function deductFromStatus($item, $statusValue, &$qtyToReject)
     {
         $statusRow = $item->statuses()->where('status', $statusValue)->first();
         if ($statusRow && $statusRow->quantity > 0) {
             $deductible = min($qtyToReject, $statusRow->quantity);
+
             $statusRow->decrement('quantity', $deductible);
+            $statusRow->decrement('quantity_accumulated', $deductible);
+
             $qtyToReject -= $deductible;
 
-            // Optionnel : supprimer la ligne si qté = 0
+            // Optionnel : supprimer la ligne si quantité = 0
             if ($statusRow->fresh()->quantity <= 0) {
                 $statusRow->delete();
             }
         }
     }
+
 
 
     /**
@@ -2477,8 +2434,7 @@ class OrderMenuRestaurantController extends Controller
 
                 $qtyRequested = (int) $itemData['quantity_to_deliver'];
 
-                // 1. VÉRIFICATION DE SÉCURITÉ (LE BLOCUS)
-                // On calcule le stock total disponible pour la mise en préparation
+                // 1. VÉRIFICATION DE SÉCURITÉ
                 $availableQty = $item->statuses()
                     ->whereIn('status', [
                         OrderMenuRestaurantItemStatus::TRANSFERRED->value,
@@ -2486,14 +2442,13 @@ class OrderMenuRestaurantController extends Controller
                     ])
                     ->sum('quantity');
 
-                // Si l'utilisateur saisit plus que ce qu'il y a en base, on stoppe tout
                 if ($qtyRequested > $availableQty) {
                     throw new \Exception(
-                        "Erreur sur {$item->menu->name} : La quantité demandée ({$qtyRequested}) dépasse le nombre de portions en attente de préparation ({$availableQty})."
+                        "Erreur sur {$item->menu->name} : La quantité demandée ({$qtyRequested}) dépasse le nombre de portions en attente ({$availableQty})."
                     );
                 }
 
-                // 2. DÉDUCTION EN CASCADE
+                // 2. DÉDUCTION EN CASCADE DES STATUTS SOURCE
                 $qtyRemainingToProcess = $qtyRequested;
                 $sourceStatuses = [
                     OrderMenuRestaurantItemStatus::TRANSFERRED->value,
@@ -2504,28 +2459,34 @@ class OrderMenuRestaurantController extends Controller
                     if ($qtyRemainingToProcess <= 0) break;
 
                     $statusModel = $item->statuses()->where('status', $statusType)->first();
-
                     if ($statusModel && $statusModel->quantity > 0) {
                         $take = min($qtyRemainingToProcess, $statusModel->quantity);
                         $statusModel->decrement('quantity', $take);
-                        $qtyRemainingToProcess -= $take;
 
-//                        if ($statusModel->fresh()->quantity <= 0) {
-//                            $statusModel->delete();
-//                        }
+                        $statusModel->quantity_accumulated = $statusModel->quantity;
+                        $statusModel->updated_by = $auth->id;
+                        $statusModel->save();
+
+
+                        $qtyRemainingToProcess -= $take;
                     }
                 }
 
-                // 3. RÉCUPÉRATION / CRÉATION DU STATUT IN_PREPARATION
+                // 3. CRÉATION OU MISE À JOUR DU STATUT IN_PREPARATION
                 $prepStatus = $item->statuses()->firstOrCreate(
                     ['status' => OrderMenuRestaurantItemStatus::IN_PREPARATION->value],
                     ['quantity' => 0, 'quantity_accumulated' => 0, 'created_by' => $auth->id]
                 );
 
+                // ⚡ recalcul exact des quantités pour éviter l'accumulation infinie
+                $totalInPrep = $item->statuses()
+                    ->where('status', OrderMenuRestaurantItemStatus::IN_PREPARATION->value)
+                    ->sum('quantity');
+
                 $prepStatus->update([
-                    'quantity'             => $prepStatus->quantity + $qtyRequested,
+                    'quantity' => $prepStatus->quantity + $qtyRequested,
                     'quantity_accumulated' => $prepStatus->quantity_accumulated + $qtyRequested,
-                    'updated_by'           => $auth->id
+                    'updated_by' => $auth->id
                 ]);
 
                 // 4. MISE À JOUR DE L'ITEM PARENT
@@ -2704,52 +2665,41 @@ class OrderMenuRestaurantController extends Controller
 
     private function updateItemStatusFromPreparation(OrderMenuRestaurantItem $item, int $qtyValidated, $auth)
     {
-        // 1. RÉCUPÉRATION DU STATUT SOURCE (Cuisine)
-        $prepStatus = $item->statuses()
-            ->where('status', OrderMenuRestaurantItemStatus::IN_PREPARATION->value)
-            ->first();
+        // 1. Récupération du statut source (Cuisine)
+        $prepStatus = $item->statuses()->where('status', OrderMenuRestaurantItemStatus::IN_PREPARATION->value)->first();
 
         if (!$prepStatus || $prepStatus->quantity <= 0) return;
 
-        // Sécurité : On ne peut pas livrer plus que ce qui est en cuisine
+        // Sécurité : on ne peut pas livrer plus que ce qui est en cuisine
         $qtyToProcess = min($qtyValidated, (int)$prepStatus->quantity);
 
+        // Décrémenter la quantité en préparation
         $prepStatus->decrement('quantity', $qtyToProcess);
 
-        $remainingInPrep = $prepStatus->fresh()->quantity;
-
-        // 2. TRANSITION : Mise à jour ou Création du statut de livraison
+        // 2. Mise à jour ou création du statut TOTAL_DELIVERED
         $deliveryStatus = $item->statuses()
-            ->whereIn('status', [
-                OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value,
-                OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value
-            ])->first();
-
-        $newStatus = ($remainingInPrep <= 0)
-            ? OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value
-            : OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value;
+            ->where('status', OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value)
+            ->first();
 
         if ($deliveryStatus) {
-            // MISE À JOUR : On cumule le flux ET l'historique
+            // Mise à jour des quantités
             $deliveryStatus->update([
-                'status'               => $newStatus,
                 'quantity'             => $deliveryStatus->quantity + $qtyToProcess,
                 'quantity_accumulated' => $deliveryStatus->quantity_accumulated + $qtyToProcess,
                 'updated_by'           => $auth->id
             ]);
         } else {
-            // CRÉATION : Premier passage en livraison
+            // Création du statut TOTAL_DELIVERED si inexistant
             $item->statuses()->create([
-                'status'               => $newStatus,
+                'status'               => OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value,
                 'quantity'             => $qtyToProcess,
                 'quantity_accumulated' => $qtyToProcess,
                 'created_by'           => $auth->id
             ]);
         }
 
-        // 3. SYNCHRONISATION : Update de l'item parent
         $item->update([
-            'status'     => $newStatus,
+            'status'     => OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value,
             'updated_by' => $auth->id
         ]);
     }
@@ -2800,7 +2750,7 @@ class OrderMenuRestaurantController extends Controller
                 }
 
                 $totalOrdered = (int) $item->quantity ?? 1;
-                $remainingQty = max(0, $item->quantity_exactly - $item->quantity_delivered);
+                $remainingQty = $item->quantity;
 
                 Log::info($remainingQty);
 
@@ -2824,7 +2774,7 @@ class OrderMenuRestaurantController extends Controller
 
                 // 🔹 Mettre à jour l'item
                 $newDeliveredTotal = $item->quantity_delivered + $qtyToDeliver;
-                $newRemaining = max(0, $totalOrdered - $newDeliveredTotal);
+                $newRemaining = max(0, $item->quantity - $qtyToDeliver);
 
                 if ($newRemaining <= 0) {
                     $itemStatus = OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value;
@@ -3099,91 +3049,65 @@ class OrderMenuRestaurantController extends Controller
 
     private function updateItemStatusToFinalDelivery(OrderMenuRestaurantItem $item, int $qtyValidated, $auth)
     {
-        // 1. RÉCUPÉRATION DU STATUT SOURCE (Sortie de cuisine : TOTAL ou PARTIAL)
-        $sourceStatus = $item->statuses()
-            ->whereIn('status', [
-                OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value,
-                OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value
-            ])
-            ->orderByRaw("FIELD(status, '".OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value."', '".OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value."')")
-            ->first();
+        $sourceStatus = $item->statuses()->where('status', OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value)->first();
 
         if (!$sourceStatus || $sourceStatus->quantity <= 0) return;
-
-        $qtyToProcess = min($qtyValidated, (int)$sourceStatus->quantity);
-
-        // 2. DÉDUCTION DU STATUT SOURCE
+        $qtyToProcess = min($qtyValidated, $sourceStatus->quantity);
         $sourceStatus->decrement('quantity', $qtyToProcess);
-
-        // Nettoyage si la quantité tombe à 0
-        if ($sourceStatus->fresh()->quantity <= 0) {
-            $sourceStatus->delete();
-        }
-
-        // 3. MISE À JOUR OU CRÉATION DU STATUT FINAL (DELIVERED)
-        // On utilise updateOrCreate pour éviter les doublons
-        $deliveredStatus = $item->statuses()->updateOrCreate(
-            ['status' => OrderMenuRestaurantItemStatus::DELIVERED->value], // Condition de recherche
+        $deliveredStatus = $item->statuses()->firstOrCreate(
+            ['status' => OrderMenuRestaurantItemStatus::DELIVERED->value],
             [
-                // Valeurs par défaut si création
-                'quantity' => 0,
+                'quantity'             => 0,
                 'quantity_accumulated' => 0,
-                'created_by' => $auth->id
+                'created_by'           => $auth->id
             ]
         );
-
-        // INC RÉMENTATION DES DEUX COMPTEURS
-        $deliveredStatus->update([
-            'quantity'             => $deliveredStatus->quantity + $qtyToProcess,
-            'quantity_accumulated' => $deliveredStatus->quantity_accumulated + $qtyToProcess,
-            'updated_by'           => $auth->id
-        ]);
-
-        // 4. MISE À JOUR DE L'ITEM PARENT
+        $deliveredStatus->increment('quantity', $qtyToProcess);
+        $deliveredStatus->increment('quantity_accumulated', $qtyToProcess);
+        $deliveredStatus->update(['updated_by' => $auth->id]);
         $item->update([
             'status'     => OrderMenuRestaurantItemStatus::DELIVERED->value,
             'updated_by' => $auth->id
         ]);
     }
 
-    private function rejectReadyItems(OrderMenuRestaurantItem $item, int $qtyToReject, $auth)
+    private function rejectFromTotalDelivered(OrderMenuRestaurantItem $item, int $qtyToReject, $auth)
     {
-        if ($qtyToReject <= 0) return;
+        // 1. Récupération du statut source (TOTAL_DELIVERED)
+        $sourceStatus = $item->statuses()
+            ->where('status', OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value)
+            ->first();
 
-        $remainingToDeduct = $qtyToReject;
+        if (!$sourceStatus || $sourceStatus->quantity <= 0) return;
 
-        // On pioche dans les statuts de livraison pour libérer la quantité
-        $sourceStatuses = [
-            OrderMenuRestaurantItemStatus::DELIVERED->value,
-            OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value,
-            OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value,
-        ];
+        // On ne peut pas rejeter plus que ce qui est disponible
+        $qtyToProcess = min($qtyToReject, $sourceStatus->quantity);
 
-        foreach ($sourceStatuses as $statusType) {
-            if ($remainingToDeduct <= 0) break;
+        // Décrémentation du statut source
+        $sourceStatus->decrement('quantity', $qtyToProcess);
 
-            $statusModel = $item->statuses()->where('status', $statusType)->first();
-            if ($statusModel && $statusModel->quantity > 0) {
-                $take = min($remainingToDeduct, (int)$statusModel->quantity);
-                $statusModel->decrement('quantity', $take);
-                $remainingToDeduct -= $take;
-
-                if ($statusModel->fresh()->quantity <= 0) {
-                    $statusModel->delete();
-                }
-            }
-        }
-
-        // Mise à jour ou Création du statut de rejet avec ACCUMULATION
+        // 2. Mise à jour ou création du statut REJECTED_FOR_NEW_UPDATE
         $rejectedStatus = $item->statuses()->firstOrCreate(
             ['status' => OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value],
-            ['quantity' => 0, 'quantity_accumulated' => 0, 'created_by' => $auth->id]
+            [
+                'quantity'             => 0,
+                'quantity_accumulated' => 0,
+                'created_by'           => $auth->id
+            ]
         );
 
-        $rejectedStatus->update([
-            'quantity'             => $rejectedStatus->quantity + $qtyToReject,
-            'quantity_accumulated' => $rejectedStatus->quantity_accumulated + $qtyToReject,
-            'updated_by'           => $auth->id
+        // Incrémentation des compteurs
+        $rejectedStatus->increment('quantity', $qtyToProcess);
+        $rejectedStatus->increment('quantity_accumulated', $qtyToProcess);
+        $rejectedStatus->update(['updated_by' => $auth->id]);
+
+        // 3. Mise à jour de l'item parent
+        $item->update([
+            'status'       => OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value,
+            'is_rejected'  => true,
+            'rejected_by'  => $auth->id,
+            'rejected_at'  => now(),
+            'updated_by'   => $auth->id
         ]);
     }
 
@@ -3415,16 +3339,17 @@ class OrderMenuRestaurantController extends Controller
                 $qtyToCancel = (int) $data['quantity_to_deliver'];
 
                 // 1. GESTION DES STATUTS (Historique inclus)
-                $this->rejectReadyItems($item, $qtyToCancel, $auth);
+                $this->rejectFromTotalDelivered($item, $qtyToCancel, $auth);
 
                 // 2. RESTAURATION DE L'ITEM PARENT
                 $actuallyDelivered = (int) $item->quantity_delivered;
                 $restoreAmount = min($qtyToCancel, $actuallyDelivered);
 
                 if ($restoreAmount > 0) {
-                    // On remet en "non livré" ce qui a été annulé
-                    $item->quantity_delivered -= $restoreAmount;
-                    $item->quantity_final_used -= $restoreAmount;
+                    $item->quantity_delivered -= $restoreAmount; // 2 - 1 = 1 ✅
+                    $item->quantity_final_used -= $restoreAmount; // idem
+                    $item->quantity += $restoreAmount; // 1 + 1 = 2 ✅
+                    Log::info("Annulation du menu {$item->menu->name} ({$item->uuid}): qty annulée = {$restoreAmount}, quantity_delivered = {$item->quantity_delivered}, quantity_final_used = {$item->quantity_final_used}, quantity restante = {$item->quantity}");
                 }
 
                 $item->status = OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value;
@@ -4244,7 +4169,7 @@ class OrderMenuRestaurantController extends Controller
         if ($lastUpdatedItem) {
             switch ($lastUpdatedItem->status) {
                 case OrderMenuRestaurantItemStatus::TRANSFERRED->value:
-                    $order->status = MenuOrderStatus::TRANSFERED->value;
+                    $order->status = MenuOrderStatus::TRANSFERRED->value;
                     $order->save();
                     return;
 
