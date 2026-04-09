@@ -670,6 +670,8 @@ class OrderMenuRestaurantController extends Controller
                         OrderMenuRestaurantItemStatus::NEW_REJECTED->value,
                         OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value,
                         OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value,
+                        OrderMenuRestaurantItemStatus::PARTIAL_COMPLETED->value,
+                        OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value,
                     ]);
 
                     $isTransferred = $existingItem->status === OrderMenuRestaurantItemStatus::TRANSFERRED->value;
