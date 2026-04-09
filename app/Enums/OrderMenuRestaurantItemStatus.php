@@ -9,7 +9,7 @@ enum OrderMenuRestaurantItemStatus: string
     CASE REJECTED = 'rejected';
     case DELIVERED = 'delivered';
 
-    case TOTAL_DELIVERED = 'total_delivered';
+    case TOTAL_DELIVERED = 'ready';
     case NOT_DELIVERED = 'not_delivered';
 
     case PARTIAL_DELIVERED = 'partial_delivered';

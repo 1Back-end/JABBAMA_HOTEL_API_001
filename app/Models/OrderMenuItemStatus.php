@@ -19,6 +19,7 @@ class OrderMenuItemStatus extends Model
     protected $fillable = [
         'uuid',
         'order_menu_restaurant_item_uuid',
+        'order_menu_restaurant_uuid',
         'status',
         'quantity',
         'created_by',
@@ -45,6 +46,11 @@ class OrderMenuItemStatus extends Model
         static::creating(function ($model) {
             $model->uuid = (string) Str::uuid();
         });
+    }
+
+    public function order()
+    {
+        return $this->belongsTo(OrderMenuRestaurant::class, 'order_menu_restaurant_uuid', 'uuid');
     }
     public function orderItem()
     {
