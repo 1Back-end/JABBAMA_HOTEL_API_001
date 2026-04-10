@@ -22,6 +22,7 @@ enum MenuOrderStatus : string
     case NEW_REJECTED = 'new_rejected';
 
     case TOTAL_DELIVERED = 'total_delivered';
+    case DEFECTIVE = 'defective';
 
     public function label(): string
     {
@@ -40,6 +41,7 @@ enum MenuOrderStatus : string
             self::PARTIAL_DELIVERED => 'Servie partiellement',
             self::NEW_REJECTED => 'Rejettée',
             self::TOTAL_DELIVERED => 'Prête',
+            self::DEFECTIVE => 'Défectieux'
 
         };
     }

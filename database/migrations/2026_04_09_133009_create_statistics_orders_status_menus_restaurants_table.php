@@ -17,7 +17,6 @@ return new class extends Migration
             $table->string('status')->default('transferred');
             $table->integer('quantity')->default(0);
 
-            // FK vers l'item de commande
             $table->foreign('order_menu_restaurant_item_uuid', 'fk_stats_order_item')
                 ->references('uuid')
                 ->on('orders_menu_restaurant_items')

@@ -22,6 +22,7 @@ enum OrderMenuRestaurantItemStatus: string
     CASE IN_PREPARATION = 'in_preparation';
     case PARTIAL_COMPLETED = 'partial_completed';
      case NEW_REJECTED = 'new_rejected';
+     case DEFECTIVE = 'defective';
 
     public function label(): string
     {
@@ -37,7 +38,8 @@ enum OrderMenuRestaurantItemStatus: string
             self::REJECTED_FOR_NEW_UPDATE => 'Rejet du prêt',
             self::IN_PREPARATION => 'En cours de préparation',
             self::PARTIAL_COMPLETED => 'Prêt partiellement',
-            self::NEW_REJECTED => 'Rejettée'
+            self::NEW_REJECTED => 'Rejettée',
+            self::DEFECTIVE => 'Défectieux'
         };
     }
 
