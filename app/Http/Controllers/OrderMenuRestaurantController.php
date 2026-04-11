@@ -1235,14 +1235,8 @@ class OrderMenuRestaurantController extends Controller
             ? OrderMenuRestaurantItemStatus::DELIVERED->value
             : OrderMenuRestaurantItemStatus::TRANSFERRED->value;
 
-        $diffQty = $newQtyRequested - $oldTotalQty;
-
-        $finalQuantity = ($newStatus === OrderMenuRestaurantItemStatus::DELIVERED->value)
-            ? 0
-            : max(0, $diffQty);
-
         $item->update([
-            'quantity' => $finalQuantity,
+            'quantity' => $newQtyRequested,
             'quantity_exactly' => $newQtyRequested,
             'total_price' => $newQtyRequested * $unitPrice,
             'status' => $newStatus,
@@ -2996,7 +2990,6 @@ class OrderMenuRestaurantController extends Controller
                         'success' => false,
                         'message' => "Impossible de livrer {$qtyToDeliver} menus pour l'item, quantité restante : {$remainingQty}"
                     ], 422);
-
                 }
 
                 // 🔹 Livrer proportionnellement
