@@ -12,17 +12,18 @@ enum MenuOrderStatus : string
     case COMPLETED  = 'completed';
     case PARTIAL_COMPLETED = 'partial_completed';
 
-    CASE IN_PREPARATION = 'in_preparation';
+    case IN_PREPARATION = 'in_preparation';
 
-    CASE REJECTED_FOR_NEW_UPDATE = 'cancel_for_new_update';
+    case REJECTED_FOR_NEW_UPDATE = 'cancel_for_new_update';
     case DELIVERED = 'delivered';
     case PARTIAL_DELIVERED = 'partial_delivered';
 
-    CASE PENDING_VALIDATION = 'pending_validation';
+    case PENDING_VALIDATION = 'pending_validation';
     case NEW_REJECTED = 'new_rejected';
 
     case TOTAL_DELIVERED = 'total_delivered';
     case DEFECTIVE = 'defective';
+    case REJECTED_AFTER_VALIDATION = 'rejected_after_validation';
 
     public function label(): string
     {
@@ -41,7 +42,8 @@ enum MenuOrderStatus : string
             self::PARTIAL_DELIVERED => 'Servie partiellement',
             self::NEW_REJECTED => 'Rejettée',
             self::TOTAL_DELIVERED => 'Prête',
-            self::DEFECTIVE => 'Défectieux'
+            self::DEFECTIVE => 'Défectieux',
+            self::REJECTED_AFTER_VALIDATION => 'Rejet du servi(s)'
 
         };
     }

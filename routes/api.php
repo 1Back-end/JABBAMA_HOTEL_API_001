@@ -228,7 +228,8 @@ Route::middleware(['activity'])->group(function () {
         Route::post('/orders_menu_restaurants/{uuid}/check_status_items', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'checkStatusForMenus']);
         Route::post('/orders_menu_restaurants/{uuid}/check_status_drinks', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'checkStatusForDrinks']);
         Route::get('/orders_menu_restaurants/{order_uuid}/items_by_status', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'getItemsStatuses']);
-        Route::post('/orders_menu_restaurants/{uuid}/make_items_defective', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'Make_Items_In_Defectieux']);
+        Route::post('/orders_menu_restaurants/{uuid}/make_items_defective', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'markItemsDefective']);
+        Route::post('/orders_menu_restaurants/{uuid}/delete_defective_items', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'deleteDefectiveItems']);
 
 
 
