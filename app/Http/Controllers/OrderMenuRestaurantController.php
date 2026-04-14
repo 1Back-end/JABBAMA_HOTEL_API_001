@@ -708,6 +708,8 @@ class OrderMenuRestaurantController extends Controller
                         OrderMenuRestaurantItemStatus::NEW_REJECTED->value,
                         OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value,
                         OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value,
+                        OrderMenuRestaurantItemStatus::REJECTED_AFTER_VALIDATION->value,
+                        OrderMenuRestaurantItemStatus::DEFECTIVE->value,
                     ]);
 
                     $isPartialCompletedOrReaday =  in_array($existingItem->status, [
@@ -4852,7 +4854,6 @@ class OrderMenuRestaurantController extends Controller
 
 
                 $remainingAfter = $item->statuses()->whereIn('status', $priorityStatuses)->sum('quantity');
-
                 if ($remainingAfter <= 0) {
                     StatisticsOrderStatusMenuRestaurant::where('order_menu_restaurant_item_uuid', $item->uuid)->delete();
                     $item->statuses()->delete();
