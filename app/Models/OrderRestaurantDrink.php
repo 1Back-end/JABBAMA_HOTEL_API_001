@@ -94,4 +94,28 @@ class OrderRestaurantDrink extends Model
     {
         return $this->belongsTo(User::class, 'rejected_by');
     }
+
+    public function statuses()
+    {
+        return $this->hasMany(OrderMenuItemStatusForDrink::class, 'order_restaurant_drink_uuid', 'uuid');
+    }
+
+    public function virtuals()
+    {
+        return $this->hasMany(VirtualOrderMenuRestaurant::class, 'item_uuid', 'uuid');
+    }
+
+
+//    public function lastStatus()
+//    {
+//        return $this->hasOne(LastStatusDrinksMenusRestaurant::class, 'order_restaurant_drink_uuid', 'uuid');
+//    }
+//    public function defectives()
+//    {
+//        return $this->hasMany(OrderMenuRestaurantDefectiveDrink::class, 'order_restaurant_drink_uuid', 'uuid');
+//    }
+//    public function statistics()
+//    {
+//        return $this->hasMany(StatisticsOrderStatusDrink::class, 'order_restaurant_drink_uuid', 'uuid');
+//    }
 }

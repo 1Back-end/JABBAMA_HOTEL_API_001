@@ -7,55 +7,49 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
-class OrderMenuItemStatus extends Model
+class LastStatusDrinksMenusRestaurant extends Model
 {
     use HasFactory, SoftDeletes;
 
-    protected $table = 'order_menu_item_statuses';
+    protected $table = 'last_status_drinks_menus_restaurants';
+
     protected $primaryKey = 'uuid';
+
     public $incrementing = false;
+
     protected $keyType = 'string';
 
     protected $fillable = [
         'uuid',
-        'order_menu_restaurant_item_uuid',
         'order_menu_restaurant_uuid',
-        'status',
-        'quantity',
+        'order_restaurant_drink_uuid',
+        'product_uuid',
+        'type',
+        'last_status',
         'created_by',
         'updated_by',
-        'quantity_exactly',
-        'quantity_accumulated'
     ];
-
-    protected $appends = ['quantities_by_status'];
-
-    public function getQuantitiesByStatusAttribute(): array
-    {
-        return self::where('order_menu_restaurant_item_uuid', $this->order_menu_restaurant_item_uuid)
-            ->get()
-            ->mapWithKeys(fn($status) => [$status->status => $status->quantity])
-            ->toArray();
-    }
-
 
     protected static function boot()
     {
         parent::boot();
 
         static::creating(function ($model) {
-            $model->uuid = (string) Str::uuid();
+            if (!$model->uuid) {
+                $model->uuid = (string) Str::uuid();
+            }
         });
     }
 
-    public function item()
-    {
-        return $this->belongsTo(OrderMenuRestaurantItem::class, 'order_menu_restaurant_item_uuid');
-    }
 
     public function order()
     {
         return $this->belongsTo(OrderMenuRestaurant::class, 'order_menu_restaurant_uuid');
+    }
+
+    public function product()
+    {
+        return $this->belongsTo(Product::class, 'product_uuid');
     }
 
     public function creator()
@@ -66,5 +60,9 @@ class OrderMenuItemStatus extends Model
     public function updater()
     {
         return $this->belongsTo(User::class, 'updated_by');
+    }
+    public function drink()
+    {
+        return $this->belongsTo(OrderRestaurantDrink::class, 'order_restaurant_drink_uuid', 'uuid');
     }
 }

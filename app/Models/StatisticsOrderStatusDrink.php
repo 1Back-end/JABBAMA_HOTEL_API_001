@@ -7,19 +7,20 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
-class StatisticsOrderStatusMenuRestaurant extends Model
+class StatisticsOrderStatusDrink extends Model
 {
-    use HasFactory, SoftDeletes;
+    use SoftDeletes,HasFactory;
 
-    protected $table = 'statistics_orders_status_menus_restaurants';
+    protected $table = 'statistics_orders_status_drinks';
     protected $primaryKey = 'uuid';
     public $incrementing = false;
     protected $keyType = 'string';
 
     protected $fillable = [
         'uuid',
-        'order_menu_restaurant_item_uuid',
         'order_menu_restaurant_uuid',
+        'order_restaurant_drink_uuid',
+        'product_uuid',
         'status',
         'quantity',
 
@@ -131,9 +132,9 @@ class StatisticsOrderStatusMenuRestaurant extends Model
     }
 
 
-    public function orderItem()
+    public function product()
     {
-        return $this->belongsTo(OrderMenuRestaurantItem::class, 'order_menu_restaurant_item_uuid', 'uuid');
+        return $this->belongsTo(Product::class, 'product_uuid', 'uuid');
     }
 
     public function creator()
@@ -144,5 +145,9 @@ class StatisticsOrderStatusMenuRestaurant extends Model
     public function updater()
     {
         return $this->belongsTo(User::class, 'updated_by');
+    }
+    public function drink()
+    {
+        return $this->belongsTo(OrderRestaurantDrink::class, 'order_restaurant_drink_uuid', 'uuid');
     }
 }
