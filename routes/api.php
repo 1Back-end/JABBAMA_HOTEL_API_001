@@ -211,6 +211,7 @@ Route::middleware(['activity'])->group(function () {
         Route::patch('orders_menu_restaurants/{uuid}/deliver_drink_selected', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'validateAndDeductStockDrinks']);
         Route::patch('orders_menu_restaurants/{uuid}/cancel_menus_selected', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'cancelMenuValidation']);
         Route::patch('orders_menu_restaurants/{uuid}/cancel_menus_selected_after_validation', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'cancelMenuValidationAfterValidation']);
+        Route::patch('orders_menu_restaurants/{uuid}/cancel_drinks_selected_after_validation', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'cancelDrinkValidationAfterValidation']);
         Route::patch('orders_menu_restaurants/{uuid}/cancel_drinks_selected', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'cancelDrinkValidation']);
         Route::delete('orders_menu_restaurants/{orderUuid}/delete_menus_not_delivered', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'DeleteOrderMenuRestaurantNotDelivered']);
         Route::patch('orders_menu_restaurants/{orderUuid}/update_quantity_for_menus', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'updateMenuItemQuantity']);
@@ -229,7 +230,9 @@ Route::middleware(['activity'])->group(function () {
         Route::post('/orders_menu_restaurants/{uuid}/check_status_drinks', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'checkStatusForDrinks']);
         Route::get('/orders_menu_restaurants/{order_uuid}/items_by_status', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'getItemsStatuses']);
         Route::post('/orders_menu_restaurants/{uuid}/make_items_defective', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'markItemsDefective']);
+        Route::post('/orders_menu_restaurants/{uuid}/make_drinks_defective', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'markDrinksDefective']);
         Route::post('/orders_menu_restaurants/{uuid}/delete_defective_items', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'deleteDefectiveItems']);
+        Route::post('/orders_menu_restaurants/{uuid}/delete_defective_drinks', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'deleteDefectiveDrinks']);
         Route::post('/orders_menu_restaurants/{uuid}/transfer_rejected_items', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'transferRejectedItems']);
         Route::post('/orders_menu_restaurants/{uuid}/transfer_rejected_drinks', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'transferRejectedDrinks']);
 
