@@ -40,7 +40,8 @@ class OrderMenuRestaurantItem extends Model
         'reason',
         'is_new_items',
         'is_last_items',
-        'make_in_preparation_at'
+        'make_in_preparation_at',
+        'is_stock_deducted'
     ];
 
     /**
@@ -53,14 +54,28 @@ class OrderMenuRestaurantItem extends Model
         'is_free'     => 'boolean',
         'is_last_items' => 'boolean',
         'is_new_items' => 'boolean',
+        'is_stock_deducted' => 'boolean', // ✅ AJOUT
 
     ];
 
-    protected $appends = ['status_item_order_label'];
+
+    protected $appends = ['status_item_order_label','total_reserved_quantity'];
+
 
     public function getStatusItemOrderLabelAttribute(): string
     {
         return OrderMenuRestaurantItemStatus::safeLabel($this->status);
+    }
+
+    public function getTotalReservedQuantityAttribute(): array
+    {
+        return [
+            'total' => (int) $this->virtuals()
+                ->whereNull('deleted_at')
+                ->sum('quantity_reserved'),
+
+            'status' => 'pending'
+        ];
     }
 
 
@@ -99,7 +114,8 @@ class OrderMenuRestaurantItem extends Model
     }
     public function virtuals()
     {
-        return $this->hasMany(VirtualOrderMenuRestaurant::class, 'item_uuid', 'uuid');
+        return $this->hasMany(VirtualOrderMenuRestaurant::class, 'item_uuid', 'uuid')
+            ->whereNull('deleted_at');
     }
 
     public function rejector()

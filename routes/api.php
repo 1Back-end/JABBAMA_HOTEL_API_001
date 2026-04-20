@@ -232,6 +232,7 @@ Route::middleware(['activity'])->group(function () {
         Route::post('/orders_menu_restaurants/{uuid}/delete_defective_items', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'deleteDefectiveItems']);
         Route::post('/orders_menu_restaurants/{uuid}/delete_defective_drinks', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'deleteDefectiveDrinks']);
         Route::post('/orders_menu_restaurants/{uuid}/transfer_rejected_items', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'transferRejectedItems']);
+        Route::post('/orders_menu_restaurants/{uuid}/generate_facture', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'GenerateFacture']);
         Route::post('/orders_menu_restaurants/{uuid}/transfer_rejected_drinks', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'transferRejectedDrinks']);
 
 

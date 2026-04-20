@@ -25,7 +25,8 @@ class MenuVirtualTemp extends Model
         'created_by',
         'updated_by',
         'product_uuid',
-        'quantity_used'
+        'quantity_used',
+        'status'
     ];
 
     protected static function boot()
