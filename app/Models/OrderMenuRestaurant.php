@@ -57,7 +57,8 @@ class OrderMenuRestaurant extends Model
         'reason_rejected',
         'quantity_exactly',
         'full_name_for_client_free',
-        'is_adjustment'
+        'is_adjustment',
+        'reservation_uuid'
     ];
 
     /**

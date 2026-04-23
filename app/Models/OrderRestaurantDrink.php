@@ -48,10 +48,17 @@ class OrderRestaurantDrink extends Model
         'is_new_items' => 'boolean',
     ];
 
-    protected $appends = ['status_label'];
+    protected $appends = ['status_label','total_reserved_quantity'];
     public function getStatusLabelAttribute(): string
     {
         return OrderMenuRestaurantItemStatus::safeLabel($this->status);
+    }
+
+    public function getTotalReservedQuantityAttribute(): array
+    {
+        return ['total' => (int) $this->virtuals()->whereNull('deleted_at')->sum('quantity_reserved'),
+            'status' => 'pending'
+        ];
     }
 
     protected static function boot()

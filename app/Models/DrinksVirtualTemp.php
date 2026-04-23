@@ -25,7 +25,9 @@ class DrinksVirtualTemp extends Model
         'created_by',
         'updated_by',
         'product_uuid',
-        'quantity_used'
+        'quantity_used',
+        'reservation_uuid',
+        'order_menu_restaurant_uuid'
     ];
 
     protected static function boot()
@@ -66,6 +68,11 @@ class DrinksVirtualTemp extends Model
     public function product()
     {
         return $this->belongsTo(Product::class, 'product_uuid', 'uuid');
+    }
+
+    public function order()
+    {
+        return $this->belongsTo(OrderMenuRestaurant::class, 'order_menu_restaurant_uuid', 'uuid');
     }
     //
 }

@@ -200,7 +200,9 @@ Route::middleware(['activity'])->group(function () {
 
         Route::apiResource('orders_menu_restaurants', \App\Http\Controllers\OrderMenuRestaurantController::class);
         Route::post('orders_menu_restaurants/check_stock', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'checkStockOnly']);
+        Route::post('orders_menu_restaurants/check_stock_orders', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'checkStockByOrder']);
         Route::post('orders_menu_restaurants/check_stock_bar', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'checkBarStockOnly']);
+        Route::post('orders_menu_restaurants/check_stock_bar_orders', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'checkDrinksStockByOrder']);
         Route::patch('orders_menu_restaurants/{uuid}/cancel', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'CancelOrderMenuRestaurant']);
         Route::patch('orders_menu_restaurants/{uuid}/cancel_by_super_admin', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'CancelOrderMenuRestaurantBySuperAdmin']);
         Route::patch('orders_menu_restaurants/{uuid}/validate_item_menus', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'validateMenusForOrder']);

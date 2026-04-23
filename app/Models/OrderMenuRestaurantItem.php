@@ -58,7 +58,6 @@ class OrderMenuRestaurantItem extends Model
 
     ];
 
-
     protected $appends = ['status_item_order_label','total_reserved_quantity'];
 
 
@@ -69,11 +68,7 @@ class OrderMenuRestaurantItem extends Model
 
     public function getTotalReservedQuantityAttribute(): array
     {
-        return [
-            'total' => (int) $this->virtuals()
-                ->whereNull('deleted_at')
-                ->sum('quantity_reserved'),
-
+        return ['total' => (int) $this->virtuals()->whereNull('deleted_at')->sum('quantity_reserved'),
             'status' => 'pending'
         ];
     }

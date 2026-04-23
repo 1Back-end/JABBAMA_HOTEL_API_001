@@ -26,6 +26,7 @@ class VirtualOrderMenuRestaurant extends Model
         'quantity_delivered',
         'quantity_exactly',
         'quantity_delivered_exactly',
+        'quantity_in_defective',
         'created_by',
         'updated_by',
         'status',

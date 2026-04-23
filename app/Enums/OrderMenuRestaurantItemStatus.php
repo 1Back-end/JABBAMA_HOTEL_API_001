@@ -2,6 +2,8 @@
 
 namespace App\Enums;
 
+use function Laravel\Prompts\select;
+
 enum OrderMenuRestaurantItemStatus: string
 {
     case PENDING = 'pending';
@@ -24,6 +26,9 @@ enum OrderMenuRestaurantItemStatus: string
      case NEW_REJECTED = 'new_rejected';
      case DEFECTIVE = 'defective';
 
+     case FACTURE_GENERATE = 'facture_generate';
+     case FACTURATE = 'facture';
+
     public function label(): string
     {
         return match ($this) {
@@ -40,7 +45,9 @@ enum OrderMenuRestaurantItemStatus: string
             self::PARTIAL_COMPLETED => 'Prêt partiellement',
             self::NEW_REJECTED => 'Rejettée',
             self::DEFECTIVE => 'Défectieux',
-            self::REJECTED_AFTER_VALIDATION => 'Rejet du servi(s)'
+            self::REJECTED_AFTER_VALIDATION => 'Rejet du servi(s)',
+            self::FACTURE_GENERATE => 'Facture générée',
+            self::FACTURATE => 'Facturée',
         };
     }
 
