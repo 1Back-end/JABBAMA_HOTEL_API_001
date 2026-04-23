@@ -27,7 +27,7 @@ enum MenuOrderStatus : string
 
     case FACTURE_GENERATE = 'facture_generate';
     case FACTURATE = 'facture';
-
+    case REINSTATED = 'reinstated';
     public function label(): string
     {
         return match ($this) {
@@ -45,10 +45,11 @@ enum MenuOrderStatus : string
             self::PARTIAL_DELIVERED => 'Servie partiellement',
             self::NEW_REJECTED => 'Rejettée',
             self::TOTAL_DELIVERED => 'Prête',
-            self::DEFECTIVE => 'Défectieux',
+            self::DEFECTIVE => 'Défectieuse',
             self::REJECTED_AFTER_VALIDATION => 'Rejet du servi(s)',
             self::FACTURE_GENERATE => 'Facture générée',
             self::FACTURATE => 'Facturée',
+            self::REINSTATED => 'Restauration'
 
         };
     }

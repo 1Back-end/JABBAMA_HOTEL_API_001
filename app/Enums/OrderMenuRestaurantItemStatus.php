@@ -28,6 +28,7 @@ enum OrderMenuRestaurantItemStatus: string
 
      case FACTURE_GENERATE = 'facture_generate';
      case FACTURATE = 'facture';
+    case REINSTATED = 'reinstated';
 
     public function label(): string
     {
@@ -48,6 +49,7 @@ enum OrderMenuRestaurantItemStatus: string
             self::REJECTED_AFTER_VALIDATION => 'Rejet du servi(s)',
             self::FACTURE_GENERATE => 'Facture générée',
             self::FACTURATE => 'Facturée',
+            self::REINSTATED => 'Restauration'
         };
     }
 

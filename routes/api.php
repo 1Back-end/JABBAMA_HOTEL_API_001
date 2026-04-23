@@ -232,11 +232,12 @@ Route::middleware(['activity'])->group(function () {
         Route::post('/orders_menu_restaurants/{uuid}/make_items_defective', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'markItemsDefective']);
         Route::post('/orders_menu_restaurants/{uuid}/make_drinks_defective', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'markDrinksDefective']);
         Route::post('/orders_menu_restaurants/{uuid}/delete_defective_items', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'deleteDefectiveItems']);
+        Route::post('/orders_menu_restaurants/{uuid}/restaure_defective_items', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'restoreDefectiveItems']);
         Route::post('/orders_menu_restaurants/{uuid}/delete_defective_drinks', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'deleteDefectiveDrinks']);
         Route::post('/orders_menu_restaurants/{uuid}/transfer_rejected_items', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'transferRejectedItems']);
         Route::post('/orders_menu_restaurants/{uuid}/generate_facture', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'GenerateFacture']);
         Route::post('/orders_menu_restaurants/{uuid}/transfer_rejected_drinks', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'transferRejectedDrinks']);
-
+        Route::post('/orders_menu_restaurants/remove_reservation_item', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'removeReservationItem']);
 
 
 
