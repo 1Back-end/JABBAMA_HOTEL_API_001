@@ -21,7 +21,7 @@ enum MenuOrderStatus : string
     case PENDING_VALIDATION = 'pending_validation';
     case NEW_REJECTED = 'new_rejected';
 
-    case TOTAL_DELIVERED = 'total_delivered';
+    case TOTAL_DELIVERED = 'ready';
     case DEFECTIVE = 'defective';
     case REJECTED_AFTER_VALIDATION = 'rejected_after_validation';
 
@@ -44,7 +44,7 @@ enum MenuOrderStatus : string
             self::DELIVERED => 'Servie totalement',
             self::PARTIAL_DELIVERED => 'Servie partiellement',
             self::NEW_REJECTED => 'Rejettée',
-            self::TOTAL_DELIVERED => 'Prête',
+            self::TOTAL_DELIVERED => 'Prête totalement',
             self::DEFECTIVE => 'Défectieuse',
             self::REJECTED_AFTER_VALIDATION => 'Rejet du servi(s)',
             self::FACTURE_GENERATE => 'Facture générée',

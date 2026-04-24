@@ -112,7 +112,6 @@ class OrderMenuRestaurantItem extends Model
         return $this->hasMany(VirtualOrderMenuRestaurant::class, 'item_uuid', 'uuid')
             ->whereNull('deleted_at');
     }
-
     public function rejector()
     {
         return $this->belongsTo(User::class, 'rejected_by');
@@ -120,5 +119,9 @@ class OrderMenuRestaurantItem extends Model
     public function statuses()
     {
         return $this->hasMany(OrderMenuItemStatus::class, 'order_menu_restaurant_item_uuid', 'uuid');
+    }
+    public function statistics()
+    {
+        return $this->hasMany(StatisticsOrderStatusMenuRestaurant::class, 'order_menu_restaurant_item_uuid', 'uuid');
     }
 }

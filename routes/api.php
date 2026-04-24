@@ -238,6 +238,7 @@ Route::middleware(['activity'])->group(function () {
         Route::post('/orders_menu_restaurants/{uuid}/generate_facture', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'GenerateFacture']);
         Route::post('/orders_menu_restaurants/{uuid}/transfer_rejected_drinks', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'transferRejectedDrinks']);
         Route::post('/orders_menu_restaurants/remove_reservation_item', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'removeReservationItem']);
+        Route::post('/orders_menu_restaurants/force_release', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'forceReleaseStock']);
 
 
 
@@ -253,5 +254,6 @@ Route::middleware(['activity'])->group(function () {
         Route::apiResource('settings_restaurants', \App\Http\Controllers\SettingRestaurantController::class);
         Route::patch('settings_restaurants/{uuid}/is_active', [\App\Http\Controllers\SettingRestaurantController::class, 'toggleActive']);
         Route::get('/get_all_settings_restaurants', [\App\Http\Controllers\SettingRestaurantController::class, 'get_all_settings_restaurants']);
+        Route::get('/get_settings', [\App\Http\Controllers\SettingRestaurantController::class, 'getSetting']);
     });
 });

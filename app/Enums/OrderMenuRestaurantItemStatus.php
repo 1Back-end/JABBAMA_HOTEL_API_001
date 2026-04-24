@@ -38,7 +38,7 @@ enum OrderMenuRestaurantItemStatus: string
             self::NOT_DELIVERED => 'Non servie',
             self::PARTIAL_DELIVERED => 'Servie partiellement',
             self::DELIVERED_IN_PREPARATION => 'Prêt pour service',
-            self::TOTAL_DELIVERED => 'Prêt',
+            self::TOTAL_DELIVERED => 'Prêt totalement',
             self::REJECTED => 'Rejetté',
             self::TRANSFERRED => 'Transférée',
             self::REJECTED_FOR_NEW_UPDATE => 'Rejet du prêt',

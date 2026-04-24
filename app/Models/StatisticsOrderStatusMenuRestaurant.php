@@ -130,7 +130,6 @@ class StatisticsOrderStatusMenuRestaurant extends Model
         return $this->belongsTo(User::class, 'make_partial_delivered_by');
     }
 
-
     public function orderItem()
     {
         return $this->belongsTo(OrderMenuRestaurantItem::class, 'order_menu_restaurant_item_uuid', 'uuid');
