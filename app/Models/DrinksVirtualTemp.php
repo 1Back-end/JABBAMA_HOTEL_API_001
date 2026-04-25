@@ -27,7 +27,9 @@ class DrinksVirtualTemp extends Model
         'product_uuid',
         'quantity_used',
         'reservation_uuid',
-        'order_menu_restaurant_uuid'
+        'order_menu_restaurant_uuid',
+        'type',
+        'status'
     ];
 
     protected static function boot()
