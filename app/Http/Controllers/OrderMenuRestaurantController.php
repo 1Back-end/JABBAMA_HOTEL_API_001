@@ -267,7 +267,13 @@ class OrderMenuRestaurantController extends Controller
 
         $reservationUuid = $request->reservation_uuid ?? (string) \Illuminate\Support\Str::uuid();
 
+        \Log::info('Check Stock Request:', [
+            'payload' => $request->all(),
+            'reservation_uuid' => $reservationUuid
+        ]);
+
         try {
+            // 🔹 Validation
             $validated = $request->validate([
                 'reservation_uuid' => ['nullable', 'uuid'],
                 'menus' => ['required', 'array', 'min:1'],
@@ -275,11 +281,14 @@ class OrderMenuRestaurantController extends Controller
                 'menus.*.quantity' => ['required', 'numeric', 'min:1'],
             ]);
 
+            // 🔹 Warehouse
             $warehouse = Warehouse::where('is_used_for_restaurant', true)->firstOrFail();
             $warehouseUuid = $warehouse->uuid;
 
+            // 🔥 1. Nettoyer ancienne réservation (IMPORTANT)
             MenuVirtualTemp::where('reservation_uuid', $reservationUuid)->delete();
 
+            // 🔹 2. Charger toutes les compositions
             $menusUuid = collect($validated['menus'])->pluck('menus_restaurant_uuid');
 
             $menuItems = MenuOrderItem::with('product')
@@ -287,43 +296,90 @@ class OrderMenuRestaurantController extends Controller
                 ->get()
                 ->groupBy('menus_restaurant_uuid');
 
-            $stockErrors = [];
+            // 🔹 3. Construire résultats
+            $results = [];
+            $productIds = [];
 
             foreach ($validated['menus'] as $menuInput) {
 
+                $menu = MenuRestaurant::find($menuInput['menus_restaurant_uuid']);
+                if (!$menu) continue;
+
                 $menuQuantity = (int) $menuInput['quantity'];
+                $composition = [];
 
                 foreach ($menuItems[$menuInput['menus_restaurant_uuid']] ?? [] as $item) {
 
-                    $requiredQty = $menuQuantity * $item->quantity_used;
+                    $totalUsed = $menuQuantity * $item->quantity_used;
 
-                    try {
-                        $this->checkStock($item->product_uuid, $warehouseUuid, $requiredQty);
-                    } catch (\Exception $e) {
+                    $composition[] = [
+                        'product_uuid' => $item->product_uuid,
+                        'product_name' => $item->product->name ?? 'Inconnu',
+                        'total_quantity_used' => $totalUsed,
+                    ];
 
+                    $productIds[] = $item->product_uuid;
+                }
+
+                $results[] = [
+                    'menu' => $menu,
+                    'quantity' => $menuQuantity,
+                    'composition' => $composition,
+                ];
+            }
+
+            $productIds = array_unique($productIds);
+
+            // 🔥 4. Charger stock réel en une requête
+            $realStocks = ProductPoint::whereIn('produit_uuid', $productIds)
+                ->where('point_uuid', $warehouseUuid)
+                ->pluck('quantity', 'produit_uuid');
+
+            // 🔥 5. Charger stock réservé en une requête
+            $reservedStocks = MenuVirtualTemp::whereIn('product_uuid', $productIds)
+                ->where('reservation_uuid', '!=', $reservationUuid)
+                ->selectRaw('product_uuid, SUM(quantity_used) as total')
+                ->groupBy('product_uuid')
+                ->pluck('total', 'product_uuid');
+
+            // 🔥 6. Vérification
+            $stockErrors = [];
+
+            foreach ($results as $menuResult) {
+                foreach ($menuResult['composition'] as $product) {
+
+                    $real = $realStocks[$product['product_uuid']] ?? 0;
+                    $reserved = $reservedStocks[$product['product_uuid']] ?? 0;
+
+                    $available = max(0, $real - $reserved);
+
+                    if ($product['total_quantity_used'] > $available) {
                         $stockErrors[] = [
-                            'menu_name' => $item->menu->name ?? 'Menu',
-                            'product_name' => $item->product->name ?? 'Inconnu',
-                            'message' => $e->getMessage()
+                            'menu_name' => $menuResult['menu']->name,
+                            'product_name' => $product['product_name'],
+                            'quantity_required' => $product['total_quantity_used'],
+                            'quantity_in_stock' => $available,
                         ];
                     }
                 }
             }
 
-            // ❌ ERREUR STOCK
+            // 🔴 Si erreur
             if (!empty($stockErrors)) {
+
                 return response()->json([
                     'status' => 'error',
                     'message' => collect($stockErrors)
-                        ->pluck('message')
+                        ->map(fn($e) => "Menu « {$e['menu_name']} » : {$e['product_name']} insuffisant (dispo : {$e['quantity_in_stock']})")
                         ->implode(' | '),
                     'details' => $stockErrors
                 ], 422);
             }
 
-            // ✅ RESERVATION TEMPORAIRE
+            // 🔥 7. Réservation propre (PAS DE DOUBLONS)
             foreach ($validated['menus'] as $menuInput) {
                 foreach ($menuItems[$menuInput['menus_restaurant_uuid']] ?? [] as $item) {
+
 
                     MenuVirtualTemp::updateOrCreate(
                         [
@@ -336,7 +392,6 @@ class OrderMenuRestaurantController extends Controller
                             'quantity_used' => $menuInput['quantity'] * $item->quantity_used,
                             'created_by' => $auth->id,
                             'updated_by' => $auth->id,
-                            'last_activity_at' => now(),
                             'order_menu_restaurant_uuid' => null,
                         ]
                     );
@@ -347,7 +402,6 @@ class OrderMenuRestaurantController extends Controller
                 'status' => 'success',
                 'message' => 'Stock OK + réservation temporaire créée',
                 'reservation_uuid' => $reservationUuid,
-                'expires_in_minutes' => $this->getLogoutMinutes(), // Ajoutez ceci
             ]);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -365,9 +419,8 @@ class OrderMenuRestaurantController extends Controller
 
             return response()->json([
                 'status' => 'error',
-                'message' => $e->getMessage(), // 🔥 IMPORTANT : message réel
+                'message' => 'Erreur serveur',
                 'reservation_uuid' => $reservationUuid,
-                'expires_in_minutes' => $this->getLogoutMinutes(), // Ajoutez ceci
             ], 500);
         }
     }
