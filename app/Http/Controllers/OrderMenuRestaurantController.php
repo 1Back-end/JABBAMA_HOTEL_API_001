@@ -2028,10 +2028,6 @@ class OrderMenuRestaurantController extends Controller
             return OrderMenuRestaurantItemStatus::TRANSFERRED->value;
         }
         $priority = [
-            OrderMenuRestaurantItemStatus::FACTURATE->value,
-            OrderMenuRestaurantItemStatus::FACTURE_GENERATE->value,
-            OrderMenuRestaurantItemStatus::DELIVERED->value,
-            OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value,
             OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value,
             OrderMenuRestaurantItemStatus::DELIVERED_IN_PREPARATION->value,
             OrderMenuRestaurantItemStatus::IN_PREPARATION->value,
@@ -2040,9 +2036,7 @@ class OrderMenuRestaurantController extends Controller
             OrderMenuRestaurantItemStatus::REJECTED_AFTER_VALIDATION->value,
             OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value,
             OrderMenuRestaurantItemStatus::REJECTED->value,
-            OrderMenuRestaurantItemStatus::NEW_REJECTED->value,
             OrderMenuRestaurantItemStatus::DEFECTIVE->value,
-            OrderMenuRestaurantItemStatus::REINSTATED->value,
             OrderMenuRestaurantItemStatus::NOT_DELIVERED->value,
         ];
 
@@ -2065,10 +2059,6 @@ class OrderMenuRestaurantController extends Controller
         }
 
         $priority = [
-            OrderMenuRestaurantItemStatus::FACTURATE->value,
-            OrderMenuRestaurantItemStatus::FACTURE_GENERATE->value,
-            OrderMenuRestaurantItemStatus::DELIVERED->value,
-            OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value,
             OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value,
             OrderMenuRestaurantItemStatus::DELIVERED_IN_PREPARATION->value,
             OrderMenuRestaurantItemStatus::IN_PREPARATION->value,
@@ -2077,9 +2067,7 @@ class OrderMenuRestaurantController extends Controller
             OrderMenuRestaurantItemStatus::REJECTED_AFTER_VALIDATION->value,
             OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value,
             OrderMenuRestaurantItemStatus::REJECTED->value,
-            OrderMenuRestaurantItemStatus::NEW_REJECTED->value,
             OrderMenuRestaurantItemStatus::DEFECTIVE->value,
-            OrderMenuRestaurantItemStatus::REINSTATED->value,
             OrderMenuRestaurantItemStatus::NOT_DELIVERED->value,
         ];
 
