@@ -38,7 +38,7 @@ enum OrderMenuRestaurantItemStatus: string
             self::NOT_DELIVERED => 'Non servie',
             self::PARTIAL_DELIVERED => 'Servie partiellement',
             self::DELIVERED_IN_PREPARATION => 'Prêt pour service',
-            self::TOTAL_DELIVERED => 'Prêt totalement',
+            self::TOTAL_DELIVERED => 'Prêt',
             self::REJECTED => 'Rejetté',
             self::TRANSFERRED => 'Transférée',
             self::REJECTED_FOR_NEW_UPDATE => 'Rejet du prêt',
@@ -63,5 +63,16 @@ enum OrderMenuRestaurantItemStatus: string
         return collect(self::cases())
             ->mapWithKeys(fn($case) => [$case->value => $case->label()])
             ->toArray();
+    }
+    public static function priorityList(): array
+    {
+        return [
+            self::TRANSFERRED->value,
+            self::IN_PREPARATION->value,
+            self::REJECTED->value,
+            self::DEFECTIVE->value,
+            self::REJECTED_FOR_NEW_UPDATE->value,
+            self::REJECTED_AFTER_VALIDATION->value,
+        ];
     }
 }

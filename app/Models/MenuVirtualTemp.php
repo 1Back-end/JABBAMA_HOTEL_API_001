@@ -30,7 +30,8 @@ class MenuVirtualTemp extends Model
         'status',
         'order_menu_restaurant_uuid',
         'last_activity_at',
-        'type'
+        'type',
+        'is_not_used_stock'
     ];
 
     protected static function boot()

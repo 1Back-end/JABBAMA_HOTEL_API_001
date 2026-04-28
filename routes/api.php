@@ -240,6 +240,7 @@ Route::middleware(['activity'])->group(function () {
         Route::post('/orders_menu_restaurants/remove_reservation_item', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'removeReservationItem']);
         Route::post('/orders_menu_restaurants/remove_reservation_drinks', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'removeDrinkReservationItem']);
         Route::post('/orders_menu_restaurants/force_release', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'forceReleaseStock']);
+        Route::post('/orders_menu_restaurants/force_release_orders_mens', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'forceReleaseOrderMenuRestaurant']);
         Route::post('/orders_menu_restaurants/cancel_reservations', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'cancelRervationsAfterValidation']);
         Route::post('/orders_menu_restaurants/cancel_currents_reservations', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'cancelCurrentRervations']);
 

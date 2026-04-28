@@ -44,7 +44,7 @@ enum MenuOrderStatus : string
             self::DELIVERED => 'Servie totalement',
             self::PARTIAL_DELIVERED => 'Servie partiellement',
             self::NEW_REJECTED => 'Rejettée',
-            self::TOTAL_DELIVERED => 'Prête totalement',
+            self::TOTAL_DELIVERED => 'Prête',
             self::DEFECTIVE => 'Défectieuse',
             self::REJECTED_AFTER_VALIDATION => 'Rejet du servi(s)',
             self::FACTURE_GENERATE => 'Facture générée',
