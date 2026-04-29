@@ -13,9 +13,9 @@ enum StocksAdjustmentStatus: string
     public function label(): string
     {
         return match ($this) {
-            self::PENDING =>  'Régularisation en attente',
-            self::VALIDATED =>  'Régularisation validée',
-            self::CANCELLED =>  'Régularisation annulée',
+            self::PENDING =>  'En attente',
+            self::VALIDATED =>  'Validée',
+            self::CANCELLED =>  'Annulée',
         };
     }
     public static function safeLabel(?string $value): string

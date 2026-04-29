@@ -32,7 +32,8 @@ class VirtualOrderMenuRestaurant extends Model
         'status',
         'item_type',
         'is_new_items',
-        'is_last_items'
+        'is_last_items',
+        'quantity'
     ];
 
     protected static function boot()

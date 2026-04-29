@@ -303,6 +303,7 @@ class OrderMenuRestaurantController extends Controller
                 ->get()
                 ->groupBy('menus_restaurant_uuid');
 
+
             $results = [];
 
             foreach ($validated['menus'] as $menuInput) {
@@ -330,14 +331,14 @@ class OrderMenuRestaurantController extends Controller
                 ];
             }
 
-            // 🔥 Vérification avec TA fonction
+            MenuVirtualTemp::where('reservation_uuid', $reservationUuid)
+                ->delete();
             $stockErrors = [];
-
             foreach ($results as $menuResult) {
                 foreach ($menuResult['composition'] as $product) {
 
                     try {
-                        $available = $this->checkStock(
+                        $this->checkStock(
                             $product['product_uuid'],
                             $warehouseUuid,
                             $product['total_quantity_used'],
@@ -370,23 +371,18 @@ class OrderMenuRestaurantController extends Controller
             // 🔥 Réservation
             foreach ($validated['menus'] as $menuInput) {
                 foreach ($menuItems[$menuInput['menus_restaurant_uuid']] ?? [] as $item) {
-
-                    MenuVirtualTemp::updateOrCreate(
-                        [
-                            'reservation_uuid' => $reservationUuid,
-                            'menus_restaurant_uuid' => $menuInput['menus_restaurant_uuid'],
-                            'product_uuid' => $item->product_uuid,
-                            'type' => 'initial'
-                        ],
-                        [
-                            'quantity' => $menuInput['quantity'],
-                            'quantity_used' => $menuInput['quantity'] * $item->quantity_used,
-                            'created_by' => $auth->id,
-                            'is_not_used_stock' => false,
-                            'updated_by' => $auth->id,
-                            'order_menu_restaurant_uuid' => null,
-                        ]
-                    );
+                    MenuVirtualTemp::create([
+                        'reservation_uuid' => $reservationUuid,
+                        'menus_restaurant_uuid' => $menuInput['menus_restaurant_uuid'],
+                        'product_uuid' => $item->product_uuid,
+                        'type' => 'initial',
+                        'quantity' => $menuInput['quantity'],
+                        'quantity_used' => $menuInput['quantity'] * $item->quantity_used,
+                        'status' => 'pending',
+                        'created_by' => $auth->id,
+                        'updated_by' => $auth->id,
+                        'order_menu_restaurant_uuid' => null,
+                    ]);
                 }
             }
 
@@ -427,11 +423,9 @@ class OrderMenuRestaurantController extends Controller
             'message' => 'Stock libéré avec succès'
         ]);
     }
-
-
     public function forceReleaseOrderMenuRestaurant(Request $request)
     {
-        $request->validate(['order_menu_restaurant_uuid' => 'required|uuid']);
+        $request->validate(['order_menu_restaurant_uuid' => 'nullable|uuid']);
         MenuVirtualTemp::where('order_menu_restaurant_uuid', $request->order_menu_restaurant_uuid)
             ->where('type', 'initial')->update(['is_not_used_stock' => false]);
 
@@ -460,8 +454,6 @@ class OrderMenuRestaurantController extends Controller
         $warehouseUuid = Warehouse::where('is_used_for_restaurant', true)
             ->value('uuid');
 
-        MenuVirtualTemp::where('order_menu_restaurant_uuid', $orderUuid)->update(['is_not_used_stock' => true]);
-
         $stockErrors = [];
 
         // 🔥 charger UNE FOIS toutes les compositions
@@ -471,8 +463,6 @@ class OrderMenuRestaurantController extends Controller
             ->whereIn('menus_restaurant_uuid', $menusUuid)
             ->get()
             ->groupBy('menus_restaurant_uuid');
-
-
 
         foreach ($validated['menus'] as $menuInput) {
 
@@ -485,10 +475,17 @@ class OrderMenuRestaurantController extends Controller
                     ->where('point_uuid', $warehouseUuid)
                     ->value('quantity') ?? 0;
 
-                $reservedStock = MenuVirtualTemp::where('product_uuid', $item->product_uuid)
+                $reservedStock = (float) MenuVirtualTemp::where('product_uuid', $item->product_uuid)
                     ->where('status', 'pending')
-                    ->where('is_not_used_stock', false)
-                    ->where('order_menu_restaurant_uuid', '!=', $orderUuid)
+                    ->where('type', '!=', 'not_used')
+
+                    ->where(function ($q) use ($orderUuid) {
+                        $q->where(function ($sub) use ($orderUuid) {
+                            $sub->whereNull('order_menu_restaurant_uuid')
+                                ->orWhere('order_menu_restaurant_uuid', '!=', $orderUuid);
+                        });
+                    })
+
                     ->sum('quantity_used');
 
                 $availableStock = max(0, $realStock - $reservedStock);
@@ -513,10 +510,8 @@ class OrderMenuRestaurantController extends Controller
         }
 
         MenuVirtualTemp::where('order_menu_restaurant_uuid', $orderUuid)
-            ->where('type', 'editing')
-            ->delete();
+            ->update(['type' => 'not_used','status' => 'cancelled']);
 
-        // 🔥 RECREATE PROPRE
         foreach ($validated['menus'] as $menuInput) {
 
             foreach ($menuItems[$menuInput['menus_restaurant_uuid']] ?? [] as $item) {
@@ -526,7 +521,7 @@ class OrderMenuRestaurantController extends Controller
                         'order_menu_restaurant_uuid' => $orderUuid,
                         'menus_restaurant_uuid' => $menuInput['menus_restaurant_uuid'],
                         'product_uuid' => $item->product_uuid,
-                        'type' => 'editing'
+                        'type' => 'initial'
                     ],
                     [
                         'quantity' => $menuInput['quantity'],
@@ -639,25 +634,37 @@ class OrderMenuRestaurantController extends Controller
         ]);
     }
 
-    private function checkStock($productUuid, $warehouseUuid, $quantity, $reservationUuid = null)
-    {
+    private function checkStock($productUuid, $warehouseUuid, $quantity, $reservationUuid = null, $orderUuid = null) {
         $realStock = (float) ProductPoint::where('produit_uuid', $productUuid)
             ->where('point_uuid', $warehouseUuid)
             ->value('quantity') ?? 0;
 
         $reservedStock = MenuVirtualTemp::where('product_uuid', $productUuid)
             ->where('status', 'pending')
-            ->where('is_not_used_stock', false)
-            ->where(function ($q) use ($reservationUuid) {
-                $q->whereNull('reservation_uuid')
-                    ->orWhere('reservation_uuid', '!=', $reservationUuid);
+            ->where('type', '!=', 'not_used')
+
+            ->when($reservationUuid, function ($q) use ($reservationUuid) {
+                $q->where(function ($sub) use ($reservationUuid) {
+                    $sub->whereNull('reservation_uuid')
+                        ->orWhere('reservation_uuid', '!=', $reservationUuid);
+                });
+            })
+
+            ->when($orderUuid, function ($q) use ($orderUuid) {
+                $q->where(function ($sub) use ($orderUuid) {
+                    $sub->whereNull('order_menu_restaurant_uuid')
+                        ->orWhere('order_menu_restaurant_uuid', '!=', $orderUuid);
+                });
             })
             ->sum('quantity_used');
 
-        $availableStock = max(0, $realStock - $reservedStock);
-
+        $availableStock = $realStock - $reservedStock;
+        if ($availableStock < 0) {
+            $availableStock = 0;
+        }
         if ($quantity > $availableStock) {
             $productName = Product::where('uuid', $productUuid)->value('name') ?? 'Produit inconnu';
+
             throw new \Exception(
                 "Stock insuffisant pour « {$productName} ». Disponible : {$availableStock}, Requis : {$quantity}"
             );
@@ -666,16 +673,16 @@ class OrderMenuRestaurantController extends Controller
         return $availableStock;
     }
 
-    public function reserveStock($orderUuid, $itemUuid, $itemType, $productUuid, $quantity, $auth, $warehouseUuid)
+    public function reserveStock($orderUuid, $itemUuid, $itemType, $productUuid, $quantity, $auth, $warehouseUuid,$quantityUsed)
     {
         // 🔹 stock réel
         $realStock = (float) ProductPoint::where('produit_uuid', $productUuid)
             ->where('point_uuid', $warehouseUuid)
             ->value('quantity') ?? 0;
 
-        $reservedStock = (float) MenuVirtualTemp::where('product_uuid', $productUuid)
+        $reservedStock = (float) VirtualOrderMenuRestaurant::where('product_uuid', $productUuid)
             ->where('status', 'pending')
-            ->sum('quantity_used');
+            ->sum('quantity_reserved');
 
         $availableStock = $realStock - $reservedStock;
 
@@ -684,7 +691,6 @@ class OrderMenuRestaurantController extends Controller
             throw new \Exception("Stock insuffisant pour « {$productName} ». Disponible : {$availableStock}, Requis : {$quantity}");
         }
 
-        // ✅ UNIQUEMENT VIRTUEL
         VirtualOrderMenuRestaurant::create([
             'orders_menu_restaurant_uuid' => $orderUuid,
             'item_uuid' => $itemUuid,
@@ -693,6 +699,7 @@ class OrderMenuRestaurantController extends Controller
             'quantity_reserved' => $quantity,
             'quantity_exactly' => $quantity,
             'quantity_delivered_exactly' => 0,
+            'quantity' => $quantityUsed,
             'status' => 'pending',
             'created_by' => $auth->id,
             'updated_by' => $auth->id,
@@ -734,7 +741,7 @@ class OrderMenuRestaurantController extends Controller
     public function cancelRervationsAfterValidation(Request $request)
     {
         $validated = $request->validate([
-            'order_menu_restaurant_uuid' => ['required', 'uuid'],
+            'order_menu_restaurant_uuid' => ['nullable', 'uuid'],
         ]);
 
         $orderUuid = $validated['order_menu_restaurant_uuid'];
@@ -744,16 +751,29 @@ class OrderMenuRestaurantController extends Controller
                 $query->where('type', 'initial')
                     ->orWhereNull('reservation_uuid');
             })
-            ->update([
-                'is_not_used_stock' => false,
-            ]);
-
-        MenuVirtualTemp::where('order_menu_restaurant_uuid', $orderUuid)
-            ->where(function ($query) {
-                $query->where('type', 'editing')
-                    ->orWhereNull('reservation_uuid');
-            })
             ->delete();
+
+        $virtualItems = VirtualOrderMenuRestaurant::where('orders_menu_restaurant_uuid', $orderUuid)
+            ->where('status', 'pending')
+            ->get();
+        $ItemMenu = OrderMenuRestaurantItem::where('order_menu_restaurant_uuid', $orderUuid) ->get();
+        foreach ($virtualItems as $item) {
+            $menuItem = $ItemMenu->firstWhere('uuid', $item->item_uuid);
+            if (!$menuItem) continue;
+            MenuVirtualTemp::create([
+                'order_menu_restaurant_uuid' => $orderUuid,
+                'menus_restaurant_uuid' => $menuItem->menus_restaurant_uuid,
+                'product_uuid' => $item->product_uuid,
+                'type' => 'initial',
+                'quantity' => $item->quantity,
+                'quantity_used' => $item->quantity_exactly,
+                'status' => 'pending',
+                'created_by' => auth()->id(),
+                'updated_by' => auth()->id(),
+            ]);
+        }
+
+
 
         DrinksVirtualTemp::where('order_menu_restaurant_uuid', $orderUuid)
             ->where(function ($query) {
@@ -770,7 +790,7 @@ class OrderMenuRestaurantController extends Controller
     public function cancelCurrentRervations(Request $request)
     {
         $validated = $request->validate([
-            'reservation_uuid' => ['required', 'uuid'],
+            'reservation_uuid' => ['nullable', 'uuid'],
         ]);
 
         $reservationUuid = $validated['reservation_uuid'];
@@ -911,7 +931,8 @@ class OrderMenuRestaurantController extends Controller
                 $compositions = MenuOrderItem::where('menus_restaurant_uuid', $menu->uuid)->get();
                 foreach ($compositions as $comp) {
                     $requiredQty = $mInput['quantity'] * $comp->quantity_used;
-                    $this->reserveStock($order->uuid, $orderItem->uuid, 'menu', $comp->product_uuid, $requiredQty, $auth, $warehouseUuid);
+                    $qteRequided = $mInput['quantity'];
+                    $this->reserveStock($order->uuid, $orderItem->uuid, 'menu', $comp->product_uuid, $requiredQty, $auth, $warehouseUuid,$qteRequided);
                 }
             }
 
@@ -2135,7 +2156,7 @@ class OrderMenuRestaurantController extends Controller
             foreach ($components as $comp) {
                 $qty = $diffQty * $comp->quantity_used;
 
-                $this->reserveStock($order->uuid, $item->uuid, 'menu', $comp->product_uuid, $qty, $auth, $warehouseUuid);
+                $this->reserveStock($order->uuid, $item->uuid, 'menu', $comp->product_uuid, $qty, $auth, $warehouseUuid,$qty);
             }
         }
 
@@ -2165,8 +2186,7 @@ class OrderMenuRestaurantController extends Controller
         $components = MenuOrderItem::where('menus_restaurant_uuid', $menu->uuid)->get();
         $warehouse = Warehouse::where('is_used_for_restaurant', true)->first();
 
-        $finalQuantity = (int) $item->quantity;
-
+        $finalQuantity = (int) $item->quantity_exactly;
 
         MenuVirtualTemp::where('order_menu_restaurant_uuid', $order->uuid)
             ->where('type', 'editing')
@@ -2174,7 +2194,6 @@ class OrderMenuRestaurantController extends Controller
             ->delete();
 
         foreach ($components as $comp) {
-
             $qtyDelta = $diffQuantity * $comp->quantity_used;
             $totalQtyUsed = $finalQuantity * $comp->quantity_used;
 
@@ -2187,6 +2206,13 @@ class OrderMenuRestaurantController extends Controller
             if ($virtualEntry) {
                 $virtualEntry->increment('quantity_reserved', $qtyDelta);
                 $virtualEntry->increment('quantity_exactly', $qtyDelta);
+
+                $virtualEntry->update([
+                    'quantity' => $finalQuantity,
+                    'updated_by' => $auth->id,
+                ]);
+
+
             } else if ($qtyDelta > 0) {
                 $this->reserveStock(
                     $order->uuid,
@@ -2195,7 +2221,8 @@ class OrderMenuRestaurantController extends Controller
                     $comp->product_uuid,
                     $qtyDelta,
                     $auth,
-                    $warehouse->uuid
+                    $warehouse->uuid,
+                    $finalQuantity
                 );
             }
 
@@ -2210,7 +2237,6 @@ class OrderMenuRestaurantController extends Controller
                     'quantity' => $finalQuantity,
                     'quantity_used' => $totalQtyUsed,
                     'status' => 'pending',
-                    'is_not_used_stock' => false,
                     'updated_by' => $auth->id,
                     'created_by' => $auth->id,
                 ]
@@ -2387,7 +2413,7 @@ class OrderMenuRestaurantController extends Controller
             $newStatus = OrderMenuRestaurantItemStatus::TRANSFERRED->value;
         }
         $item->update([
-            'quantity' => $diff,
+            'quantity' => $newQty,
             'quantity_exactly' => $newQty,
             'total_price' => $unitPrice * $newQty,
             'status' => $newStatus,
@@ -2397,7 +2423,6 @@ class OrderMenuRestaurantController extends Controller
             $this->updateVirtualStock($menu, $order, $item, $diff, $auth);
             $this->syncIncreasedStatus($item, $diff, $auth,$order);
         }
-
         return null;
     }
     private function syncIncreasedStatus(OrderMenuRestaurantItem $item, int $diff, $auth, OrderMenuRestaurant $order)
@@ -3726,6 +3751,8 @@ class OrderMenuRestaurantController extends Controller
 
                     MenuVirtualTemp::where('order_menu_restaurant_uuid', $order->uuid)
                         ->where('product_uuid', $virtual->product_uuid)
+                        ->where('status', 'pending')
+                        ->where('type', 'initial')
                         ->update([
                             'status' => OrderMenuRestaurantItemStatus::DELIVERED->value,
                             'updated_by' => $auth->id]);
@@ -6618,21 +6645,23 @@ class OrderMenuRestaurantController extends Controller
                     $productPoint->decrement('quantity', $toDeduct);
                     $v->decrement('quantity_in_defective', $toDeduct);
                     $v->decrement('quantity_reserved', $toDeduct);
+                    $v->decrement('quantity', $qty);
 
                     $v->update([
                         'quantity_in_defective' => max(0, $v->quantity_in_defective),
                         'quantity_reserved' => max(0, $v->quantity_reserved),
+                        'quantity' => max(0, $v->quantity),
                     ]);
 
                     MenuVirtualTemp::where('order_menu_restaurant_uuid', $order->uuid)
                         ->where('product_uuid', $v->product_uuid)
+                        ->where('type', 'initial')
                         ->update([
                             'quantity_used' => DB::raw("GREATEST(quantity_used - {$toDeduct}, 0)"),
                             'quantity' => DB::raw("GREATEST(quantity - {$qty}, 0)"),
                             'updated_by' => $auth->id,
                         ]);
                 }
-
 
                 $item->update([
                     'quantity_exactly' => max(0, $item->quantity_exactly - $qty),
