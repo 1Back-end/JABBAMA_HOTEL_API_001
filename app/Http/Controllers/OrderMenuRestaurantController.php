@@ -675,7 +675,6 @@ class OrderMenuRestaurantController extends Controller
 
         $reservedStock = (float) MenuVirtualTemp::where('product_uuid', $productUuid)
             ->where('status', 'pending')
-            ->where('is_not_used_stock', false)
             ->sum('quantity_used');
 
         $availableStock = $realStock - $reservedStock;
