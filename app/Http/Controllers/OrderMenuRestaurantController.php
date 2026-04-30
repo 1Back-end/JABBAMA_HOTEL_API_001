@@ -2120,7 +2120,9 @@ class OrderMenuRestaurantController extends Controller
 
     private function resolveItemStatusFromStatuses(OrderMenuRestaurantItem $item): string
     {
-        $statuses = $item->statuses()->pluck('quantity', 'status')->toArray();
+        $statuses = collect($item->statuses()->pluck('quantity', 'status')->toArray())
+            ->except([OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value])
+            ->toArray();
 
         if (!$statuses) {
             return OrderMenuRestaurantItemStatus::TRANSFERRED->value;
@@ -4231,9 +4233,7 @@ class OrderMenuRestaurantController extends Controller
 
         try {
             // 🔹 Charger la commande avec les menus uniquement
-            $order = OrderMenuRestaurant::where('uuid', $uuid)
-                ->with(['items', 'items.menu'])
-                ->firstOrFail();
+            $order = OrderMenuRestaurant::where('uuid', $uuid)->with(['items', 'items.menu'])->firstOrFail();
 
             $allDeliveryLogs = [];
 
@@ -4268,23 +4268,13 @@ class OrderMenuRestaurantController extends Controller
 
                 $newDeliveredTotal = $item->quantity_delivered + $qtyToDeliver;
                 $newRemaining = max(0, $item->quantity - $qtyToDeliver);
-
-                if ($newRemaining <= 0) {
-                    $itemStatus = OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value;
-                    $hasBeenValidated = true;
-                } else {
-                    $itemStatus = $item->status === OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value
-                        ? OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value
-                        : OrderMenuRestaurantItemStatus::PARTIAL_COMPLETED->value;
-                    $hasBeenValidated = false;
-                }
-
                 $item->quantity_delivered = $newDeliveredTotal;
                 $item->quantity_final_used += $qtyToDeliver;
                 $item->quantity = $newRemaining;
-                $item->status = $itemStatus;
-                $item->has_been_validated = $hasBeenValidated;
                 $item->save();
+
+                $this->refreshItemForPartialStatusStatus($item, $auth);
+                $item->refresh();
 
                 $allDeliveryLogs[] = [
                     'item_uuid' => $item->uuid,
@@ -4294,26 +4284,21 @@ class OrderMenuRestaurantController extends Controller
                     'quantity_delivered_total' => $item->quantity_delivered,
                     'quantity_remaining' => $item->quantity,
                     'quantity_to_deliver' => $qtyToDeliver,
-                    'status_item' => $itemStatus,
-//                    'virtuals' => $virtualLogs,
+                    'status_item' => $item->status,
                 ];
             }
 
-            // 🔹 Statut global de la commande pour les menus
-            $itemsStatus = array_column($allDeliveryLogs, 'status_item');
-            if (empty($itemsStatus)) {
+            $itemsStatus = collect($allDeliveryLogs)->pluck('status_item');
+
+            if ($itemsStatus->isEmpty()) {
                 $orderStatus = OrderMenuRestaurantItemStatus::NOT_DELIVERED->value;
             } else {
-                $allFinished = true;
-                foreach ($itemsStatus as $status) {
-                    if ($status !== OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value) {
-                        $allFinished = false;
-                        break;
-                    }
-                }
+                $allFinished = $itemsStatus->every(
+                    fn($status) => $status === OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value
+                );
                 $orderStatus = $allFinished
                     ? OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value
-                    : OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value;
+                    : OrderMenuRestaurantItemStatus::PARTIAL_COMPLETED->value;
             }
 
             $this->refreshOrderStatus($order);
@@ -4340,46 +4325,6 @@ class OrderMenuRestaurantController extends Controller
         }
     }
 
-
-    protected function deliverMenuVirtualsProportional(string $orderUuid, string $itemUuid, int $qtyToDeliver, int $totalOrdered): array
-    {
-        $virtuals = VirtualOrderMenuRestaurant::where('orders_menu_restaurant_uuid', $orderUuid)
-            ->where('item_uuid', $itemUuid)
-            ->where('item_type', 'menu')
-            ->get();
-
-        $deliveryLogs = [];
-
-        $proportion = min(1, $qtyToDeliver / max(1, $totalOrdered));
-
-        foreach ($virtuals as $virtual) {
-            $reserved = (int) $virtual->quantity_reserved;
-
-            $simDelivered = (int) round($reserved * $proportion);
-
-            $status = match(true) {
-                $simDelivered >= $reserved => VirtualOrderMenuRestaurantStatus::DELIVERED,
-                $simDelivered > 0 => VirtualOrderMenuRestaurantStatus::PARTIALLY_DELIVERED,
-                default => VirtualOrderMenuRestaurantStatus::RESERVED,
-            };
-
-            $virtual->quantity_reserved = max(0, $reserved - $simDelivered);
-            $virtual->quantity_delivered = $simDelivered;
-            $virtual->status = $status->value;
-            $virtual->save();
-
-            $deliveryLogs[] = [
-                'virtual_uuid' => $virtual->uuid,
-                'product_uuid' => $virtual->product_uuid,
-                'quantity_reserved' => $reserved,
-                'quantity_delivered' => $simDelivered,
-                'quantity_to_serve' => max(0, $reserved - $simDelivered),
-                'status' => $status->value,
-            ];
-        }
-
-        return $deliveryLogs;
-    }
 
 
     /**
@@ -4821,6 +4766,23 @@ class OrderMenuRestaurantController extends Controller
             $item->status = OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value;
         }
 
+        $item->updated_by = $auth->id;
+        $item->save();
+    }
+
+
+    private function refreshItemForPartialStatusStatus(OrderMenuRestaurantItem $item, $auth)
+    {
+        $item->refresh();
+        $deliveredQty = (int) $item->statuses()->where('status', OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value)
+            ->whereNull('deleted_at')
+            ->sum('quantity');
+        $requiredQty = (int) $item->quantity_exactly;
+        if ($deliveredQty === $requiredQty && $requiredQty > 0) {
+            $item->status = OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value;
+        } elseif ($deliveredQty > 0) {
+            $item->status = OrderMenuRestaurantItemStatus::PARTIAL_COMPLETED->value;
+        }
         $item->updated_by = $auth->id;
         $item->save();
     }
@@ -6282,29 +6244,19 @@ class OrderMenuRestaurantController extends Controller
 
             foreach ($validated['items'] as $data) {
 
-                $item = OrderMenuRestaurantItem::where('uuid', $data['uuid'])
-                    ->with('statuses')
-                    ->first();
+                $item = OrderMenuRestaurantItem::where('uuid', $data['uuid'])->with('statuses')->first();
 
                 if (!$item) continue;
 
                 $qtyToRestore = (int) $data['quantity_to_deliver'];
                 $reason = $data['reason'] ?? null;
 
-                /**
-                 * 🔥 1. Vérification DEFECTIVE
-                 */
-                $defectiveRow = $item->statuses()
-                    ->where('status', OrderMenuRestaurantItemStatus::DEFECTIVE->value)
-                    ->first();
+                $defectiveRow = $item->statuses()->where('status', OrderMenuRestaurantItemStatus::DEFECTIVE->value)->first();
 
                 if (!$defectiveRow || $qtyToRestore > $defectiveRow->quantity) {
                     throw new \Exception("Quantité DEFECTIVE insuffisante pour {$item->uuid}");
                 }
 
-                /**
-                 * 🔥 2. Historique (LIFO)
-                 */
                 $defectHistories = OrderMenuRestaurantDefectiveItem::where('order_menu_restaurant_item_uuid', $item->uuid)
                     ->orderByDesc('created_at')
                     ->get();
@@ -6396,23 +6348,18 @@ class OrderMenuRestaurantController extends Controller
                     );
 
                     $virtual->decrement('quantity_in_defective', $qtyToRestoreStock);
-
-                    // 🔥 sécurité anti négatif
                     if ($virtual->fresh()->quantity_in_defective < 0) {
                         $virtual->update(['quantity_in_defective' => 0]);
                     }
                 }
 
-                /**
-                 * 🔥 9. Recalcul statut global
-                 */
                 $item->update([
                     'status' => $this->resolveItemStatusFromStatuses($item),
                     'updated_by' => $auth->id,
                 ]);
             }
 
-            $this->refreshOrderStatus($order->fresh());
+            $this->refreshOrderStatus($order);
 
             return response()->json([
                 'status' => 'success',
@@ -6605,24 +6552,16 @@ class OrderMenuRestaurantController extends Controller
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $newOrderStatus = LastStatusItemsMenusRestaurant::where('order_menu_restaurant_uuid', $order->uuid)
-                ->pluck('last_status')
-                ->filter()
-                ->first()
-                ?? OrderMenuRestaurantItemStatus::TRANSFERRED->value;
+            $newOrderStatus = LastStatusItemsMenusRestaurant::where('order_menu_restaurant_uuid', $order->uuid)->pluck('last_status')->filter()
+                ->first() ?? OrderMenuRestaurantItemStatus::TRANSFERRED->value;
 
             foreach ($request->items as $data) {
 
-                $item = OrderMenuRestaurantItem::where('uuid', $data['uuid'])
-                    ->with(['statuses', 'virtuals'])
-                    ->lockForUpdate()
-                    ->first();
+                $item = OrderMenuRestaurantItem::where('uuid', $data['uuid'])->with(['statuses', 'virtuals'])->lockForUpdate()->first();
 
                 if (!$item) continue;
 
-                $defective = $item->statuses
-                    ->where('status', OrderMenuRestaurantItemStatus::DEFECTIVE->value)
-                    ->first();
+                $defective = $item->statuses->where('status', OrderMenuRestaurantItemStatus::DEFECTIVE->value)->first();
 
                 if (!$defective || $defective->quantity <= 0) continue;
 
@@ -6666,9 +6605,10 @@ class OrderMenuRestaurantController extends Controller
                 $item->update([
                     'quantity_exactly' => max(0, $item->quantity_exactly - $qty),
                     'quantity' => max(0, $item->quantity - $qty),
-                    'status' => $newOrderStatus,
                     'updated_by' => $auth->id,
                 ]);
+
+                $this->refreshItemStatus($item, $auth);
 
 
                 $item->statuses()
@@ -6697,10 +6637,7 @@ class OrderMenuRestaurantController extends Controller
                 }
             }
 
-            $order->update([
-                'status' => $newOrderStatus,
-                'updated_by' => $auth->id
-            ]);
+            $this->refreshOrderStatus($order);
 
             return response()->json([
                 'status' => 'success',
