@@ -432,6 +432,7 @@ class OrderMenuRestaurantController extends Controller
         MenuVirtualTemp::where('order_menu_restaurant_uuid', $request->order_menu_restaurant_uuid)
             ->where('type', 'editing')
             ->delete();
+
         return response()->json([
             'status' => 'success',
             'message' => 'Stock libéré avec succès'
@@ -756,6 +757,7 @@ class OrderMenuRestaurantController extends Controller
         $virtualItems = VirtualOrderMenuRestaurant::where('orders_menu_restaurant_uuid', $orderUuid)
             ->where('status', 'pending')
             ->get();
+
         $ItemMenu = OrderMenuRestaurantItem::where('order_menu_restaurant_uuid', $orderUuid) ->get();
         foreach ($virtualItems as $item) {
             $menuItem = $ItemMenu->firstWhere('uuid', $item->item_uuid);
@@ -772,8 +774,6 @@ class OrderMenuRestaurantController extends Controller
                 'updated_by' => auth()->id(),
             ]);
         }
-
-
 
         DrinksVirtualTemp::where('order_menu_restaurant_uuid', $orderUuid)
             ->where(function ($query) {
@@ -2121,14 +2121,12 @@ class OrderMenuRestaurantController extends Controller
     private function resolveItemStatusFromStatuses(OrderMenuRestaurantItem $item): string
     {
         $statuses = collect($item->statuses()->pluck('quantity', 'status')->toArray())
-            ->except([OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value])
-            ->toArray();
+            ->only(OrderMenuRestaurantItemStatus::priorityList())->toArray();
 
         if (!$statuses) {
             return OrderMenuRestaurantItemStatus::TRANSFERRED->value;
         }
         $maxQty = max($statuses);
-
         $candidates = array_keys(array_filter($statuses, fn($qty) => $qty === $maxQty));
         if (count($candidates) === 1) {
             return $candidates[0];
@@ -2140,6 +2138,7 @@ class OrderMenuRestaurantController extends Controller
         }
         return $candidates[0];
     }
+
     private function updateExistingMenuItem(OrderMenuRestaurantItem $item, MenuRestaurant $menu, OrderMenuRestaurant $order, int $newQty, float $unitPrice, $auth, $warehouseUuid) {
         $oldQty = $item->quantity;
         $item->update([
@@ -6607,9 +6606,7 @@ class OrderMenuRestaurantController extends Controller
                     'quantity' => max(0, $item->quantity - $qty),
                     'updated_by' => $auth->id,
                 ]);
-
-                $this->refreshItemStatus($item, $auth);
-
+                $this->refreshItemStatusAfterDelete($item, $auth);
 
                 $item->statuses()
                     ->where('status', OrderMenuRestaurantItemStatus::TRANSFERRED->value)
@@ -6621,11 +6618,7 @@ class OrderMenuRestaurantController extends Controller
 
                 $defective->delete();
 
-                StatisticsOrderStatusMenuRestaurant::where([
-                    'order_menu_restaurant_item_uuid' => $item->uuid,
-                    'status' => OrderMenuRestaurantItemStatus::DEFECTIVE->value
-                ])->delete();
-
+                StatisticsOrderStatusMenuRestaurant::where(['order_menu_restaurant_item_uuid' => $item->uuid, 'status' => OrderMenuRestaurantItemStatus::DEFECTIVE->value])->delete();
 
                 $hasRemaining = $item->statuses()
                     ->where('status', '!=', OrderMenuRestaurantItemStatus::DEFECTIVE->value)
@@ -6639,11 +6632,33 @@ class OrderMenuRestaurantController extends Controller
 
             $this->refreshOrderStatus($order);
 
+            $order->update([
+                'updated_by' => $auth->id,
+            ]);
+
             return response()->json([
                 'status' => 'success',
                 'message' => 'Défectueux supprimés + stock restauré correctement.'
             ]);
         });
+    }
+
+    private function refreshItemStatusAfterDelete(OrderMenuRestaurantItem $item, $auth)
+    {
+        $item->refresh();
+
+        $deliveredQty = (int) $item->statuses()->where('status', OrderMenuRestaurantItemStatus::DELIVERED->value)->whereNull('deleted_at')
+            ->sum('quantity');
+        $requiredQty = (int) $item->quantity_exactly;
+        if ($requiredQty > 0 && $deliveredQty === $requiredQty) {
+            $status = OrderMenuRestaurantItemStatus::DELIVERED->value;
+        } else {
+            $status = $this->resolveItemStatusFromStatuses($item);
+        }
+        $item->update([
+            'status' => $status,
+            'updated_by' => $auth->id
+        ]);
     }
 
 
