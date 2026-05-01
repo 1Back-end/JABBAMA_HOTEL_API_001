@@ -213,15 +213,9 @@ Route::middleware(['activity'])->group(function () {
         Route::patch('orders_menu_restaurants/{uuid}/cancel_menus_selected_after_validation', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'cancelMenuValidationAfterValidation']);
         Route::patch('orders_menu_restaurants/{uuid}/cancel_drinks_selected_after_validation', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'cancelDrinkValidationAfterValidation']);
         Route::patch('orders_menu_restaurants/{uuid}/cancel_drinks_selected', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'cancelDrinkValidation']);
-        Route::delete('orders_menu_restaurants/{orderUuid}/delete_menus_not_delivered', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'DeleteOrderMenuRestaurantNotDelivered']);
-        Route::patch('orders_menu_restaurants/{orderUuid}/update_quantity_for_menus', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'updateMenuItemQuantity']);
-        Route::delete('orders_menu_restaurants/{orderUuid}/delete_drinks_not_delivered', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'DeleteOrderDrinksNotDelivered']);
-        Route::patch('orders_menu_restaurants/{orderUuid}/update_quantity_for_drinks', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'updateDrinksQuantity']);
         Route::patch('orders_menu_restaurants/{uuid}/rejected_selected_menus_items', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'rejectMenuItems']);
         Route::patch('orders_menu_restaurants/{uuid}/rejected_selected_drinks_items', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'rejectDrinks']);
         Route::patch('orders_menu_restaurants/{uuid}/add_new_items', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'addItemsToOrder']);
-        Route::patch('orders_menu_restaurants/{orderUuid}/add_quantity_for_menus', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'increaseMenuItemQuantity']);
-        Route::patch('orders_menu_restaurants/{orderUuid}/add_quantity_for_drinks', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'increaseDrinksQuantity']);
         Route::patch('orders_menu_restaurants/{uuid}/change_in_preparation_selected_items_menus', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'validateItemMenusInPreparation']);
         Route::patch('orders_menu_restaurants/{uuid}/change_in_preparation_selected_items_drinks', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'SetDrinksInPreparation']);
         Route::delete('orders_menu_restaurants/{order_uuid}/items/{item_uuid}/verify_delete_items_menus', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'verify_to_delete_items_menu']);
@@ -233,6 +227,7 @@ Route::middleware(['activity'])->group(function () {
         Route::post('/orders_menu_restaurants/{uuid}/make_drinks_defective', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'markDrinksDefective']);
         Route::post('/orders_menu_restaurants/{uuid}/delete_defective_items', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'deleteDefectiveItems']);
         Route::post('/orders_menu_restaurants/{uuid}/restaure_defective_items', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'restoreDefectiveItems']);
+        Route::post('/orders_menu_restaurants/{uuid}/restaure_defective_drinks', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'restoreDefectiveDrinks']);
         Route::post('/orders_menu_restaurants/{uuid}/delete_defective_drinks', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'deleteDefectiveDrinks']);
         Route::post('/orders_menu_restaurants/{uuid}/transfer_rejected_items', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'transferRejectedItems']);
         Route::post('/orders_menu_restaurants/{uuid}/generate_facture', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'GenerateFacture']);
