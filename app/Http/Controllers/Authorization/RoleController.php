@@ -77,8 +77,9 @@ class RoleController extends Controller
     {
         DB::beginTransaction();
         try {
-            $role = Role::create($request->validated());
-
+            $roleData = $request->validated();
+            $roleData['name'] = strtoupper($roleData['name']);
+            $role = Role::create($roleData);
             if ($request->input('permissions')) {
                 foreach ($request->input('permissions') as $permission) {
                     $role->permissions()->attach($permission['id'], [
@@ -133,12 +134,14 @@ class RoleController extends Controller
         try {
             $data = $request->validated();
 
-            // Si c'est le rôle admin (id = 1), on n'autorise pas la modification du nom
             if ($role->id === 1) {
-                $data = $request->except('name');
+                unset($data['name']);
+            } else {
+                if (isset($data['name'])) {
+                    $data['name'] = strtoupper($data['name']);
+                }
             }
 
-            // Mise à jour du rôle
             $role->update($data);
 
             // Mettre à jour les permissions

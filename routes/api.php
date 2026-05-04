@@ -240,6 +240,13 @@ Route::middleware(['activity'])->group(function () {
         Route::post('/orders_menu_restaurants/cancel_currents_reservations', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'cancelCurrentRervations']);
 
 
+        Route::get('/notifications', [\App\Http\Controllers\NotificationController::class, 'index']);
+        Route::get('/notifications/unread', [\App\Http\Controllers\NotificationController::class, 'unread']);
+        Route::post('/notifications/{id}/read', [\App\Http\Controllers\NotificationController::class, 'markAsRead']);
+        Route::post('/notifications/read_all', [\App\Http\Controllers\NotificationController::class, 'markAllAsRead']);
+        Route::delete('/notifications/{id}', [\App\Http\Controllers\NotificationController::class, 'destroy']);
+
+
 
 
 
