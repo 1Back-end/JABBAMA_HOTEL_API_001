@@ -180,6 +180,26 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des commandes du restaurant',
             'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
+        'view_all_notification_transferred' => [
+            'description' => 'Afficher la liste des notifications d\'une commande transférée',
+            'category' => 'Gestion des notifications du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'view_all_notification_in_preparation' => [
+            'description' => 'Afficher la liste des notifications d\'une commande en cours de préparation',
+            'category' => 'Gestion des notifications du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'view_all_notification_rejected' => [
+            'description' => 'Afficher la liste des notifications d\'une commande en rejetée',
+            'category' => 'Gestion des notifications du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'view_all_notification' => [
+            'description' => 'Afficher la liste de toute les notifications d\'une commande',
+            'category' => 'Gestion des notifications du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
 
     ];
 

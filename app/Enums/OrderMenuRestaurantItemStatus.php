@@ -73,6 +73,8 @@ enum OrderMenuRestaurantItemStatus: string
             self::DEFECTIVE->value,
             self::REJECTED_FOR_NEW_UPDATE->value,
             self::REJECTED_AFTER_VALIDATION->value,
+            self::DELIVERED->value,
+            self::TOTAL_DELIVERED->value,
         ];
     }
 }

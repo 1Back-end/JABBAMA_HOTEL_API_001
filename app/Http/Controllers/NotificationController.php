@@ -12,15 +12,37 @@ class NotificationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission NotificationController::index
-     * @permission_desc Afficher la liste de toute les notifications
+     * @permission_desc Afficher l'icone des notifications
      */
     public function index()
     {
         $user = auth()->user();
 
+        $query = \App\Models\OrderNotification::with(['creator','updater']);
+
+        if ($user->can('view_all_notification')) {
+
+            $notifications = $query;
+
+        } else if ($user->can('view_all_notification_in_preparation')) {
+
+            $notifications = $query->where('status', 'in_preparation');
+
+        } else if ($user->can('view_all_notification_transferred')) {
+
+            $notifications = $query->where('status', 'transferred');
+
+        } else if ($user->can('view_all_notification_rejected')) {
+
+            $notifications = $query->where('status', 'rejected');
+
+        } else {
+
+            $notifications = $query->where('status', 'transferred');
+        }
         return response()->json([
             'status' => 'success',
-            'data' => $user->notifications
+            'data' => $notifications->latest()->get()
         ]);
     }
 
