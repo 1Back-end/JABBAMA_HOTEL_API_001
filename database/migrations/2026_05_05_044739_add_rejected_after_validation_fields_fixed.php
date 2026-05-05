@@ -53,7 +53,6 @@ return new class extends Migration
 
             $table->unsignedBigInteger('rejected_after_validation_by')->nullable();
 
-            // ✅ nom court contrôlé
             $table->foreign('rejected_after_validation_by', 'fk_rej_after_val_by')
                 ->references('id')
                 ->on('users')
