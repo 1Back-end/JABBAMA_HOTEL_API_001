@@ -5724,6 +5724,23 @@ class OrderMenuRestaurantController extends Controller
             : MenuOrderStatus::PARTIAL_DELIVERED->value;
     }
 
+    private function checkIfAllOrderIsReady($allItems): string
+    {
+        if ($allItems->isEmpty()) {
+            return MenuOrderStatus::TRANSFERRED->value;
+        }
+        $isAllDone = $allItems->every(function ($item) {
+            $deliveredQty = (int) $item->statuses()
+                ->where('status', OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value)
+                ->whereNull('deleted_at')
+                ->sum('quantity');
+            return $deliveredQty >= (int) $item->quantity_exactly && (int) $item->quantity_exactly > 0;
+        });
+        return $isAllDone
+            ? MenuOrderStatus::TOTAL_DELIVERED->value
+            : MenuOrderStatus::PARTIAL_COMPLETED->value;
+    }
+
     private function refreshOrderStatus(OrderMenuRestaurant $order): void
     {
         $order->load(['items.statuses', 'drinks.statuses']);
@@ -5773,7 +5790,7 @@ class OrderMenuRestaurantController extends Controller
                 OrderMenuRestaurantItemStatus::TRANSFERRED->value => MenuOrderStatus::TRANSFERRED->value,
                 OrderMenuRestaurantItemStatus::DEFECTIVE->value => MenuOrderStatus::DEFECTIVE->value,
                 OrderMenuRestaurantItemStatus::PARTIAL_COMPLETED->value => MenuOrderStatus::PARTIAL_COMPLETED->value,
-                OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value => MenuOrderStatus::TOTAL_DELIVERED->value,
+                OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value => $this->checkIfAllOrderIsReady($allItems),
                 OrderMenuRestaurantItemStatus::DELIVERED->value => $this->checkIfAllOrderIsDelivered($allItems),
                 default => $order->status,
             };
