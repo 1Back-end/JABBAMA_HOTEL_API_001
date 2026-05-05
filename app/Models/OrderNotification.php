@@ -24,7 +24,8 @@ class OrderNotification extends Model
         'message',
         'created_by',
         'updated_by',
-        'read_at'
+        'read_at',
+        'is_read'
     ];
 
     protected static function boot()

@@ -21,23 +21,24 @@ class NotificationController extends Controller
         $query = \App\Models\OrderNotification::with(['creator','updater']);
 
         if ($user->can('view_all_notification')) {
-
             $notifications = $query;
-
         } else if ($user->can('view_all_notification_in_preparation')) {
-
             $notifications = $query->where('status', 'in_preparation');
-
         } else if ($user->can('view_all_notification_transferred')) {
-
             $notifications = $query->where('status', 'transferred');
-
         } else if ($user->can('view_all_notification_rejected')) {
-
             $notifications = $query->where('status', 'rejected');
-
+        } else if ($user->can('view_all_notification_in_defective')) {
+            $notifications = $query->where('status', 'defective');
+        } else if ($user->can('view_all_notification_in_ready')) {
+            $notifications = $query->where('status', 'ready');
+        } else if ($user->can('view_all_notification_in_delivered')) {
+            $notifications = $query->where('status', 'delivered');
+        } else if ($user->can('view_all_notification_in_rejected_after_validation')) {
+            $notifications = $query->where('status', 'rejected_after_validation');
+        } else if ($user->can('view_all_notification_in_cancel_for_new_update')) {
+            $notifications = $query->where('status', 'cancel_for_new_update');
         } else {
-
             $notifications = $query->where('status', 'transferred');
         }
         return response()->json([
@@ -55,11 +56,34 @@ class NotificationController extends Controller
     {
         $user = auth()->user();
 
+        $query = \App\Models\OrderNotification::with(['creator','updater'])->where('is_read', false);
+        if ($user->can('view_all_notification')) {
+            $notifications = $query;
+        } else if ($user->can('view_all_notification_in_preparation')) {
+            $notifications = $query->where('status', 'in_preparation');
+        } else if ($user->can('view_all_notification_transferred')) {
+            $notifications = $query->where('status', 'transferred');
+        } else if ($user->can('view_all_notification_rejected')) {
+            $notifications = $query->where('status', 'rejected');
+        } else if ($user->can('view_all_notification_in_defective')) {
+            $notifications = $query->where('status', 'defective');
+        } else if ($user->can('view_all_notification_in_ready')) {
+            $notifications = $query->where('status', 'ready');
+        } else if ($user->can('view_all_notification_in_delivered')) {
+            $notifications = $query->where('status', 'delivered');
+        } else if ($user->can('view_all_notification_in_rejected_after_validation')) {
+            $notifications = $query->where('status', 'rejected_after_validation');
+        } else if ($user->can('view_all_notification_in_cancel_for_new_update')) {
+            $notifications = $query->where('status', 'cancel_for_new_update');
+        } else {
+            $notifications = $query->where('status', 'transferred');
+        }
         return response()->json([
             'status' => 'success',
-            'data' => $user->unreadNotifications
+            'data' => $notifications->latest()->get()
         ]);
     }
+
 
     /**
      * Display a listing of the resource.
