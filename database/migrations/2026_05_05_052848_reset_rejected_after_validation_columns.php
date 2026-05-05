@@ -8,26 +8,14 @@ return new class extends Migration
 {
     public function up(): void
     {
-        // 🔥 1. DETECTER LA FK REELLE
-        $fks = DB::select("
-            SELECT CONSTRAINT_NAME
-            FROM information_schema.KEY_COLUMN_USAGE
-            WHERE TABLE_NAME = 'orders_menu_restaurant_items'
-            AND COLUMN_NAME = 'rejected_after_validation_by'
-            AND CONSTRAINT_SCHEMA = DATABASE()
-            AND REFERENCED_TABLE_NAME IS NOT NULL
-        ");
+        Schema::table('orders_menu_restaurant_items', function (Blueprint $table) {
 
-        // 🔥 2. DROP SAFE FK
-        Schema::table('orders_menu_restaurant_items', function (Blueprint $table) use ($fks) {
+            // 🔥 drop FK si existe
+            try {
+                $table->dropForeign('fk_rej_after_val_by');
+            } catch (\Exception $e) {}
 
-            foreach ($fks as $fk) {
-                try {
-                    $table->dropForeign($fk->CONSTRAINT_NAME);
-                } catch (\Exception $e) {}
-            }
-
-            // 🔹 DROP COLUMNS SAFE
+            // 🔥 drop columns si existent
             $columns = [
                 'rejected_after_validation_by',
                 'rejected_after_validation_at',
@@ -42,19 +30,18 @@ return new class extends Migration
             }
         });
 
-        // 🔥 3. RECREATE COLUMNS
+        // 🔥 recréation propre
         Schema::table('orders_menu_restaurant_items', function (Blueprint $table) {
+
+            $table->timestamp('rejected_after_validation_at')->nullable();
+
+            $table->string('reason_of_rejected_after_validation')->nullable();
+
+            $table->boolean('is_reason_of_cancel_for_new_update')->default(false);
 
             $table->unsignedBigInteger('rejected_after_validation_by')->nullable();
-            $table->timestamp('rejected_after_validation_at')->nullable();
-            $table->string('reason_of_rejected_after_validation')->nullable();
-            $table->boolean('is_reason_of_cancel_for_new_update')->default(false);
-        });
 
-        // 🔥 4. FK PROPRE
-        Schema::table('orders_menu_restaurant_items', function (Blueprint $table) {
-
-            $table->foreign('rejected_after_validation_by', 'omri_rav_by_fk')
+            $table->foreign('rejected_after_validation_by', 'fk_rej_after_val_by')
                 ->references('id')
                 ->on('users')
                 ->nullOnDelete();
@@ -66,7 +53,7 @@ return new class extends Migration
         Schema::table('orders_menu_restaurant_items', function (Blueprint $table) {
 
             try {
-                $table->dropForeign('omri_rav_by_fk');
+                $table->dropForeign('fk_rej_after_val_by');
             } catch (\Exception $e) {}
 
             $columns = [

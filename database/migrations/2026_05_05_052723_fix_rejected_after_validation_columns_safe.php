@@ -6,30 +6,11 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-
     public function up(): void
     {
-        // 🔥 check FK existantes
-        $fks = DB::select("
-        SELECT CONSTRAINT_NAME
-        FROM information_schema.KEY_COLUMN_USAGE
-        WHERE TABLE_NAME = 'orders_menu_restaurant_items'
-        AND COLUMN_NAME = 'rejected_after_validation_by'
-        AND CONSTRAINT_SCHEMA = DATABASE()
-    ");
+        Schema::table('orders_menu_restaurant_items', function (Blueprint $table) {
 
-        Schema::table('orders_menu_restaurant_items', function (Blueprint $table) use ($fks) {
-
-            // 🔥 DROP FK SEULEMENT SI EXISTE
-            foreach ($fks as $fk) {
-                $table->dropForeign($fk->CONSTRAINT_NAME);
-            }
-
-            // 🔹 colonnes safe
-            if (!Schema::hasColumn('orders_menu_restaurant_items', 'rejected_after_validation_by')) {
-                $table->unsignedBigInteger('rejected_after_validation_by')->nullable();
-            }
-
+            // 🔥 ajouter seulement si n'existe pas
             if (!Schema::hasColumn('orders_menu_restaurant_items', 'rejected_after_validation_at')) {
                 $table->timestamp('rejected_after_validation_at')->nullable();
             }
@@ -41,21 +22,29 @@ return new class extends Migration
             if (!Schema::hasColumn('orders_menu_restaurant_items', 'is_reason_of_cancel_for_new_update')) {
                 $table->boolean('is_reason_of_cancel_for_new_update')->default(false);
             }
+
+            if (!Schema::hasColumn('orders_menu_restaurant_items', 'rejected_after_validation_by')) {
+                $table->unsignedBigInteger('rejected_after_validation_by')->nullable();
+            }
         });
 
-        // 🔥 recréation FK propre
+        // 🔥 FK séparée (IMPORTANT)
         Schema::table('orders_menu_restaurant_items', function (Blueprint $table) {
 
-            $table->foreign('rejected_after_validation_by', 'fk_rej_after_val_by')
-                ->references('id')
-                ->on('users')
-                ->nullOnDelete();
+            // éviter double FK
+            try {
+                $table->dropForeign('fk_rej_after_val_by');
+            } catch (\Exception $e) {}
+
+            if (Schema::hasColumn('orders_menu_restaurant_items', 'rejected_after_validation_by')) {
+                $table->foreign('rejected_after_validation_by', 'fk_rej_after_val_by')
+                    ->references('id')
+                    ->on('users')
+                    ->nullOnDelete();
+            }
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::table('orders_menu_restaurant_items', function (Blueprint $table) {

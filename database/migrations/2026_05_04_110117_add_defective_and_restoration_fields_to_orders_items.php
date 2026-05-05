@@ -14,7 +14,6 @@ return new class extends Migration
         Schema::table('orders_menu_restaurant_items', function (Blueprint $table) {
             $table->foreignId('defective_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamp('defective_at')->nullable();
-
             $table->foreignId('restorated_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamp('restorated_at')->nullable();
         });
