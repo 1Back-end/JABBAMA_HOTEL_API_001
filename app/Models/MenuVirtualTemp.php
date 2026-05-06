@@ -22,10 +22,16 @@ class MenuVirtualTemp extends Model
         'code',
         'quantity',
         'menus_restaurant_uuid',
+        'reservation_uuid',
         'created_by',
         'updated_by',
         'product_uuid',
-        'quantity_used'
+        'quantity_used',
+        'status',
+        'order_menu_restaurant_uuid',
+        'last_activity_at',
+        'type',
+        'is_not_used_stock'
     ];
 
     protected static function boot()
@@ -55,6 +61,11 @@ class MenuVirtualTemp extends Model
     public function menuOrder()
     {
         return $this->belongsTo(MenuRestaurant::class, 'menus_restaurant_uuid', 'uuid');
+    }
+
+    public function order()
+    {
+        return $this->belongsTo(OrderMenuRestaurant::class, 'order_menu_restaurant_uuid', 'uuid');
     }
 
     public function creator()

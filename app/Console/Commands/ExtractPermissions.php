@@ -164,11 +164,7 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des commandes du restaurant',
             'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
-        'change_status_for_all_items' => [
-            'description' => 'Afficher le bouton de mise en prêt  d\'une commande',
-            'category' => 'Gestion des commandes du restaurant',
-            'modules' => ['Gestion du restaurant','Autres Modules'],
-        ],
+
         'update_items_for_facture' => [
             'description' => 'Afficher le bouton d\'ajustement d\'une commande',
             'category' => 'Gestion des commandes du restaurant',
@@ -184,6 +180,52 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des commandes du restaurant',
             'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
+        'view_all_notification_transferred' => [
+            'description' => 'Afficher les notifications d\'une commande transférée',
+            'category' => 'Gestion des notifications du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'view_all_notification_in_preparation' => [
+            'description' => 'Afficher les notifications d\'une commande en cours de préparation',
+            'category' => 'Gestion des notifications du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'view_all_notification_rejected' => [
+            'description' => 'Afficher les notifications d\'une commande en rejetée',
+            'category' => 'Gestion des notifications du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'view_all_notification_in_defective' => [
+            'description' => 'Afficher les notifications d\'une commande en défectieux',
+            'category' => 'Gestion des notifications du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'view_all_notification_in_ready' => [
+            'description' => 'Afficher les notifications d\'une commande en prêt',
+            'category' => 'Gestion des notifications du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'view_all_notification_in_delivered' => [
+            'description' => 'Afficher les notifications d\'une commande en servie',
+            'category' => 'Gestion des notifications du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'view_all_notification_in_rejected_after_validation' => [
+            'description' => 'Afficher les notifications d\'une commande en rejet du servi',
+            'category' => 'Gestion des notifications du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'view_all_notification_in_cancel_for_new_update' => [
+            'description' => 'Afficher les notifications d\'une commande en rejet du prêt',
+            'category' => 'Gestion des notifications du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'view_all_notification' => [
+            'description' => 'Afficher la liste des notifications d\'une commande',
+            'category' => 'Gestion des notifications du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+
 
     ];
 

@@ -133,6 +133,15 @@ class SettingRestaurantController extends Controller
         ]);
     }
 
+    public function getSetting(Request $request)
+    {
+        $value = SettingRestaurant::where('key', $request->key)->where('is_active', true)->value('value');
+        return response()->json([
+            'status' => 'success',
+            'value' => $value ?? 30
+        ]);
+    }
+
 
 
 }

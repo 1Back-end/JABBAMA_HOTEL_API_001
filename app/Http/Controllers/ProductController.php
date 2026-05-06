@@ -124,9 +124,7 @@ class ProductController extends Controller
         ]);
     }
 
-
-
-
+    
     /**
      * Display a listing of the resource.
      * @permission ProductController::store

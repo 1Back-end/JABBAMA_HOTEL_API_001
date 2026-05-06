@@ -36,7 +36,8 @@ class OrderRestaurantDrink extends Model
         'is_rejected',
         'reason',
         'is_new_items',
-        'is_last_items'
+        'is_last_items',
+        'make_in_preparation_at'
     ];
 
     protected $casts = [
@@ -47,10 +48,17 @@ class OrderRestaurantDrink extends Model
         'is_new_items' => 'boolean',
     ];
 
-    protected $appends = ['status_label'];
+    protected $appends = ['status_label','total_reserved_quantity'];
     public function getStatusLabelAttribute(): string
     {
         return OrderMenuRestaurantItemStatus::safeLabel($this->status);
+    }
+
+    public function getTotalReservedQuantityAttribute(): array
+    {
+        return ['total' => (int) $this->virtuals()->whereNull('deleted_at')->sum('quantity_reserved'),
+            'status' => 'pending'
+        ];
     }
 
     protected static function boot()
@@ -93,4 +101,28 @@ class OrderRestaurantDrink extends Model
     {
         return $this->belongsTo(User::class, 'rejected_by');
     }
+
+    public function statuses()
+    {
+        return $this->hasMany(OrderMenuItemStatusForDrink::class, 'order_restaurant_drink_uuid', 'uuid');
+    }
+
+    public function virtuals()
+    {
+        return $this->hasMany(VirtualOrderMenuRestaurant::class, 'item_uuid', 'uuid');
+    }
+
+
+//    public function lastStatus()
+//    {
+//        return $this->hasOne(LastStatusDrinksMenusRestaurant::class, 'order_restaurant_drink_uuid', 'uuid');
+//    }
+//    public function defectives()
+//    {
+//        return $this->hasMany(OrderMenuRestaurantDefectiveDrink::class, 'order_restaurant_drink_uuid', 'uuid');
+//    }
+//    public function statistics()
+//    {
+//        return $this->hasMany(StatisticsOrderStatusDrink::class, 'order_restaurant_drink_uuid', 'uuid');
+//    }
 }
