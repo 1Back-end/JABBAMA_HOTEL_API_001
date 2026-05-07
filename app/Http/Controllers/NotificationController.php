@@ -18,32 +18,63 @@ class NotificationController extends Controller
     {
         $user = auth()->user();
 
-        $query = \App\Models\OrderNotification::with(['creator','updater']);
+        $query = \App\Models\OrderNotification::with(['creator', 'updater']);
 
+        // 🔥 accès total
         if ($user->can('view_all_notification')) {
-            $notifications = $query;
-        } else if ($user->can('view_all_notification_in_preparation')) {
-            $notifications = $query->where('status', 'in_preparation');
-        } else if ($user->can('view_all_notification_transferred')) {
-            $notifications = $query->where('status', 'transferred');
-        } else if ($user->can('view_all_notification_rejected')) {
-            $notifications = $query->where('status', 'rejected');
-        } else if ($user->can('view_all_notification_in_defective')) {
-            $notifications = $query->where('status', 'defective');
-        } else if ($user->can('view_all_notification_in_ready')) {
-            $notifications = $query->where('status', 'ready');
-        } else if ($user->can('view_all_notification_in_delivered')) {
-            $notifications = $query->where('status', 'delivered');
-        } else if ($user->can('view_all_notification_in_rejected_after_validation')) {
-            $notifications = $query->where('status', 'rejected_after_validation');
-        } else if ($user->can('view_all_notification_in_cancel_for_new_update')) {
-            $notifications = $query->where('status', 'cancel_for_new_update');
-        } else {
-            $notifications = $query->where('status', 'transferred');
+            return response()->json([
+                'status' => 'success',
+                'data' => $query->latest()->get()
+            ]);
         }
+
+        $statuses = [];
+
+        if ($user->can('view_all_notification_in_preparation')) {
+            $statuses[] = 'in_preparation';
+        }
+
+        if ($user->can('view_all_notification_transferred')) {
+            $statuses[] = 'transferred';
+        }
+
+        if ($user->can('view_all_notification_rejected')) {
+            $statuses[] = 'rejected';
+        }
+
+        if ($user->can('view_all_notification_in_defective')) {
+            $statuses[] = 'defective';
+        }
+
+        if ($user->can('view_all_notification_in_ready')) {
+            $statuses[] = 'ready';
+        }
+
+        if ($user->can('view_all_notification_in_delivered')) {
+            $statuses[] = 'delivered';
+        }
+
+        if ($user->can('view_all_notification_in_rejected_after_validation')) {
+            $statuses[] = 'rejected_after_validation';
+        }
+
+        if ($user->can('view_all_notification_in_cancel_for_new_update')) {
+            $statuses[] = 'cancel_for_new_update';
+        }
+
+        // 🔥 fallback
+        if (empty($statuses)) {
+            $statuses[] = 'transferred';
+        }
+
+        $notifications = $query
+            ->whereIn('status', $statuses)
+            ->latest()
+            ->get();
+
         return response()->json([
             'status' => 'success',
-            'data' => $notifications->latest()->get()
+            'data' => $notifications
         ]);
     }
 
@@ -56,31 +87,60 @@ class NotificationController extends Controller
     {
         $user = auth()->user();
 
-        $query = \App\Models\OrderNotification::with(['creator','updater'])->where('is_read', false);
-        if ($user->can('view_all_notification')) {
-            $notifications = $query;
-        } else if ($user->can('view_all_notification_in_preparation')) {
-            $notifications = $query->where('status', 'in_preparation');
-        } else if ($user->can('view_all_notification_transferred')) {
-            $notifications = $query->where('status', 'transferred');
-        } else if ($user->can('view_all_notification_rejected')) {
-            $notifications = $query->where('status', 'rejected');
-        } else if ($user->can('view_all_notification_in_defective')) {
-            $notifications = $query->where('status', 'defective');
-        } else if ($user->can('view_all_notification_in_ready')) {
-            $notifications = $query->where('status', 'ready');
-        } else if ($user->can('view_all_notification_in_delivered')) {
-            $notifications = $query->where('status', 'delivered');
-        } else if ($user->can('view_all_notification_in_rejected_after_validation')) {
-            $notifications = $query->where('status', 'rejected_after_validation');
-        } else if ($user->can('view_all_notification_in_cancel_for_new_update')) {
-            $notifications = $query->where('status', 'cancel_for_new_update');
-        } else {
-            $notifications = $query->where('status', 'transferred');
+        $query = \App\Models\OrderNotification::with(['creator', 'updater'])
+            ->where('is_read', false);
+
+        // 🔥 utiliser plusieurs if et non else if
+        // pour permettre à un utilisateur ayant plusieurs permissions
+        // de voir plusieurs statuts
+
+        if (!$user->can('view_all_notification')) {
+
+            $statuses = [];
+
+            if ($user->can('view_all_notification_in_preparation')) {
+                $statuses[] = 'in_preparation';
+            }
+
+            if ($user->can('view_all_notification_transferred')) {
+                $statuses[] = 'transferred';
+            }
+
+            if ($user->can('view_all_notification_rejected')) {
+                $statuses[] = 'rejected';
+            }
+
+            if ($user->can('view_all_notification_in_defective')) {
+                $statuses[] = 'defective';
+            }
+
+            if ($user->can('view_all_notification_in_ready')) {
+                $statuses[] = 'ready';
+            }
+
+            if ($user->can('view_all_notification_in_delivered')) {
+                $statuses[] = 'delivered';
+            }
+
+            if ($user->can('view_all_notification_in_rejected_after_validation')) {
+                $statuses[] = 'rejected_after_validation';
+            }
+
+            if ($user->can('view_all_notification_in_cancel_for_new_update')) {
+                $statuses[] = 'cancel_for_new_update';
+            }
+
+            // 🔥 fallback
+            if (empty($statuses)) {
+                $statuses[] = 'transferred';
+            }
+
+            $query->whereIn('status', $statuses);
         }
+
         return response()->json([
             'status' => 'success',
-            'data' => $notifications->latest()->get()
+            'data' => $query->latest()->get()
         ]);
     }
 
