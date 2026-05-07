@@ -2,6 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\DrinkComposition;
+use App\Models\DrinkCompositionItem;
+use App\Models\MenuOrder;
 use App\Models\RestaurantDrinkConfiguration;
 use App\Models\SupplyItem;
 use Illuminate\Http\Request;
@@ -49,6 +52,45 @@ class RestaurantDrinkConfigurationController extends Controller
 
     }
 
+    /**
+     * Display a listing of the resource.
+     * @permission RestaurantDrinkConfigurationController::transformableProducts
+     * @permission_desc Afficher la liste des prix des boissons transformables
+     */
+    public function transformableProducts(Request $request)
+    {
+        $perPage = $request->input('limit', 25);
+        $page = $request->input('page', 1);
+
+        $query = RestaurantDrinkConfiguration::with(['creator', 'updater', 'product'])
+            ->where('is_transformable_product', true)
+
+            ->when($request->filled('is_active'), function ($query) use ($request) {
+                $query->where(
+                    'is_active',
+                    filter_var($request->input('is_active'), FILTER_VALIDATE_BOOLEAN)
+                );
+            });
+
+        if ($search = trim($request->input('search'))) {
+            $query->where(function ($q) use ($search) {
+                $q->where('code', 'like', "%{$search}%")
+                    ->orWhere('uuid', 'like', "%{$search}%")
+                    ->orWhere('product_uuid', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%");
+            });
+        }
+
+        $data = $query->latest()->paginate($perPage, ['*'], 'page', $page);
+
+        return response()->json([
+            'data'         => $data->items(),
+            'current_page' => $data->currentPage(),
+            'last_page'    => $data->lastPage(),
+            'total'        => $data->total(),
+        ]);
+    }
+
     private function getLastSellPrice(string $product_uuid): ?float
     {
         return SupplyItem::where('product_uuid', $product_uuid)
@@ -78,6 +120,8 @@ class RestaurantDrinkConfigurationController extends Controller
                 'description' => ['nullable', 'string'],
                 'is_active' => ['nullable', 'boolean'],
                 'default_price' => ['nullable', 'numeric', 'min:0'],
+                'is_finished_product' => ['nullable', 'boolean'],
+                'is_transformable_product' => ['nullable', 'boolean'],
             ]);
 
             // 🔒 Vérifier si déjà configuré
@@ -202,6 +246,8 @@ class RestaurantDrinkConfigurationController extends Controller
                 'description' => ['nullable', 'string'],
                 'is_active' => ['nullable', 'boolean'],
                 'default_price' => ['nullable', 'numeric', 'min:0'],
+                'is_finished_product' => ['nullable', 'boolean'],
+                'is_transformable_product' => ['nullable', 'boolean'],
             ]);
 
             // 🔒 Unicité produit
@@ -361,6 +407,124 @@ class RestaurantDrinkConfigurationController extends Controller
                 'message' => 'Configuration introuvable : ' . $e->getMessage()
             ], 404);
         }
+    }
+
+    public function getTransformableProductByUuid(Request $request, $uuid)
+    {
+        $perPage = $request->input('limit', 25);
+        $page = $request->input('page', 1);
+
+        $query = RestaurantDrinkConfiguration::with(['creator', 'updater', 'product'])->where('is_transformable_product', true)
+            ->where('uuid', $uuid);
+
+        if ($search = trim($request->input('search'))) {
+            $query->where(function ($q) use ($search) {
+                $q->where('code', 'like', "%{$search}%")
+                    ->orWhere('uuid', 'like', "%{$search}%")
+                    ->orWhere('product_uuid', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%")
+                    ->orWhereHas('product', function ($p) use ($search) {
+                        $p->where('name', 'like', "%{$search}%")
+                            ->orWhere('code', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        $data = $query->latest()->paginate($perPage, ['*'], 'page', $page);
+
+        return response()->json([
+            'status'       => 'success',
+            'data'         => $data->items(),
+            'current_page' => $data->currentPage(),
+            'last_page'    => $data->lastPage(),
+            'total'        => $data->total(),
+        ]);
+    }
+
+    /**
+     * Display a listing of the resource.
+     * @permission RestaurantDrinkConfigurationController::upsert
+     * @permission_desc Effectuer la confection des boissons de transformation
+     */
+    public function upsert(Request $request, $drinks_restaurant_uuid)
+    {
+        $request->validate([
+            'warehouse_uuid' => 'required|uuid',
+            'items' => 'required|array',
+            'items.*.product_uuid' => 'required|uuid',
+            'items.*.quantity_used' => 'required|numeric|min:0',
+        ]);
+
+        $userId = auth()->id();
+
+        DB::beginTransaction();
+
+        try {
+
+            $composition = DrinkComposition::updateOrCreate(
+                [
+                    'drinks_restaurant_uuid' => $drinks_restaurant_uuid,
+                    'warehouse_uuid' => $request->warehouse_uuid,
+                ],
+                [
+                    'updated_by' => $userId,
+                    'created_by' => $userId,
+                ]
+            );
+
+            DrinkCompositionItem::where('drink_composition_uuid', $composition->uuid)->delete();
+
+            foreach ($request->items as $item) {
+                DrinkCompositionItem::create([
+                    'drink_composition_uuid' => $composition->uuid,
+                    'product_uuid' => $item['product_uuid'],
+                    'quantity_used' => $item['quantity_used'],
+                    'is_optional' => $item['is_optional'] ?? false,
+                    'created_by' => $userId,
+                    'updated_by' => $userId,
+                ]);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Composition enregistrée avec succès',
+                'data' => $composition->load(['warehouse', 'items'])
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function get_compositions_drinks_by_uuid(string $drinks_restaurant_uuid)
+    {
+        $DrinksOrder = DrinkComposition::with([
+            'drink',
+            'items.product',
+            'creator',
+            'updater',
+            'warehouse'
+        ])->where('drinks_restaurant_uuid', $drinks_restaurant_uuid)->first();
+
+        if (!$DrinksOrder) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Aucune confection trouvée pour cette boisson.'
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'drinks_orders' => $DrinksOrder,
+            'message' => 'Composition de boissons récupérée avec succès.'
+        ]);
     }
 
 

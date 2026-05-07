@@ -170,6 +170,76 @@ class WarehouseController extends Controller
 
     /**
      * Display a listing of the resource.
+     * @permission WarehouseController::get_warehouses_is_used_for_drinks_transformation
+     * @permission_desc Afficher la liste des entrepôts (Bar Transformation) utilisés pour la transformation des boissons
+     */
+    public function get_warehouses_is_used_for_drinks_transformation(Request $request)
+    {
+        $auth = auth()->user();
+        $perPage = $request->input('limit', 25);
+        $page = $request->input('page', 1);
+        $roleIds = $auth->roles->pluck('id');
+
+        $query = Warehouse::with(['creator', 'updater', 'natures', 'managers'])->where('is_used_for_drinks_transformation', true);;
+
+        // 🔥 Filtrer selon le rôle
+        if (!$auth->hasRole('SUPER_ADMIN') && !$auth->can('view_all_warehouses')) {
+
+            $query->where(function ($q) use ($auth, $roleIds) {
+
+                // 👉 Utilisateurs avec view_role_related_data : voient tous les entrepôts gérés par des utilisateurs ayant le même rôle
+                if ($auth->can('view_role_related_data')) {
+                    $q->whereHas('managers.roles', function ($qr) use ($roleIds) {
+                        $qr->whereIn('roles.id', $roleIds);
+                    });
+                }
+
+                // 👉 Autres utilisateurs : voir uniquement les entrepôts dont ils sont managers
+                else {
+                    $q->whereHas('managers', function ($qr) use ($auth) {
+                        $qr->where('user_id', $auth->id);
+                    });
+                }
+
+            });
+        }
+
+        if ($request->has('is_active')) {
+            $query->where('is_active', filter_var($request->input('is_active'), FILTER_VALIDATE_BOOLEAN));
+        }
+
+        if ($search = trim($request->input('search'))) {
+            $query->where(function ($q) use ($search) {
+                $q->where('ref', 'like', "%{$search}%")
+                    ->orWhere('name', 'like', "%{$search}%")
+                    ->orWhere('stock_type', 'like', "%{$search}%")
+                    ->orWhere('address', 'like', "%{$search}%")
+                    ->orWhere('total_stock', 'like', "%{$search}%"); // ✅ corrigé
+            })
+                ->orWhereHas('natures', function ($qw) use ($search) {
+                    $qw->where('code', 'like', "%{$search}%")
+                        ->orWhere('name', 'like', "%{$search}%")
+                        ->orWhere('abbreviation', 'like', "%{$search}%");
+                })
+                ->orWhereHas('managers', function ($ma) use ($search) {
+                    $ma->where('nom_utilisateur', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%");
+                });
+        }
+
+        $warehouses = $query->latest()->paginate($perPage, ['*'], 'page', $page);
+
+        return response()->json([
+            'data'         => $warehouses->items(),
+            'current_page' => $warehouses->currentPage(),
+            'last_page'    => $warehouses->lastPage(),
+            'total'        => $warehouses->total(),
+        ]);
+    }
+
+
+    /**
+     * Display a listing of the resource.
      * @permission WarehouseController::get_warehouses_is_bar_warehouse
      * @permission_desc Afficher la liste des entrepôts (Bar) utilisés pour le restaurant
      */
@@ -260,6 +330,7 @@ class WarehouseController extends Controller
             'natures.*'   => 'required|exists:nature_entrepots,uuid',
             'is_used_for_restaurant' => 'nullable|boolean',
             'is_bar_warehouse'  => 'nullable|boolean',
+            'is_used_for_drinks_transformation' => 'nullable|boolean'
         ]);
 
         /**
@@ -312,6 +383,16 @@ class WarehouseController extends Controller
                 return response()->json([
                     'success' => false,
                     'message' => "Il existe déjà un entrepôt bar pour le restaurant.",
+                ], 422);
+            }
+        }
+
+        if (!empty($validated['is_used_for_drinks_transformation']) && $validated['is_used_for_drinks_transformation']) {
+            $existsWarehouse = Warehouse::where('is_used_for_drinks_transformation', true)->exists();
+            if ($existsWarehouse) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Il existe déjà un entrepôt de transformation des boissons.",
                 ], 422);
             }
         }
@@ -396,6 +477,7 @@ class WarehouseController extends Controller
             'natures.*'   => 'required|exists:nature_entrepots,uuid',
             'is_used_for_restaurant' => 'nullable|boolean',
             'is_bar_warehouse'  => 'nullable|boolean',
+            'is_used_for_drinks_transformation' => 'nullable|boolean'
         ]);
 
         // 🔹 Règle entrepôt principal = 1 seul manager
@@ -446,6 +528,20 @@ class WarehouseController extends Controller
                 return response()->json([
                     'success' => false,
                     'message' => "Il existe déjà un entrepôt bar pour le restaurant.",
+                ], 422);
+            }
+        }
+
+        if (!empty($validated['is_used_for_drinks_transformation']) && $validated['is_used_for_drinks_transformation']) {
+
+            $existsWarehouse = Warehouse::where('is_used_for_drinks_transformation', true)
+                ->where('uuid', '!=', $warehouse->uuid)
+                ->exists();
+
+            if ($existsWarehouse) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Il existe déjà un entrepôt de transformation des boissons.",
                 ], 422);
             }
         }
