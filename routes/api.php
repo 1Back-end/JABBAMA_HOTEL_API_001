@@ -66,6 +66,7 @@ Route::middleware(['activity'])->group(function () {
         Route::patch('natures_warehouses/{uuid}/is_active', [WarehouseController::class, 'update_status']);
         Route::get('get_warehouses_is_used_for_restaurant', [WarehouseController::class, 'get_warehouses_is_used_for_restaurant']);
         Route::get('get_warehouses_is_bar_warehouse', [WarehouseController::class, 'get_warehouses_is_bar_warehouse']);
+        Route::get('get_warehouses_is_used_for_drinks_transformation', [WarehouseController::class, 'get_warehouses_is_used_for_drinks_transformation']);
 
 
 
@@ -160,9 +161,12 @@ Route::middleware(['activity'])->group(function () {
         Route::get('/get_price_product', [\App\Http\Controllers\MenuRestaurantController::class, 'get_price_by_product_and_client']);
         Route::get('/get_menu_is_confectioned', [\App\Http\Controllers\MenuRestaurantController::class, 'get_menu_is_confectioned']);
 
+        Route::get('restaurant_drink_configurations/transformable_products', [\App\Http\Controllers\RestaurantDrinkConfigurationController::class, 'transformableProducts']);
+        Route::get('restaurant_drink_configurations/transformable_products/{product_uuid}', [\App\Http\Controllers\RestaurantDrinkConfigurationController::class, 'getTransformableProductByUuid']);
         Route::apiResource('restaurant_drink_configurations', \App\Http\Controllers\RestaurantDrinkConfigurationController::class);
         Route::patch('restaurant_drink_configurations/{uuid}/is_active', [\App\Http\Controllers\RestaurantDrinkConfigurationController::class, 'update_status']);
-
+        Route::post('/compositions_drinks_orders/{drinks_restaurant_uuid}/store', [\App\Http\Controllers\RestaurantDrinkConfigurationController::class, 'upsert']);
+        Route::get('/compositions_drinks_orders/{drinks_restaurant_uuid}/show', [\App\Http\Controllers\RestaurantDrinkConfigurationController::class, 'get_compositions_drinks_by_uuid']);
         Route::apiResource('regulation_methods', \App\Http\Controllers\RegulationMethodController::class);
         Route::patch('regulation_methods/{regulationMethod}/activate', [\App\Http\Controllers\RegulationMethodController::class, 'activate']);
 

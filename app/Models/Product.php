@@ -87,8 +87,9 @@ class Product extends Model
             'produit_uuid',
             'point_uuid'
         )
-            ->using(\App\Models\ProductPoint::class) // pivot personnalisé
-            ->withPivot('uuid', 'quantity', 'stocks_minimal','is_active')
+            ->using(\App\Models\ProductPoint::class)
+            ->withPivot('uuid', 'quantity', 'stocks_minimal', 'is_active')
+            ->wherePivotNull('deleted_at') // 🔥 IMPORTANT
             ->withTimestamps();
     }
 

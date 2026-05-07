@@ -18,6 +18,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 /**
  * @permission_category Gestion des articles
@@ -124,7 +125,7 @@ class ProductController extends Controller
         ]);
     }
 
-    
+
     /**
      * Display a listing of the resource.
      * @permission ProductController::store
@@ -341,20 +342,25 @@ class ProductController extends Controller
         DB::beginTransaction();
 
         try {
+            // 1. Trouver le produit par UUID ou échouer
             $product = Product::where('uuid', $uuid)->firstOrFail();
 
-            // Validation des champs obligatoires
+            // 2. Validation des champs
             $validated = $request->validate([
+                // On ignore l'ID actuel pour le nom unique
                 'name' => 'required|string|max:255|unique:produits,name,' . $product->uuid . ',uuid',
                 'description' => 'nullable|string',
                 'category_uuid' => 'nullable|exists:categories,uuid',
-                'unit_uuid' => 'required|exists:units,uuid',
+                'unit_uuid' => 'nullable|exists:units,uuid',
+                'purchase_price' => 'nullable|numeric|min:0',
+                'sale_price' => 'nullable|numeric|min:0',
+                'stock_quantity' => 'nullable|integer|min:0',
                 'minimum_stock' => 'required|integer|min:0',
                 'sub_categories' => 'nullable|array',
                 'sub_categories.*' => 'exists:sub_categories,uuid',
                 'points' => 'nullable|array',
                 'points.*.uuid' => 'required|exists:warehouses,uuid',
-                'points.*.quantity' => 'required|integer|min:0',
+                'points.*.quantity' => 'nullable|integer|min:0',
                 'points.*.stocks_minimal' => 'nullable|integer|min:0',
                 'image_file' => 'nullable|file|max:2048|mimes:jpg,jpeg,png,svg',
                 'category_json' => 'nullable|array',
@@ -362,56 +368,42 @@ class ProductController extends Controller
             ], [
                 'name.required' => 'Le nom du produit est obligatoire.',
                 'name.unique' => 'Ce nom de produit existe déjà.',
-                'unit_uuid.required' => 'L’unité de mesure est obligatoire.',
-                'minimum_stock.required' => 'Le stock minimum est obligatoire.',
-                'points.*.uuid.required' => 'Le point de dépôt est obligatoire.',
-                'points.*.quantity.required' => 'La quantité pour chaque point est obligatoire.',
-                'image_file.max' => 'La taille maximale de l\'image du produit doit être de 2Mo',
-                'image_fil.mimes' => 'L\'image du produit doit prendre en compte uniquement ce type de fichier: jpg, jpeg et png'
+                'minimum_stock.required' => 'Le stock minimal est obligatoire.',
             ]);
 
             $validated['updated_by'] = $auth->id;
 
-            // Mise à jour produit
+            // 3. Mise à jour des données de base du produit
             $product->update($validated);
 
-            // Sous-catégories
-            if ($request->has('sub_categories')) {
-                $pivotData = [];
-                foreach ($validated['sub_categories'] as $sub_uuid) {
-                    $pivotData[$sub_uuid] = [
-                        'is_active' => true,
-                        'updated_by' => $auth->id,
-                    ];
-                }
-                $product->subCategories()->sync($pivotData);
+            // 4. Synchronisation des Sous-catégories
+            // Si sub_categories est vide, sync([]) va tout détacher proprement
+            $subCategories = $request->input('sub_categories', []);
+            $pivotSub = [];
+            foreach ($subCategories as $sub_uuid) {
+                $pivotSub[$sub_uuid] = [
+                    'is_active' => true,
+                    'updated_by' => $auth->id,
+                ];
+            }
+            $product->subCategories()->sync($pivotSub);
+
+            $points = $request->input('points', []);
+            $pivotPoints = [];
+            foreach ($points as $point) {
+                $pivotPoints[$point['uuid']] = [
+                    'quantity' => $point['quantity'] ?? 0,
+                    'stocks_minimal' => $point['stocks_minimal'] ?? $validated['minimum_stock'],
+                    'is_active' => 1,
+                    'updated_by' => $auth->id,
+                ];
             }
 
-            // Points de dépôt (⚠️ ne supprime pas les quantités si non envoyées)
-            if ($request->has('points')) {
-                $pivotData = [];
+            $product->points()->sync($pivotPoints);
 
-                foreach ($validated['points'] as $point) {
-                    $existing = $product->points()->where('warehouses.uuid', $point['uuid'])->first();
-
-                    $pivotData[$point['uuid']] = [
-                        'quantity' => array_key_exists('quantity', $point)
-                            ? $point['quantity']
-                            : ($existing->pivot->quantity ?? 0),
-
-                        'stocks_minimal' => $point['stocks_minimal']
-                            ?? ($existing->pivot->stocks_minimal ?? $validated['minimum_stock']),
-
-                        'updated_by' => $auth->id,
-                    ];
-                }
-
-                $product->points()->sync($pivotData);
-            }
-
-            // Image (remplacement)
             if ($request->hasFile('image_file')) {
-                $product->medias()->delete();
+                // Optionnel : Supprimer l'ancien média physiquement ici si nécessaire
+                $product->medias()->delete(); // Supprime l'enregistrement en base
 
                 $file = $request->file('image_file');
                 $filename = time() . '_' . $file->getClientOriginalName();
@@ -432,14 +424,20 @@ class ProductController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => "Le produit '{$product->name}' a été mis à jour avec succès.",
-                'product' => $product->load(['subCategories', 'points']),
+                'product' => $product->load(['subCategories', 'points', 'medias']),
             ], 200);
 
-        } catch (\Exception $e) {
-            DB::rollback();
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollBack();
             return response()->json([
                 'success' => false,
-                'message' => 'Impossible de mettre à jour le produit pour le moment.',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de la mise à jour.',
                 'error' => $e->getMessage()
             ], 500);
         }

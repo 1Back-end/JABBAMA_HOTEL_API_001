@@ -29,7 +29,9 @@ class RestaurantDrinkConfiguration extends Model
         'created_by',
         'updated_by',
         'has_prices',
-        'default_price'
+        'default_price',
+        'is_finished_product',
+        'is_transformable_product'
     ];
 
     protected $casts = [

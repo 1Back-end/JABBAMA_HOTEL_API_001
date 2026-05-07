@@ -11,6 +11,8 @@ class Warehouse extends Model
 {
     use HasFactory, SoftDeletes;
 
+
+
     protected $primaryKey = 'uuid';
     public $incrementing = false;
     protected $keyType = 'string';
@@ -26,7 +28,8 @@ class Warehouse extends Model
         'total_stock',
         'is_primary',
         'is_used_for_restaurant',
-        'is_bar_warehouse'
+        'is_bar_warehouse',
+        'is_used_for_drinks_transformation'
     ];
 
     protected $appends = ['total_stock'];
