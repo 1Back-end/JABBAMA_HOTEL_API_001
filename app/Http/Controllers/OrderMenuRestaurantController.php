@@ -47,9 +47,6 @@ use Illuminate\Validation\Rules\Enum;
  */
 class OrderMenuRestaurantController extends Controller
 {
-    public function __construct()
-    {
-    }
 
     private function getLogoutMinutes()
     {
@@ -1048,12 +1045,12 @@ class OrderMenuRestaurantController extends Controller
                 }
             }
 
-            \App\Models\OrderNotification::create([
-                'order_menu_restaurant_uuid' => $order->uuid,
-                'status' => MenuOrderStatus::TRANSFERRED->value,
-                'message' => "Commande {$order->code} enregistrée avec succès.",
-                'created_by' => $auth->id,
-            ]);
+            \App\Models\OrderNotification::createOrUpdateNotification(
+                $order->uuid,
+                MenuOrderStatus::TRANSFERRED->value,
+                "Commande {$order->code} enregistrée avec succès.",
+                $auth->id
+            );
             if ($request->filled('reservation_uuid')) {
                 $affected = \DB::table('menu_virtuals_temp')
                     ->where('reservation_uuid', $request->reservation_uuid)
@@ -2240,11 +2237,28 @@ class OrderMenuRestaurantController extends Controller
             ->filter(fn($qty) => $qty > 0)
             ->toArray();
 
-        if (empty($statuses)) {
-            return OrderMenuRestaurantItemStatus::TRANSFERRED->value;
+        $finalStatus = $this->weightedRandomWithConditions(
+            $statuses,
+            $allStatuses,
+            $requiredQty
+        );
+
+        $order = $item->order;
+
+        $lastStatus = $item->status;
+
+        if ($lastStatus !== $finalStatus) {
+
+            \App\Models\OrderNotification::createOrUpdateNotification(
+                $order->uuid,
+                $finalStatus,
+                "Commande {$order->code} déjà en " . OrderMenuRestaurantItemStatus::safeLabel($finalStatus) . ".",
+                auth()->id(),
+                $item->uuid
+            );
         }
 
-        return $this->weightedRandomWithConditions($statuses, $allStatuses, $requiredQty);
+        return $finalStatus;
     }
     private function weightedRandomWithConditions(array $statuses, array $allStatuses, int $requiredQty): string
     {
@@ -2411,11 +2425,29 @@ class OrderMenuRestaurantController extends Controller
             if ($newQty > 0 && $deliveredQty === $newQty) {
                 return OrderMenuRestaurantItemStatus::DELIVERED->value;
             }
-            return $this->resolveItemStatusFromStatuses($item);
+            $status = $this->resolveItemStatusFromStatuses($item);
+            $this->notifyStatusChange($item, $status);
+            return $status;
         }
 
-        return $this->computeDeliveryStatus($item)
+        $status = $this->computeDeliveryStatus($item)
             ?? $this->resolveItemStatusFromStatuses($item);
+
+        $this->notifyStatusChange($item, $status);
+
+        return $status;
+    }
+    private function notifyStatusChange(OrderMenuRestaurantItem $item, string $status): void
+    {
+        $order = $item->order;
+
+        \App\Models\OrderNotification::createOrUpdateNotification(
+            $order->uuid,
+            $status,
+            "Commande {$order->code} déjà en " . OrderMenuRestaurantItemStatus::safeLabel($status) . ".",
+            auth()->id(),
+            $item->uuid
+        );
     }
     private function updateVirtualStock($menu, $order, $item, $diffQuantity, $auth)
     {
@@ -3256,7 +3288,8 @@ class OrderMenuRestaurantController extends Controller
             'menu_restaurant',
             'items.menu',
             'drinks.product',
-            'free_client_for_restaurant'
+            'free_client_for_restaurant',
+            'notifications'
         ]);
 
         if ($request->filled('restaurant_table_uuid')) {
@@ -3453,6 +3486,7 @@ class OrderMenuRestaurantController extends Controller
                 'items.restoredByUser',
                 'items.cancelForNewUpdateBy',
                 'items.rejectedAfterValidationByUser',
+                'notifications',
 
                 'items' => function ($query) {
                     $query->orderByDesc('created_at');
@@ -3561,12 +3595,13 @@ class OrderMenuRestaurantController extends Controller
                 ]);
             }
 
-            \App\Models\OrderNotification::create([
-                'order_menu_restaurant_uuid' => $order->uuid,
-                'status' => MenuOrderStatus::REJECTED->value,
-                'message' => "Commande {$order->code} rejetée en cuisine. Action requise.",
-                'created_by' => $auth->id,
-            ]);
+            \App\Models\OrderNotification::createOrUpdateNotification(
+                $order->uuid,
+                MenuOrderStatus::REJECTED->value,
+                "Commande {$order->code} rejetée en cuisine. Action requise.",
+                $auth->id
+            );
+
             $this->refreshOrderStatus($order);
             $order->update(['updated_by' => $auth->id]);
 
@@ -3891,12 +3926,12 @@ class OrderMenuRestaurantController extends Controller
                     'updated_at' => now()
                 ]);
             }
-            \App\Models\OrderNotification::create([
-                'order_menu_restaurant_uuid' => $order->uuid,
-                'status' => MenuOrderStatus::IN_PREPARATION->value,
-                'message' => "Commande {$order->code} mise en préparation. Veuillez commencer.",
-                'created_by' => $auth->id,
-            ]);
+            \App\Models\OrderNotification::createOrUpdateNotification(
+                $order->uuid,
+                MenuOrderStatus::IN_PREPARATION->value,
+                "Commande {$order->code} mise en préparation. Veuillez commencer.",
+                $auth->id
+            );
 
             $this->refreshOrderStatus($order);
             DB::commit();
@@ -3987,12 +4022,12 @@ class OrderMenuRestaurantController extends Controller
                 ]);
             }
 
-            \App\Models\OrderNotification::create([
-                'order_menu_restaurant_uuid' => $order->uuid,
-                'status' => MenuOrderStatus::TRANSFERRED->value,
-                'message' => "Commande {$order->code} retranférée en cuisine. Action requise.",
-                'created_by' => $auth->id,
-            ]);
+            \App\Models\OrderNotification::createOrUpdateNotification(
+                $order->uuid,
+                MenuOrderStatus::TRANSFERRED->value,
+                "Commande {$order->code} retranférée en cuisine. Action requise.",
+                $auth->id
+            );
 
             $this->refreshOrderStatus($order->fresh());
 
@@ -4151,12 +4186,12 @@ class OrderMenuRestaurantController extends Controller
                 ]);
             }
 
-            \App\Models\OrderNotification::create([
-                'order_menu_restaurant_uuid' => $order->uuid,
-                'status' => MenuOrderStatus::FACTURATE->value,
-                'message' => "Facture générée pour la commande {$order->code}.",
-                'created_by' => $auth->id,
-            ]);
+            \App\Models\OrderNotification::createOrUpdateNotification(
+                $order->uuid,
+                MenuOrderStatus::FACTURATE->value,
+                "Facture générée pour la commande {$order->code}.",
+                $auth->id
+            );
 
             $order->update([
                 'updated_by' => $auth->id,
@@ -4693,13 +4728,12 @@ class OrderMenuRestaurantController extends Controller
                     : OrderMenuRestaurantItemStatus::PARTIAL_COMPLETED->value;
             }
 
-            \App\Models\OrderNotification::create([
-                'order_menu_restaurant_uuid' => $order->uuid,
-                'status' => MenuOrderStatus::TOTAL_DELIVERED->value,
-                'message' => "Commande {$order->code} prête en cuisine. Prête à être servie.",
-                'created_by' => $auth->id,
-            ]);
-
+            \App\Models\OrderNotification::createOrUpdateNotification(
+                $order->uuid,
+                MenuOrderStatus::TOTAL_DELIVERED->value,
+                "Commande {$order->code} prête en cuisine. Prête à être servie.",
+                $auth->id
+            );
 
             $this->refreshOrderStatus($order);
 
@@ -5261,12 +5295,13 @@ class OrderMenuRestaurantController extends Controller
 
                 $this->refreshItemStatus($item, $auth);
             }
-            \App\Models\OrderNotification::create([
-                'order_menu_restaurant_uuid' => $order->uuid,
-                'status' => MenuOrderStatus::DELIVERED->value,
-                'message' => "Commande {$order->code} servie avec succès. Bon appétit !",
-                'created_by' => $auth->id,
-            ]);
+            \App\Models\OrderNotification::createOrUpdateNotification(
+                $order->uuid,
+                MenuOrderStatus::DELIVERED->value,
+                "Commande {$order->code} servie avec succès.",
+                $auth->id
+            );
+
             $this->refreshOrderStatus($order);
             $order->update(['updated_by' => $auth->id]);
 
@@ -5423,12 +5458,13 @@ class OrderMenuRestaurantController extends Controller
                 'status' => MenuOrderStatus::REJECTED_FOR_NEW_UPDATE->value,
                 'updated_by' => $auth->id,
             ]);
-            \App\Models\OrderNotification::create([
-                'order_menu_restaurant_uuid' => $order->uuid,
-                'status' => MenuOrderStatus::REJECTED_FOR_NEW_UPDATE->value,
-                'message' => "La commande {$order->code} a été rejetée pour modification.",
-                'created_by' => $auth->id,
-            ]);
+            \App\Models\OrderNotification::createOrUpdateNotification(
+                $order->uuid,
+                MenuOrderStatus::REJECTED_FOR_NEW_UPDATE->value,
+                "La commande {$order->code} a été rejetée pour modification.",
+                $auth->id
+            );
+
 
             $this->refreshOrderStatus($order);
             DB::commit();
@@ -5959,12 +5995,12 @@ class OrderMenuRestaurantController extends Controller
                 ]);
             }
 
-            \App\Models\OrderNotification::create([
-                'order_menu_restaurant_uuid' => $order->uuid,
-                'status' => MenuOrderStatus::DEFECTIVE->value,
-                'message' => "Commande {$order->code} marquée comme défectueuse en cuisine. Action requise.",
-                'created_by' => $auth->id,
-            ]);
+            \App\Models\OrderNotification::createOrUpdateNotification(
+                $order->uuid,
+                MenuOrderStatus::DEFECTIVE->value,
+                "Commande {$order->code} marquée comme défectueuse en cuisine. Action requise",
+                $auth->id
+            );
 
             $this->refreshOrderStatus($order->fresh());
             $order->update([
@@ -6119,13 +6155,13 @@ class OrderMenuRestaurantController extends Controller
                     'restorated_at' => now(),
                 ]);
             }
-            $auth->notify(
-                new OrderNotification(
-                    "Commande {$order->code} restaurée avec succès en cuisine.",
-                    MenuOrderStatus::REINSTATED->value,
-                    $order->uuid
-                )
+            \App\Models\OrderNotification::createOrUpdateNotification(
+                $order->uuid,
+                MenuOrderStatus::REINSTATED->value,
+                "Commande {$order->code} restaurée avec succès en cuisine.",
+                $auth->id
             );
+
             $this->refreshOrderStatus($order);
             $order->update([
                 'updated_by' => $auth->id,

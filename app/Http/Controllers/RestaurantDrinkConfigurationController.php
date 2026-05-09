@@ -52,6 +52,36 @@ class RestaurantDrinkConfigurationController extends Controller
 
     }
 
+    public function get_sall_drinks_for_restaurants(Request $request)
+    {
+        $perPage = $request->input('limit', 5);
+        $page = $request->input('page', 1);
+
+        $query = RestaurantDrinkConfiguration::with(['creator','updater','product'])
+            ->when($request->has('is_active'), function ($query) use ($request) {
+                $query->where('is_active', filter_var($request->input('is_active'), FILTER_VALIDATE_BOOLEAN));
+            });
+
+        if($search = trim($request->input('search'))){
+            $query->where(function ($q) use ($search) {
+                $q->where('code', 'like', "%{$search}%")
+                    ->orWhere('uuid', 'like', "%{$search}%")
+                    ->orWhere('product_uuid', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%");
+            });
+        }
+        $config = $query->latest()->paginate($perPage, ['*'], 'page', $page);
+
+        // Réponse JSON
+        return response()->json([
+            'data'         => $config->items(),
+            'current_page' => $config->currentPage(),
+            'last_page'    => $config->lastPage(),
+            'total'        => $config->total(),
+        ]);
+
+    }
+
     /**
      * Display a listing of the resource.
      * @permission RestaurantDrinkConfigurationController::transformableProducts
@@ -409,35 +439,23 @@ class RestaurantDrinkConfigurationController extends Controller
         }
     }
 
-    public function getTransformableProductByUuid(Request $request, $uuid)
+    public function getTransformableProductByUuid($uuid)
     {
-        $perPage = $request->input('limit', 25);
-        $page = $request->input('page', 1);
+        $data = RestaurantDrinkConfiguration::with(['creator','updater','product'])
+            ->where('is_transformable_product', true)
+            ->where('uuid', $uuid)
+            ->first(); // ✅ IMPORTANT
 
-        $query = RestaurantDrinkConfiguration::with(['creator', 'updater', 'product'])->where('is_transformable_product', true)
-            ->where('uuid', $uuid);
-
-        if ($search = trim($request->input('search'))) {
-            $query->where(function ($q) use ($search) {
-                $q->where('code', 'like', "%{$search}%")
-                    ->orWhere('uuid', 'like', "%{$search}%")
-                    ->orWhere('product_uuid', 'like', "%{$search}%")
-                    ->orWhere('description', 'like', "%{$search}%")
-                    ->orWhereHas('product', function ($p) use ($search) {
-                        $p->where('name', 'like', "%{$search}%")
-                            ->orWhere('code', 'like', "%{$search}%");
-                    });
-            });
+        if (!$data) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Not found'
+            ], 404);
         }
 
-        $data = $query->latest()->paginate($perPage, ['*'], 'page', $page);
-
         return response()->json([
-            'status'       => 'success',
-            'data'         => $data->items(),
-            'current_page' => $data->currentPage(),
-            'last_page'    => $data->lastPage(),
-            'total'        => $data->total(),
+            'status' => 'success',
+            'data' => $data
         ]);
     }
 
@@ -526,6 +544,181 @@ class RestaurantDrinkConfigurationController extends Controller
             'message' => 'Composition de boissons récupérée avec succès.'
         ]);
     }
+
+
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission RestaurantDrinkConfigurationController::storeTransformableByName
+     * @permission_desc Enregistrer les boissons de transformation
+     */
+    public function storeTransformableByName(Request $request)
+    {
+        $auth = auth()->user();
+        DB::beginTransaction();
+
+        try {
+
+            $validated = $request->validate([
+                'drink_name' => ['required', 'string', 'max:255'],
+
+                'prices_for_clients_debtor' => ['nullable', 'array'],
+                'prices_for_clients_partner' => ['nullable', 'array'],
+                'prices_for_clients_free' => ['nullable', 'array'],
+
+                'description' => ['nullable', 'string'],
+                'is_active' => ['nullable', 'boolean'],
+                'default_price' => ['nullable', 'numeric', 'min:0'],
+            ]);
+
+            // 🔒 éviter doublon sur le nom
+            $existingConfig = RestaurantDrinkConfiguration::where('drink_name', $validated['drink_name'])
+                ->where('is_transformable_product', true)
+                ->first();
+
+            if ($existingConfig) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Cette boisson transformable existe déjà.'
+                ], 400);
+            }
+
+            // 🔹 default price
+            $defaultPrice = $validated['default_price']
+                ?? 0;
+
+            $validated['default_price'] = $defaultPrice;
+
+            // 🔁 injection prix sécurisée
+            $validated['prices_for_clients_debtor'] = array_values(array_unique(array_filter(array_merge(
+                [$defaultPrice],
+                $validated['prices_for_clients_debtor'] ?? []
+            ))));
+
+            $validated['prices_for_clients_partner'] = array_values(array_unique(array_filter(array_merge(
+                [$defaultPrice],
+                $validated['prices_for_clients_partner'] ?? []
+            ))));
+
+            $validated['prices_for_clients_free'] = array_values(array_unique(array_filter(array_merge(
+                [$defaultPrice],
+                $validated['prices_for_clients_free'] ?? []
+            ))));
+
+            // 🔥 flags métier
+            $validated['is_transformable_product'] = true;
+            $validated['is_finished_product'] = false;
+
+            $validated['created_by'] = $auth->id;
+            $validated['has_prices'] = true;
+
+            $config = RestaurantDrinkConfiguration::create($validated);
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Boisson transformable enregistrée avec succès',
+                'data' => $config
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission RestaurantDrinkConfigurationController::updateTransformableByName
+     * @permission_desc Modifier les boissons de transformation
+     */
+    public function updateTransformableByName(Request $request, $uuid)
+    {
+        $auth = auth()->user();
+        DB::beginTransaction();
+
+        try {
+
+            $config = RestaurantDrinkConfiguration::where('uuid', $uuid)
+                ->where('is_transformable_product', true)
+                ->firstOrFail();
+
+            $validated = $request->validate([
+                'drink_name' => ['required', 'string', 'max:255'],
+
+                'prices_for_clients_debtor' => ['nullable', 'array'],
+                'prices_for_clients_partner' => ['nullable', 'array'],
+                'prices_for_clients_free' => ['nullable', 'array'],
+
+                'description' => ['nullable', 'string'],
+                'is_active' => ['nullable', 'boolean'],
+                'default_price' => ['nullable', 'numeric', 'min:0'],
+            ]);
+
+            // 🔹 default price
+            $defaultPrice = $validated['default_price']
+                ?? $config->default_price
+                ?? 0;
+
+            $validated['default_price'] = $defaultPrice;
+
+            // 🔁 injection prix sécurisée
+            $validated['prices_for_clients_debtor'] = array_values(array_unique(array_filter(array_merge(
+                [$defaultPrice],
+                $validated['prices_for_clients_debtor'] ?? []
+            ))));
+
+            $validated['prices_for_clients_partner'] = array_values(array_unique(array_filter(array_merge(
+                [$defaultPrice],
+                $validated['prices_for_clients_partner'] ?? []
+            ))));
+
+            $validated['prices_for_clients_free'] = array_values(array_unique(array_filter(array_merge(
+                [$defaultPrice],
+                $validated['prices_for_clients_free'] ?? []
+            ))));
+
+            // 🔥 mise à jour flags
+            $validated['is_transformable_product'] = true;
+            $validated['is_finished_product'] = false;
+
+            $validated['updated_by'] = $auth->id;
+
+            $config->update($validated);
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Boisson transformable mise à jour avec succès',
+                'data' => $config->fresh()
+            ]);
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Boisson transformable introuvable.'
+            ], 404);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
 
 
 }

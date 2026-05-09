@@ -150,11 +150,11 @@ class NotificationController extends Controller
      * @permission NotificationController::markAsRead
      * @permission_desc Marquer les notifications comme lues
      */
-    public function markAsRead(string $id)
+    public function markAsRead(string $uuid)
     {
-        $user = auth()->user();
+        $auth = auth()->user();
 
-        $notification = $user->notifications()->where('id', $id)->first();
+        $notification = \App\Models\OrderNotification::where('uuid', $uuid)->first();
 
         if (!$notification) {
             return response()->json([
@@ -162,9 +162,11 @@ class NotificationController extends Controller
                 'message' => 'Notification introuvable'
             ], 404);
         }
-
-        $notification->markAsRead();
-
+        $notification->update([
+            'updated_by' => $auth->id,
+            'is_read' => true,
+            'read_at' => now()
+        ]);
         return response()->json([
             'status' => 'success',
             'message' => 'Notification marquée comme lue'

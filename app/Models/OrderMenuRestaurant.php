@@ -219,5 +219,10 @@ class OrderMenuRestaurant extends Model
     {
         return $this->belongsTo(FreeClientRestaurant::class, 'free_client_for_restaurant_uuid', 'uuid');
     }
+    // 🔥 Relation inverse
+    public function notifications()
+    {
+        return $this->hasMany(OrderNotification::class, 'order_menu_restaurant_uuid', 'uuid');
+    }
 
 }

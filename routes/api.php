@@ -162,11 +162,14 @@ Route::middleware(['activity'])->group(function () {
         Route::get('/get_menu_is_confectioned', [\App\Http\Controllers\MenuRestaurantController::class, 'get_menu_is_confectioned']);
 
         Route::get('restaurant_drink_configurations/transformable_products', [\App\Http\Controllers\RestaurantDrinkConfigurationController::class, 'transformableProducts']);
-        Route::get('restaurant_drink_configurations/transformable_products/{product_uuid}', [\App\Http\Controllers\RestaurantDrinkConfigurationController::class, 'getTransformableProductByUuid']);
+        Route::get('restaurant_drink_configurations/get_sall_drinks_for_restaurants', [\App\Http\Controllers\RestaurantDrinkConfigurationController::class, 'get_sall_drinks_for_restaurants']);
+        Route::get('restaurant_drink_configurations/transformable_products/{uuid}', [\App\Http\Controllers\RestaurantDrinkConfigurationController::class, 'getTransformableProductByUuid']);
         Route::apiResource('restaurant_drink_configurations', \App\Http\Controllers\RestaurantDrinkConfigurationController::class);
         Route::patch('restaurant_drink_configurations/{uuid}/is_active', [\App\Http\Controllers\RestaurantDrinkConfigurationController::class, 'update_status']);
         Route::post('/compositions_drinks_orders/{drinks_restaurant_uuid}/store', [\App\Http\Controllers\RestaurantDrinkConfigurationController::class, 'upsert']);
         Route::get('/compositions_drinks_orders/{drinks_restaurant_uuid}/show', [\App\Http\Controllers\RestaurantDrinkConfigurationController::class, 'get_compositions_drinks_by_uuid']);
+        Route::post('/restaurant_drink_configurations/transformable', [\App\Http\Controllers\RestaurantDrinkConfigurationController::class, 'storeTransformableByName']);
+        Route::put('/restaurant_drink_configurations/update_transformable/{uuid}', [\App\Http\Controllers\RestaurantDrinkConfigurationController::class, 'updateTransformableByName']);
         Route::apiResource('regulation_methods', \App\Http\Controllers\RegulationMethodController::class);
         Route::patch('regulation_methods/{regulationMethod}/activate', [\App\Http\Controllers\RegulationMethodController::class, 'activate']);
 
@@ -246,7 +249,7 @@ Route::middleware(['activity'])->group(function () {
 
         Route::get('/notifications', [\App\Http\Controllers\NotificationController::class, 'index']);
         Route::get('/notifications/unread', [\App\Http\Controllers\NotificationController::class, 'unread']);
-        Route::post('/notifications/{id}/read', [\App\Http\Controllers\NotificationController::class, 'markAsRead']);
+        Route::post('/notifications/{uuid}/read', [\App\Http\Controllers\NotificationController::class, 'markAsRead']);
         Route::post('/notifications/read_all', [\App\Http\Controllers\NotificationController::class, 'markAllAsRead']);
         Route::delete('/notifications/{id}', [\App\Http\Controllers\NotificationController::class, 'destroy']);
 

@@ -31,7 +31,8 @@ class RestaurantDrinkConfiguration extends Model
         'has_prices',
         'default_price',
         'is_finished_product',
-        'is_transformable_product'
+        'is_transformable_product',
+        'drink_name'
     ];
 
     protected $casts = [
