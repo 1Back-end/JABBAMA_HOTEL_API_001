@@ -41,7 +41,7 @@ enum MenuOrderStatus : string
             self::PENDING_VALIDATION => 'En attente validation',
             self::IN_PREPARATION => 'En cours de préparation',
             self::REJECTED_FOR_NEW_UPDATE => 'Rejet du prêt',
-            self::DELIVERED => 'Servie totalement',
+            self::DELIVERED => 'Servie',
             self::PARTIAL_DELIVERED => 'Servie partiellement',
             self::NEW_REJECTED => 'Rejettée',
             self::TOTAL_DELIVERED => 'Prêt',
