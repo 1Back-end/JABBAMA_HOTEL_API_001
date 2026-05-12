@@ -470,45 +470,37 @@ class MenuRestaurantController extends Controller
         ]);
     }
 
-    public function get_price_by_product_and_client(Request $request)
+    public function get_price_by_drink_and_client(Request $request)
     {
-        // 🔹 Validation
         $validated = $request->validate([
-            'product_uuid' => ['required', 'uuid', 'exists:produits,uuid'],
-            'client_type'  => ['required', 'string', new Enum(TypeClientsForPaiment::class)], // debtor, partner, free
+            'drink_restaurant_uuid' => ['required', 'uuid', 'exists:restaurant_drink_configurations,uuid'],
+            'client_type' => ['required', 'string', new Enum(TypeClientsForPaiment::class)],
         ]);
 
-        $productConfig = RestaurantDrinkConfiguration::where('product_uuid', $validated['product_uuid'])->firstOrFail();
+        $drinkConfig = RestaurantDrinkConfiguration::where('uuid', $validated['drink_restaurant_uuid'])
+            ->firstOrFail();
+
         $clientType = $validated['client_type'];
 
-        // 🔹 Sélectionner le tableau de prix selon le type de client
-        $pricesArray = [];
+        $pricesArray = match ($clientType) {
+            TypeClientsForPaiment::DEBTOR->value => $drinkConfig->prices_for_clients_debtor,
+            TypeClientsForPaiment::PARTNER->value => $drinkConfig->prices_for_clients_partner,
+            TypeClientsForPaiment::FREE->value => $drinkConfig->prices_for_clients_free,
+            default => []
+        };
 
-        if ($clientType === TypeClientsForPaiment::DEBTOR->value) {
-            $pricesArray = is_array($productConfig->prices_for_clients_debtor)
-                ? $productConfig->prices_for_clients_debtor
-                : [$productConfig->prices_for_clients_debtor];
-        } elseif ($clientType === TypeClientsForPaiment::PARTNER->value) {
-            $pricesArray = is_array($productConfig->prices_for_clients_partner)
-                ? $productConfig->prices_for_clients_partner
-                : [$productConfig->prices_for_clients_partner];
-        } elseif ($clientType === TypeClientsForPaiment::FREE->value) {
-            $pricesArray = is_array($productConfig->prices_for_clients_free)
-                ? $productConfig->prices_for_clients_free
-                : [$productConfig->prices_for_clients_free];
-        }
-
-        // 🔹 Nettoyer les valeurs nulles et convertir en int
-        // 🔹 Nettoyer les valeurs nulles et convertir en int
-        $prices = array_map('intval', array_filter($pricesArray, fn($v) => $v !== null));
+        $prices = array_values(array_filter(
+            is_array($pricesArray) ? $pricesArray : [$pricesArray],
+            fn($v) => $v !== null
+        ));
 
         return response()->json([
-            'status'       => 'success',
-            'product_name' => $productConfig->product->name ?? null,
-            'client_type'  => $clientType,
-            'prices'       => $prices,               // tableau complet
-            'min_price'    => count($prices) ? min($prices) : 0,
-            'max_price'    => count($prices) ? max($prices) : 0,
+            'status' => 'success',
+            'drink_name' => $drinkConfig->drink_name,
+            'client_type' => $clientType,
+            'prices' => $prices,
+            'min_price' => count($prices) ? min($prices) : 0,
+            'max_price' => count($prices) ? max($prices) : 0,
         ]);
     }
 

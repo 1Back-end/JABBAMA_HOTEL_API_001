@@ -20,7 +20,6 @@ class StatisticsOrderStatusDrink extends Model
         'uuid',
         'order_menu_restaurant_uuid',
         'order_restaurant_drink_uuid',
-        'product_uuid',
         'status',
         'quantity',
 
@@ -130,13 +129,6 @@ class StatisticsOrderStatusDrink extends Model
     {
         return $this->belongsTo(User::class, 'make_partial_delivered_by');
     }
-
-
-    public function product()
-    {
-        return $this->belongsTo(Product::class, 'product_uuid', 'uuid');
-    }
-
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');

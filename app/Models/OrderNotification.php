@@ -99,44 +99,19 @@ class OrderNotification extends Model
     {
         return $this->belongsTo(OrderMenuRestaurant::class, 'order_menu_restaurant_uuid', 'uuid');
     }
-    public static function createOrUpdateNotification(
-        string $orderUuid,
-        string $status,
-        string $message,
-        int $userId,
-        ?string $itemUuid = null
-    ) {
-
-        // 🔹 Vérifie si une notification existe déjà
-        $notification = self::query()
-            ->where('order_menu_restaurant_uuid', $orderUuid)
-            ->where('status', $status)
-            ->first();
-
-
-        // 🔹 Si elle existe → on met juste à jour
-        if ($notification) {
-
-            $notification->update([
+    public static function createOrUpdateNotification(string $orderUuid, string $status, string $message, int $userId) {
+        return self::updateOrCreate(
+            [
+                'order_menu_restaurant_uuid' => $orderUuid,
+                'status' => $status,
+            ],
+            [
                 'message' => $message,
                 'is_read' => false,
                 'read_at' => null,
+                'created_by' => $userId,
                 'updated_by' => $userId,
-            ]);
-
-            return $notification->fresh();
-        }
-
-        // 🔹 Sinon création
-        return self::create([
-            'order_menu_restaurant_uuid' => $orderUuid,
-            'order_menu_restaurant_item_uuid' => $itemUuid,
-            'status' => $status,
-            'message' => $message,
-            'is_read' => false,
-            'read_at' => null,
-            'created_by' => $userId,
-            'updated_by' => $userId,
-        ]);
+            ]
+        );
     }
 }

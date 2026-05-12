@@ -24,32 +24,73 @@ class RestaurantDrinkConfigurationController extends Controller
      */
     public function index(Request $request)
     {
-        $perPage = $request->input('limit', 25);
-        $page = $request->input('page', 1);
+        $perPage = (int) $request->input('limit', 25);
+        $page = (int) $request->input('page', 1);
+        $search = trim($request->input('search', ''));
+        $status = $request->input('status');
 
-        $query = RestaurantDrinkConfiguration::with(['creator','updater','product'])
+        $query = RestaurantDrinkConfiguration::with([
+            'creator',
+            'updater',
+            'product'
+        ])
+
+            // 🔹 Filtre actif / inactif
             ->when($request->has('is_active'), function ($query) use ($request) {
-                $query->where('is_active', filter_var($request->input('is_active'), FILTER_VALIDATE_BOOLEAN));
+
+                $query->where(
+                    'is_active',
+                    filter_var(
+                        $request->input('is_active'),
+                        FILTER_VALIDATE_BOOLEAN
+                    )
+                );
+
+            })
+
+            // 🔹 Filtre type de boisson
+            ->when(!empty($status), function ($query) use ($status) {
+
+                switch ($status) {
+
+                    case 'transformable':
+
+                        $query->where('is_transformable_product', 1);
+                        break;
+
+                    case 'finished':
+
+                        $query->where('is_transformable_product', 0);
+                        break;
+                }
+
+            })
+
+            // 🔍 Recherche
+            ->when(!empty($search), function ($query) use ($search) {
+
+                $query->where(function ($q) use ($search) {
+
+                    $q->where('code', 'like', "%{$search}%")
+                        ->orWhere('uuid', 'like', "%{$search}%")
+                        ->orWhere('product_uuid', 'like', "%{$search}%")
+                        ->orWhere('drink_name', 'like', "%{$search}%")
+                        ->orWhere('description', 'like', "%{$search}%");
+
+                });
+
             });
 
-        if($search = trim($request->input('search'))){
-            $query->where(function ($q) use ($search) {
-                $q->where('code', 'like', "%{$search}%")
-                    ->orWhere('uuid', 'like', "%{$search}%")
-                    ->orWhere('product_uuid', 'like', "%{$search}%")
-                    ->orWhere('description', 'like', "%{$search}%");
-            });
-        }
+        // 🔹 Pagination
         $config = $query->latest()->paginate($perPage, ['*'], 'page', $page);
 
-        // Réponse JSON
+        // 🔹 Response JSON
         return response()->json([
-            'data'         => $config->items(),
+            'data' => $config->items(),
             'current_page' => $config->currentPage(),
-            'last_page'    => $config->lastPage(),
-            'total'        => $config->total(),
+            'last_page' => $config->lastPage(),
+            'total' => $config->total(),
         ]);
-
     }
 
     public function get_sall_drinks_for_restaurants(Request $request)
@@ -57,29 +98,52 @@ class RestaurantDrinkConfigurationController extends Controller
         $perPage = $request->input('limit', 5);
         $page = $request->input('page', 1);
 
-        $query = RestaurantDrinkConfiguration::with(['creator','updater','product'])
+        $query = RestaurantDrinkConfiguration::with([
+            'creator',
+            'updater',
+            'product'
+        ])
+
+            // 🔹 filtre actif
             ->when($request->has('is_active'), function ($query) use ($request) {
-                $query->where('is_active', filter_var($request->input('is_active'), FILTER_VALIDATE_BOOLEAN));
+                $query->where(
+                    'is_active',
+                    filter_var($request->input('is_active'), FILTER_VALIDATE_BOOLEAN)
+                );
+            })
+
+            // 🔍 SEARCH GLOBAL
+            ->when($search = trim($request->input('search')), function ($query) use ($search) {
+
+                $query->where(function ($q) use ($search) {
+
+                    // 🔹 champs table principale
+                    $q->where('code', 'like', "%{$search}%")
+                        ->orWhere('uuid', 'like', "%{$search}%")
+                        ->orWhere('description', 'like', "%{$search}%")
+                        ->orWhere('drink_name', 'like', "%{$search}%");
+
+                    // 🔥 recherche sur produit lié
+                    $q->orWhereHas('product', function ($pq) use ($search) {
+                        $pq->where('uuid', 'like', "%{$search}%")
+                            ->orWhere('name', 'like', "%{$search}%")
+                            ->orWhere('code', 'like', "%{$search}%")
+                            ->orWhere('description', 'like', "%{$search}%");
+
+                    });
+
+                });
+
             });
 
-        if($search = trim($request->input('search'))){
-            $query->where(function ($q) use ($search) {
-                $q->where('code', 'like', "%{$search}%")
-                    ->orWhere('uuid', 'like', "%{$search}%")
-                    ->orWhere('product_uuid', 'like', "%{$search}%")
-                    ->orWhere('description', 'like', "%{$search}%");
-            });
-        }
         $config = $query->latest()->paginate($perPage, ['*'], 'page', $page);
 
-        // Réponse JSON
         return response()->json([
-            'data'         => $config->items(),
+            'data' => $config->items(),
             'current_page' => $config->currentPage(),
-            'last_page'    => $config->lastPage(),
-            'total'        => $config->total(),
+            'last_page' => $config->lastPage(),
+            'total' => $config->total(),
         ]);
-
     }
 
     /**
@@ -424,8 +488,7 @@ class RestaurantDrinkConfigurationController extends Controller
     public function show(string $uuid)
     {
         try {
-            // 🔹 Récupérer la configuration par UUID
-            $config = RestaurantDrinkConfiguration::with(['creator','updater','product'])->findOrFail($uuid);
+            $config = RestaurantDrinkConfiguration::with(['creator','updater','product','medias'])->findOrFail($uuid);
 
             return response()->json([
                 'status' => 'success',
@@ -570,6 +633,7 @@ class RestaurantDrinkConfigurationController extends Controller
                 'description' => ['nullable', 'string'],
                 'is_active' => ['nullable', 'boolean'],
                 'default_price' => ['nullable', 'numeric', 'min:0'],
+                'image_file' => 'nullable|file|max:2048|mimes:jpg,jpeg,png,svg',
             ]);
 
             // 🔒 éviter doublon sur le nom
@@ -615,6 +679,21 @@ class RestaurantDrinkConfigurationController extends Controller
 
             $config = RestaurantDrinkConfiguration::create($validated);
 
+            if ($request->hasFile('image_file')) {
+                $file = $request->file('image_file');
+                $filename = time() . '_' . $file->getClientOriginalName();
+                $path = $file->store('drinks', 'public');
+
+                $config->medias()->create([
+                    'name' => $filename,
+                    'disk' => 'public',
+                    'path' => $path,
+                    'filename' => $filename,
+                    'mimetype' => $file->getClientMimeType(),
+                    'extension' => $file->getClientOriginalExtension(),
+                ]);
+            }
+
             DB::commit();
 
             return response()->json([
@@ -625,6 +704,11 @@ class RestaurantDrinkConfigurationController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
+
+            \Log::error('STORE TRANSFORMABLE ERROR', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
 
             return response()->json([
                 'status' => 'error',
@@ -692,6 +776,26 @@ class RestaurantDrinkConfigurationController extends Controller
             $validated['updated_by'] = $auth->id;
 
             $config->update($validated);
+            if ($request->hasFile('image_file')) {
+                $oldMedia = $config->medias()->latest()->first();
+
+                if ($oldMedia) {
+                    \Storage::disk($oldMedia->disk)->delete($oldMedia->path);
+                    $oldMedia->delete();
+                }
+                $file = $request->file('image_file');
+                $filename = time() . '_' . $file->getClientOriginalName();
+                $path = $file->store('drinks', 'public');
+
+                $config->medias()->create([
+                    'name' => $filename,
+                    'disk' => 'public',
+                    'path' => $path,
+                    'filename' => $filename,
+                    'mimetype' => $file->getClientMimeType(),
+                    'extension' => $file->getClientOriginalExtension(),
+                ]);
+            }
 
             DB::commit();
 

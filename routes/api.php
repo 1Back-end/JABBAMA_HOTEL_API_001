@@ -151,123 +151,27 @@ Route::middleware(['activity'])->group(function () {
         Route::get('deductions_stocks/{uuid}/print_deductions_stocks', [\App\Http\Controllers\StockDeductionController::class, 'print_stocks_deductions']);
 
 
-        Route::apiResource('floors_services', \App\Http\Controllers\FloorController::class);
-        Route::patch('floors_services/{uuid}/is_active', [\App\Http\Controllers\FloorController::class, 'updateStatus']);
+        /*
+         |--------------------------------------------------------------------------
+         | GESTION DU RESTAURANT
+         |---------------------------------------------------------------------------
+       */
+        require __DIR__.'/floors_services.php';
+        require __DIR__.'/menus_restaurants.php';
+        require __DIR__.'/restaurant_drink_configurations.php';
+        require __DIR__.'/restaurant_tables.php';
+        require __DIR__.'/menu_categories.php';
+        require __DIR__.'/regulation_methods.php';
+        require __DIR__.'/restaurant_partners.php';
+        require __DIR__.'/free_clients_restaurants.php';
+        require __DIR__.'/enums_data.php';
+        require __DIR__.'/compositions_menus_orders.php';
+        require __DIR__.'/orders_menu_restaurants.php';
+        require __DIR__ . '/notifications.php';
+        require __DIR__ . '/restaurant_rooms.php';
+        require __DIR__ . '/settings_restaurants.php';
+        require __DIR__ . '/modules_applications.php';
+        require __DIR__ . '/countries.php';
 
-        Route::apiResource('menus_restaurants', \App\Http\Controllers\MenuRestaurantController::class);
-        Route::patch('menus_restaurants/{uuid}/is_active', [\App\Http\Controllers\MenuRestaurantController::class, 'updateStatus']);
-        Route::post('menus_restaurants/{uuid}/update_menus_restaurants', [\App\Http\Controllers\MenuRestaurantController::class, 'update_menus']);
-        Route::get('/get_price', [\App\Http\Controllers\MenuRestaurantController::class, 'get_price_by_menus_and_clients']);
-        Route::get('/get_price_product', [\App\Http\Controllers\MenuRestaurantController::class, 'get_price_by_product_and_client']);
-        Route::get('/get_menu_is_confectioned', [\App\Http\Controllers\MenuRestaurantController::class, 'get_menu_is_confectioned']);
-
-        Route::get('restaurant_drink_configurations/transformable_products', [\App\Http\Controllers\RestaurantDrinkConfigurationController::class, 'transformableProducts']);
-        Route::get('restaurant_drink_configurations/get_sall_drinks_for_restaurants', [\App\Http\Controllers\RestaurantDrinkConfigurationController::class, 'get_sall_drinks_for_restaurants']);
-        Route::get('restaurant_drink_configurations/transformable_products/{uuid}', [\App\Http\Controllers\RestaurantDrinkConfigurationController::class, 'getTransformableProductByUuid']);
-        Route::apiResource('restaurant_drink_configurations', \App\Http\Controllers\RestaurantDrinkConfigurationController::class);
-        Route::patch('restaurant_drink_configurations/{uuid}/is_active', [\App\Http\Controllers\RestaurantDrinkConfigurationController::class, 'update_status']);
-        Route::post('/compositions_drinks_orders/{drinks_restaurant_uuid}/store', [\App\Http\Controllers\RestaurantDrinkConfigurationController::class, 'upsert']);
-        Route::get('/compositions_drinks_orders/{drinks_restaurant_uuid}/show', [\App\Http\Controllers\RestaurantDrinkConfigurationController::class, 'get_compositions_drinks_by_uuid']);
-        Route::post('/restaurant_drink_configurations/transformable', [\App\Http\Controllers\RestaurantDrinkConfigurationController::class, 'storeTransformableByName']);
-        Route::put('/restaurant_drink_configurations/update_transformable/{uuid}', [\App\Http\Controllers\RestaurantDrinkConfigurationController::class, 'updateTransformableByName']);
-        Route::apiResource('regulation_methods', \App\Http\Controllers\RegulationMethodController::class);
-        Route::patch('regulation_methods/{regulationMethod}/activate', [\App\Http\Controllers\RegulationMethodController::class, 'activate']);
-
-
-        Route::apiResource('restaurant_tables', \App\Http\Controllers\RestaurantTableController::class);
-        Route::patch('restaurant_tables/{uuid}/is_available', [\App\Http\Controllers\RestaurantTableController::class, 'update_status']);
-
-        Route::apiResource('menu_categories', \App\Http\Controllers\MenuCategoryController::class);
-        Route::patch('menu_categories/{uuid}/is_active', [\App\Http\Controllers\MenuCategoryController::class, 'update_status']);
-
-
-        Route::apiResource('restaurant_partners', \App\Http\Controllers\PartenaireController::class);
-        Route::patch('restaurant_partners/{uuid}/is_active', [\App\Http\Controllers\PartenaireController::class, 'updateStatus']);
-        Route::post('restaurant_partners/{uuid}/update_partners', [\App\Http\Controllers\PartenaireController::class, 'update_partners']);
-
-        Route::apiResource('free_clients_restaurants', \App\Http\Controllers\FreeClientRestaurantController::class);
-        Route::patch('free_clients_restaurants/{uuid}/is_active', [\App\Http\Controllers\FreeClientRestaurantController::class, 'updateStatus']);
-        Route::post('free_clients_restaurants/{uuid}/update_free_clients_restaurants', [\App\Http\Controllers\FreeClientRestaurantController::class, 'update_free_clients_restaurants']);
-
-
-        Route::get('/countries', [\App\Http\Controllers\CountryController::class, 'index']);
-
-
-        Route::get('enums/consumption_type_status', [\App\Http\Controllers\EnumController::class, 'consumption_type_status']);
-        Route::get('enums/type_clients_for_payment', [\App\Http\Controllers\EnumController::class, 'type_clients_for_payment']);
-        Route::get('enums/room_type', [\App\Http\Controllers\EnumController::class, 'room_type']);
-        Route::get('enums/menu_orders_status', [\App\Http\Controllers\EnumController::class, 'menu_orders_status']);
-        Route::get('menus_orders_actions', [\App\Http\Controllers\MenuOrdersController::class, 'MenuOrderStatus']);
-
-
-        Route::apiResource('compositions_menus_orders', \App\Http\Controllers\MenuOrdersController::class);
-        Route::post('/compositions_menus_orders/{menus_restaurant_uuid}/store', [\App\Http\Controllers\MenuOrdersController::class, 'storeOrUpdateMenu']);
-        Route::get('/compositions_menus_orders/{menus_restaurant_uuid}/show', [\App\Http\Controllers\MenuOrdersController::class, 'showByMenu']);
-
-
-        Route::apiResource('orders_menu_restaurants', \App\Http\Controllers\OrderMenuRestaurantController::class);
-        Route::post('orders_menu_restaurants/check_stock', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'checkStockOnly']);
-        Route::post('orders_menu_restaurants/check_stock_orders', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'checkStockByOrder']);
-        Route::post('orders_menu_restaurants/check_stock_bar', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'checkBarStockOnly']);
-        Route::post('orders_menu_restaurants/check_stock_bar_orders', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'checkDrinksStockByOrder']);
-        Route::patch('orders_menu_restaurants/{uuid}/cancel', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'CancelOrderMenuRestaurant']);
-        Route::patch('orders_menu_restaurants/{uuid}/cancel_by_super_admin', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'CancelOrderMenuRestaurantBySuperAdmin']);
-        Route::patch('orders_menu_restaurants/{uuid}/validate_item_menus', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'validateMenusForOrder']);
-        Route::patch('orders_menu_restaurants/{uuid}/validate_item_drinks', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'validateDrinksForOrder']);
-        Route::patch('orders_menu_restaurants/{uuid}/deliver_menus_selected', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'validateAndDeductStockMenus']);
-        Route::patch('orders_menu_restaurants/{uuid}/deliver_drink_selected', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'validateAndDeductStockDrinks']);
-        Route::patch('orders_menu_restaurants/{uuid}/cancel_menus_selected', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'cancelMenuValidation']);
-        Route::patch('orders_menu_restaurants/{uuid}/cancel_menus_selected_after_validation', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'cancelMenuValidationAfterValidation']);
-        Route::patch('orders_menu_restaurants/{uuid}/cancel_drinks_selected_after_validation', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'cancelDrinkValidationAfterValidation']);
-        Route::patch('orders_menu_restaurants/{uuid}/cancel_drinks_selected', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'cancelDrinkValidation']);
-        Route::patch('orders_menu_restaurants/{uuid}/rejected_selected_menus_items', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'rejectMenuItems']);
-        Route::patch('orders_menu_restaurants/{uuid}/rejected_selected_drinks_items', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'rejectDrinks']);
-        Route::patch('orders_menu_restaurants/{uuid}/add_new_items', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'addItemsToOrder']);
-        Route::patch('orders_menu_restaurants/{uuid}/change_in_preparation_selected_items_menus', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'validateItemMenusInPreparation']);
-        Route::patch('orders_menu_restaurants/{uuid}/change_in_preparation_selected_items_drinks', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'SetDrinksInPreparation']);
-        Route::delete('orders_menu_restaurants/{order_uuid}/items/{item_uuid}/verify_delete_items_menus', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'verify_to_delete_items_menu']);
-        Route::delete('orders_menu_restaurants/{order_uuid}/drinks/{item_uuid}/verify_delete_items_drinks', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'verify_to_delete_items_drink']);
-        Route::post('/orders_menu_restaurants/{uuid}/check_status_items', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'checkStatusForMenus']);
-        Route::post('/orders_menu_restaurants/{uuid}/check_status_drinks', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'checkStatusForDrinks']);
-        Route::get('/orders_menu_restaurants/{order_uuid}/items_by_status', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'getItemsStatuses']);
-        Route::post('/orders_menu_restaurants/{uuid}/make_items_defective', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'markItemsDefective']);
-        Route::post('/orders_menu_restaurants/{uuid}/make_drinks_defective', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'markDrinksDefective']);
-        Route::post('/orders_menu_restaurants/{uuid}/delete_defective_items', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'deleteDefectiveItems']);
-        Route::post('/orders_menu_restaurants/{uuid}/restaure_defective_items', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'restoreDefectiveItems']);
-        Route::post('/orders_menu_restaurants/{uuid}/restaure_defective_drinks', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'restoreDefectiveDrinks']);
-        Route::post('/orders_menu_restaurants/{uuid}/delete_defective_drinks', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'deleteDefectiveDrinks']);
-        Route::post('/orders_menu_restaurants/{uuid}/transfer_rejected_items', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'transferRejectedItems']);
-        Route::post('/orders_menu_restaurants/{uuid}/generate_facture', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'GenerateFacture']);
-        Route::post('/orders_menu_restaurants/{uuid}/transfer_rejected_drinks', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'transferRejectedDrinks']);
-        Route::post('/orders_menu_restaurants/remove_reservation_item', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'removeReservationItem']);
-        Route::post('/orders_menu_restaurants/remove_reservation_drinks', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'removeDrinkReservationItem']);
-        Route::post('/orders_menu_restaurants/force_release', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'forceReleaseStock']);
-        Route::post('/orders_menu_restaurants/force_release_orders_mens', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'forceReleaseOrderMenuRestaurant']);
-        Route::post('/orders_menu_restaurants/cancel_reservations', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'cancelRervationsAfterValidation']);
-        Route::post('/orders_menu_restaurants/cancel_currents_reservations', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'cancelCurrentRervations']);
-
-
-        Route::get('/notifications', [\App\Http\Controllers\NotificationController::class, 'index']);
-        Route::get('/notifications/unread', [\App\Http\Controllers\NotificationController::class, 'unread']);
-        Route::post('/notifications/{uuid}/read', [\App\Http\Controllers\NotificationController::class, 'markAsRead']);
-        Route::post('/notifications/read_all', [\App\Http\Controllers\NotificationController::class, 'markAllAsRead']);
-        Route::delete('/notifications/{id}', [\App\Http\Controllers\NotificationController::class, 'destroy']);
-
-
-
-
-
-        Route::apiResource('restaurant_rooms', \App\Http\Controllers\RestaurantRoomController::class);
-        Route::patch('restaurant_rooms/{uuid}/is_active', [\App\Http\Controllers\RestaurantRoomController::class, 'update_status']);
-
-
-        Route::apiResource('module_applications', \App\Http\Controllers\ModuleApplicationsController::class);
-        Route::get('/modules/{uuid}/permissions', [\App\Http\Controllers\ModuleApplicationsController::class, 'get_permissions_by_module']);
-        Route::patch('module_applications/{uuid}/is_active', [\App\Http\Controllers\ModuleApplicationsController::class, 'toggleActive']);
-
-        Route::apiResource('settings_restaurants', \App\Http\Controllers\SettingRestaurantController::class);
-        Route::patch('settings_restaurants/{uuid}/is_active', [\App\Http\Controllers\SettingRestaurantController::class, 'toggleActive']);
-        Route::get('/get_all_settings_restaurants', [\App\Http\Controllers\SettingRestaurantController::class, 'get_all_settings_restaurants']);
-        Route::get('/get_settings', [\App\Http\Controllers\SettingRestaurantController::class, 'getSetting']);
     });
 });
