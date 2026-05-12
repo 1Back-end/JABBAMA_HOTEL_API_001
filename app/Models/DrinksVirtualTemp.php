@@ -29,7 +29,8 @@ class DrinksVirtualTemp extends Model
         'reservation_uuid',
         'order_menu_restaurant_uuid',
         'type',
-        'status'
+        'status',
+        'drink_restaurant_uuid',
     ];
 
     protected static function boot()
@@ -76,5 +77,12 @@ class DrinksVirtualTemp extends Model
     {
         return $this->belongsTo(OrderMenuRestaurant::class, 'order_menu_restaurant_uuid', 'uuid');
     }
-    //
+    public function drinkRestaurant()
+    {
+        return $this->belongsTo(
+            RestaurantDrinkConfiguration::class,
+            'drink_restaurant_uuid',
+            'uuid'
+        );
+    }
 }

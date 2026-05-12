@@ -34,7 +34,7 @@ enum OrderMenuRestaurantItemStatus: string
     {
         return match ($this) {
             self::PENDING => 'En attente',
-            self::DELIVERED => 'Servie totalement',
+            self::DELIVERED => 'Servie',
             self::NOT_DELIVERED => 'Non servie',
             self::PARTIAL_DELIVERED => 'Servie partiellement',
             self::DELIVERED_IN_PREPARATION => 'Prêt pour service',

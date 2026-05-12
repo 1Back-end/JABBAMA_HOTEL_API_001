@@ -20,7 +20,7 @@ class OrderRestaurantDrink extends Model
     protected $fillable = [
         'uuid',
         'order_menu_restaurant_uuid',
-        'product_uuid',
+        'drink_restaurant_uuid',
         'quantity',
         'unit_price',
         'total_price',
@@ -110,6 +110,16 @@ class OrderRestaurantDrink extends Model
     public function virtuals()
     {
         return $this->hasMany(VirtualOrderMenuRestaurant::class, 'item_uuid', 'uuid');
+    }
+    public function drinkConfig()
+    {
+        return $this->belongsTo(
+            RestaurantDrinkConfiguration::class,
+            'drink_restaurant_uuid',
+            'uuid'
+        )->withDefault([
+            'drink_name' => 'Non défini',
+        ]);
     }
 
 

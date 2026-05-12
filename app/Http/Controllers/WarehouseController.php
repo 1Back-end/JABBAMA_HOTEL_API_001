@@ -866,7 +866,7 @@ class WarehouseController extends Controller
             'subCategories',
             'medias',
             'points' => function ($q) {
-                $q->where('is_bar_warehouse', true); // Seulement les points du bar
+                $q->where('is_bar_warehouse', true);
             }
         ])->whereHas('points', function ($q) {
             $q->where('is_bar_warehouse', true);

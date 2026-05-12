@@ -20,7 +20,6 @@ class OrderMenuItemStatusForDrink extends Model
         'uuid',
         'order_menu_restaurant_uuid',
         'order_restaurant_drink_uuid',
-        'product_uuid',
         'status',
         'quantity',
         'quantity_exactly',
@@ -64,10 +63,6 @@ class OrderMenuItemStatusForDrink extends Model
         return $this->belongsTo(OrderRestaurantDrink::class, 'order_restaurant_drink_uuid', 'uuid');
     }
 
-    public function product()
-    {
-        return $this->belongsTo(Product::class, 'product_uuid', 'uuid');
-    }
 
     public function creator()
     {

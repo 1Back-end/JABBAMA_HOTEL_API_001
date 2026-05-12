@@ -4,7 +4,9 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class RestaurantDrinkConfiguration extends Model
@@ -32,8 +34,11 @@ class RestaurantDrinkConfiguration extends Model
         'default_price',
         'is_finished_product',
         'is_transformable_product',
-        'drink_name'
+        'drink_name',
+        'image_file'
     ];
+
+    protected $appends = ['product_image'];
 
     protected $casts = [
         'prices_for_clients_debtor' => 'array',
@@ -81,6 +86,23 @@ class RestaurantDrinkConfiguration extends Model
 
     public function product()
     {
-        return $this->belongsTo(Product::class, 'product_uuid');
+        return $this->belongsTo(
+            Product::class,
+            'product_uuid',
+            'uuid'
+        );
+    }
+    public function medias(): MorphMany
+    {
+        return $this->morphMany(Medias::class, 'mediable');
+    }
+
+    public function getProductImageAttribute()
+    {
+        $media = $this->medias()->first();
+        if ($media) {
+            return Storage::disk($media->disk)->url($media->path);
+        }
+        return null;
     }
 }
