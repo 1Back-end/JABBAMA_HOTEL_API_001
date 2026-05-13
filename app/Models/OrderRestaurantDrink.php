@@ -37,7 +37,15 @@ class OrderRestaurantDrink extends Model
         'reason',
         'is_new_items',
         'is_last_items',
-        'make_in_preparation_at'
+        'make_in_preparation_at',
+        'is_defective',
+        'reason_of_defective',
+        'defective_by',
+        'defective_at',
+        'is_restored',
+        'reason_of_restoration',
+        'restorated_by',
+        'restorated_at'
     ];
 
     protected $casts = [
@@ -120,6 +128,16 @@ class OrderRestaurantDrink extends Model
         )->withDefault([
             'drink_name' => 'Non défini',
         ]);
+    }
+
+    public function defectiveByUser()
+    {
+        return $this->belongsTo(User::class, 'defective_by');
+    }
+
+    public function restoredByUser()
+    {
+        return $this->belongsTo(User::class, 'restorated_by');
     }
 
 

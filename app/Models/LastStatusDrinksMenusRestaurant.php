@@ -28,6 +28,7 @@ class LastStatusDrinksMenusRestaurant extends Model
         'last_status',
         'created_by',
         'updated_by',
+        'drink_restaurant_uuid'
     ];
 
     protected static function boot()
@@ -64,5 +65,9 @@ class LastStatusDrinksMenusRestaurant extends Model
     public function drink()
     {
         return $this->belongsTo(OrderRestaurantDrink::class, 'order_restaurant_drink_uuid', 'uuid');
+    }
+    public function drinkConfig()
+    {
+        return $this->belongsTo(RestaurantDrinkConfiguration::class, 'drink_restaurant_uuid', 'uuid');
     }
 }

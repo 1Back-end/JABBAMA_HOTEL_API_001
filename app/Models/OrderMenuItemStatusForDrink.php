@@ -10,7 +10,7 @@ class OrderMenuItemStatusForDrink extends Model
 {
     use SoftDeletes,HasFactory;
 
-    protected $table = 'orders_menu_item_statuses_for_drinks';
+    protected $table = 'orders_menu_statuses_for_drinks';
 
     protected $primaryKey = 'uuid';
     public $incrementing = false;
