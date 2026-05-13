@@ -2291,7 +2291,7 @@ class OrderMenuRestaurantController extends Controller
             return $status;
         }
 
-       $status = $this->computeDeliveryDrinksStatus($drink)
+        $status = $this->computeDeliveryDrinksStatus($drink)
             ?? $this->resolveDrinkStatusFromStatuses($drink);
         $this->notifyStatusDrinkChange($drink, $status);
         return $status;
@@ -3907,7 +3907,6 @@ class OrderMenuRestaurantController extends Controller
             $this->updateVirtualStock($menu, $order, $item, $diff, $auth);
         }
     }
-
     public function verify_to_delete_items_menu(Request $request, $order_uuid, $item_uuid)
     {
         DB::beginTransaction();
@@ -3994,7 +3993,6 @@ class OrderMenuRestaurantController extends Controller
             ], 500);
         }
     }
-
     public function verify_to_delete_items_drink(Request $request, $order_uuid, $drink_uuid)
     {
         DB::beginTransaction();
