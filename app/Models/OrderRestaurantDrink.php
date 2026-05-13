@@ -45,7 +45,15 @@ class OrderRestaurantDrink extends Model
         'is_restored',
         'reason_of_restoration',
         'restorated_by',
-        'restorated_at'
+        'restorated_at',
+        'cancel_for_new_update_at',
+        'reason_of_cancel_for_new_update',
+        'is_reason_of_cancel_for_new_update',
+        'cancel_for_new_update_by',
+        'is_reason_of_rejected_after_validation',
+        'reason_of_rejected_after_validation',
+        'rejected_after_validation_by',
+        'rejected_after_validation_at'
     ];
 
     protected $casts = [
@@ -138,6 +146,14 @@ class OrderRestaurantDrink extends Model
     public function restoredByUser()
     {
         return $this->belongsTo(User::class, 'restorated_by');
+    }
+    public function cancelForNewUpdateBy()
+    {
+        return $this->belongsTo(User::class, 'cancel_for_new_update_by');
+    }
+    public function rejectedAfterValidationByUser()
+    {
+        return $this->belongsTo(User::class, 'rejected_after_validation_by');
     }
 
 

@@ -89,7 +89,7 @@ class PermissionController extends Controller
                         ->orWhere('description', 'like', "%{$search}%");
                 });
             })
-            ->orderBy('libelle', 'asc') // Tri des catégories par libelle
+            ->orderBy('libelle', 'asc')
             ->get();
 
         return response()->json([

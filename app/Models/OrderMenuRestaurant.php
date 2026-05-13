@@ -88,14 +88,24 @@ class OrderMenuRestaurant extends Model
         return MenuOrderStatus::safeLabel($this->status);
     }
 
-    public function getTotalItemsAttribute(): int
+    public function getTotalItemsAttribute(): float
     {
-        return $this->items->sum(fn($item) => $item->total_price ?? 0);
+        return $this->items->sum(function ($item) {
+            return (
+                ($item->unit_price ?? 0) *
+                ($item->quantity_exactly ?? 0)
+            );
+        });
     }
 
-    public function getTotalDrinksAttribute(): int
+    public function getTotalDrinksAttribute(): float
     {
-        return $this->drinks->sum(fn($drink) => $drink->total_price ?? 0);
+        return $this->drinks->sum(function ($drink) {
+            return (
+                ($drink->unit_price ?? 0) *
+                ($drink->quantity_exactly ?? 0)
+            );
+        });
     }
 
     public function getTotalOrderAttribute(): int
