@@ -2115,8 +2115,6 @@ class OrderMenuRestaurantController extends Controller
                 }
             }
 
-
-
             $drinks = $validated['drinks'] ?? [];
 
             if (!empty($drinks)) {
@@ -2322,7 +2320,6 @@ class OrderMenuRestaurantController extends Controller
     private function notifyStatusDrinkChange(OrderRestaurantDrink $drink, string $status): void
     {
         $order = $drink->order;
-
         \App\Models\OrderNotification::createOrUpdateNotification(
             $order->uuid,
             $status,
@@ -5193,6 +5190,13 @@ class OrderMenuRestaurantController extends Controller
                 ]);
             }
 
+            \App\Models\OrderNotification::createOrUpdateNotification(
+                $order->uuid,
+                MenuOrderStatus::TRANSFERRED->value,
+                "Commande {$order->code} retranférée en cuisine. Action requise.",
+                $auth->id
+            );
+
             $this->refreshOrderStatus($order->fresh());
 
             return response()->json([
@@ -5237,7 +5241,8 @@ class OrderMenuRestaurantController extends Controller
                 $availableQty = $drink->statuses()
                     ->whereIn('status', [
                         OrderMenuRestaurantItemStatus::TRANSFERRED->value,
-                        OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value
+                        OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value,
+                        OrderMenuRestaurantItemStatus::REJECTED_AFTER_VALIDATION->value
                     ])
                     ->sum('quantity');
 
@@ -5252,7 +5257,8 @@ class OrderMenuRestaurantController extends Controller
 
                 $sourceStatuses = [
                     OrderMenuRestaurantItemStatus::TRANSFERRED->value,
-                    OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value
+                    OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value,
+                    OrderMenuRestaurantItemStatus::REJECTED_AFTER_VALIDATION->value
                 ];
 
                 foreach ($sourceStatuses as $statusType) {
@@ -6738,6 +6744,13 @@ class OrderMenuRestaurantController extends Controller
                 $drink->cancel_for_new_update_by = $auth->id;
                 $drink->save();
             }
+
+            \App\Models\OrderNotification::createOrUpdateNotification(
+                $order->uuid,
+                MenuOrderStatus::REJECTED_FOR_NEW_UPDATE->value,
+                "La commande {$order->code} a été rejetée pour modification.",
+                $auth->id
+            );
 
             $order->update([
                 'status' => MenuOrderStatus::REJECTED_FOR_NEW_UPDATE->value,
