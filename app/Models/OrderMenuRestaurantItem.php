@@ -59,7 +59,8 @@ class OrderMenuRestaurantItem extends Model
         'is_reason_of_cancel_for_new_update',
         'rejected_after_validation_at',
         'rejected_after_validation_by',
-        'reason_of_rejected_after_validation'
+        'reason_of_rejected_after_validation',
+        'is_reason_of_rejected_after_validation'
     ];
 
     /**
