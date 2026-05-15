@@ -4,6 +4,8 @@ use Illuminate\Support\Facades\Route;
 Route::apiResource('orders_menu_restaurants', \App\Http\Controllers\OrderMenuRestaurantController::class);
 Route::post('orders_menu_restaurants/check_stock', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'checkStockOnly']);
 Route::post('orders_menu_restaurants/check_stock_orders', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'checkStockByOrder']);
+Route::post('orders_menu_restaurants/check_new_stock_orders', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'appendMenusToOrder']);
+Route::post('orders_menu_restaurants/check_new_drinks_stock_orders', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'appendDrinksToOrder']);
 Route::post('orders_menu_restaurants/check_stock_bar', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'checkBarStockOnly']);
 Route::post('orders_menu_restaurants/check_stock_bar_orders', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'checkDrinksStockByOrder']);
 Route::patch('orders_menu_restaurants/{uuid}/cancel', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'CancelOrderMenuRestaurant']);
@@ -41,3 +43,4 @@ Route::post('/orders_menu_restaurants/force_release', [\App\Http\Controllers\Ord
 Route::post('/orders_menu_restaurants/force_release_orders_mens', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'forceReleaseOrderMenuRestaurant']);
 Route::post('/orders_menu_restaurants/cancel_reservations', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'cancelRervationsAfterValidation']);
 Route::post('/orders_menu_restaurants/cancel_currents_reservations', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'cancelCurrentRervations']);
+Route::delete('/orders_menu_restaurants/remove_abandoned_reservation', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'removeAbandonedReservation']);

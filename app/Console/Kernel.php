@@ -7,12 +7,6 @@ use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
 
 class Kernel extends ConsoleKernel
 {
-    protected function schedule(Schedule $schedule): void
-    {
-        $schedule->command('menu:clear-virtual-temp')
-            ->everyMinute()
-            ->withoutOverlapping();
-    }
 
     protected function commands()
     {

@@ -109,11 +109,6 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des chambres',
             'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
-        'view_all_orders_for_restaurant' => [
-            'description' => 'Accéder à toutes les commandes du restaurant',
-            'category' => 'Gestion des commandes du restaurant',
-            'modules' => ['Gestion du restaurant','Autres Modules'],
-        ],
         'view_all_orders_module_applications' => [
             'description' => 'Accéder à tous les modules de l\'application',
             'category' => 'Gestion des modules de l\'application',
@@ -230,7 +225,21 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des notifications du restaurant',
             'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
-
+        'view_kitchen_orders' => [
+            'description' => 'Afficher les commandes contenant uniquement des menus',
+            'category' => 'Gestion des commandes du restaurant',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'view_bar_orders' => [
+            'description' => 'Afficher les commandes contenant uniquement des boissons',
+            'category' => 'Gestion des commandes du restaurant',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'view_kitchen_and_bar_orders' => [
+            'description' => 'Afficher les commandes contenant des menus et/ou des boissons (cuisine + bar)',
+            'category' => 'Gestion des commandes du restaurant',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
 
     ];
 

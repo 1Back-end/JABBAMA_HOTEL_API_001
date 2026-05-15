@@ -150,6 +150,8 @@ Route::middleware(['activity'])->group(function () {
         Route::get("/exports/exports_stocks_deductions", [\App\Http\Controllers\StockDeductionController::class, 'export_stocks_deductions']);
         Route::get('deductions_stocks/{uuid}/print_deductions_stocks', [\App\Http\Controllers\StockDeductionController::class, 'print_stocks_deductions']);
 
+        Route::post('/orders_menu_restaurants/clean_reservations_abandoned', [\App\Http\Controllers\RestaurantMaintenanceController::class, 'cleanAbandoned']);
+
 
         /*
          |--------------------------------------------------------------------------
