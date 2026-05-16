@@ -58,7 +58,9 @@ class OrderMenuRestaurant extends Model
         'quantity_exactly',
         'full_name_for_client_free',
         'is_adjustment',
-        'reservation_uuid'
+        'reservation_uuid',
+        'kitchen_user_id',
+        'bar_user_id'
     ];
 
     /**
@@ -233,6 +235,15 @@ class OrderMenuRestaurant extends Model
     public function notifications()
     {
         return $this->hasMany(OrderNotification::class, 'order_menu_restaurant_uuid', 'uuid');
+    }
+
+    public function bar_users()
+    {
+        return $this->belongsToMany(User::class, 'bar_user_id', 'bar_user_id');
+    }
+    public function kitchen_users()
+    {
+        return $this->belongsToMany(User::class, 'kitchen_user_id', 'bar_user_id');
     }
 
 }

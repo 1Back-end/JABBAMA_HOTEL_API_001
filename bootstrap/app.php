@@ -16,7 +16,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withSchedule(function ($schedule) {
-        $schedule->command('menu:clear-virtual-temp')
+        $schedule->command('restaurant:clean-abandoned')
             ->everyMinute()
             ->withoutOverlapping();
     })

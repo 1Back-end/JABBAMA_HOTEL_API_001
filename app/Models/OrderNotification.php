@@ -28,7 +28,8 @@ class OrderNotification extends Model
         'created_by',
         'updated_by',
         'read_at',
-        'is_read'
+        'is_read',
+        'target'
     ];
 
     protected $appends = ['status_label'];
@@ -99,19 +100,26 @@ class OrderNotification extends Model
     {
         return $this->belongsTo(OrderMenuRestaurant::class, 'order_menu_restaurant_uuid', 'uuid');
     }
-    public static function createOrUpdateNotification(string $orderUuid, string $status, string $message, int $userId) {
-        return self::updateOrCreate(
-            [
-                'order_menu_restaurant_uuid' => $orderUuid,
-                'status' => $status,
-            ],
-            [
-                'message' => $message,
-                'is_read' => false,
-                'read_at' => null,
-                'created_by' => $userId,
-                'updated_by' => $userId,
-            ]
-        );
+    public static function createOrUpdateNotification(
+        string $orderUuid,
+        string $status,
+        string $message,
+        int $userId,
+        string $target
+    ) {
+        self::where('order_menu_restaurant_uuid', $orderUuid)
+            ->where('status', $status)
+            ->where('target', $target)
+            ->delete();
+        return self::create([
+            'order_menu_restaurant_uuid' => $orderUuid,
+            'status' => $status,
+            'target' => $target,
+            'message' => $message,
+            'is_read' => false,
+            'read_at' => null,
+            'created_by' => $userId,
+            'updated_by' => $userId,
+        ]);
     }
 }

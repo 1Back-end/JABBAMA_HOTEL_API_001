@@ -157,16 +157,16 @@ class OrderRestaurantDrink extends Model
     }
 
 
-//    public function lastStatus()
-//    {
-//        return $this->hasOne(LastStatusDrinksMenusRestaurant::class, 'order_restaurant_drink_uuid', 'uuid');
-//    }
-//    public function defectives()
-//    {
-//        return $this->hasMany(OrderMenuRestaurantDefectiveDrink::class, 'order_restaurant_drink_uuid', 'uuid');
-//    }
-//    public function statistics()
-//    {
-//        return $this->hasMany(StatisticsOrderStatusDrink::class, 'order_restaurant_drink_uuid', 'uuid');
-//    }
+    public function lastStatus()
+    {
+        return $this->hasOne(LastStatusDrinksMenusRestaurant::class, 'order_restaurant_drink_uuid', 'uuid');
+    }
+    public function defectives()
+    {
+        return $this->hasMany(OrderMenuRestaurantDefectiveDrink::class, 'order_restaurant_drink_uuid', 'uuid');
+    }
+    public function statistics()
+    {
+        return $this->hasMany(StatisticsOrderStatusDrink::class, 'order_restaurant_drink_uuid', 'uuid');
+    }
 }
