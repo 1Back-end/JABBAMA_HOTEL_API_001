@@ -44,3 +44,4 @@ Route::post('/orders_menu_restaurants/force_release_orders_mens', [\App\Http\Con
 Route::post('/orders_menu_restaurants/cancel_reservations', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'cancelRervationsAfterValidation']);
 Route::post('/orders_menu_restaurants/cancel_currents_reservations', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'cancelCurrentRervations']);
 Route::delete('/orders_menu_restaurants/remove_abandoned_reservation', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'removeAbandonedReservation']);
+Route::post('/orders_menu_restaurants/update_activity', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'updateActivity']);
