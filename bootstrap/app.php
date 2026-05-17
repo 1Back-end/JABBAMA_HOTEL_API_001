@@ -17,12 +17,12 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withSchedule(function ($schedule) {
 
-        $schedule->command('restaurant:clean-abandoned')
-            ->everyMinute()
-            ->withoutOverlapping();
-        $schedule->command('app:rollback-abandoned-orders')
-            ->everyMinute()
-            ->withoutOverlapping();
+//        $schedule->command('restaurant:clean-abandoned')
+//            ->everyMinute()
+//            ->withoutOverlapping();
+//        $schedule->command('app:rollback-abandoned-orders')
+//            ->everyMinute()
+//            ->withoutOverlapping();
     })
 
     ->withMiddleware(function (Middleware $middleware) {
