@@ -60,7 +60,10 @@ class OrderMenuRestaurant extends Model
         'is_adjustment',
         'reservation_uuid',
         'kitchen_user_id',
-        'bar_user_id'
+        'bar_user_id',
+        'is_in_editing',
+        'editing_by',
+        'editing_started_at'
     ];
 
     /**
@@ -244,6 +247,11 @@ class OrderMenuRestaurant extends Model
     public function kitchen_users()
     {
         return $this->belongsToMany(User::class, 'kitchen_user_id', 'bar_user_id');
+    }
+
+    public function editing_orders()
+    {
+        return $this->belongsToMany(User::class, 'editing_by', 'editing_by');
     }
 
 }
