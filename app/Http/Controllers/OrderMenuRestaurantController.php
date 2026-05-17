@@ -722,11 +722,17 @@ class OrderMenuRestaurantController extends Controller
             ->where('type', '!=', 'not_used')
 
             ->when($reservationUuid, function ($q) use ($reservationUuid) {
-                $q->where('reservation_uuid', '!=', $reservationUuid);
+                $q->where(function ($sub) use ($reservationUuid) {
+                    $sub->whereNull('reservation_uuid')
+                        ->orWhere('reservation_uuid', '!=', $reservationUuid);
+                });
             })
 
             ->when($orderUuid, function ($q) use ($orderUuid) {
-                $q->where('order_menu_restaurant_uuid', '!=', $orderUuid);
+                $q->where(function ($sub) use ($orderUuid) {
+                    $sub->whereNull('order_menu_restaurant_uuid')
+                        ->orWhere('order_menu_restaurant_uuid', '!=', $orderUuid);
+                });
             })
 
             ->sum('quantity_used');
@@ -811,7 +817,7 @@ class OrderMenuRestaurantController extends Controller
                     ->where('status', 'pending')
                     ->where('type', '!=', 'not_used')
 
-                    ->where(function ($q) use ($orderUuid) {
+                    ->when($orderUuid, function ($q) use ($orderUuid) {
                         $q->where(function ($sub) use ($orderUuid) {
                             $sub->whereNull('order_menu_restaurant_uuid')
                                 ->orWhere('order_menu_restaurant_uuid', '!=', $orderUuid);
@@ -1163,7 +1169,8 @@ class OrderMenuRestaurantController extends Controller
                     ->where('status', 'pending')
                     ->where('type', '!=', 'not_used')
 
-                    ->where(function ($q) use ($orderUuid) {
+                    // 🔥 exclure uniquement CETTE commande en modification
+                    ->when($orderUuid, function ($q) use ($orderUuid) {
                         $q->where(function ($sub) use ($orderUuid) {
                             $sub->whereNull('order_menu_restaurant_uuid')
                                 ->orWhere('order_menu_restaurant_uuid', '!=', $orderUuid);
@@ -1507,41 +1514,50 @@ class OrderMenuRestaurantController extends Controller
         }
     }
 
-    private function checkStock($productUuid, $warehouseUuid, $quantity, $reservationUuid = null, $orderUuid = null) {
+    private function checkStock(
+        $productUuid,
+        $warehouseUuid,
+        $quantity,
+        $reservationUuid = null,
+        $orderUuid = null
+    ) {
+
+        // 🔥 Stock réel
         $realStock = (float) ProductPoint::where('produit_uuid', $productUuid)
             ->where('point_uuid', $warehouseUuid)
             ->value('quantity') ?? 0;
 
-        $reservedStock = MenuVirtualTemp::where('product_uuid', $productUuid)
+        $reservedQuery = MenuVirtualTemp::where('product_uuid', $productUuid)
             ->where('status', 'pending')
-            ->where('type', '!=', 'not_used')
+            ->where('type', '!=', 'not_used');
 
-            ->when($reservationUuid, function ($q) use ($reservationUuid) {
-                $q->where(function ($sub) use ($reservationUuid) {
-                    $sub->whereNull('reservation_uuid')
-                        ->orWhere('reservation_uuid', '!=', $reservationUuid);
-                });
-            })
+        if ($orderUuid) {
+            $reservedQuery->where(function ($q) use ($orderUuid) {
+                $q->whereNull('order_menu_restaurant_uuid')
+                    ->orWhere('order_menu_restaurant_uuid', '!=', $orderUuid);
+            });
+        }
 
-            ->when($orderUuid, function ($q) use ($orderUuid) {
-                $q->where(function ($sub) use ($orderUuid) {
-                    $sub->whereNull('order_menu_restaurant_uuid')
-                        ->orWhere('order_menu_restaurant_uuid', '!=', $orderUuid);
-                });
-            })
-            ->sum('quantity_used');
+        $reservedStock = (float) $reservedQuery->sum('quantity_used');
 
+        // 🔥 Stock disponible
         $availableStock = $realStock - $reservedStock;
+
         if ($availableStock < 0) {
             $availableStock = 0;
         }
+
+        // 🔥 Vérification
         if ($quantity > $availableStock) {
-            $productName = Product::where('uuid', $productUuid)->value('name') ?? 'Produit inconnu';
+
+            $productName = Product::where('uuid', $productUuid)
+                ->value('name') ?? 'Produit inconnu';
 
             throw new \Exception(
                 "Stock insuffisant pour « {$productName} ». Disponible : {$availableStock}, Requis : {$quantity}"
             );
         }
+
         return $availableStock;
     }
 
