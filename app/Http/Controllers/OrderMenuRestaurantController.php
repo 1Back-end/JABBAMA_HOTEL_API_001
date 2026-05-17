@@ -448,6 +448,7 @@ class OrderMenuRestaurantController extends Controller
                             'status' => 'pending',
                             'created_by' => $auth->id,
                             'updated_by' => $auth->id,
+                            'last_activity_at' => now()
                         ]);
                     }
                 }
@@ -514,6 +515,7 @@ class OrderMenuRestaurantController extends Controller
                         'status' => 'pending',
                         'created_by' => $auth->id,
                         'updated_by' => $auth->id,
+                        'last_activity_at' => now()
                     ]);
                 }
             }
@@ -866,6 +868,7 @@ class OrderMenuRestaurantController extends Controller
                         'quantity_used' => $menuInput['quantity'] * $item->quantity_used,
                         'created_by' => $auth->id,
                         'updated_by' => $auth->id,
+                        'last_activity_at' => now()
                     ]
                 );
             }
@@ -998,6 +1001,7 @@ class OrderMenuRestaurantController extends Controller
                             'status' => 'pending',
                             'created_by' => $auth->id,
                             'updated_by' => $auth->id,
+                            'last_activity_at' => now()
                         ]);
                     }
 
@@ -1069,6 +1073,7 @@ class OrderMenuRestaurantController extends Controller
                         'status' => 'pending',
                         'created_by' => $auth->id,
                         'updated_by' => $auth->id,
+                        'last_activity_at' => now()
                     ]);
                 }
             }
@@ -1215,6 +1220,7 @@ class OrderMenuRestaurantController extends Controller
                     'status' => 'pending',
                     'created_by' => $auth->id,
                     'updated_by' => $auth->id,
+                    'last_activity_at' => now()
                 ]);
             }
         }
@@ -1382,6 +1388,7 @@ class OrderMenuRestaurantController extends Controller
                             'status' => 'pending',
                             'created_by' => $auth->id,
                             'updated_by' => $auth->id,
+                            'last_activity_at' => now()
                         ]);
                     }
 
@@ -1452,6 +1459,7 @@ class OrderMenuRestaurantController extends Controller
                         'status' => 'pending',
                         'created_by' => $auth->id,
                         'updated_by' => $auth->id,
+                        'last_activity_at' => now()
                     ]);
                 }
             }

@@ -31,6 +31,7 @@ class DrinksVirtualTemp extends Model
         'type',
         'status',
         'drink_restaurant_uuid',
+        'last_activity_at'
     ];
 
     protected static function boot()
