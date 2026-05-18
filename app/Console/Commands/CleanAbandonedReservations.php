@@ -32,6 +32,7 @@ class CleanAbandonedReservations extends Command
                 ->whereNull('order_menu_restaurant_uuid')
                 ->where('last_activity_at', '<=', $limitDate)
                 ->delete();
+
             $this->info("Menus supprimés: $menuDeleted");
             $this->info("Boissons supprimées: $drinkDeleted");
 

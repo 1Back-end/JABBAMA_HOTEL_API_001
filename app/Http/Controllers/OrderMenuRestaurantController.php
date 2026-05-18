@@ -50,6 +50,26 @@ use Illuminate\Validation\Rules\Enum;
  */
 class OrderMenuRestaurantController extends Controller
 {
+    public function updateActivity(Request $request)
+    {
+        $request->validate([
+            'reservation_uuid' => ['required', 'uuid']
+        ]);
+
+        MenuVirtualTemp::where('reservation_uuid', $request->reservation_uuid)
+            ->update([
+                'last_activity_at' => now()
+            ]);
+
+        DrinksVirtualTemp::where('reservation_uuid', $request->reservation_uuid)
+            ->update([
+                'last_activity_at' => now()
+            ]);
+
+        return response()->json([
+            'status' => 'success'
+        ]);
+    }
 
     private function getLogoutMinutes()
     {
@@ -1545,7 +1565,6 @@ class OrderMenuRestaurantController extends Controller
                     ->orWhere('order_menu_restaurant_uuid', '!=', $orderUuid);
             });
         }
-
         $reservedStock = (float) $reservedQuery->sum('quantity_used');
 
         // 🔥 Stock disponible
