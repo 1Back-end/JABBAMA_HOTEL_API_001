@@ -226,12 +226,12 @@ class ExtractPermissions extends Command
             'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
         'view_kitchen_orders' => [
-            'description' => 'Afficher les commandes contenant uniquement des menus',
+            'description' => 'Afficher les commandes contenant des menus',
             'category' => 'Gestion des commandes du restaurant',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],
         'view_bar_orders' => [
-            'description' => 'Afficher les commandes contenant uniquement des boissons',
+            'description' => 'Afficher les commandes contenant des boissons',
             'category' => 'Gestion des commandes du restaurant',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],
@@ -239,6 +239,26 @@ class ExtractPermissions extends Command
             'description' => 'Afficher les commandes contenant des menus et/ou des boissons (cuisine + bar)',
             'category' => 'Gestion des commandes du restaurant',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'view_unit_price_and_total_price' => [
+            'description' => 'Afficher le prix unitaire et le prix totale des items d\'une commande',
+            'category' => 'Gestion des commandes du restaurant',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'view_kitchen_notifications' => [
+            'description' => 'Afficher les notifications des commandes contenant des menus/plats',
+            'category' => 'Gestion des notifications du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'view_bar_notifications' => [
+            'description' => 'Afficher les notifications des commandes contenant des boissons',
+            'category' => 'Gestion des notifications du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'view_all_notification_menu_and_drinks' => [
+            'description' => 'Afficher les notifications des commandes contenant menus et boissons',
+            'category' => 'Gestion des notifications du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
 
     ];
