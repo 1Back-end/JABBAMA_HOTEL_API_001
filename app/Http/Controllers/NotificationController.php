@@ -18,9 +18,17 @@ class NotificationController extends Controller
     {
         $user = auth()->user();
 
-        $query = \App\Models\OrderNotification::with(['creator', 'updater']);
+        $query = \App\Models\OrderNotification::with([
+            'creator',
+            'updater',
+            'order'
+        ]);
 
-        // 🔥 accès total
+        /*
+        |--------------------------------------------------------------------------
+        | ACCÈS TOTAL
+        |--------------------------------------------------------------------------
+        */
         if ($user->can('view_all_notification')) {
             return response()->json([
                 'status' => 'success',
@@ -28,53 +36,71 @@ class NotificationController extends Controller
             ]);
         }
 
+        /*
+        |--------------------------------------------------------------------------
+        | STATUTS
+        |--------------------------------------------------------------------------
+        */
         $statuses = [];
 
-        if ($user->can('view_all_notification_in_preparation')) {
-            $statuses[] = 'in_preparation';
-        }
+        if ($user->can('view_all_notification_in_preparation')) $statuses[] = 'in_preparation';
+        if ($user->can('view_all_notification_transferred')) $statuses[] = 'transferred';
+        if ($user->can('view_all_notification_rejected')) $statuses[] = 'rejected';
+        if ($user->can('view_all_notification_in_defective')) $statuses[] = 'defective';
+        if ($user->can('view_all_notification_in_ready')) $statuses[] = 'ready';
+        if ($user->can('view_all_notification_in_delivered')) $statuses[] = 'delivered';
+        if ($user->can('view_all_notification_in_rejected_after_validation')) $statuses[] = 'rejected_after_validation';
+        if ($user->can('view_all_notification_in_cancel_for_new_update')) $statuses[] = 'cancel_for_new_update';
 
-        if ($user->can('view_all_notification_transferred')) {
-            $statuses[] = 'transferred';
-        }
-
-        if ($user->can('view_all_notification_rejected')) {
-            $statuses[] = 'rejected';
-        }
-
-        if ($user->can('view_all_notification_in_defective')) {
-            $statuses[] = 'defective';
-        }
-
-        if ($user->can('view_all_notification_in_ready')) {
-            $statuses[] = 'ready';
-        }
-
-        if ($user->can('view_all_notification_in_delivered')) {
-            $statuses[] = 'delivered';
-        }
-
-        if ($user->can('view_all_notification_in_rejected_after_validation')) {
-            $statuses[] = 'rejected_after_validation';
-        }
-
-        if ($user->can('view_all_notification_in_cancel_for_new_update')) {
-            $statuses[] = 'cancel_for_new_update';
-        }
-
-        // 🔥 fallback
         if (empty($statuses)) {
             $statuses[] = 'transferred';
         }
 
-        $notifications = $query
-            ->whereIn('status', $statuses)
-            ->latest()
-            ->get();
+        $query->whereIn('status', $statuses);
+
+        /*
+        |--------------------------------------------------------------------------
+        | FILTRE STRICT CUISINE / BAR (IMPORTANT)
+        |--------------------------------------------------------------------------
+        */
+        $query->where(function ($q) use ($user) {
+
+            /*
+            |--------------------------------------------------------------------------
+            | CUISINE
+            |--------------------------------------------------------------------------
+            */
+            if ($user->can('view_kitchen_notifications')) {
+
+                $q->orWhere(function ($sub) {
+
+                    $sub->where('target', 'kitchen')
+                        ->whereHas('order', function ($order) {
+                            $order->whereHas('items'); // uniquement cuisine
+                        });
+                });
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | BAR
+            |--------------------------------------------------------------------------
+            */
+            if ($user->can('view_bar_notifications')) {
+
+                $q->orWhere(function ($sub) {
+                    $sub->where('target', 'bar')
+                        ->whereHas('order', function ($order) {
+                            $order->whereHas('drinks');
+                        });
+                });
+            }
+
+        });
 
         return response()->json([
             'status' => 'success',
-            'data' => $notifications
+            'data' => $query->latest()->get()
         ]);
     }
 

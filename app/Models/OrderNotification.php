@@ -29,7 +29,9 @@ class OrderNotification extends Model
         'updated_by',
         'read_at',
         'is_read',
-        'target'
+        'target',
+        'kitchen_user_id',
+        'bar_user_id',
     ];
 
     protected $appends = ['status_label'];
@@ -111,6 +113,32 @@ class OrderNotification extends Model
             ->where('status', $status)
             ->where('target', $target)
             ->delete();
+
+        $barUserId = null;
+        $kitchenUserId = null;
+        $barmanRole = Role::where('name', 'BARMAN')->first();
+        $cuisinierRole = Role::where('name', 'CUISINIER')->first();
+
+        if ($target === 'bar' && $barmanRole) {
+            $firstBarman = $barmanRole->first();
+            $barUserId = $firstBarman?->id;
+        }
+
+        if ($target === 'kitchen' && $cuisinierRole) {
+            $firstCuisinier = $cuisinierRole->first();
+            $kitchenUserId = $firstCuisinier?->id;
+        }
+        if ($target === 'all') {
+            if ($barmanRole) {
+                $firstBarman = $barmanRole->first();
+                $barUserId = $firstBarman?->id;
+            }
+            if ($cuisinierRole) {
+                $firstCuisinier = $cuisinierRole->first();
+                $kitchenUserId = $firstCuisinier?->id;
+            }
+        }
+
         return self::create([
             'order_menu_restaurant_uuid' => $orderUuid,
             'status' => $status,
@@ -120,6 +148,17 @@ class OrderNotification extends Model
             'read_at' => null,
             'created_by' => $userId,
             'updated_by' => $userId,
+            'bar_user_id' => $barUserId,
+            'kitchen_user_id' => $kitchenUserId,
         ]);
+    }
+    public function kitchen_users()
+    {
+        return $this->belongsToMany(User::class, 'kitchen_user_id', 'bar_user_id');
+    }
+
+    public function editing_orders()
+    {
+        return $this->belongsToMany(User::class, 'editing_by', 'editing_by');
     }
 }

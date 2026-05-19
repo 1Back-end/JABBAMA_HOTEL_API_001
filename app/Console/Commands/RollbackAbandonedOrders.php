@@ -42,6 +42,7 @@ class RollbackAbandonedOrders extends Command
 
         $orders = OrderMenuRestaurant::where('is_in_editing', true)
             ->where('editing_started_at', '<', $limitDate)
+            ->whereNull('rollback_at')
             ->get();
 
         foreach ($orders as $order) {
@@ -124,6 +125,7 @@ class RollbackAbandonedOrders extends Command
                     'is_in_editing' => false,
                     'editing_by' => null,
                     'editing_started_at' => null,
+                    'rollback_at' => now()
                 ]);
             });
         }

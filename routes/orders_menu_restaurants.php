@@ -45,3 +45,5 @@ Route::post('/orders_menu_restaurants/cancel_reservations', [\App\Http\Controlle
 Route::post('/orders_menu_restaurants/cancel_currents_reservations', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'cancelCurrentRervations']);
 Route::delete('/orders_menu_restaurants/remove_abandoned_reservation', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'removeAbandonedReservation']);
 Route::post('/orders_menu_restaurants/update_activity', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'updateActivity']);
+Route::post('/orders_menu_restaurants/update_orders_activity', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'updateActivityForOrder']);
+Route::post('/orders_menu_restaurants/clean_reservations_abandoned', [\App\Http\Controllers\RestaurantMaintenanceController::class, 'cleanAbandoned']);

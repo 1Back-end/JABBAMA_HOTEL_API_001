@@ -71,6 +71,23 @@ class OrderMenuRestaurantController extends Controller
         ]);
     }
 
+    public function updateActivityForOrder(Request $request)
+    {
+        $request->validate([
+            'order_menu_restaurant_uuid' => ['required', 'uuid']
+        ]);
+
+        $now = now();
+        OrderMenuRestaurant::where('uuid', $request->order_menu_restaurant_uuid)
+            ->update([
+                'editing_started_at' => $now,
+                'rollback_at' => null,
+            ]);
+        return response()->json([
+            'status' => 'success'
+        ]);
+    }
+
     private function getLogoutMinutes()
     {
         $setting = SettingRestaurant::where('key', 'logout_period')
@@ -625,13 +642,25 @@ class OrderMenuRestaurantController extends Controller
             // 🔹 Warehouse
             $warehouseUuid = Warehouse::where('is_used_for_restaurant', true)->value('uuid');
 
-            // 🔹 Récupération des compositions menus
-            $menusUuid = collect($validated['menus'])->pluck('menus_restaurant_uuid');
+            $menusUuid = collect($validated['menus'])
+                ->pluck('menus_restaurant_uuid')
+                ->toArray();
 
             $menuItems = MenuOrderItem::with('product')
                 ->whereIn('menus_restaurant_uuid', $menusUuid)
                 ->get()
                 ->groupBy('menus_restaurant_uuid');
+
+            foreach ($validated['menus'] as $MenusInput) {
+                MenuVirtualTemp::where('reservation_uuid', $reservationUuid)
+                    ->where(
+                        'menus_restaurant_uuid',
+                        $MenusInput['menus_restaurant_uuid']
+                    )
+                    ->where('status', 'pending')
+                    ->delete();
+            }
+
 
             $stockErrors = [];
 
@@ -678,7 +707,7 @@ class OrderMenuRestaurantController extends Controller
                 ], 422);
             }
 
-            // 🔥 UPSERT PANIER TEMPORAIRE (IMPORTANT)
+
             foreach ($validated['menus'] as $menuInput) {
 
                 $menu = MenuRestaurant::find($menuInput['menus_restaurant_uuid']);
@@ -688,22 +717,18 @@ class OrderMenuRestaurantController extends Controller
 
                     $totalUsed = $menuInput['quantity'] * $item->quantity_used;
 
-                    MenuVirtualTemp::updateOrCreate(
-                        [
-                            'reservation_uuid' => $reservationUuid,
-                            'menus_restaurant_uuid' => $menu->uuid,
-                            'product_uuid' => $item->product_uuid,
-                        ],
-                        [
-                            'type' => 'initial',
-                            'quantity' => $menuInput['quantity'],
-                            'quantity_used' => $totalUsed,
-                            'status' => 'pending',
-                            'created_by' => $auth->id,
-                            'updated_by' => $auth->id,
-                            'last_activity_at' => now()
-                        ]
-                    );
+                    MenuVirtualTemp::create([
+                        'reservation_uuid' => $reservationUuid,
+                        'menus_restaurant_uuid' => $menuInput['menus_restaurant_uuid'],
+                        'product_uuid' => $item->product_uuid,
+                        'type' => 'initial',
+                        'quantity' => $menuInput['quantity'],
+                        'quantity_used' => $totalUsed,
+                        'status' => 'pending',
+                        'created_by' => $auth->id,
+                        'updated_by' => $auth->id,
+                        'last_activity_at' => now()
+                    ]);
                 }
             }
 
@@ -733,6 +758,8 @@ class OrderMenuRestaurantController extends Controller
             ], 500);
         }
     }
+
+
 
     private function getDrinkAvailableStock($productUuid, $warehouseUuid, $quantity, $reservationUuid = null, $orderUuid = null) {
         $realStock = (float) ProductPoint::where('produit_uuid', $productUuid)
@@ -898,6 +925,7 @@ class OrderMenuRestaurantController extends Controller
             'is_in_editing' => true,
             'editing_by' => $auth->id,
             'editing_started_at' => now(),
+            'rollback_at' => null
         ]);
 
         return response()->json([
@@ -1115,6 +1143,7 @@ class OrderMenuRestaurantController extends Controller
                     'details' => $stockErrors,
                 ], 422);
             }
+            $order->update(['is_in_editing' => true, 'editing_by' => $auth->id, 'editing_started_at' => now(),'rollback_at' => null, ]);
 
             DB::commit();
 
@@ -1244,6 +1273,7 @@ class OrderMenuRestaurantController extends Controller
                 ]);
             }
         }
+        $order->update(['is_in_editing' => true, 'editing_by' => $auth->id, 'editing_started_at' => now(),'rollback_at' => null, ]);
         return response()->json([
             'status' => 'success',
             'message' => 'Stock OK pour modification commande',
@@ -1506,6 +1536,7 @@ class OrderMenuRestaurantController extends Controller
                 'is_in_editing' => true,
                 'editing_by' => $auth->id,
                 'editing_started_at' => now(),
+                'rollback_at' => null,
             ]);
 
             DB::commit();
@@ -1546,8 +1577,8 @@ class OrderMenuRestaurantController extends Controller
         $productUuid,
         $warehouseUuid,
         $quantity,
-        $reservationUuid = null,
-        $orderUuid = null
+        $orderUuid = null,
+        $reservationUuid = null
     ) {
 
         // 🔥 Stock réel
@@ -1555,20 +1586,13 @@ class OrderMenuRestaurantController extends Controller
             ->where('point_uuid', $warehouseUuid)
             ->value('quantity') ?? 0;
 
-        $reservedQuery = MenuVirtualTemp::where('product_uuid', $productUuid)
+        $reservedStock = (float) MenuVirtualTemp::where('product_uuid', $productUuid)
             ->where('status', 'pending')
-            ->where('type', '!=', 'not_used');
+            ->where('type', '!=', 'not_used')
+            ->where('reservation_uuid', '!=', $reservationUuid)
+            ->sum('quantity_used');
 
-        if ($orderUuid) {
-            $reservedQuery->where(function ($q) use ($orderUuid) {
-                $q->whereNull('order_menu_restaurant_uuid')
-                    ->orWhere('order_menu_restaurant_uuid', '!=', $orderUuid);
-            });
-        }
-        $reservedStock = (float) $reservedQuery->sum('quantity_used');
-
-        // 🔥 Stock disponible
-        $availableStock = $realStock - $reservedStock;
+        $availableStock = max(0, $realStock - $reservedStock);
 
         if ($availableStock < 0) {
             $availableStock = 0;
@@ -1587,6 +1611,7 @@ class OrderMenuRestaurantController extends Controller
 
         return $availableStock;
     }
+
 
 
     public function reserveStock($orderUuid, $itemUuid, $itemType, $productUuid, $quantity, $auth, $warehouseUuid, $quantityUsed) {
@@ -2179,27 +2204,27 @@ class OrderMenuRestaurantController extends Controller
             $hasMenus = !empty($validated['menus']);
             $hasDrinks = !empty($validated['drinks']);
 
-            if ($hasMenus) {
-                \App\Models\OrderNotification::createOrUpdateNotification(
-                    $order->uuid,
-                    MenuOrderStatus::TRANSFERRED->value,
-                    $hasDrinks
-                        ? "Commande cuisine + bar {$order->code} enregistrée."
-                        : "Commande cuisine {$order->code} enregistrée.",
-                    $auth->id,
-                    'kitchen'
-                );
-            }
+            if ($hasMenus || $hasDrinks) {
+                $target = match (true) {
+                    $hasMenus && $hasDrinks => 'all',
+                    $hasMenus => 'kitchen',
+                    $hasDrinks => 'bar',
+                    default => 'all',
+                };
 
-            if ($hasDrinks) {
+                $message = match (true) {
+                    $hasMenus && $hasDrinks => "Commande cuisine + bar {$order->code} enregistrée.",
+                    $hasMenus => "Commande cuisine {$order->code} enregistrée.",
+                    $hasDrinks => "Commande bar {$order->code} enregistrée.",
+                    default => null,
+                };
+
                 \App\Models\OrderNotification::createOrUpdateNotification(
                     $order->uuid,
                     MenuOrderStatus::TRANSFERRED->value,
-                    $hasMenus
-                        ? "Commande cuisine + bar {$order->code} enregistrée."
-                        : "Commande bar {$order->code} enregistrée.",
+                    $message,
                     $auth->id,
-                    'bar'
+                    $target
                 );
             }
 
@@ -2682,7 +2707,8 @@ class OrderMenuRestaurantController extends Controller
                 'updated_by' => $auth->id,
                 'is_in_editing' => false,
                 'editing_by' => $auth->id,
-                'editing_started_at' => null
+                'editing_started_at' => null,
+                'rollback_at' => null
             ]);
 
             DB::commit();
@@ -3095,7 +3121,7 @@ class OrderMenuRestaurantController extends Controller
         \App\Models\OrderNotification::createOrUpdateNotification(
             $order->uuid,
             MenuOrderStatus::TRANSFERRED->value,
-            "Une nouvelle boisson a été ajoutée à la commande {$order->code} et transmise en cuisine.",
+            "Boisson ajoutée à la commande {$order->code} et transmise en cuisine.",
             $auth->id,
             'bar'
         );
@@ -3178,7 +3204,7 @@ class OrderMenuRestaurantController extends Controller
         \App\Models\OrderNotification::createOrUpdateNotification(
             $order->uuid,
             $newStatus,
-            "{$order->code}La commande {$order->code} est déjà au statut " . OrderMenuRestaurantItemStatus::safeLabel($newStatus) . ".",
+            "La commande {$order->code} est déjà au statut " . OrderMenuRestaurantItemStatus::safeLabel($newStatus) . ".",
             auth()->id(),
             'bar'
         );
@@ -3462,7 +3488,7 @@ class OrderMenuRestaurantController extends Controller
         \App\Models\OrderNotification::createOrUpdateNotification(
             $order->uuid,
             $newStatus,
-            "{$order->code}La commande {$order->code} est déjà au statut " . OrderMenuRestaurantItemStatus::safeLabel($newStatus) . ".",
+            "La commande {$order->code} est déjà au statut " . OrderMenuRestaurantItemStatus::safeLabel($newStatus) . ".",
             auth()->id(),
             'bar'
         );
@@ -3592,7 +3618,7 @@ class OrderMenuRestaurantController extends Controller
         \App\Models\OrderNotification::createOrUpdateNotification(
             $order->uuid,
             $newStatus,
-            "{$order->code}La commande {$order->code} est déjà au statut " . OrderMenuRestaurantItemStatus::safeLabel($newStatus) . ".",
+            "La commande {$order->code} est déjà au statut " . OrderMenuRestaurantItemStatus::safeLabel($newStatus) . ".",
             auth()->id(),
             'bar'
         );
@@ -3861,7 +3887,7 @@ class OrderMenuRestaurantController extends Controller
         \App\Models\OrderNotification::createOrUpdateNotification(
             $order->uuid,
             MenuOrderStatus::TRANSFERRED->value,
-            "Un nouveau menu a été ajouté à la commande {$order->code} et transmis en cuisine.",
+            "Menu(s) ajouté à la commande {$order->code} et transmis en cuisine.",
             $auth->id,
             'kitchen'
         );
@@ -4467,7 +4493,7 @@ class OrderMenuRestaurantController extends Controller
         \App\Models\OrderNotification::createOrUpdateNotification(
             $order->uuid,
             $newStatus,
-            "{$order->code}La commande {$order->code} est de nouveau au statut " . OrderMenuRestaurantItemStatus::safeLabel($newStatus) . ".",
+            "La commande {$order->code} est actuellement au statut " . OrderMenuRestaurantItemStatus::safeLabel($newStatus) . ".",
             auth()->id(),
             'kitchen'
         );
@@ -5334,9 +5360,9 @@ class OrderMenuRestaurantController extends Controller
             \App\Models\OrderNotification::createOrUpdateNotification(
                 $order->uuid,
                 MenuOrderStatus::REJECTED->value,
-                "Commande {$order->code} rejetée en cuisine. Action requise.",
+                "Commande {$order->code} rejetée. Action requise.",
                 $auth->id,
-                'kitchen'
+                'bar'
             );
             $this->refreshOrderStatus($order);
             $order->update(['updated_by' => $auth->id]);
@@ -6595,7 +6621,7 @@ class OrderMenuRestaurantController extends Controller
             \App\Models\OrderNotification::createOrUpdateNotification(
                 $order->uuid,
                 MenuOrderStatus::TOTAL_DELIVERED->value,
-                "Commande {$order->code} prête en cuisine. Prête à être servie.",
+                "Commande {$order->code} prête. Prête à être servie.",
                 $auth->id,
                 'bar'
             );
@@ -7383,7 +7409,7 @@ class OrderMenuRestaurantController extends Controller
             \App\Models\OrderNotification::createOrUpdateNotification(
                 $order->uuid,
                 MenuOrderStatus::REJECTED_AFTER_VALIDATION->value,
-                "Commande {$order->code} refusée pour service.",
+                "Commande {$order->code} refusée pour service.Action requise!",
                 $auth->id,
                 'bar'
             );
