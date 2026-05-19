@@ -77,6 +77,7 @@ class RollbackAbandonedOrders extends Command
                     if (!$menuItem) continue;
                     MenuVirtualTemp::create([
                         'order_menu_restaurant_uuid' => $orderUuid,
+                        'reservation_uuid' => $order->reservation_uuid,
                         'menus_restaurant_uuid' => $menuItem->menus_restaurant_uuid,
                         'product_uuid' => $item->product_uuid,
                         'type' => 'initial',
@@ -85,6 +86,7 @@ class RollbackAbandonedOrders extends Command
                         'status' => 'pending',
                         'created_by' => $order->editing_by,
                         'updated_by' => $order->editing_by,
+                        'last_activity_at' => now()
                     ]);
                 }
 
@@ -110,6 +112,7 @@ class RollbackAbandonedOrders extends Command
                     if (!$realDrink) continue;
                     DrinksVirtualTemp::create([
                         'order_menu_restaurant_uuid' => $orderUuid,
+                        'reservation_uuid' => $order->reservation_uuid,
                         'product_uuid' => $item->product_uuid,
                         'drink_restaurant_uuid' => $realDrink->drink_restaurant_uuid,
                         'type' => 'initial',
@@ -118,6 +121,7 @@ class RollbackAbandonedOrders extends Command
                         'status' => 'pending',
                         'created_by' => $order->editing_by,
                         'updated_by' => $order->editing_by,
+                        'last_activity_at' => now()
                     ]);
                 }
 

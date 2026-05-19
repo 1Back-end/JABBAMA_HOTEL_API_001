@@ -908,12 +908,14 @@ class OrderMenuRestaurantController extends Controller
                         'order_menu_restaurant_uuid' => $orderUuid,
                         'menus_restaurant_uuid' => $menuInput['menus_restaurant_uuid'],
                         'product_uuid' => $item->product_uuid,
-                        'type' => 'initial'
+                        'type' => 'initial',
+                        'reservation_uuid' => $order->reservation_uuid,
                     ],
                     [
                         'quantity' => $menuInput['quantity'],
                         'quantity_used' => $menuInput['quantity'] * $item->quantity_used,
                         'created_by' => $auth->id,
+                        'status' => 'pending',
                         'updated_by' => $auth->id,
                         'last_activity_at' => now()
                     ]
@@ -1429,6 +1431,7 @@ class OrderMenuRestaurantController extends Controller
                         |--------------------------------------------------------------------------
                         */
                         DrinksVirtualTemp::create([
+                            'reservation_uuid' => $order->reservation_uuid,
                             'order_menu_restaurant_uuid' => $orderUuid,
                             'drink_restaurant_uuid' => $drinkConfig->uuid,
                             'product_uuid' => $item->product_uuid,
@@ -1438,7 +1441,7 @@ class OrderMenuRestaurantController extends Controller
                             'status' => 'pending',
                             'created_by' => $auth->id,
                             'updated_by' => $auth->id,
-                            'last_activity_at' => now()
+                            'last_activity_at' => now(),
                         ]);
                     }
 
@@ -1501,6 +1504,7 @@ class OrderMenuRestaurantController extends Controller
                     */
                     DrinksVirtualTemp::create([
                         'order_menu_restaurant_uuid' => $orderUuid,
+                        'reservation_uuid' => $order->reservation_uuid,
                         'drink_restaurant_uuid' => $drinkConfig->uuid,
                         'product_uuid' => $drinkConfig->product_uuid,
                         'quantity' => $qty,
@@ -1723,6 +1727,7 @@ class OrderMenuRestaurantController extends Controller
         ]);
 
         $orderUuid = $validated['order_menu_restaurant_uuid'];
+        $order = OrderMenuRestaurant::where('uuid', $orderUuid)->firstOrFail();
 
         MenuVirtualTemp::where('order_menu_restaurant_uuid', $orderUuid)
             ->where(function ($query) {
@@ -1742,6 +1747,7 @@ class OrderMenuRestaurantController extends Controller
             if (!$menuItem) continue;
             MenuVirtualTemp::create([
                 'order_menu_restaurant_uuid' => $orderUuid,
+                'reservation_uuid' => $order->reservation_uuid,
                 'menus_restaurant_uuid' => $menuItem->menus_restaurant_uuid,
                 'product_uuid' => $item->product_uuid,
                 'type' => 'initial',
@@ -1750,6 +1756,7 @@ class OrderMenuRestaurantController extends Controller
                 'status' => 'pending',
                 'created_by' => auth()->id(),
                 'updated_by' => auth()->id(),
+                'last_activity_at' => now()
             ]);
         }
 
@@ -1771,6 +1778,7 @@ class OrderMenuRestaurantController extends Controller
             if (!$realDrink) continue;
             DrinksVirtualTemp::create([
                 'order_menu_restaurant_uuid' => $orderUuid,
+                'reservation_uuid' => $order->reservation_uuid,
                 'product_uuid' => $item->product_uuid,
                 'drink_restaurant_uuid' => $realDrink->drink_restaurant_uuid,
                 'type' => 'initial',
@@ -1779,6 +1787,7 @@ class OrderMenuRestaurantController extends Controller
                 'status' => 'pending',
                 'created_by' => auth()->id(),
                 'updated_by' => auth()->id(),
+                'last_activity_at' => now()
             ]);
         }
 
@@ -3121,7 +3130,7 @@ class OrderMenuRestaurantController extends Controller
         \App\Models\OrderNotification::createOrUpdateNotification(
             $order->uuid,
             MenuOrderStatus::TRANSFERRED->value,
-            "Boisson ajoutée à la commande {$order->code} et transmise en cuisine.",
+            "Boisson(s) ajoutée à la commande {$order->code} et transmise au bar.",
             $auth->id,
             'bar'
         );
