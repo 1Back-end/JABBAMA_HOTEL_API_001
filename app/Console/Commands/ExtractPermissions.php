@@ -255,12 +255,6 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des notifications du restaurant',
             'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
-        'view_all_notification_menu_and_drinks' => [
-            'description' => 'Afficher les notifications des commandes contenant menus et boissons',
-            'category' => 'Gestion des notifications du restaurant',
-            'modules' => ['Gestion du restaurant','Autres Modules'],
-        ],
-
     ];
 
     public function handle(): void

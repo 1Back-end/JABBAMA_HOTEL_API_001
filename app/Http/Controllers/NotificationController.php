@@ -76,7 +76,7 @@ class NotificationController extends Controller
 
                     $sub->where('target', 'kitchen')
                         ->whereHas('order', function ($order) {
-                            $order->whereHas('items'); // uniquement cuisine
+                            $order->whereHas('items');
                         });
                 });
             }

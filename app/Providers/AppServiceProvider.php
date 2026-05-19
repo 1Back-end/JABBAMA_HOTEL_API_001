@@ -29,5 +29,7 @@ class AppServiceProvider extends ServiceProvider
         Paginator::useBootstrapFour();
 
         Carbon::setLocale('fr');
+
     }
+
 }
