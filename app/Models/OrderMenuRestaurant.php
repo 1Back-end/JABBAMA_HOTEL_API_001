@@ -65,7 +65,8 @@ class OrderMenuRestaurant extends Model
         'is_in_editing',
         'editing_by',
         'editing_started_at',
-        'rollback_at'
+        'rollback_at',
+        'is_restored'
     ];
 
     /**
