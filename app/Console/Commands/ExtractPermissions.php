@@ -175,11 +175,6 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des commandes du restaurant',
             'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
-        'view_total_price_for_order_restaurant' => [
-            'description' => 'Afficher le montant total d\'une commande',
-            'category' => 'Gestion des commandes du restaurant',
-            'modules' => ['Gestion du restaurant','Autres Modules'],
-        ],
         'view_all_notification_transferred' => [
             'description' => 'Afficher les notifications d\'une commande transférée',
             'category' => 'Gestion des notifications du restaurant',
@@ -241,7 +236,7 @@ class ExtractPermissions extends Command
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],
         'view_unit_price_and_total_price' => [
-            'description' => 'Afficher le prix unitaire et le prix totale des items d\'une commande',
+            'description' => 'Afficher le prix unitaire, le prix total des items et le montant total d\'une commande',
             'category' => 'Gestion des commandes du restaurant',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],

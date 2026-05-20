@@ -15,9 +15,9 @@ Route::patch('orders_menu_restaurants/{uuid}/validate_item_drinks', [\App\Http\C
 Route::patch('orders_menu_restaurants/{uuid}/deliver_menus_selected', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'validateAndDeductStockMenus']);
 Route::patch('orders_menu_restaurants/{uuid}/deliver_drink_selected', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'validateAndDeductStockDrinks']);
 Route::patch('orders_menu_restaurants/{uuid}/cancel_menus_selected', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'cancelMenuValidation']);
+Route::patch('orders_menu_restaurants/{uuid}/cancel_drinks_selected', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'cancelDrinkValidation']);
 Route::patch('orders_menu_restaurants/{uuid}/cancel_menus_selected_after_validation', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'cancelMenuValidationAfterValidation']);
 Route::patch('orders_menu_restaurants/{uuid}/cancel_drinks_selected_after_validation', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'cancelDrinkValidationAfterValidation']);
-Route::patch('orders_menu_restaurants/{uuid}/cancel_drinks_selected', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'cancelDrinkValidation']);
 Route::patch('orders_menu_restaurants/{uuid}/rejected_selected_menus_items', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'rejectMenuItems']);
 Route::patch('orders_menu_restaurants/{uuid}/rejected_selected_drinks_items', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'rejectDrinks']);
 Route::patch('orders_menu_restaurants/{uuid}/add_new_items', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'addItemsToOrder']);
