@@ -38,6 +38,7 @@ class OrderMenuRestaurant extends Model
         'created_by',
         'updated_by',
         'validated_by',
+        'is_restored',
         'cancelled_by',
         'type_clients_for_payment',
         'order_menu_restaurant_date',
