@@ -6,7 +6,6 @@ use function Laravel\Prompts\select;
 
 enum OrderMenuRestaurantItemStatus: string
 {
-    case PENDING = 'pending';
 
     CASE REJECTED = 'rejected';
     case DELIVERED = 'delivered';
@@ -25,31 +24,23 @@ enum OrderMenuRestaurantItemStatus: string
     case PARTIAL_COMPLETED = 'partial_completed';
      case NEW_REJECTED = 'new_rejected';
      case DEFECTIVE = 'defective';
-
-     case FACTURE_GENERATE = 'facture_generate';
      case FACTURATE = 'facture';
-    case REINSTATED = 'reinstated';
 
     public function label(): string
     {
         return match ($this) {
-            self::PENDING => 'En attente',
             self::DELIVERED => 'Servie',
             self::NOT_DELIVERED => 'Non servie',
             self::PARTIAL_DELIVERED => 'Servie partiellement',
-            self::DELIVERED_IN_PREPARATION => 'Prêt pour service',
             self::TOTAL_DELIVERED => 'Prêt',
             self::REJECTED => 'Rejetté',
             self::TRANSFERRED => 'Transférée',
             self::REJECTED_FOR_NEW_UPDATE => 'Rejet du prêt',
             self::IN_PREPARATION => 'En cours de préparation',
             self::PARTIAL_COMPLETED => 'Prêt partiellement',
-            self::NEW_REJECTED => 'Rejettée',
             self::DEFECTIVE => 'Défectieux',
             self::REJECTED_AFTER_VALIDATION => 'Rejet du servi(s)',
-            self::FACTURE_GENERATE => 'Facture générée',
             self::FACTURATE => 'Facturée',
-            self::REINSTATED => 'Restauration'
         };
     }
 

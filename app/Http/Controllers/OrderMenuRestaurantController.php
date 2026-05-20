@@ -836,14 +836,10 @@ class OrderMenuRestaurantController extends Controller
 
         $orderUuid = $validated['order_menu_restaurant_uuid'];
         $order = OrderMenuRestaurant::where('uuid', $orderUuid)->firstOrFail();
-        $menu_uuid = $validated['menus'];
 
         $warehouseUuid = Warehouse::where('is_used_for_restaurant', true)
             ->value('uuid');
-
         $stockErrors = [];
-
-        // 🔥 charger UNE FOIS toutes les compositions
         $menusUuid = collect($validated['menus'])->pluck('menus_restaurant_uuid');
 
         $menuItems = MenuOrderItem::with('product')
@@ -851,13 +847,22 @@ class OrderMenuRestaurantController extends Controller
             ->get()
             ->groupBy('menus_restaurant_uuid');
 
+        $MenuUuids = collect($validated['menus'])
+            ->pluck('menus_restaurant_uuid')
+            ->unique()
+            ->toArray();
+
+        MenuVirtualTemp::where('order_menu_restaurant_uuid', $orderUuid)
+            ->where('status', 'pending')
+            ->whereIn('menus_restaurant_uuid', $MenuUuids)
+            ->delete();
+
         foreach ($validated['menus'] as $menuInput) {
 
             foreach ($menuItems[$menuInput['menus_restaurant_uuid']] ?? [] as $item) {
 
                 $requiredQty = (int) $menuInput['quantity'] * (int) $item->quantity_used;
 
-                // 🔥 stock réel
                 $realStock = (float) ProductPoint::where('produit_uuid', $item->product_uuid)
                     ->where('point_uuid', $warehouseUuid)
                     ->value('quantity') ?? 0;
@@ -896,30 +901,22 @@ class OrderMenuRestaurantController extends Controller
             ], 422);
         }
 
-        MenuVirtualTemp::where('menus_restaurant_uuid', $menusUuid)
-            ->update(['type' => 'not_used','status' => 'cancelled']);
-
         foreach ($validated['menus'] as $menuInput) {
 
             foreach ($menuItems[$menuInput['menus_restaurant_uuid']] ?? [] as $item) {
-
-                MenuVirtualTemp::updateOrCreate(
-                    [
-                        'order_menu_restaurant_uuid' => $orderUuid,
-                        'menus_restaurant_uuid' => $menuInput['menus_restaurant_uuid'],
-                        'product_uuid' => $item->product_uuid,
-                        'type' => 'initial',
-                        'reservation_uuid' => $order->reservation_uuid,
-                    ],
-                    [
-                        'quantity' => $menuInput['quantity'],
-                        'quantity_used' => $menuInput['quantity'] * $item->quantity_used,
-                        'created_by' => $auth->id,
-                        'status' => 'pending',
-                        'updated_by' => $auth->id,
-                        'last_activity_at' => now()
-                    ]
-                );
+                MenuVirtualTemp::create([
+                    'order_menu_restaurant_uuid' => $orderUuid,
+                    'menus_restaurant_uuid' => $menuInput['menus_restaurant_uuid'],
+                    'product_uuid' => $item->product_uuid,
+                    'type' => 'initial',
+                    'reservation_uuid' => $order->reservation_uuid,
+                    'quantity' => $menuInput['quantity'],
+                    'quantity_used' => $menuInput['quantity'] * $item->quantity_used,
+                    'created_by' => $auth->id,
+                    'updated_by' => $auth->id,
+                    'status' => 'pending',
+                    'last_activity_at' => now(),
+                ]);
             }
         }
 
@@ -1943,7 +1940,7 @@ class OrderMenuRestaurantController extends Controller
 
             // 5. Création de la commande principale
             $order = OrderMenuRestaurant::create([
-                'status' => \App\Enums\MenuOrderStatus::PENDING->value,
+                'status' => \App\Enums\MenuOrderStatus::TRANSFERRED->value,
                 'type_clients_for_payment' => $validated['type_clients_for_payment'],
                 'consumption_type' => $validated['consumption_type'],
                 'restaurant_table_uuid' => $validated['restaurant_table_uuid'] ?? null,
@@ -8763,109 +8760,80 @@ class OrderMenuRestaurantController extends Controller
     }
 
 
-
     /**
      * Display a listing of the resource.
-     * @permission OrderMenuRestaurantController::PrintFactureForOrderMenuRestaurant
-     * @permission_desc Imprimer la facture du client
+     * @permission OrderMenuRestaurantController::destroy
+     * @permission_desc Supprimer définitivement une commande
      */
-    public static function PrintFactureForOrderMenuRestaurant(Request $request, string $uuid)
+    public function destroy(Request $request, string $uuid)
     {
         $auth = auth()->user();
-        try {
-            DB::beginTransaction();
 
-            $order_menu_restaurant = OrderMenuRestaurant::with([
-                'restaurantTable',
-                'creator',
-                'updater',
-                'validator',
-                'cancelor',
-                'partners_restaurant',
-                'warehouse',
-                'restaurant_room',
-                'menu_restaurant',
-                'items.menu',
-            ])->findOrFail($uuid);
+        $request->validate([
+            'password' => 'required|string'
+        ]);
 
-            $fileName   = strtoupper('FACTURE-N°-' . strtoupper($order_menu_restaurant->code) . '-'. '.pdf');
-            $folderPath = 'storage/details-facture-orders-menus-restaurant/' . $order_menu_restaurant->uuid;
-            $filePath   = $folderPath . '/' . $fileName;
-
-            if (!is_dir($folderPath)) {
-                if (!mkdir($folderPath, 0755, true) && !is_dir($folderPath)) {
-                    throw new \RuntimeException("Impossible de créer le répertoire : {$folderPath}");
-                }
-            }
-
-            $data = ['order' => $order_menu_restaurant];
-
-            $footer = 'pdfs.reports.factures.footer';
-
-            save_browser_shot_pdf(
-                view: 'pdfs.facture-client.facture-client',
-                data: $data,
-                folderPath: $folderPath,
-                path: $filePath,
-                margins: [10, 10, 10, 10],
-                footer: $footer
-            );
-            DB::commit();
-
-            if (!file_exists($filePath)) {
-                return response()->json(['message' => "Le fichier PDF n'a pas été généré."], 500);
-            }
-
-            $pdf = PdfDocument::where('order_menu_restaurant', $order_menu_restaurant->uuid)
-                ->where('name', 'FACTURE-ORDERS-RESTAURANT')
-                ->first();
-
-            // S'il existe → on met à jour le fichier
-            if ($pdf) {
-                $pdf->update([
-                    'path'       => $filePath,
-                    'filename'   => $fileName,
-                    'updated_by' => $auth->id,
-                ]);
-            }
-            // Sinon → on crée un nouvel enregistrement
-            else {
-                $pdf = PdfDocument::create([
-                    'name'       => 'FACTURE-ORDERS-RESTAURANT',
-                    'order_uuid' => $order_menu_restaurant->uuid,
-                    'disk'       => 'public',
-                    'path'       => $filePath,
-                    'filename'   => $fileName,
-                    'mimetype'   => 'application/pdf',
-                    'extension'  => 'pdf',
-                    'created_by' => auth()->id(),
-                ]);
-            }
-
-            $pdfContent = file_get_contents($filePath);
-            $base64     = base64_encode($pdfContent);
-
-            return response()->json([
-                'data'     => $data,
-                'base64'   => $base64,
-                'url'      => $filePath,
-                'filename' => $fileName,
-                'document' => $pdf,
-            ], 200);
-        } catch (\Exception $e) {
-            DB::rollBack();
-
-            \Log::error("Erreur génération PDF commande : " . $e->getMessage());
-
+        if (!Hash::check($request->password, $auth->password)) {
             return response()->json([
                 'status'  => 'error',
-                'message' => "Erreur lors de la génération du fichier PDF.",
-                'details' => $e->getMessage()
+                'message' => 'Mot de passe incorrect.'
+            ], 422);
+        }
+
+        $order = OrderMenuRestaurant::where('uuid', $uuid)->firstOrFail();
+
+        if ($order->is_in_editing) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Cette commande est actuellement en cours de modification.',
+            ], 409);
+        }
+
+        DB::beginTransaction();
+
+        try {
+
+            $this->deleteOrderRelations($order->uuid);
+
+            $order->delete();
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Commande supprimée avec succès.',
+            ]);
+
+        } catch (\Exception $e) {
+
+            DB::rollBack();
+
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(), // 🔥 erreur exacte
+                'line' => $e->getLine(),
+                'file' => $e->getFile(),
             ], 500);
         }
     }
 
-
+    private function deleteOrderRelations(string $orderUuid): void
+    {
+        MenuVirtualTemp::where('order_menu_restaurant_uuid', $orderUuid)->delete();
+        DrinksVirtualTemp::where('order_menu_restaurant_uuid', $orderUuid)->delete();
+        OrderRestaurantDrink::where('order_menu_restaurant_uuid', $orderUuid)->delete();
+        OrderMenuRestaurantItem::where('order_menu_restaurant_uuid', $orderUuid)->delete();
+        OrderMenuItemStatusForDrink::where('order_menu_restaurant_uuid', $orderUuid)->delete();
+        OrderMenuItemStatus::where('order_menu_restaurant_uuid', $orderUuid)->delete();
+        LastStatusDrinksMenusRestaurant::where('order_menu_restaurant_uuid', $orderUuid)->delete();
+        LastStatusItemsMenusRestaurant::where('order_menu_restaurant_uuid', $orderUuid)->delete();
+        OrderMenuRestaurantDefectiveDrink::where('order_menu_restaurant_uuid', $orderUuid)->delete();
+        OrderMenuRestaurantDefectiveItem::where('order_menu_restaurant_uuid', $orderUuid)->delete();
+        \App\Models\OrderNotification::where('order_menu_restaurant_uuid', $orderUuid)->delete();
+        StatisticsOrderStatusMenuRestaurant::where('order_menu_restaurant_uuid', $orderUuid)->delete();
+        StatisticsOrderStatusDrink::where('order_menu_restaurant_uuid', $orderUuid)->delete();
+        VirtualOrderMenuRestaurant::where('orders_menu_restaurant_uuid', $orderUuid)->delete();
+    }
 
 
 
