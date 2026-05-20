@@ -6007,6 +6007,7 @@ class OrderMenuRestaurantController extends Controller
                 $sourceStatuses = [
                     OrderMenuRestaurantItemStatus::TRANSFERRED->value,
                     OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value,
+                    OrderMenuRestaurantItemStatus::REJECTED_AFTER_VALIDATION->value
 
                 ];
 
@@ -6786,12 +6787,10 @@ class OrderMenuRestaurantController extends Controller
             ]
         );
 
-        // Incrémentation des compteurs
         $rejectedStatus->increment('quantity', $qtyToProcess);
         $rejectedStatus->increment('quantity_accumulated', $qtyToProcess);
         $rejectedStatus->update(['updated_by' => $auth->id, 'order_menu_restaurant_uuid' => $order->uuid]);
 
-        // 3. Mise à jour de l'item parent
         $item->update([
             'status'       => OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value,
             'is_rejected'  => true,
@@ -6901,30 +6900,21 @@ class OrderMenuRestaurantController extends Controller
     }
 
     private function rejectDrinkFromDelivered(OrderRestaurantDrink $drink, int $qtyToReject, $auth, OrderMenuRestaurant $order) {
-        $sourceStatus = $drink->statuses()
-            ->where('status', OrderMenuRestaurantItemStatus::DELIVERED->value)
-            ->first();
+        $sourceStatus = $drink->statuses()->where('status', OrderMenuRestaurantItemStatus::DELIVERED->value)->first();
 
         if (!$sourceStatus || $sourceStatus->quantity <= 0) return;
 
-        // 🔹 2. Quantité à traiter
         $qtyToProcess = min($qtyToReject, $sourceStatus->quantity);
 
-        // 🔻 Décrémenter DELIVERED
         $sourceStatus->decrement('quantity', $qtyToProcess);
-
         if ($sourceStatus->fresh()->quantity <= 0) {
-            $sourceStatus->update([
-                'quantity_accumulated' => 0,
-                'updated_by' => $auth->id
-            ]);
+            $sourceStatus->update(['quantity_accumulated' => 0]);
         }
 
-        // 🔹 3. Créer / update REJECTED_AFTER_VALIDATION
         $rejectedStatus = $drink->statuses()->firstOrCreate(
             [
                 'status' => OrderMenuRestaurantItemStatus::REJECTED_AFTER_VALIDATION->value,
-                'order_restaurant_drink_uuid' => $drink->uuid // ⚠️ IMPORTANT
+                'order_restaurant_drink_uuid' => $drink->uuid
             ],
             [
                 'order_menu_restaurant_uuid' => $order->uuid,
@@ -6942,7 +6932,6 @@ class OrderMenuRestaurantController extends Controller
             'updated_by' => $auth->id,
         ]);
 
-        // 🔹 4. Update DRINK principal
         $drink->update([
             'status' => OrderMenuRestaurantItemStatus::REJECTED_AFTER_VALIDATION->value,
             'is_rejected' => true,
@@ -7297,7 +7286,6 @@ class OrderMenuRestaurantController extends Controller
                 ->with(['items.virtuals', 'items.statuses'])
                 ->firstOrFail();
 
-            $warehouse = Warehouse::where('is_used_for_restaurant', true)->firstOrFail();
             $restorationLogs = [];
             $selectedItems = collect($request->items)->keyBy('item_uuid');
 
