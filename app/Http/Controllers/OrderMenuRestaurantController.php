@@ -2951,7 +2951,8 @@ class OrderMenuRestaurantController extends Controller
             $order->uuid,
             $newStatus,
             "{$order->code}La commande {$order->code} est déjà au statut " . OrderMenuRestaurantItemStatus::safeLabel($newStatus) . ".",
-            auth()->id()
+            auth()->id(),
+            'bar'
         );
         $this->refreshOrderStatus($order);
         if ($diff !== 0) {
