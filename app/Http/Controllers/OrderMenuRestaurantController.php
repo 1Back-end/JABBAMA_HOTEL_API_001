@@ -873,8 +873,13 @@ class OrderMenuRestaurantController extends Controller
 
                     ->when($orderUuid, function ($q) use ($orderUuid) {
                         $q->where(function ($sub) use ($orderUuid) {
-                            $sub->whereNull('order_menu_restaurant_uuid')
-                                ->orWhere('order_menu_restaurant_uuid', '!=', $orderUuid);
+                            $sub->where('order_menu_restaurant_uuid', $orderUuid)
+
+                                ->orWhere(function ($s) use ($orderUuid) {
+
+                                    $s->whereNotNull('order_menu_restaurant_uuid')
+                                        ->where('order_menu_restaurant_uuid', '!=', $orderUuid);
+                                });
                         });
                     })
 
