@@ -870,13 +870,10 @@ class OrderMenuRestaurantController extends Controller
                 $reservedStock = (float) MenuVirtualTemp::where('product_uuid', $item->product_uuid)
                     ->where('status', 'pending')
                     ->where('type', '!=', 'not_used')
-
                     ->when($orderUuid, function ($q) use ($orderUuid) {
                         $q->where(function ($sub) use ($orderUuid) {
                             $sub->where('order_menu_restaurant_uuid', $orderUuid)
-
                                 ->orWhere(function ($s) use ($orderUuid) {
-
                                     $s->whereNotNull('order_menu_restaurant_uuid')
                                         ->where('order_menu_restaurant_uuid', '!=', $orderUuid);
                                 });
@@ -7245,8 +7242,6 @@ class OrderMenuRestaurantController extends Controller
                 }
 
                 $item->status = OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value;
-                $item->reason = $reason;
-                $item->is_rejected = true;
                 $item->updated_by = $auth->id;
                 $item->is_reason_of_cancel_for_new_update = true;
                 $item->cancel_for_new_update_at = now();
@@ -7327,8 +7322,6 @@ class OrderMenuRestaurantController extends Controller
                 }
 
                 $item->status = OrderMenuRestaurantItemStatus::REJECTED_AFTER_VALIDATION->value;
-                $item->reason = $reason;
-                $item->is_rejected = true;
                 $item->updated_by = $auth->id;
                 $item->rejected_after_validation_by = $auth->id;
                 $item->rejected_after_validation_at = now();
@@ -7407,8 +7400,6 @@ class OrderMenuRestaurantController extends Controller
                 }
 
                 $drink->status = OrderMenuRestaurantItemStatus::REJECTED_AFTER_VALIDATION->value;
-                $drink->reason = $reason;
-                $drink->is_rejected = true;
                 $drink->updated_by = $auth->id;
                 $drink->rejected_after_validation_by = $auth->id;
                 $drink->rejected_after_validation_at = now();
@@ -7500,7 +7491,6 @@ class OrderMenuRestaurantController extends Controller
                 }
 
                 $drink->status = OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value;
-                $drink->is_rejected = true;
                 $drink->updated_by = $auth->id;
                 $drink->is_reason_of_cancel_for_new_update = true;
                 $drink->cancel_for_new_update_at = now();
@@ -7944,7 +7934,7 @@ class OrderMenuRestaurantController extends Controller
             }
             \App\Models\OrderNotification::createOrUpdateNotification(
                 $order->uuid,
-                MenuOrderStatus::REINSTATED->value,
+                MenuOrderStatus::TRANSFERRED->value,
                 "Commande {$order->code} restaurée avec succès en cuisine.",
                 $auth->id,
                 'kitchen'
@@ -8058,7 +8048,7 @@ class OrderMenuRestaurantController extends Controller
 
             \App\Models\OrderNotification::createOrUpdateNotification(
                 $order->uuid,
-                MenuOrderStatus::REINSTATED->value,
+                MenuOrderStatus::TRANSFERRED->value,
                 "Commande {$order->code} restaurée avec succès.",
                 $auth->id,
                 'bar'
