@@ -71,6 +71,8 @@ class OrderNotification extends Model
                 'view_all_notification_in_delivered'   => 'delivered',
                 'view_all_notification_in_rejected_after_validation' => 'rejected_after_validation',
                 'view_all_notification_in_cancel_for_new_update'     => 'cancel_for_new_update',
+                'view_all_notification_in_partial_completed' => 'partial_completed',
+                'view_all_notification_in_partial_delivered' => 'partial_delivered',
             ];
 
             $allowedStatuses = [];
