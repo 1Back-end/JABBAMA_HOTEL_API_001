@@ -215,6 +215,16 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des notifications du restaurant',
             'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
+        'view_all_notification_in_partial_delivered' => [
+            'description' => 'Afficher les notifications d\'une commande en servie partiellement',
+            'category' => 'Gestion des notifications du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'view_all_notification_in_partial_completed' => [
+            'description' => 'Afficher les notifications d\'une commande en prêt partiellement',
+            'category' => 'Gestion des notifications du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
         'view_all_notification' => [
             'description' => 'Afficher la liste des notifications d\'une commande',
             'category' => 'Gestion des notifications du restaurant',

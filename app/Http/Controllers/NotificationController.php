@@ -51,6 +51,8 @@ class NotificationController extends Controller
         if ($user->can('view_all_notification_in_delivered')) $statuses[] = 'delivered';
         if ($user->can('view_all_notification_in_rejected_after_validation')) $statuses[] = 'rejected_after_validation';
         if ($user->can('view_all_notification_in_cancel_for_new_update')) $statuses[] = 'cancel_for_new_update';
+        if ($user->can('view_all_notification_in_partial_completed')) $statuses[] = 'partial_completed';
+        if ($user->can('view_all_notification_in_partial_delivered')) $statuses[] = 'partial_delivered';
 
         if (empty($statuses)) {
             $statuses[] = 'transferred';
