@@ -1592,8 +1592,20 @@ class OrderMenuRestaurantController extends Controller
         $reservedStock = (float) MenuVirtualTemp::where('product_uuid', $productUuid)
             ->where('status', 'pending')
             ->where('type', '!=', 'not_used')
-            ->where('reservation_uuid', '!=', $reservationUuid)
+            ->when($reservationUuid, function ($q) use ($reservationUuid) {
+                $q->where(function ($sub) use ($reservationUuid) {
+                    $sub->where('reservation_uuid', $reservationUuid)
+                        ->orWhere(function ($s) use ($reservationUuid) {
+                            $s->whereNotNull('reservation_uuid')
+                                ->where('reservation_uuid', '!=', $reservationUuid);
+                        });
+                });
+            })
+
             ->sum('quantity_used');
+
+
+
 
         $availableStock = max(0, $realStock - $reservedStock);
 
@@ -7760,6 +7772,7 @@ class OrderMenuRestaurantController extends Controller
                         ]
                     );
                     $virtual->increment('quantity_in_defective', $qtyToSave);
+                    $virtual->increment('quantity_to_remove', $qtyToDefect);
                 }
 
                 $item->update([
@@ -8384,11 +8397,6 @@ class OrderMenuRestaurantController extends Controller
                 'created_by' => $auth->id,
             ]);
 
-            /*
-            |--------------------------------------------------------------------------
-            | 📌 VIRTUAL STOCK
-            |--------------------------------------------------------------------------
-            */
             $virtual = VirtualOrderMenuRestaurant::firstOrCreate(
                 [
                     'item_uuid' => $drink->uuid,
@@ -8401,24 +8409,14 @@ class OrderMenuRestaurantController extends Controller
                     'quantity_in_defective' => 0,
                     'quantity_reserved' => 0,
                     'quantity_exactly' => 0,
+                    'quantity_to_remove' => 0,
                     'created_by' => $auth->id,
                     'updated_by' => $auth->id,
                 ]
             );
 
-            /*
-            |--------------------------------------------------------------------------
-            | 📌 IMPORTANT
-            |--------------------------------------------------------------------------
-            | SIMPLE :
-            | 2 drinks => +2 defective
-            |
-            | COMPOSED :
-            | 2 drinks + composition(2,3)
-            | => +4 and +6
-            |--------------------------------------------------------------------------
-            */
             $virtual->quantity_in_defective += $ing['qty_to_remove'];
+            $virtual->quantity_to_remove += $ing['qty_to_remove'];
 
             $virtual->updated_by = $auth->id;
 
@@ -8474,6 +8472,7 @@ class OrderMenuRestaurantController extends Controller
                 foreach ($item->virtuals->where('item_type', 'menu') as $v) {
 
                     $toDeduct = $v->quantity_in_defective;
+                    $toDeductExactly = $v->quantity_to_remove;
 
                     if ($toDeduct <= 0) continue;
 
@@ -8488,22 +8487,45 @@ class OrderMenuRestaurantController extends Controller
                     $productPoint->decrement('quantity', $toDeduct);
                     $v->decrement('quantity_in_defective', $toDeduct);
                     $v->decrement('quantity_reserved', $toDeduct);
-                    $v->decrement('quantity', $qty);
+                    $v->decrement('quantity', $toDeductExactly);
+                    $v->decrement('quantity_to_remove', $toDeductExactly);
 
-                    $v->update([
-                        'quantity_in_defective' => max(0, $v->quantity_in_defective),
-                        'quantity_reserved' => max(0, $v->quantity_reserved),
-                        'quantity' => max(0, $v->quantity),
+                }
+
+                MenuVirtualTemp::where('order_menu_restaurant_uuid', $order->uuid)
+                    ->where(function ($query) {
+                        $query->whereIn('type', ['initial', 'editing','not_used'])
+                            ->orWhereNull('reservation_uuid');
+                    })
+                    ->forceDelete();
+
+                $virtualItems = VirtualOrderMenuRestaurant::where('orders_menu_restaurant_uuid', $order->uuid)
+                    ->where('status', 'pending')
+                    ->where('item_type', 'menu')
+                    ->get();
+
+                $ItemMenu = OrderMenuRestaurantItem::where('order_menu_restaurant_uuid', $order->uuid)->get();
+
+                foreach ($virtualItems as $virtualItem) {
+                    $menuItem = $ItemMenu->firstWhere('uuid', $virtualItem->item_uuid);
+
+                    if (!$menuItem) {
+                        continue;
+                    }
+
+                    MenuVirtualTemp::create([
+                        'order_menu_restaurant_uuid' => $order->uuid,
+                        'reservation_uuid' => $order->reservation_uuid,
+                        'menus_restaurant_uuid' => $menuItem->menus_restaurant_uuid,
+                        'product_uuid' => $virtualItem->product_uuid,
+                        'type' => 'initial',
+                        'quantity' => $virtualItem->quantity,
+                        'quantity_used' => $virtualItem->quantity_reserved,
+                        'status' => 'pending',
+                        'created_by' => auth()->id(),
+                        'updated_by' => auth()->id(),
+                        'last_activity_at' => now(),
                     ]);
-
-                    MenuVirtualTemp::where('order_menu_restaurant_uuid', $order->uuid)
-                        ->where('product_uuid', $v->product_uuid)
-                        ->where('type', 'initial')
-                        ->update([
-                            'quantity_used' => DB::raw("GREATEST(quantity_used - {$toDeduct}, 0)"),
-                            'quantity' => DB::raw("GREATEST(quantity - {$qty}, 0)"),
-                            'updated_by' => $auth->id,
-                        ]);
                 }
 
                 $item->update([
@@ -8511,7 +8533,7 @@ class OrderMenuRestaurantController extends Controller
                     'quantity' => max(0, $item->quantity - $qty),
                     'updated_by' => $auth->id,
                 ]);
-                $this->refreshItemStatusAfterDelete($item, $auth);
+                $this->refreshItemStatusAfterDelete($item, $auth,$order);
 
                 $item->statuses()
                     ->where('status', OrderMenuRestaurantItemStatus::TRANSFERRED->value)
@@ -8548,39 +8570,64 @@ class OrderMenuRestaurantController extends Controller
         });
     }
 
-    private function refreshItemStatusAfterDelete(OrderMenuRestaurantItem $item, $auth)
+    private function refreshItemStatusAfterDelete(OrderMenuRestaurantItem $item, $auth,$order)
     {
         $item->refresh();
         $deliveredQty = (int) $item->statuses()->where('status', OrderMenuRestaurantItemStatus::DELIVERED->value)->whereNull('deleted_at')
             ->sum('quantity');
         $requiredQty = (int) $item->quantity_exactly;
+        $currentStatus = $this->resolveItemStatusFromStatuses($item);
+
         if ($requiredQty > 0 && $deliveredQty === $requiredQty) {
             $status = OrderMenuRestaurantItemStatus::DELIVERED->value;
+            $notificationStatus = MenuOrderStatus::TOTAL_DELIVERED->value;
+            $message = "Commande {$order->code} est prête.";
         } else {
-            $status = $this->resolveItemStatusFromStatuses($item);
+            $status = $currentStatus;
+            $notificationStatus = $currentStatus;
+            $message = "Commande {$order->code} au statut " . MenuOrderStatus::safeLabel($currentStatus);
         }
         $item->update([
             'status' => $status,
             'updated_by' => $auth->id
         ]);
+        \App\Models\OrderNotification::createOrUpdateNotification(
+            $order->uuid,
+            $notificationStatus,
+            $message,
+            $auth->id,
+            'kitchen'
+        );
     }
 
-    private function refreshDrinksStatusAfterDelete(OrderRestaurantDrink $drink, $auth)
+    private function refreshDrinksStatusAfterDelete(OrderRestaurantDrink $drink, $auth,$order)
     {
         $drink->refresh();
 
         $deliveredQty = (int) $drink->statuses()->where('status', OrderMenuRestaurantItemStatus::DELIVERED->value)->whereNull('deleted_at')
             ->sum('quantity');
         $requiredQty = (int) $drink->quantity_exactly;
+        $currentStatus = $this->resolveDrinkStatusFromStatuses($drink);
         if ($requiredQty > 0 && $deliveredQty === $requiredQty) {
             $status = OrderMenuRestaurantItemStatus::DELIVERED->value;
+            $notificationStatus = MenuOrderStatus::TOTAL_DELIVERED->value;
+            $message = "Commande {$order->code} est prête.";
         } else {
-            $status = $this->resolveDrinkStatusFromStatuses($drink);
+            $status = $currentStatus;
+            $notificationStatus = $currentStatus;
+            $message = "Commande {$order->code} au statut " . MenuOrderStatus::safeLabel($currentStatus);
         }
         $drink->update([
             'status' => $status,
             'updated_by' => $auth->id
         ]);
+        \App\Models\OrderNotification::createOrUpdateNotification(
+            $order->uuid,
+            $notificationStatus,
+            $message,
+            $auth->id,
+            'bar'
+        );
     }
 
 
@@ -8636,13 +8683,9 @@ class OrderMenuRestaurantController extends Controller
                     $warehouse = Warehouse::where('is_bar_warehouse', true)->lockForUpdate()->firstOrFail();
                 }
 
-                /*
-                |--------------------------------------------------------------------------
-                | MISE À JOUR DES STOCKS VIRTUELS
-                |--------------------------------------------------------------------------
-                */
                 foreach ($drink->virtuals->where('item_type', 'drink') as $v) {
                     $toDeduct = (float) $v->quantity_in_defective;
+                    $toDeductExactly = (float) $v->quantity_to_remove;
                     if ($toDeduct <= 0) {
                         continue;
                     }
@@ -8654,47 +8697,60 @@ class OrderMenuRestaurantController extends Controller
                         );
                     }
 
-                    /*
-                    |--------------------------------------------------------------------------
-                    | DÉDUCTION STOCK PHYSIQUE
-                    |--------------------------------------------------------------------------
-                    */
                     $productPoint->update(['quantity' => max(0, $productPoint->quantity - $toDeduct),
                         'updated_by' => $auth->id,
                     ]);
 
-                    /*
-                    |--------------------------------------------------------------------------
-                    | DÉDUCTION STOCK VIRTUEL
-                    |--------------------------------------------------------------------------
-                    */
-                    $v->update(['quantity_in_defective' => max(0, $v->quantity_in_defective - $toDeduct),
+                    $v->update([
+                        'quantity_in_defective' => max(0, $v->quantity_in_defective - $toDeduct),
                         'quantity_reserved' => max(0, $v->quantity_reserved - $toDeduct),
-                        'quantity' => max(0, $v->quantity - $qty),
+                        'quantity' => max(0, $v->quantity - $toDeductExactly),
+                        'quantity_to_remove' => max(0, $v->quantity_to_remove - $toDeductExactly),
                         'updated_by' => $auth->id,
                     ]);
 
-                    DrinksVirtualTemp::where('order_menu_restaurant_uuid', $order->uuid)
-                        ->where('product_uuid', $v->product_uuid)
-                        ->where('type', 'initial')
-                        ->update([
-                            'quantity_used' => DB::raw(
-                                "GREATEST(quantity_used - {$toDeduct}, 0)"
-                            ),
-
-                            'quantity' => DB::raw(
-                                "GREATEST(quantity - {$qty}, 0)"
-                            ),
-
-                            'updated_by' => $auth->id,
-                        ]);
                 }
 
-                /*
-                |--------------------------------------------------------------------------
-                | MISE À JOUR DRINK PRINCIPAL
-                |--------------------------------------------------------------------------
-                */
+                DrinksVirtualTemp::where('order_menu_restaurant_uuid', $order->uuid)
+                    ->where(function ($query) {
+                        $query->whereIn('type', ['initial', 'editing'])
+                            ->orWhereNull('reservation_uuid');
+                    })
+                    ->forceDelete();
+
+                $virtualItemsDrinks = VirtualOrderMenuRestaurant::where('orders_menu_restaurant_uuid', $order->uuid)
+                    ->where('status', 'pending')
+                    ->where('item_type', 'drink')
+                    ->get();
+
+                $itemDrinks = OrderRestaurantDrink::where('order_menu_restaurant_uuid', $order->uuid)
+                    ->get();
+
+                foreach ($virtualItemsDrinks as $virtualDrink) {
+
+                    $realDrink = $itemDrinks->firstWhere('uuid', $virtualDrink->item_uuid);
+
+                    if (!$realDrink) {
+                        continue;
+                    }
+
+                    DrinksVirtualTemp::create([
+                        'order_menu_restaurant_uuid' => $order->uuid,
+                        'reservation_uuid' => $order->reservation_uuid,
+                        'drink_restaurant_uuid' => $realDrink->drink_restaurant_uuid,
+                        'product_uuid' => $virtualDrink->product_uuid,
+                        'type' => 'initial',
+                        'status' => 'pending',
+                        'quantity' => $virtualDrink->quantity,
+                        'quantity_used' => $virtualDrink->quantity_reserved,
+
+                        'created_by' => auth()->id(),
+                        'updated_by' => auth()->id(),
+
+                        'last_activity_at' => now(),
+                    ]);
+                }
+
                 $drink->update([
                     'quantity_exactly' => max(
                         0,
@@ -8709,7 +8765,7 @@ class OrderMenuRestaurantController extends Controller
                     'updated_by' => $auth->id,
                 ]);
 
-                $this->refreshDrinksStatusAfterDelete($drink, $auth);
+                $this->refreshDrinksStatusAfterDelete($drink, $auth,$order);
 
                 $drink->statuses()->where('status', OrderMenuRestaurantItemStatus::TRANSFERRED->value)
                     ->update([

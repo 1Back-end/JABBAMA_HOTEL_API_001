@@ -33,7 +33,9 @@ class VirtualOrderMenuRestaurant extends Model
         'item_type',
         'is_new_items',
         'is_last_items',
-        'quantity'
+        'quantity',
+        'quantity_to_remove',
+        'virtual_uuid'
     ];
 
     protected static function boot()
