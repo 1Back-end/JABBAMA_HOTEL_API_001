@@ -17,7 +17,6 @@ return new class extends Migration
             $table->string('description')->nullable()->comment('Description de la catégorie');
             $table->boolean('active')->default(true)->comment('Statut actif/inactif');
 
-            // Utilisateurs ayant créé ou mis à jour
             $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
             $table->foreignId('updated_by')->nullable()->constrained('users')->nullOnDelete();
 
