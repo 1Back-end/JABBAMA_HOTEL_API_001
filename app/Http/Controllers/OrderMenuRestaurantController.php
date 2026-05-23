@@ -93,7 +93,6 @@ class OrderMenuRestaurantController extends Controller
         $setting = SettingRestaurant::where('key', 'logout_period')
             ->where('is_active', true)
             ->first();
-
         return $setting ? (int)$setting->value : 30;
     }
 
@@ -5138,6 +5137,7 @@ class OrderMenuRestaurantController extends Controller
         $validatedItems = $request->validate([
             '*.item_uuid' => 'required|uuid|exists:orders_menu_restaurant_items,uuid',
             '*.quantity_to_deliver' => 'required|integer|min:1',
+            '*.reason' => 'required|string|max:255',
         ]);
 
         DB::beginTransaction();
@@ -5152,6 +5152,7 @@ class OrderMenuRestaurantController extends Controller
 
                 $qtyToReject = (int) $selection['quantity_to_deliver'];
                 $originalQtyToReject = $qtyToReject;
+                $reason = $selection['reason'];
 
                 // 1. Déduction en cascade : d'abord TRANSFERRED, puis IN_PREPARATION
                 $this->deductFromStatus($item, OrderMenuRestaurantItemStatus::TRANSFERRED->value, $qtyToReject);
@@ -5195,7 +5196,7 @@ class OrderMenuRestaurantController extends Controller
                     'rejected_by' => $auth->id,
                     'rejected_at' => now(),
                     'status'      => OrderMenuRestaurantItemStatus::REJECTED->value,
-                    'reason' => 'Plat rejetée en cuisine. Action requise.'
+                    'reason' =>  $reason,
                 ]);
             }
 
@@ -5308,6 +5309,7 @@ class OrderMenuRestaurantController extends Controller
         $validatedItems = $request->validate([
             '*.drink_uuid' => 'required|uuid|exists:order_restaurannts_drinks,uuid',
             '*.quantity_to_deliver' => 'required|integer|min:1',
+            '*.reason' => 'required|string|max:255',
         ]);
 
         DB::beginTransaction();
@@ -5324,6 +5326,7 @@ class OrderMenuRestaurantController extends Controller
 
                 $qtyToReject = (int) $selection['quantity_to_deliver'];
                 $originalQtyToReject = $qtyToReject;
+                $reason = $selection['reason'];
 
                 // 1. 🔥 Déduction cascade (TRANSFERRED → IN_PREPARATION)
                 $this->deductFromDrinkStatus($drink, OrderMenuRestaurantItemStatus::TRANSFERRED->value, $qtyToReject);
@@ -5375,7 +5378,7 @@ class OrderMenuRestaurantController extends Controller
                     'rejected_at' => now(),
                     'status' => OrderMenuRestaurantItemStatus::REJECTED->value,
                     'updated_by' => $auth->id,
-                    'reason' => 'Boisson rejetée en cuisine. Action requise.'
+                    'reason' => $reason
                 ]);
             }
 
@@ -6985,8 +6988,6 @@ class OrderMenuRestaurantController extends Controller
             'kitchen'
         );
     }
-
-
     private function refreshItemForPartialStatusStatus(OrderMenuRestaurantItem $item, $auth,$order)
     {
         $item->refresh();
@@ -8581,7 +8582,7 @@ class OrderMenuRestaurantController extends Controller
         if ($requiredQty > 0 && $deliveredQty === $requiredQty) {
             $status = OrderMenuRestaurantItemStatus::DELIVERED->value;
             $notificationStatus = MenuOrderStatus::TOTAL_DELIVERED->value;
-            $message = "Commande {$order->code} est prête.";
+            $message = "Commande {$order->code} est servie.";
         } else {
             $status = $currentStatus;
             $notificationStatus = $currentStatus;
@@ -8611,7 +8612,7 @@ class OrderMenuRestaurantController extends Controller
         if ($requiredQty > 0 && $deliveredQty === $requiredQty) {
             $status = OrderMenuRestaurantItemStatus::DELIVERED->value;
             $notificationStatus = MenuOrderStatus::TOTAL_DELIVERED->value;
-            $message = "Commande {$order->code} est prête.";
+            $message = "Commande {$order->code} est servie.";
         } else {
             $status = $currentStatus;
             $notificationStatus = $currentStatus;
