@@ -6,3 +6,4 @@ Route::get('enums/type_clients_for_payment', [\App\Http\Controllers\EnumControll
 Route::get('enums/room_type', [\App\Http\Controllers\EnumController::class, 'room_type']);
 Route::get('enums/menu_orders_status', [\App\Http\Controllers\EnumController::class, 'menu_orders_status']);
 Route::get('menus_orders_actions', [\App\Http\Controllers\MenuOrdersController::class, 'MenuOrderStatus']);
+Route::get('enums/menus_complement_type', [\App\Http\Controllers\MenuOrdersController::class, 'MenuComplementType']);

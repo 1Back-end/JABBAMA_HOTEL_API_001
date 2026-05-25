@@ -34,7 +34,8 @@ class MenuRestaurant extends Model
         'description',
         'category_uuid',
         'type_complement_boisson',
-        'is_confectioned'
+        'is_confectioned',
+        'quantity'
     ];
 
     protected $casts = [

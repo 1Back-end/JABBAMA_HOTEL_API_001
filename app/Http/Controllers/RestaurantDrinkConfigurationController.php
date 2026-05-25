@@ -214,6 +214,7 @@ class RestaurantDrinkConfigurationController extends Controller
                 'description' => ['nullable', 'string'],
                 'is_active' => ['nullable', 'boolean'],
                 'default_price' => ['nullable', 'numeric', 'min:0'],
+                'quantity' => ['nullable', 'integer', 'min:0'],
                 'is_finished_product' => ['nullable', 'boolean'],
                 'is_transformable_product' => ['nullable', 'boolean'],
             ]);

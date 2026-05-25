@@ -147,7 +147,7 @@ class ProductController extends Controller
                 'purchase_price' => 'nullable|numeric|min:0',
                 'sale_price' => 'nullable|numeric|min:0',
                 'stock_quantity' => 'nullable|integer|min:0',
-                'minimum_stock' => 'required|integer|min:0', // obligatoire
+                'minimum_stock' => 'required|integer|min:0',
                 'sub_categories' => 'nullable|array',
                 'sub_categories.*' => 'exists:sub_categories,uuid',
                 'points' => 'nullable|array',
@@ -376,8 +376,7 @@ class ProductController extends Controller
             // 3. Mise à jour des données de base du produit
             $product->update($validated);
 
-            // 4. Synchronisation des Sous-catégories
-            // Si sub_categories est vide, sync([]) va tout détacher proprement
+
             $subCategories = $request->input('sub_categories', []);
             $pivotSub = [];
             foreach ($subCategories as $sub_uuid) {
@@ -389,18 +388,65 @@ class ProductController extends Controller
             $product->subCategories()->sync($pivotSub);
 
             $points = $request->input('points', []);
-            $pivotPoints = [];
-            foreach ($points as $point) {
-                $pivotPoints[$point['uuid']] = [
-                    'quantity' => $point['quantity'] ?? 0,
-                    'stocks_minimal' => $point['stocks_minimal'] ?? $validated['minimum_stock'],
-                    'is_active' => 1,
-                    'updated_by' => $auth->id,
-                ];
+            $existingUuids = $product->points()
+                ->withPivot('is_active')
+                ->get()
+                ->pluck('pivot.point_uuid')
+                ->toArray();
+            $incomingUuids = collect($points)->pluck('uuid')->toArray();
+
+            $removedUuids = array_diff($existingUuids, $incomingUuids);
+
+            foreach ($removedUuids as $removedUuid) {
+                $product->points()->updateExistingPivot(
+                    $removedUuid,
+                    [
+                        'is_active' => 0,
+                        'updated_by' => $auth->id,
+                    ]
+                );
             }
 
-            $product->points()->sync($pivotPoints);
+            foreach ($points as $point) {
 
+                $pointUuid = $point['uuid'];
+
+                $existingPivot = $product->points()
+                    ->withPivot('quantity', 'stocks_minimal')
+                    ->wherePivot('point_uuid', $pointUuid)
+                    ->first();
+
+
+                if ($existingPivot) {
+
+                    $product->points()->updateExistingPivot(
+                        $pointUuid,
+                        [
+                            'quantity' => array_key_exists('quantity', $point)
+                                ? $point['quantity']
+                                : $existingPivot->pivot->quantity,
+
+                            'stocks_minimal' => array_key_exists('stocks_minimal', $point)
+                                ? $point['stocks_minimal']
+                                : $existingPivot->pivot->stocks_minimal,
+
+                            'is_active' => 1,
+                            'updated_by' => $auth->id,
+                        ]
+                    );
+
+                } else {
+                    $product->points()->attach(
+                        $pointUuid,
+                        [
+                            'quantity' => $point['quantity'] ?? 0,
+                            'stocks_minimal' => $point['stocks_minimal'] ?? $validated['minimum_stock'],
+                            'is_active' => 1,
+                            'updated_by' => $auth->id,
+                        ]
+                    );
+                }
+            }
             if ($request->hasFile('image_file')) {
                 // Optionnel : Supprimer l'ancien média physiquement ici si nécessaire
                 $product->medias()->delete(); // Supprime l'enregistrement en base

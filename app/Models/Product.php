@@ -89,7 +89,8 @@ class Product extends Model
         )
             ->using(\App\Models\ProductPoint::class)
             ->withPivot('uuid', 'quantity', 'stocks_minimal', 'is_active')
-            ->wherePivotNull('deleted_at') // 🔥 IMPORTANT
+            ->wherePivot('is_active', 1)
+            ->wherePivotNull('deleted_at')
             ->withTimestamps();
     }
 
