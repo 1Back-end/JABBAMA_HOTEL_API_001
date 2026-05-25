@@ -32,7 +32,7 @@ class NotificationController extends Controller
         if ($user->can('view_all_notification')) {
             return response()->json([
                 'status' => 'success',
-                'data' => $query->latest()->get()
+                'data' => $query->oldest()->get()
             ]);
         }
 
@@ -64,7 +64,7 @@ class NotificationController extends Controller
 
             if ($user->can('view_kitchen_notifications')) {
                 $q->orWhere(function ($sub) {
-                    $sub->where('target', 'all')
+                    $sub->whereIn('target', ['all', 'kitchen'])
                         ->orWhere(function ($q2) {
                             $q2->where('target', 'kitchen')
                                 ->whereHas('order', function ($order) {
@@ -77,7 +77,7 @@ class NotificationController extends Controller
 
             if ($user->can('view_bar_notifications')) {
                 $q->orWhere(function ($sub) {
-                    $sub->where('target', 'all')
+                    $sub->whereIn('target', ['all', 'bar'])
                         ->orWhere(function ($q2) {
                             $q2->where('target', 'bar')
                                 ->whereHas('order', function ($order) {
@@ -91,7 +91,7 @@ class NotificationController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'data' => $query->latest()->get()
+            'data' => $query->oldest()->get()
         ]);
     }
 
@@ -113,7 +113,7 @@ class NotificationController extends Controller
         if ($user->can('view_all_notification')) {
             return response()->json([
                 'status' => 'success',
-                'data' => $query->latest()->get()
+                'data' => $query->oldest()->get()
             ]);
         }
 
@@ -167,7 +167,7 @@ class NotificationController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'data' => $query->latest()->get()
+            'data' => $query->oldest()->get()
         ]);
     }
 

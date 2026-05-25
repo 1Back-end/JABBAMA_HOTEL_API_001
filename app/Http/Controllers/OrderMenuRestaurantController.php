@@ -93,7 +93,6 @@ class OrderMenuRestaurantController extends Controller
         $setting = SettingRestaurant::where('key', 'logout_period')
             ->where('is_active', true)
             ->first();
-
         return $setting ? (int)$setting->value : 30;
     }
 
@@ -772,18 +771,22 @@ class OrderMenuRestaurantController extends Controller
 
             ->when($reservationUuid, function ($q) use ($reservationUuid) {
                 $q->where(function ($sub) use ($reservationUuid) {
-                    $sub->whereNull('reservation_uuid')
-                        ->orWhere('reservation_uuid', '!=', $reservationUuid);
+                    $sub->where('reservation_uuid', $reservationUuid)
+                        ->orWhere(function ($s) use ($reservationUuid) {
+                            $s->whereNotNull('reservation_uuid')
+                                ->where('reservation_uuid', '!=', $reservationUuid);
+                        });
                 });
             })
-
             ->when($orderUuid, function ($q) use ($orderUuid) {
                 $q->where(function ($sub) use ($orderUuid) {
-                    $sub->whereNull('order_menu_restaurant_uuid')
-                        ->orWhere('order_menu_restaurant_uuid', '!=', $orderUuid);
+                    $sub->where('order_menu_restaurant_uuid', $orderUuid)
+                        ->orWhere(function ($s) use ($orderUuid) {
+                            $s->whereNotNull('order_menu_restaurant_uuid')
+                                ->where('order_menu_restaurant_uuid', '!=', $orderUuid);
+                        });
                 });
             })
-
             ->sum('quantity_used');
 
         $availableStock = max(0, $realStock - $reservedStock);
@@ -1223,12 +1226,13 @@ class OrderMenuRestaurantController extends Controller
                 $reservedStock = (float) MenuVirtualTemp::where('product_uuid', $item->product_uuid)
                     ->where('status', 'pending')
                     ->where('type', '!=', 'not_used')
-
-                    // 🔥 exclure uniquement CETTE commande en modification
                     ->when($orderUuid, function ($q) use ($orderUuid) {
                         $q->where(function ($sub) use ($orderUuid) {
-                            $sub->whereNull('order_menu_restaurant_uuid')
-                                ->orWhere('order_menu_restaurant_uuid', '!=', $orderUuid);
+                            $sub->where('order_menu_restaurant_uuid', $orderUuid)
+                                ->orWhere(function ($s) use ($orderUuid) {
+                                    $s->whereNotNull('order_menu_restaurant_uuid')
+                                        ->where('order_menu_restaurant_uuid', '!=', $orderUuid);
+                                });
                         });
                     })
 
@@ -3330,10 +3334,7 @@ class OrderMenuRestaurantController extends Controller
             $statuses = $drink->statuses;
 
             // 1. Priorité aux REJECTED
-            $rejectedStatuses = $statuses->whereIn('status', [
-                OrderMenuRestaurantItemStatus::REJECTED->value,
-                OrderMenuRestaurantItemStatus::NEW_REJECTED->value
-            ]);
+            $rejectedStatuses = $statuses->whereIn('status', OrderMenuRestaurantItemStatus::REJECTED->value);
 
             foreach ($rejectedStatuses as $status) {
                 $deduct = min($status->quantity, $remainingToRemove);
@@ -3442,10 +3443,7 @@ class OrderMenuRestaurantController extends Controller
             $statuses = $drink->statuses;
 
             // 1. On tape d'abord dans les REJECTED
-            $rejectedStatuses = $statuses->whereIn('status', [
-                OrderMenuRestaurantItemStatus::REJECTED->value,
-                OrderMenuRestaurantItemStatus::NEW_REJECTED->value
-            ]);
+            $rejectedStatuses = $statuses->whereIn('status',OrderMenuRestaurantItemStatus::REJECTED->value);
 
             foreach ($rejectedStatuses as $status) {
                 $deduct = min($status->quantity, $remainingToRemove);
@@ -3550,10 +3548,7 @@ class OrderMenuRestaurantController extends Controller
         $statuses = $drink->statuses;
 
         // Récupération des deux groupes
-        $rejectedStatuses = $statuses->whereIn('status', [
-            OrderMenuRestaurantItemStatus::REJECTED->value,
-            OrderMenuRestaurantItemStatus::NEW_REJECTED->value
-        ]);
+        $rejectedStatuses = $statuses->whereIn('status', OrderMenuRestaurantItemStatus::REJECTED->value,);
         $transferredStatuses = $statuses->where('status', OrderMenuRestaurantItemStatus::TRANSFERRED->value);
 
         $qtyRejected = $rejectedStatuses->sum('quantity');
@@ -4294,10 +4289,7 @@ class OrderMenuRestaurantController extends Controller
             $remainingToRemove = abs($diff);
 
             // 🔹 1. REJECTED
-            foreach ($statuses->whereIn('status', [
-                OrderMenuRestaurantItemStatus::REJECTED->value,
-                OrderMenuRestaurantItemStatus::NEW_REJECTED->value
-            ]) as $status) {
+            foreach ($statuses->whereIn('status',OrderMenuRestaurantItemStatus::REJECTED->value) as $status) {
 
                 if ($status->deleted_at) continue;
 
@@ -4433,10 +4425,7 @@ class OrderMenuRestaurantController extends Controller
 
                 // 🔹 REJECTED
                 $rejectedStatuses = $item->statuses()
-                    ->whereIn('status', [
-                        OrderMenuRestaurantItemStatus::REJECTED->value,
-                        OrderMenuRestaurantItemStatus::NEW_REJECTED->value
-                    ])
+                    ->where('status', OrderMenuRestaurantItemStatus::REJECTED->value)
                     ->get();
 
                 foreach ($rejectedStatuses as $status) {
@@ -4563,10 +4552,7 @@ class OrderMenuRestaurantController extends Controller
 
                 // 🔹 1. REJECTED
                 $rejectedStatuses = $item->statuses()
-                    ->whereIn('status', [
-                        OrderMenuRestaurantItemStatus::REJECTED->value,
-                        OrderMenuRestaurantItemStatus::NEW_REJECTED->value
-                    ])
+                    ->where('status', OrderMenuRestaurantItemStatus::REJECTED->value)
                     ->get();
 
                 foreach ($rejectedStatuses as $status) {
@@ -5138,6 +5124,7 @@ class OrderMenuRestaurantController extends Controller
         $validatedItems = $request->validate([
             '*.item_uuid' => 'required|uuid|exists:orders_menu_restaurant_items,uuid',
             '*.quantity_to_deliver' => 'required|integer|min:1',
+            '*.reason' => 'required|string|max:255',
         ]);
 
         DB::beginTransaction();
@@ -5152,6 +5139,7 @@ class OrderMenuRestaurantController extends Controller
 
                 $qtyToReject = (int) $selection['quantity_to_deliver'];
                 $originalQtyToReject = $qtyToReject;
+                $reason = $selection['reason'];
 
                 // 1. Déduction en cascade : d'abord TRANSFERRED, puis IN_PREPARATION
                 $this->deductFromStatus($item, OrderMenuRestaurantItemStatus::TRANSFERRED->value, $qtyToReject);
@@ -5195,7 +5183,7 @@ class OrderMenuRestaurantController extends Controller
                     'rejected_by' => $auth->id,
                     'rejected_at' => now(),
                     'status'      => OrderMenuRestaurantItemStatus::REJECTED->value,
-                    'reason' => 'Plat rejetée en cuisine. Action requise.'
+                    'reason' =>  $reason,
                 ]);
             }
 
@@ -5308,6 +5296,7 @@ class OrderMenuRestaurantController extends Controller
         $validatedItems = $request->validate([
             '*.drink_uuid' => 'required|uuid|exists:order_restaurannts_drinks,uuid',
             '*.quantity_to_deliver' => 'required|integer|min:1',
+            '*.reason' => 'required|string|max:255',
         ]);
 
         DB::beginTransaction();
@@ -5324,6 +5313,7 @@ class OrderMenuRestaurantController extends Controller
 
                 $qtyToReject = (int) $selection['quantity_to_deliver'];
                 $originalQtyToReject = $qtyToReject;
+                $reason = $selection['reason'];
 
                 // 1. 🔥 Déduction cascade (TRANSFERRED → IN_PREPARATION)
                 $this->deductFromDrinkStatus($drink, OrderMenuRestaurantItemStatus::TRANSFERRED->value, $qtyToReject);
@@ -5375,7 +5365,7 @@ class OrderMenuRestaurantController extends Controller
                     'rejected_at' => now(),
                     'status' => OrderMenuRestaurantItemStatus::REJECTED->value,
                     'updated_by' => $auth->id,
-                    'reason' => 'Boisson rejetée en cuisine. Action requise.'
+                    'reason' => $reason
                 ]);
             }
 
@@ -5702,11 +5692,7 @@ class OrderMenuRestaurantController extends Controller
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if (
-                !$warehouseRestaurant ||
-                !$warehouseBar ||
-                !$warehouseTransformation
-            ) {
+            if (!$warehouseRestaurant || !$warehouseBar || !$warehouseTransformation) {
                 throw new \Exception(
                     "Configuration des entrepôts incomplète"
                 );
@@ -5722,19 +5708,13 @@ class OrderMenuRestaurantController extends Controller
                 }
 
                 foreach ($item->virtuals as $virtual) {
-
                     $qty = (float) $virtual->quantity_reserved;
-
                     if ($qty <= 0) {
                         continue;
                     }
 
-                    $stock = ProductPoint::where(
-                        'point_uuid',
-                        $warehouseRestaurant->uuid
-                    )
-                        ->where(
-                            'produit_uuid',
+                    $stock = ProductPoint::where('point_uuid', $warehouseRestaurant->uuid)->where(
+                        'produit_uuid',
                             $virtual->product_uuid
                         )
                         ->lockForUpdate()
@@ -5748,7 +5728,6 @@ class OrderMenuRestaurantController extends Controller
                     }
 
                     if ($stock->quantity < $qty) {
-
                         throw new \Exception(
                             "Stock RESTAURANT insuffisant produit {$virtual->product_uuid}"
                         );
@@ -6985,8 +6964,6 @@ class OrderMenuRestaurantController extends Controller
             'kitchen'
         );
     }
-
-
     private function refreshItemForPartialStatusStatus(OrderMenuRestaurantItem $item, $auth,$order)
     {
         $item->refresh();
@@ -7632,7 +7609,6 @@ class OrderMenuRestaurantController extends Controller
         if ($lastItem) {
             $order->status = match ($lastItem->status) {
                 OrderMenuRestaurantItemStatus::REJECTED->value => MenuOrderStatus::REJECTED->value,
-                OrderMenuRestaurantItemStatus::NEW_REJECTED->value => MenuOrderStatus::NEW_REJECTED->value,
                 OrderMenuRestaurantItemStatus::REJECTED_AFTER_VALIDATION->value => MenuOrderStatus::REJECTED_AFTER_VALIDATION->value,
                 OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value => MenuOrderStatus::REJECTED_FOR_NEW_UPDATE->value,
                 OrderMenuRestaurantItemStatus::IN_PREPARATION->value => MenuOrderStatus::IN_PREPARATION->value,
@@ -8581,7 +8557,7 @@ class OrderMenuRestaurantController extends Controller
         if ($requiredQty > 0 && $deliveredQty === $requiredQty) {
             $status = OrderMenuRestaurantItemStatus::DELIVERED->value;
             $notificationStatus = MenuOrderStatus::TOTAL_DELIVERED->value;
-            $message = "Commande {$order->code} est prête.";
+            $message = "Commande {$order->code} est servie.";
         } else {
             $status = $currentStatus;
             $notificationStatus = $currentStatus;
@@ -8611,7 +8587,7 @@ class OrderMenuRestaurantController extends Controller
         if ($requiredQty > 0 && $deliveredQty === $requiredQty) {
             $status = OrderMenuRestaurantItemStatus::DELIVERED->value;
             $notificationStatus = MenuOrderStatus::TOTAL_DELIVERED->value;
-            $message = "Commande {$order->code} est prête.";
+            $message = "Commande {$order->code} est servie.";
         } else {
             $status = $currentStatus;
             $notificationStatus = $currentStatus;
