@@ -2556,6 +2556,7 @@ class OrderMenuRestaurantController extends Controller
 
 
             $menus = $validated['menus'] ?? [];
+            $menuWasProcessed = false;
             if (!empty($menus)) {
                 foreach ($menus as $m) {
                     $menu = MenuRestaurant::findOrFail($m['menus_restaurant_uuid']);
@@ -2577,7 +2578,11 @@ class OrderMenuRestaurantController extends Controller
                     if ($existingItem) {
 
                         $newQty = $m['quantity'];
-                        $oldQty = $existingItem->quantity;
+                        $oldQty = $existingItem->quantity_exactly;
+
+                        if ($newQty == $oldQty) {
+                            continue;
+                        }
 
                         $isRejectedGroup = in_array($existingItem->status, [
                             OrderMenuRestaurantItemStatus::REJECTED->value,
@@ -2596,6 +2601,7 @@ class OrderMenuRestaurantController extends Controller
                         $isTransferred = $existingItem->status === OrderMenuRestaurantItemStatus::TRANSFERRED->value;
                         $isInPreparation = $existingItem->status === OrderMenuRestaurantItemStatus::IN_PREPARATION->value;
                         $isDelivered = $existingItem->status === OrderMenuRestaurantItemStatus::DELIVERED->value;
+                        $menuWasProcessed = true;
 
                         if ($newQty == $oldQty && !$isRejectedGroup && !$isDelivered && !$isTransferred && !$isInPreparation) {
                             continue;
@@ -2613,6 +2619,7 @@ class OrderMenuRestaurantController extends Controller
 
                         if ($isTransferred) {
                             $this->handleTransferred($existingItem, $m, $menu, $order, $unitPrice, $auth);
+
                             continue;
                         }
 
@@ -2627,15 +2634,15 @@ class OrderMenuRestaurantController extends Controller
                         }
 
                         $this->updateExistingMenuItem($existingItem, $menu, $order, $newQty, $unitPrice, $auth, $warehouseUuid);
-
                         continue;
                     }
+                    $menuWasProcessed = true;
                     $this->createNewMenuItem($m, $menu, $order, $unitPrice, $auth);
                 }
             }
 
             $drinks = $validated['drinks'] ?? [];
-
+            $drinkWasProcessed = false;
             if (!empty($drinks)) {
 
                 foreach ($drinks as $d) {
@@ -2661,7 +2668,11 @@ class OrderMenuRestaurantController extends Controller
                     if ($existingDrink) {
 
                         $newQty = $d['quantity'];
-                        $oldQty = $existingDrink->quantity;
+                        $oldQty = $existingDrink->quantity_exactly;
+
+                        if ($newQty == $oldQty) {
+                            continue;
+                        }
 
                         $isRejectedGroupDrinks = in_array($existingDrink->status, [
                             OrderMenuRestaurantItemStatus::REJECTED->value,
@@ -2692,6 +2703,7 @@ class OrderMenuRestaurantController extends Controller
                             continue;
                         }
 
+                        $drinkWasProcessed = true;
                         if ($isRejectedGroupDrinks) {
                             $this->handleRejectedDrink($existingDrink, $d, $unitPrice, $auth, $order);
                             continue;
@@ -2722,7 +2734,7 @@ class OrderMenuRestaurantController extends Controller
 
                         continue;
                     }
-
+                    $drinkWasProcessed = true;
                     $this->createNewDrink($d, $order, $drinkConfig, $unitPrice, $auth, $warehouseDrinkUuid, $warehouseTransformationUuid);
                 }
             }
@@ -2734,6 +2746,26 @@ class OrderMenuRestaurantController extends Controller
                 'editing_started_at' => null,
                 'rollback_at' => null
             ]);
+
+            $order->refresh();
+            if ($menuWasProcessed) {
+                \App\Models\OrderNotification::createOrUpdateNotification(
+                    $order->uuid,
+                    $order->status,
+                    "Les menus de la commande {$order->code} ont été mis à jour (Statut : " . MenuOrderStatus::safeLabel($order->status) . ").",
+                    $auth->id,
+                    'kitchen'
+                );
+            }
+            if ($drinkWasProcessed) {
+                \App\Models\OrderNotification::createOrUpdateNotification(
+                    $order->uuid,
+                    $order->status,
+                    "Les boissons de la commande {$order->code} ont été mises à jour (Statut : " . MenuOrderStatus::safeLabel($order->status) . ").",
+                    $auth->id,
+                    'bar'
+                );
+            }
 
             DB::commit();
 
@@ -2821,26 +2853,12 @@ class OrderMenuRestaurantController extends Controller
                 return OrderMenuRestaurantItemStatus::DELIVERED->value;
             }
             $status = $this->resolveDrinkStatusFromStatuses($drink);
-            $this->notifyStatusDrinkChange($drink, $status);
             return $status;
         }
 
         $status = $this->computeDeliveryDrinksStatus($drink)
             ?? $this->resolveDrinkStatusFromStatuses($drink);
-        $this->notifyStatusDrinkChange($drink, $status);
         return $status;
-    }
-    private function notifyStatusDrinkChange(OrderRestaurantDrink $drink, string $status): void
-    {
-        $order = $drink->order;
-        \App\Models\OrderNotification::createOrUpdateNotification(
-            $order->uuid,
-            $status,
-            "Commande {$order->code} déjà en " . OrderMenuRestaurantItemStatus::safeLabel($status) . ".",
-            auth()->id(),
-            $drink->uuid,
-            'bar'
-        );
     }
     private function updateVirtualDrinkStock($order, $drink, $diffQuantity, $auth)
     {
@@ -2962,14 +2980,7 @@ class OrderMenuRestaurantController extends Controller
         $drink->update([
             'status' => $newStatus,
         ]);
-        $order = $drink->order;
-        \App\Models\OrderNotification::createOrUpdateNotification(
-            $order->uuid,
-            $newStatus,
-            "{$order->code}La commande {$order->code} est déjà au statut " . OrderMenuRestaurantItemStatus::safeLabel($newStatus) . ".",
-            auth()->id(),
-            'bar'
-        );
+
         $this->refreshOrderStatus($order);
         if ($diff !== 0) {
             $this->syncIncreasedStatusDrink($drink, $diff, $auth, $order);
@@ -3225,14 +3236,7 @@ class OrderMenuRestaurantController extends Controller
         $drink->update([
             'status' => $newStatus,
         ]);
-        $order = $drink->order;
-        \App\Models\OrderNotification::createOrUpdateNotification(
-            $order->uuid,
-            $newStatus,
-            "La commande {$order->code} est déjà au statut " . OrderMenuRestaurantItemStatus::safeLabel($newStatus) . ".",
-            auth()->id(),
-            'bar'
-        );
+
         $this->refreshOrderStatus($order);
 
         // 🔥 STATS
@@ -3395,14 +3399,7 @@ class OrderMenuRestaurantController extends Controller
         $drink->update([
             'status' => $newStatus,
         ]);
-        $order = $drink->order;
-        \App\Models\OrderNotification::createOrUpdateNotification(
-            $order->uuid,
-            $newStatus,
-            "{$order->code}La commande {$order->code} est déjà au statut " . OrderMenuRestaurantItemStatus::safeLabel($newStatus) . ".",
-            auth()->id(),
-            'bar'
-        );
+
         $this->refreshOrderStatus($order);
 
         StatisticsOrderStatusDrink::where('order_restaurant_drink_uuid', $drink->uuid)
@@ -3503,14 +3500,7 @@ class OrderMenuRestaurantController extends Controller
         $drink->update([
             'status' => $newStatus,
         ]);
-        $order = $drink->order;
-        \App\Models\OrderNotification::createOrUpdateNotification(
-            $order->uuid,
-            $newStatus,
-            "La commande {$order->code} est déjà au statut " . OrderMenuRestaurantItemStatus::safeLabel($newStatus) . ".",
-            auth()->id(),
-            'bar'
-        );
+
         $this->refreshOrderStatus($order);
 
         // 📊 STATS DRINKS
@@ -3630,14 +3620,7 @@ class OrderMenuRestaurantController extends Controller
         $drink->update([
             'status' => $newStatus,
         ]);
-        $order = $drink->order;
-        \App\Models\OrderNotification::createOrUpdateNotification(
-            $order->uuid,
-            $newStatus,
-            "La commande {$order->code} est déjà au statut " . OrderMenuRestaurantItemStatus::safeLabel($newStatus) . ".",
-            auth()->id(),
-            'bar'
-        );
+
         $this->refreshOrderStatus($order);
 
         // 📊 STATS DRINKS
@@ -3691,8 +3674,6 @@ class OrderMenuRestaurantController extends Controller
         if ($deliveredQty > 0) {
             return OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value;
         }
-
-        // 🔥 IMPORTANT : pas de fallback ici
         return null;
     }
     private function resolveItemStatusFromStatuses(OrderMenuRestaurantItem $item): string
@@ -3941,28 +3922,12 @@ class OrderMenuRestaurantController extends Controller
                 return OrderMenuRestaurantItemStatus::DELIVERED->value;
             }
             $status = $this->resolveItemStatusFromStatuses($item);
-            $this->notifyStatusChange($item, $status);
             return $status;
         }
 
         $status = $this->computeDeliveryStatus($item)
             ?? $this->resolveItemStatusFromStatuses($item);
-
-        $this->notifyStatusChange($item, $status);
-
         return $status;
-    }
-    private function notifyStatusChange(OrderMenuRestaurantItem $item, string $status): void
-    {
-        $order = $item->order;
-
-        \App\Models\OrderNotification::createOrUpdateNotification(
-            $order->uuid,
-            $status,
-            "Commande {$order->code} déjà en " . OrderMenuRestaurantItemStatus::safeLabel($status) . ".",
-            auth()->id(),
-            $item->uuid
-        );
     }
     private function updateVirtualStock($menu, $order, $item, $diffQuantity, $auth)
     {
@@ -4091,14 +4056,6 @@ class OrderMenuRestaurantController extends Controller
         $item->update([
             'status' => $newStatus,
         ]);
-        $order = $item->order;
-        \App\Models\OrderNotification::createOrUpdateNotification(
-            $order->uuid,
-            $newStatus,
-            "La commande {$order->code} est déjà au statut " . OrderMenuRestaurantItemStatus::safeLabel($newStatus) . ".",
-            auth()->id(),
-            'kitchen'
-        );
         $this->refreshOrderStatus($order);
 
         StatisticsOrderStatusMenuRestaurant::updateOrCreate(
@@ -4202,14 +4159,7 @@ class OrderMenuRestaurantController extends Controller
         $item->update([
             'status' => $newStatus,
         ]);
-        $order = $item->order;
-        \App\Models\OrderNotification::createOrUpdateNotification(
-            $order->uuid,
-            $newStatus,
-            "La commande {$order->code} est déjà au statut " . OrderMenuRestaurantItemStatus::safeLabel($newStatus) . ".",
-            auth()->id(),
-            'kitchen'
-        );
+
         $this->refreshOrderStatus($order);
 
         /**
@@ -4360,14 +4310,7 @@ class OrderMenuRestaurantController extends Controller
         $item->update([
             'status' => $newStatus,
         ]);
-        $order = $item->order;
-        \App\Models\OrderNotification::createOrUpdateNotification(
-            $order->uuid,
-            $newStatus,
-            "La commande {$order->code} est déjà au statut " . OrderMenuRestaurantItemStatus::safeLabel($newStatus) . ".",
-            auth()->id(),
-            'kitchen'
-        );
+
         $this->refreshOrderStatus($order);
 
         /**
@@ -4499,14 +4442,6 @@ class OrderMenuRestaurantController extends Controller
         $item->update([
             'status' => $newStatus,
         ]);
-        $order = $item->order;
-        \App\Models\OrderNotification::createOrUpdateNotification(
-            $order->uuid,
-            $newStatus,
-            "La commande {$order->code} est actuellement au statut " . OrderMenuRestaurantItemStatus::safeLabel($newStatus) . ".",
-            auth()->id(),
-            'kitchen'
-        );
         $this->refreshOrderStatus($order);
 
         /**
@@ -4626,14 +4561,6 @@ class OrderMenuRestaurantController extends Controller
         $item->update([
             'status' => $newStatus,
         ]);
-        $order = $item->order;
-        \App\Models\OrderNotification::createOrUpdateNotification(
-            $order->uuid,
-            $newStatus,
-            "La commande {$order->code} est déjà au statut " . OrderMenuRestaurantItemStatus::safeLabel($newStatus) . ".",
-            auth()->id(),
-            'kitchen'
-        );
         $this->refreshOrderStatus($order);
 
         /**

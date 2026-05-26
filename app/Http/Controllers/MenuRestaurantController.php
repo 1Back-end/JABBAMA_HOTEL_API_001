@@ -61,7 +61,9 @@ class MenuRestaurantController extends Controller
                 'special_price'   => 'nullable|array',
                 'special_price.*' => 'numeric|min:0',
                 'description'     => 'nullable|string',
-                'type_complement_boisson' => 'nullable', 'json',
+                'type_complement_boisson' => 'nullable|array',
+                'type_complement_boisson.*.type' => 'required|string',
+                'type_complement_boisson.*.quantity' => 'nullable|integer|min:0',
             ]);
 
             $validated['created_by'] = $auth->id;
@@ -152,7 +154,9 @@ class MenuRestaurantController extends Controller
                 'special_price'   => 'nullable|array',
                 'special_price.*' => 'numeric|min:0',
                 'description'     => 'nullable|string',
-                'type_complement_boisson' => 'nullable', 'json',
+                'type_complement_boisson' => 'nullable|array',
+                'type_complement_boisson.*.type' => 'required|string',
+                'type_complement_boisson.*.quantity' => 'nullable|integer|min:0',
             ]);
 
             $validated['updated_by'] = $auth->id;

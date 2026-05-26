@@ -35,7 +35,8 @@ class RestaurantDrinkConfiguration extends Model
         'is_finished_product',
         'is_transformable_product',
         'drink_name',
-        'image_file'
+        'image_file',
+        'quantity'
     ];
 
     protected $appends = ['product_image'];
@@ -46,6 +47,9 @@ class RestaurantDrinkConfiguration extends Model
         'prices_for_clients_free' => 'array',
         'is_active' => 'boolean',
         'default_price' => 'decimal:2',
+        'quantity' => 'integer',
+        'is_finished_product' => 'boolean',
+        'is_transformable_product' => 'boolean',
     ];
 
     public static function generateCode(): string

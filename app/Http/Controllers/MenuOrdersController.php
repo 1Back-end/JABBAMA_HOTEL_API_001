@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\MenuComplementType;
 use App\Enums\MenuOrderStatus;
 use App\Enums\TypeClientsForPaiment;
 use App\Models\MenuOrder;
@@ -28,6 +29,14 @@ class MenuOrdersController extends Controller
         return response()->json([
             'status' => 'success',
             'data'   => MenuOrderStatus::toArray(),
+        ]);
+    }
+
+    public function MenuComplementType()
+    {
+        return response()->json([
+            'status' => 'success',
+            'data'   => MenuComplementType::toArray(),
         ]);
     }
 
@@ -87,7 +96,7 @@ class MenuOrdersController extends Controller
                 ['menus_restaurant_uuid' => $menus_restaurant_uuid],
                 [
                     'warehouse_uuid' => $warehouseUuid,
-                    'status'         => \App\Enums\MenuOrderStatus::PENDING->value,
+                    'status'         => \App\Enums\MenuOrderStatus::TRANSFERRED->value,
                     'created_by'     => $auth->id,
                     'description' => $validated['description'] ?? 'Confection du menu ' . trim($menu_restaurant->name),
                 ]
@@ -97,7 +106,7 @@ class MenuOrdersController extends Controller
             $menuOrder->update([
                 'warehouse_uuid' => $warehouseUuid,
                 'description'   => $validated['description'] ?? $menuOrder->description ?? 'Confection du menu ' . trim($menu_restaurant->name),
-                'status'        => \App\Enums\MenuOrderStatus::PENDING->value,
+                'status'        => \App\Enums\MenuOrderStatus::TRANSFERRED->value,
                 'updated_by'    => $auth->id,
             ]);
 
