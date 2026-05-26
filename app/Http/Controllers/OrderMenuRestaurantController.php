@@ -1460,7 +1460,7 @@ class OrderMenuRestaurantController extends Controller
                     if (!$drinkConfig->product_uuid) {
 
                         $stockErrors[] = [
-                            'drink_name' => $drinkConfig->drink_name,
+                            'drink_name' => $drinkConfig->drink_name ?? 'Boisson inconnue',
                             'quantity_required' => $qty,
                             'quantity_in_stock' => 0,
                             'error' => 'Produit introuvable'
@@ -1490,11 +1490,12 @@ class OrderMenuRestaurantController extends Controller
                     if ($qty > $available) {
 
                         $stockErrors[] = [
-                            'drink_name' => $drinkConfig->drink_name,
-                            'product_name' => $drinkConfig->product?->name,
+                            'drink_name' => $drinkConfig->drink_name ?? 'Boisson inconnue',
+                            'product_name' => optional($drinkConfig->product)->name,
                             'quantity_required' => $qty,
                             'quantity_in_stock' => $available,
-                            'error' => "{$drinkConfig->drink_name} : demandé {$qty}, disponible {$available}",
+                            'error' => ($drinkConfig->drink_name ?? 'Boisson')
+                                . " : demandé {$qty}, disponible {$available}",
                         ];
 
                         continue;
@@ -3154,13 +3155,6 @@ class OrderMenuRestaurantController extends Controller
                 quantityUsed: $quantity
             );
         }
-        \App\Models\OrderNotification::createOrUpdateNotification(
-            $order->uuid,
-            MenuOrderStatus::TRANSFERRED->value,
-            "Boisson(s) ajoutée à la commande {$order->code} et transmise au bar.",
-            $auth->id,
-            'bar'
-        );
         $order->update([
             'status' => MenuOrderStatus::TRANSFERRED->value,
             'updated_by' => $auth->id,
@@ -4801,7 +4795,7 @@ class OrderMenuRestaurantController extends Controller
             'items.menu',
             'drinks.drinkConfig.product',
             'free_client_for_restaurant',
-            'notifications'
+            'notifications.userNotifications'
         ]);
 
         if ($request->filled('restaurant_table_uuid')) {
@@ -5449,7 +5443,6 @@ class OrderMenuRestaurantController extends Controller
                 // 4. MISE À JOUR DE L'ITEM PARENT
                 $item->update([
                     'status' => OrderMenuRestaurantItemStatus::IN_PREPARATION->value,
-                    'is_rejected' => false,
                     'make_in_preparation_at' => $now,
                     'updated_by' => $auth->id,
                     'updated_at' => now()
@@ -5996,7 +5989,6 @@ class OrderMenuRestaurantController extends Controller
                 // 🍹 UPDATE DRINK
                 $drink->update([
                     'status' => OrderMenuRestaurantItemStatus::IN_PREPARATION->value,
-                    'is_rejected' => false,
                     'make_in_preparation_at' => $now,
                     'updated_by' => $auth->id
                 ]);
@@ -7175,7 +7167,7 @@ class OrderMenuRestaurantController extends Controller
             \App\Models\OrderNotification::createOrUpdateNotification(
                 $order->uuid,
                 MenuOrderStatus::REJECTED_FOR_NEW_UPDATE->value,
-                "La commande {$order->code} a été rejetée pour modification.",
+                "La commande {$order->code} est de nouveau au statut : " . MenuOrderStatus::safeLabel($order->status) . ".",
                 $auth->id,
                 'kitchen'
             );
@@ -7225,7 +7217,6 @@ class OrderMenuRestaurantController extends Controller
                 $reason = $data['reason'];
                 $qtyToCancel = (int) $data['quantity_to_deliver'];
 
-                // 1. GESTION DES STATUTS (Historique inclus)
                 $this->rejectFromDelivered($item, $qtyToCancel, $auth,$order);
 
                 $actuallyDelivered = (int) $item->quantity_final_used;
@@ -7251,10 +7242,11 @@ class OrderMenuRestaurantController extends Controller
                 'status' => MenuOrderStatus::REJECTED_AFTER_VALIDATION->value,
                 'updated_by' => $auth->id,
             ]);
+
             \App\Models\OrderNotification::createOrUpdateNotification(
                 $order->uuid,
                 MenuOrderStatus::REJECTED_AFTER_VALIDATION->value,
-                "Commande {$order->code} refusée pour service.",
+                "La commande {$order->code} est de nouveau au statut : " . MenuOrderStatus::safeLabel($order->status) . ".",
                 $auth->id,
                 'kitchen'
             );
@@ -7328,7 +7320,7 @@ class OrderMenuRestaurantController extends Controller
             \App\Models\OrderNotification::createOrUpdateNotification(
                 $order->uuid,
                 MenuOrderStatus::REJECTED_AFTER_VALIDATION->value,
-                "Commande {$order->code} refusée pour service.Action requise!",
+                "La commande {$order->code} est de nouveau au statut : " . MenuOrderStatus::safeLabel($order->status) . ".",
                 $auth->id,
                 'bar'
             );
@@ -7419,7 +7411,7 @@ class OrderMenuRestaurantController extends Controller
             \App\Models\OrderNotification::createOrUpdateNotification(
                 $order->uuid,
                 MenuOrderStatus::REJECTED_FOR_NEW_UPDATE->value,
-                "La commande {$order->code} a été rejetée pour modification.",
+                "La commande {$order->code} est de nouveau au statut : " . MenuOrderStatus::safeLabel($order->status) . ".",
                 $auth->id,
                 'bar'
             );
@@ -8587,30 +8579,34 @@ class OrderMenuRestaurantController extends Controller
                 }
 
                 foreach ($drink->virtuals->where('item_type', 'drink') as $v) {
+
                     $toDeduct = (float) $v->quantity_in_defective;
                     $toDeductExactly = (float) $v->quantity_to_remove;
                     if ($toDeduct <= 0) {
                         continue;
                     }
-                    $productPoint = ProductPoint::where('produit_uuid', $v->product_uuid)
-                        ->where('point_uuid', $warehouse->uuid)->lockForUpdate()->first();
+                    logger()->info('STOCK DEDUCTION DEBUG', [
+                        'virtual_id' => $v->uuid,
+                        'product_uuid' => $v->product_uuid,
+                        'quantity_in_defective' => $toDeduct,
+                        'quantity_to_remove' => $toDeductExactly,
+                    ]);
+
+                    $productPoint = ProductPoint::where('produit_uuid', $v->product_uuid)->where('point_uuid', $warehouse->uuid)->lockForUpdate()->first();
                     if (!$productPoint) {
                         throw new \Exception(
                             "Stock introuvable pour produit {$v->product_uuid}"
                         );
                     }
 
-                    $productPoint->update(['quantity' => max(0, $productPoint->quantity - $toDeduct),
-                        'updated_by' => $auth->id,
-                    ]);
-
-                    $v->update([
-                        'quantity_in_defective' => max(0, $v->quantity_in_defective - $toDeduct),
-                        'quantity_reserved' => max(0, $v->quantity_reserved - $toDeduct),
-                        'quantity' => max(0, $v->quantity - $toDeductExactly),
-                        'quantity_to_remove' => max(0, $v->quantity_to_remove - $toDeductExactly),
-                        'updated_by' => $auth->id,
-                    ]);
+                    if (!$productPoint) {
+                        throw new \Exception("Stock introuvable pour produit {$v->product_uuid}");
+                    }
+                    $productPoint->decrement('quantity', $toDeduct);
+                    $v->decrement('quantity_in_defective', $toDeduct);
+                    $v->decrement('quantity_reserved', $toDeduct);
+                    $v->decrement('quantity', $toDeductExactly);
+                    $v->decrement('quantity_to_remove', $toDeductExactly);
 
                 }
 
