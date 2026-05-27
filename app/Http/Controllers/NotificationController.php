@@ -21,7 +21,10 @@ class NotificationController extends Controller
         $query = \App\Models\OrderNotification::with([
             'creator',
             'updater',
-            'order'
+            'order',
+            'userNotifications' => function ($q) use ($user) {
+                $q->where('user_id', $user->id);
+            }
         ]);
 
         $query->whereHas('userNotifications', function ($q) use ($user) {
@@ -78,7 +81,7 @@ class NotificationController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'data' => $query->oldest()->get()
+            'data' => $query->latest()->get()
         ]);
     }
 
@@ -192,6 +195,8 @@ class NotificationController extends Controller
         $userNotification->update([
             'is_read' => true,
             'read_at' => now(),
+            'created_by' => $auth->id,
+            'updated_by' => $auth->id,
         ]);
 
         return response()->json([

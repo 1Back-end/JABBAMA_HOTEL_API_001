@@ -22,6 +22,8 @@ class UserOrderNotification extends Model
         'user_id',
         'is_read',
         'read_at',
+        'created_by',
+        'updated_by',
     ];
 
     public function notification()

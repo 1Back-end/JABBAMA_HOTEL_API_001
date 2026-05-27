@@ -5543,7 +5543,6 @@ class OrderMenuRestaurantController extends Controller
                 // 🔥 update item
                 $item->update([
                     'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
-                    'is_rejected' => false,
                     'updated_by' => $auth->id,
                 ]);
             }
@@ -5846,7 +5845,6 @@ class OrderMenuRestaurantController extends Controller
                 // 🔥 4. update DRINK PRINCIPAL
                 $drink->update([
                     'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
-                    'is_rejected' => false,
                     'updated_by' => $auth->id,
                 ]);
             }

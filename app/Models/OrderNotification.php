@@ -169,17 +169,24 @@ class OrderNotification extends Model
             $users->push($kitchenUserId);
         }
 
-        $superAdminIds = \App\Models\User::whereHas('roles', function ($q) {$q->where('name', 'SUPER_ADMIN');})->pluck('id');
+        $superAdminIds = \App\Models\User::whereHas('roles', function ($q) {
+            $q->where('name', 'SUPER_ADMIN');
+        })->pluck('id');
+
         $users = $users->merge($superAdminIds);
 
         foreach ($users->unique() as $uid) {
-            \App\Models\UserOrderNotification::create([
-                'uuid' => \Str::uuid(),
-                'order_notification_uuid' => $notification->uuid,
-                'user_id' => $uid,
-                'is_read' => false,
-                'read_at' => null,
-            ]);
+            \App\Models\UserOrderNotification::updateOrCreate(
+                [
+                    'order_notification_uuid' => $notification->uuid,
+                    'user_id' => $uid,
+                ],
+                [
+                    'uuid' => \Str::uuid(),
+                    'is_read' => false,
+                    'read_at' => null,
+                ]
+            );
         }
 
         return $notification;
