@@ -225,11 +225,6 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des notifications du restaurant',
             'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
-        'view_all_notification' => [
-            'description' => 'Afficher la liste des notifications d\'une commande',
-            'category' => 'Gestion des notifications du restaurant',
-            'modules' => ['Gestion du restaurant','Autres Modules'],
-        ],
         'view_kitchen_orders' => [
             'description' => 'Afficher les commandes contenant des menus',
             'category' => 'Gestion des commandes du restaurant',

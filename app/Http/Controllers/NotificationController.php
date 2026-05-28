@@ -22,14 +22,8 @@ class NotificationController extends Controller
             'creator',
             'updater',
             'order',
-            'userNotifications' => function ($q) use ($user) {
-                $q->where('user_id', $user->id);
-            }
         ]);
 
-        $query->whereHas('userNotifications', function ($q) use ($user) {
-            $q->where('user_id', $user->id);
-        });
 
         $statuses = [];
 
@@ -45,7 +39,11 @@ class NotificationController extends Controller
         if ($user->can('view_all_notification_in_partial_delivered')) $statuses[] = 'partial_delivered';
 
         if (empty($statuses)) {
-            $statuses[] = 'transferred';
+
+            return response()->json([
+                'status' => 'success',
+                'data' => []
+            ]);
         }
 
         $query->whereIn('status', $statuses);
@@ -62,7 +60,6 @@ class NotificationController extends Controller
                                 });
                         });
                 });
-
             }
 
             if ($user->can('view_bar_notifications')) {
@@ -172,31 +169,16 @@ class NotificationController extends Controller
         $auth = auth()->user();
 
         $notification = \App\Models\OrderNotification::where('uuid', $uuid)->first();
-
         if (!$notification) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Notification introuvable'
             ], 404);
         }
-
-        $userNotification = \App\Models\UserOrderNotification::where([
-            'order_notification_uuid' => $notification->uuid,
-            'user_id' => $auth->id,
-        ])->first();
-
-        if (!$userNotification) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Accès non autorisé à cette notification'
-            ], 403);
-        }
-
-        $userNotification->update([
-            'is_read' => true,
-            'read_at' => now(),
-            'created_by' => $auth->id,
+        $notification->update([
             'updated_by' => $auth->id,
+            'is_read' => true,
+            'read_at' => now()
         ]);
 
         return response()->json([

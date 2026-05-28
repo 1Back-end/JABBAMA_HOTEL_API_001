@@ -6299,8 +6299,7 @@ class OrderMenuRestaurantController extends Controller
                 $item->quantity_final_used += $qtyToDeliver;
                 $item->quantity = $newRemaining;
                 $item->save();
-
-                $this->refreshItemForPartialStatusStatus($item, $auth,$order);
+                $this->refreshItemForPartialStatusStatus($item, $auth);
                 $item->refresh();
 
                 $allDeliveryLogs[] = [
@@ -6319,14 +6318,30 @@ class OrderMenuRestaurantController extends Controller
 
             if ($itemsStatus->isEmpty()) {
                 $orderStatus = OrderMenuRestaurantItemStatus::NOT_DELIVERED->value;
+                $allFinished = false;
             } else {
                 $allFinished = $itemsStatus->every(
-                    fn($status) => $status === OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value
+                    fn($status) =>
+                        $status === OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value
                 );
                 $orderStatus = $allFinished
                     ? OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value
                     : OrderMenuRestaurantItemStatus::PARTIAL_COMPLETED->value;
             }
+
+            $notificationStatus = $allFinished
+                ? MenuOrderStatus::TOTAL_DELIVERED->value
+                : MenuOrderStatus::PARTIAL_COMPLETED->value;
+
+            \App\Models\OrderNotification::createOrUpdateNotification(
+                $order->uuid,
+                $notificationStatus,
+                $allFinished
+                    ? "La commande commande {$order->code} est déjà prête."
+                    : "La commande {$order->code} est déjà prête partiellement.",
+                $auth->id,
+                'kitchen'
+            );
             $this->refreshOrderStatus($order);
 
             $order->update([
@@ -6469,7 +6484,7 @@ class OrderMenuRestaurantController extends Controller
                 | 📌 REFRESH STATUS
                 |--------------------------------------------------------------------------
                 */
-                $this->refreshDrinkForPartialStatus($item, $auth,$order);
+                $this->refreshDrinkForPartialStatus($item, $auth);
 
                 $item->refresh();
 
@@ -6499,29 +6514,34 @@ class OrderMenuRestaurantController extends Controller
                 ];
             }
 
-            /*
-            |--------------------------------------------------------------------------
-            | 📌 ORDER STATUS
-            |--------------------------------------------------------------------------
-            */
-            $itemsStatus = collect($allDeliveryLogs)
-                ->pluck('status_item');
+            $itemsStatus = collect($allDeliveryLogs)->pluck('status_item');
 
             if ($itemsStatus->isEmpty()) {
-
                 $orderStatus = OrderMenuRestaurantItemStatus::NOT_DELIVERED->value;
-
+                $allFinished = false;
             } else {
-
                 $allFinished = $itemsStatus->every(
                     fn($status) =>
                         $status === OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value
                 );
-
                 $orderStatus = $allFinished
                     ? OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value
                     : OrderMenuRestaurantItemStatus::PARTIAL_COMPLETED->value;
             }
+
+            $notificationStatus = $allFinished
+                ? MenuOrderStatus::TOTAL_DELIVERED->value
+                : MenuOrderStatus::PARTIAL_COMPLETED->value;
+
+            \App\Models\OrderNotification::createOrUpdateNotification(
+                $order->uuid,
+                $notificationStatus,
+                $allFinished
+                    ? "La commande commande {$order->code} est déjà prête."
+                    : "La commande {$order->code} est déjà prête partiellement.",
+                $auth->id,
+                'bar'
+            );
 
             $this->refreshOrderStatus($order);
 
@@ -6842,7 +6862,7 @@ class OrderMenuRestaurantController extends Controller
     }
 
 
-    private function refreshItemStatus(OrderMenuRestaurantItem $item, $auth, $order)
+    private function refreshItemStatus(OrderMenuRestaurantItem $item, $auth)
     {
         $item->refresh();
 
@@ -6854,34 +6874,17 @@ class OrderMenuRestaurantController extends Controller
         $requiredQty = (int) $item->quantity_exactly;
 
         if ($deliveredQty === $requiredQty && $requiredQty > 0) {
-
             $item->status = OrderMenuRestaurantItemStatus::DELIVERED->value;
-
-            $notificationStatus = MenuOrderStatus::DELIVERED->value;
-
-            $message = "Commande {$order->code} servie avec succès.";
 
         } elseif ($deliveredQty > 0) {
 
             $item->status = OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value;
-
-            $notificationStatus = MenuOrderStatus::PARTIAL_DELIVERED->value;
-
-            $message = "Commande {$order->code} servie partiellement.";
         }
 
         $item->updated_by = $auth->id;
         $item->save();
-
-        \App\Models\OrderNotification::createOrUpdateNotification(
-            $order->uuid,
-            $notificationStatus,
-            $message,
-            $auth->id,
-            'kitchen'
-        );
     }
-    private function refreshItemForPartialStatusStatus(OrderMenuRestaurantItem $item, $auth,$order)
+    private function refreshItemForPartialStatusStatus(OrderMenuRestaurantItem $item, $auth)
     {
         $item->refresh();
         $deliveredQty = (int) $item->statuses()->where('status', OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value)
@@ -6890,24 +6893,13 @@ class OrderMenuRestaurantController extends Controller
         $requiredQty = (int) $item->quantity_exactly;
         if ($deliveredQty === $requiredQty && $requiredQty > 0) {
             $item->status = OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value;
-            $notificationStatus = MenuOrderStatus::TOTAL_DELIVERED->value;
-            $message = "Commande {$order->code} est prête.";
         } elseif ($deliveredQty > 0) {
             $item->status = OrderMenuRestaurantItemStatus::PARTIAL_COMPLETED->value;
-            $notificationStatus = MenuOrderStatus::PARTIAL_COMPLETED->value;
-            $message = "Commande {$order->code} prête partiellement.";
         }
         $item->updated_by = $auth->id;
         $item->save();
-        \App\Models\OrderNotification::createOrUpdateNotification(
-            $order->uuid,
-            $notificationStatus,
-            $message,
-            $auth->id,
-            'kitchen'
-        );
     }
-    private function refreshDrinkForPartialStatus(OrderRestaurantDrink $drink, $auth,$order)
+    private function refreshDrinkForPartialStatus(OrderRestaurantDrink $drink, $auth)
     {
         $drink->refresh();
 
@@ -6917,25 +6909,14 @@ class OrderMenuRestaurantController extends Controller
         $requiredQty = (int) $drink->quantity_exactly;
         if ($deliveredQty === $requiredQty && $requiredQty > 0) {
             $drink->status = OrderMenuRestaurantItemStatus::TOTAL_DELIVERED->value;
-            $notificationStatus = MenuOrderStatus::TOTAL_DELIVERED->value;
-            $message = "Commande {$order->code} est prête.";
         } elseif ($deliveredQty > 0) {
             $drink->status = OrderMenuRestaurantItemStatus::PARTIAL_COMPLETED->value;
-            $notificationStatus = MenuOrderStatus::PARTIAL_COMPLETED->value;
-            $message = "Commande {$order->code} prête partiellement.";
         }
         $drink->updated_by = $auth->id;
         $drink->save();
-        \App\Models\OrderNotification::createOrUpdateNotification(
-            $order->uuid,
-            $notificationStatus,
-            $message,
-            $auth->id,
-            'bar'
-        );
     }
 
-    private function refreshDrinkStatus(OrderRestaurantDrink $drink, $auth,$order)
+    private function refreshDrinkStatus(OrderRestaurantDrink $drink, $auth)
     {
         $drink->refresh();
 
@@ -6948,22 +6929,11 @@ class OrderMenuRestaurantController extends Controller
 
         if ($deliveredQty === $requiredQty && $requiredQty > 0) {
             $drink->status = OrderMenuRestaurantItemStatus::DELIVERED->value;
-            $notificationStatus = MenuOrderStatus::DELIVERED->value;
-            $message = "La commande {$order->code} servie avec succès.";
         } elseif ($deliveredQty > 0) {
             $drink->status = OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value;
-            $notificationStatus = MenuOrderStatus::PARTIAL_DELIVERED->value;
-            $message = "La commande {$order->code} servie partiellement.";
         }
         $drink->updated_by = $auth->id;
         $drink->save();
-        \App\Models\OrderNotification::createOrUpdateNotification(
-            $order->uuid,
-            $notificationStatus,
-            $message,
-            $auth->id,
-            'bar'
-        );
     }
 
 
@@ -7006,8 +6976,34 @@ class OrderMenuRestaurantController extends Controller
 
                 $this->updateItemStatusToFinalDelivery($item, $qtyToDeliver, $auth,$order);
 
-                $this->refreshItemStatus($item, $auth, $order);
+                $this->refreshItemStatus($item, $auth);
             }
+
+            $allDelivered = collect($order->items)->every(
+                fn ($i) => $i->status === OrderMenuRestaurantItemStatus::DELIVERED->value
+            );
+            $hasPartial = collect($order->items)->contains(
+                fn ($i) => $i->status === OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value
+            );
+
+            if ($allDelivered) {
+                $notificationStatus = MenuOrderStatus::DELIVERED->value;
+                $message = "Les menus de la commande {$order->code} ont été servis avec succès.";
+            } elseif ($hasPartial) {
+                $notificationStatus = MenuOrderStatus::PARTIAL_DELIVERED->value;
+                $message = "Les menus de la commande {$order->code} ont été servis partiellement.";
+            } else {
+                $notificationStatus = MenuOrderStatus::TRANSFERRED->value;
+                $message = "Les menus de la commande {$order->code} sont en cours de préparation.";
+            }
+            \App\Models\OrderNotification::createOrUpdateNotification(
+                $order->uuid,
+                $notificationStatus,
+                $message,
+                $auth->id,
+                'kitchen'
+            );
+
             $this->refreshOrderStatus($order);
             $order->update(['updated_by' => $auth->id]);
 
@@ -7073,10 +7069,37 @@ class OrderMenuRestaurantController extends Controller
 
                 $this->updateDrinkStatusToFinalDelivery($drink, $toDeduct, $auth, $order);
 
-                $this->refreshDrinkStatus($drink, $auth,$order);
+                $this->refreshDrinkStatus($drink, $auth);
             }
 
             $this->refreshOrderStatus($order);
+
+            $allDelivered = collect($order->drinks)->every(
+                fn ($d) => $d->status === OrderMenuRestaurantItemStatus::DELIVERED->value
+            );
+
+            $hasPartial = collect($order->drinks)->contains(
+                fn ($d) => $d->status === OrderMenuRestaurantItemStatus::PARTIAL_DELIVERED->value
+            );
+
+            if ($allDelivered) {
+                $notificationStatus = MenuOrderStatus::DELIVERED->value;
+                $message = "Les boissons de la commande {$order->code} ont été servies avec succès.";
+            } elseif ($hasPartial) {
+                $notificationStatus = MenuOrderStatus::PARTIAL_DELIVERED->value;
+                $message = "Les boissons de la commande {$order->code} ont été servies partiellement.";
+            } else {
+                $notificationStatus = MenuOrderStatus::TRANSFERRED->value;
+                $message = "Les boissons de la commande {$order->code} sont en cours de transfert.";
+            }
+
+            \App\Models\OrderNotification::createOrUpdateNotification(
+                $order->uuid,
+                $notificationStatus,
+                $message,
+                $auth->id,
+                'bar'
+            );
 
             $order->update([
                 'updated_by' => $auth->id,

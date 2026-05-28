@@ -131,8 +131,16 @@ class RoleController extends Controller
     public function update(RoleRequest $request, Role $role)
     {
         DB::beginTransaction();
+
         try {
+
             $data = $request->validated();
+
+            /*
+            |--------------------------------------------------------------------------
+            | PROTECTION ROLE ADMIN (id = 1)
+            |--------------------------------------------------------------------------
+            */
 
             if ($role->id === 1) {
                 unset($data['name']);
@@ -144,33 +152,56 @@ class RoleController extends Controller
 
             $role->update($data);
 
-            // Mettre à jour les permissions
-            if ($request->input('permissions')) {
-                $role->permissions()->detach(); // supprimer les anciennes permissions
+            /*
+            |--------------------------------------------------------------------------
+            | PERMISSIONS
+            |--------------------------------------------------------------------------
+            */
 
-                foreach ($request->input('permissions') as $permission) {
-                    $role->permissions()->attach($permission['id'], [
-                        'created_by' => auth()->id(),
-                        'updated_by' => auth()->id(),
-                    ]);
-                }
+            $permissions = collect($request->input('permissions', []))
+                ->pluck('id')
+                ->toArray();
+            $role->permissions()->detach();
+
+            $now = now();
+            $userId = auth()->id();
+
+            $attachData = [];
+
+            foreach ($permissions as $permissionId) {
+                $attachData[$permissionId] = [
+                    'created_by' => $userId,
+                    'updated_by' => $userId,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
             }
+
+            if (!empty($attachData)) {
+                $role->permissions()->attach($attachData);
+            }
+
+            app()[\Spatie\Permission\PermissionRegistrar::class]
+                ->forgetCachedPermissions();
+
+            DB::commit();
+
+            return response()->json([
+                'message' => __("Mise à jour du rôle effectuée avec succès !"),
+                'role' => $role->fresh('permissions'),
+                'validated' => $request->validated()
+            ]);
+
         } catch (\Exception $e) {
+
             DB::rollBack();
+
             Log::error($e->getMessage());
 
             return response()->json([
                 'message' => __("Une erreur s'est produite lors de la mise à jour du rôle !")
-            ], Response::HTTP_INTERNAL_SERVER_ERROR);
+            ], 500);
         }
-
-        DB::commit();
-
-        return response()->json([
-            'message' => __("Mise à jour du rôle effectuée avec succès !"),
-            'role' => $role,
-            'validated' => $request->validated()
-        ]);
     }
 
 
