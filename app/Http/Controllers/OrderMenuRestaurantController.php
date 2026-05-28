@@ -107,7 +107,7 @@ class OrderMenuRestaurantController extends Controller
 
         $deleted = MenuVirtualTemp::where('reservation_uuid', $validated['reservation_uuid'])
             ->where('menus_restaurant_uuid', $validated['menus_restaurant_uuid'])
-            ->delete();
+            ->forceDelete();
 
         return response()->json([
             'status' => 'success',
@@ -124,7 +124,7 @@ class OrderMenuRestaurantController extends Controller
         ]);
         $deleted = DrinksVirtualTemp::where('reservation_uuid', $validated['reservation_uuid'])
             ->where('drink_restaurant_uuid', $validated['drink_restaurant_uuid'])
-            ->delete();
+            ->forceDelete();
 
         return response()->json([
             'status' => 'success',
@@ -383,7 +383,7 @@ class OrderMenuRestaurantController extends Controller
                         $drinkInput['drink_restaurant_uuid']
                     )
                     ->where('status', 'pending')
-                    ->delete();
+                    ->forceDelete();
             }
 
             $stockErrors = [];
@@ -657,7 +657,7 @@ class OrderMenuRestaurantController extends Controller
                         $MenusInput['menus_restaurant_uuid']
                     )
                     ->where('status', 'pending')
-                    ->delete();
+                    ->forceDelete();
             }
 
 
@@ -805,8 +805,8 @@ class OrderMenuRestaurantController extends Controller
     public function forceReleaseStock(Request $request)
     {
         $request->validate(['reservation_uuid' => 'required|uuid']);
-        MenuVirtualTemp::where('reservation_uuid', $request->reservation_uuid)->delete();
-        DrinksVirtualTemp::where('reservation_uuid', $request->reservation_uuid)->delete();
+        MenuVirtualTemp::where('reservation_uuid', $request->reservation_uuid)->forceDelete();
+        DrinksVirtualTemp::where('reservation_uuid', $request->reservation_uuid)->forceDelete();
         return response()->json([
             'status' => 'success',
             'message' => 'Stock libéré avec succès'
@@ -819,7 +819,7 @@ class OrderMenuRestaurantController extends Controller
             ->where('type', 'initial')->update(['is_not_used_stock' => false]);
         MenuVirtualTemp::where('order_menu_restaurant_uuid', $request->order_menu_restaurant_uuid)
             ->where('type', 'editing')
-            ->delete();
+            ->forceDelete();
         return response()->json([
             'status' => 'success',
             'message' => 'Stock libéré avec succès'
@@ -858,7 +858,7 @@ class OrderMenuRestaurantController extends Controller
         MenuVirtualTemp::where('order_menu_restaurant_uuid', $orderUuid)
             ->where('status', 'pending')
             ->whereIn('menus_restaurant_uuid', $MenuUuids)
-            ->delete();
+            ->forceDelete();
 
         foreach ($validated['menus'] as $menuInput) {
 
@@ -1049,7 +1049,7 @@ class OrderMenuRestaurantController extends Controller
                             'product_uuid' => $item->product_uuid,
                             'quantity' => $qty,
                             'quantity_used' => $requiredQty,
-                            'type' => 'editing',
+                            'type' => 'initial',
                             'status' => 'pending',
                             'created_by' => $auth->id,
                             'updated_by' => $auth->id,
@@ -1121,7 +1121,7 @@ class OrderMenuRestaurantController extends Controller
                         'product_uuid' => $drinkConfig->product_uuid,
                         'quantity' => $qty,
                         'quantity_used' => $qty,
-                        'type' => 'editing',
+                        'type' => 'initial',
                         'status' => 'pending',
                         'created_by' => $auth->id,
                         'updated_by' => $auth->id,
@@ -1341,7 +1341,7 @@ class OrderMenuRestaurantController extends Controller
             DrinksVirtualTemp::where('order_menu_restaurant_uuid', $orderUuid)
                 ->where('status', 'pending')
                 ->whereIn('drink_restaurant_uuid', $drinkUuids)
-                ->delete();
+                ->forceDelete();
 
 
             $stockErrors = [];
@@ -1750,7 +1750,7 @@ class OrderMenuRestaurantController extends Controller
                 $query->whereIn('type', ['initial', 'editing','not_used'])
                     ->orWhereNull('reservation_uuid');
             })
-            ->delete();
+            ->forceDelete();
 
         $virtualItems = VirtualOrderMenuRestaurant::where('orders_menu_restaurant_uuid', $orderUuid)
             ->where('status', 'pending')
@@ -1781,7 +1781,7 @@ class OrderMenuRestaurantController extends Controller
                 $query->whereIn('type', ['initial', 'editing'])
                     ->orWhereNull('reservation_uuid');
             })
-            ->delete();
+            ->forceDelete();
 
         $virtualItemsDrinks = VirtualOrderMenuRestaurant::where('orders_menu_restaurant_uuid', $orderUuid)
             ->where('status', 'pending')
@@ -1826,10 +1826,10 @@ class OrderMenuRestaurantController extends Controller
 
         $reservationUuid = $validated['reservation_uuid'];
         MenuVirtualTemp::where('reservation_uuid', $reservationUuid)->where('type', 'initial')
-            ->whereNull('order_menu_restaurant_uuid')->delete();
+            ->whereNull('order_menu_restaurant_uuid')->forceDelete();
 
         DrinksVirtualTemp::where('reservation_uuid', $reservationUuid)->where('type', 'initial')
-            ->whereNull('order_menu_restaurant_uuid')->delete();
+            ->whereNull('order_menu_restaurant_uuid')->forceDelete();
 
         return response()->json([
             'status' => 'success',
@@ -1848,12 +1848,12 @@ class OrderMenuRestaurantController extends Controller
         MenuVirtualTemp::where('reservation_uuid', $reservationUuid)
             ->where('type', 'initial')
             ->whereNull('order_menu_restaurant_uuid')
-            ->delete();
+            ->forceDelete();
 
         DrinksVirtualTemp::where('reservation_uuid', $reservationUuid)
             ->where('type', 'initial')
             ->whereNull('order_menu_restaurant_uuid')
-            ->delete();
+            ->forceDelete();
 
         return response()->json([
             'status' => 'success',
@@ -2541,41 +2541,49 @@ class OrderMenuRestaurantController extends Controller
             ]);
 
 
-            $warehouse = Warehouse::where('is_used_for_restaurant', true)->firstOrFail();
-            $warehouseUuid = $warehouse->uuid;
+            $warehouses = Warehouse::where(function ($query) {
+                $query->where('is_used_for_restaurant', true)
+                    ->orWhere('is_bar_warehouse', true)
+                    ->orWhere('is_used_for_drinks_transformation', true);
+            })->get();
 
-            $warehouseDrinks = Warehouse::where('is_bar_warehouse', true)->firstOrFail();
-            $warehouseDrinkUuid = $warehouseDrinks->uuid;
-
-            $warehouseTransformation = Warehouse::where('is_used_for_drinks_transformation', true)->firstOrFail();
-            $warehouseTransformationUuid = $warehouseTransformation->uuid;
-
+            $warehouse = $warehouses->firstWhere('is_used_for_restaurant', true);
+            $warehouseDrinks = $warehouses->firstWhere('is_bar_warehouse', true);
+            $warehouseTransformation = $warehouses->firstWhere('is_used_for_drinks_transformation', true);
 
             if (!$warehouse || !$warehouseDrinks || !$warehouseTransformation) {
                 throw new \Exception("Configuration des entrepôts incomplète");
             }
 
+            $warehouseUuid = $warehouse->uuid;
+            $warehouseDrinkUuid = $warehouseDrinks->uuid;
+            $warehouseTransformationUuid = $warehouseTransformation->uuid;
+
 
             $menus = $validated['menus'] ?? [];
             $menuWasProcessed = false;
             if (!empty($menus)) {
+
+                $menuUuids = collect($menus)
+                    ->pluck('menus_restaurant_uuid')
+                    ->toArray();
+
+                $menusCollection = MenuRestaurant::whereIn('uuid', $menuUuids)->get()->keyBy('uuid');
+                $existingItems = OrderMenuRestaurantItem::where('order_menu_restaurant_uuid', $order->uuid)->get()->keyBy('menus_restaurant_uuid');
+
                 foreach ($menus as $m) {
-                    $menu = MenuRestaurant::findOrFail($m['menus_restaurant_uuid']);
-
-                    $unitPrice = $m['unit_price'] ?? $menu->price ?? 0;
-                    $isLastItem = $m['is_last_items'] ?? false;
-
-                    if ($isLastItem) {
+                    if ($m['is_last_items'] ?? false) {
                         continue;
                     }
 
-                    $existingItem = OrderMenuRestaurantItem::where('order_menu_restaurant_uuid', $order->uuid)->where('menus_restaurant_uuid', $menu->uuid)->first();
+                    $menu = $menusCollection[$m['menus_restaurant_uuid']] ?? null;
 
-                    /*
-                    |--------------------------------------------------------------------------
-                    | CAS 1 : ITEM EXISTE
-                    |--------------------------------------------------------------------------
-                    */
+                    if (!$menu) {
+                        continue;
+                    }
+                    $unitPrice = $m['unit_price'] ?? $menu->price ?? 0;
+                    $existingItem = $existingItems[$menu->uuid] ?? null;
+
                     if ($existingItem) {
 
                         $newQty = $m['quantity'];
@@ -2646,25 +2654,31 @@ class OrderMenuRestaurantController extends Controller
             $drinkWasProcessed = false;
             if (!empty($drinks)) {
 
-                foreach ($drinks as $d) {
+                $drinkUuids = collect($drinks)
+                    ->pluck('drink_restaurant_uuid')
+                    ->toArray();
 
+                $drinksCollection = RestaurantDrinkConfiguration::whereIn('uuid', $drinkUuids)
+                    ->get()
+                    ->keyBy('uuid');
+
+                $existingDrinks = OrderRestaurantDrink::where('order_menu_restaurant_uuid', $order->uuid)
+                    ->get()
+                    ->keyBy('drink_restaurant_uuid');
+
+
+                foreach ($drinks as $d) {
                     if ($d['is_last_items'] ?? false) {
                         continue;
                     }
+                    $drinkConfig = $drinksCollection[$d['drink_restaurant_uuid']] ?? null;
 
+                    if (!$drinkConfig) {
+                        continue;
+                    }
                     $unitPrice = $d['unit_price'] ?? 0;
 
-                    // 🔥 NEW MODEL
-                    $drinkConfig = RestaurantDrinkConfiguration::findOrFail(
-                        $d['drink_restaurant_uuid']
-                    );
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | EXISTE DÉJÀ
-                    |--------------------------------------------------------------------------
-                    */
-                    $existingDrink = OrderRestaurantDrink::where('order_menu_restaurant_uuid', $order->uuid)->where('drink_restaurant_uuid', $drinkConfig->uuid)->first();
+                    $existingDrink = $existingDrinks[$drinkConfig->uuid] ?? null;
 
                     if ($existingDrink) {
 
@@ -2743,26 +2757,29 @@ class OrderMenuRestaurantController extends Controller
             $order->update([
                 'updated_by' => $auth->id,
                 'is_in_editing' => false,
-                'editing_by' => $auth->id,
+                'editing_by' => null,
                 'editing_started_at' => null,
                 'rollback_at' => null
             ]);
 
-            $order->refresh();
+            $status = $order->status;
+            $statusLabel = MenuOrderStatus::safeLabel($status);
+
             if ($menuWasProcessed) {
                 \App\Models\OrderNotification::createOrUpdateNotification(
                     $order->uuid,
-                    $order->status,
-                    "Les menus de la commande {$order->code} ont été mis à jour (Statut : " . MenuOrderStatus::safeLabel($order->status) . ").",
+                    $status,
+                    "Les menus de la commande {$order->code} ont été mis à jour (Statut : {$statusLabel}).",
                     $auth->id,
                     'kitchen'
                 );
             }
+
             if ($drinkWasProcessed) {
                 \App\Models\OrderNotification::createOrUpdateNotification(
                     $order->uuid,
-                    $order->status,
-                    "Les boissons de la commande {$order->code} ont été mises à jour (Statut : " . MenuOrderStatus::safeLabel($order->status) . ").",
+                    $status,
+                    "Les boissons de la commande {$order->code} ont été mises à jour (Statut : {$statusLabel}).",
                     $auth->id,
                     'bar'
                 );
@@ -2871,22 +2888,13 @@ class OrderMenuRestaurantController extends Controller
 
         $finalQuantity = (float) $drink->quantity_exactly;
 
-        /**
-         * 1. NETTOYAGE TOTAL POUR CETTE LIGNE
-         * On enlève TOUT (editing, initial, pending) pour éviter les restes
-         */
-        VirtualOrderMenuRestaurant::where('orders_menu_restaurant_uuid', $order->uuid)
-            ->where('item_uuid', $drink->uuid)
-            ->delete();
-
-        DrinksVirtualTemp::where('order_menu_restaurant_uuid', $order->uuid)
-            ->where('drink_restaurant_uuid', $drink->drink_restaurant_uuid)
-            ->delete();
-
-        /**
-         * 2. CAS BOISSON COMPOSÉE
-         */
+        /*
+        |--------------------------------------------------------------------------
+        | CAS BOISSON COMPOSÉE
+        |--------------------------------------------------------------------------
+        */
         if ($drinkConfig->is_transformable_product) {
+
             $composition = DrinkComposition::with('items.product')
                 ->where('drinks_restaurant_uuid', $drinkConfig->uuid)
                 ->first();
@@ -2896,62 +2904,140 @@ class OrderMenuRestaurantController extends Controller
             }
 
             foreach ($composition->items as $item) {
+
                 if (!$item->product_uuid) continue;
 
                 $totalQtyUsed = $finalQuantity * (float) $item->quantity_used;
 
+                $virtualEntry = VirtualOrderMenuRestaurant::where('orders_menu_restaurant_uuid', $order->uuid)
+                    ->where('item_uuid', $drink->uuid)
+                    ->where('product_uuid', $item->product_uuid)
+                    ->where('status', 'pending')
+                    ->first();
+
+                if ($virtualEntry) {
+
+                    $virtualEntry->update([
+                        'quantity_reserved' => $totalQtyUsed,
+                        'quantity_exactly'   => $finalQuantity,
+                        'quantity'           => $finalQuantity,
+                        'updated_by'         => $auth->id,
+                        'type'               => 'drink',
+                    ]);
+
+                } else {
+
+                    $this->reserveDrinkStock(
+                        orderUuid: $order->uuid,
+                        drinkOrderUuid: $drink->uuid,
+                        productUuid: $item->product_uuid,
+                        quantity: $finalQuantity,
+                        auth: $auth,
+                        warehouseUuid: $transformationWarehouse->uuid,
+                        quantityUsed: $totalQtyUsed,
+                    );
+
+                    VirtualOrderMenuRestaurant::create([
+                        'orders_menu_restaurant_uuid' => $order->uuid,
+                        'item_uuid'                   => $drink->uuid,
+                        'product_uuid'                => $item->product_uuid,
+                        'quantity_reserved'           => $totalQtyUsed,
+                        'quantity_exactly'            => $finalQuantity,
+                        'quantity'                    => $finalQuantity,
+                        'status'                      => 'pending',
+                        'type'                        => 'drink',
+                        'created_by'                  => $auth->id,
+                        'updated_by'                  => $auth->id,
+                    ]);
+                }
+
+                DrinksVirtualTemp::updateOrCreate(
+                    [
+                        'order_menu_restaurant_uuid' => $order->uuid,
+                        'drink_restaurant_uuid'      => $drink->drink_restaurant_uuid,
+                        'product_uuid'               => $item->product_uuid,
+                    ],
+                    [
+                        'reservation_uuid' => $order->reservation_uuid,
+                        'quantity'         => $finalQuantity,
+                        'quantity_used'    => $totalQtyUsed,
+                        'type'             => 'initial',
+                        'status'           => 'pending',
+                        'updated_by'       => $auth->id,
+                        'created_by'       => $auth->id,
+                    ]
+                );
+            }
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | CAS BOISSON SIMPLE
+        |--------------------------------------------------------------------------
+        */
+        else {
+
+            $productUuid = $drinkConfig->product_uuid ?? $drink->product_uuid;
+            $totalQtyUsed = $finalQuantity;
+
+            $virtualEntry = VirtualOrderMenuRestaurant::where('orders_menu_restaurant_uuid', $order->uuid)
+                ->where('item_uuid', $drink->uuid)
+                ->where('product_uuid', $productUuid)
+                ->where('status', 'pending')
+                ->first();
+
+            if ($virtualEntry) {
+
+                $virtualEntry->update([
+                    'quantity_reserved' => $totalQtyUsed,
+                    'quantity_exactly'   => $finalQuantity,
+                    'quantity'           => $finalQuantity,
+                    'updated_by'         => $auth->id,
+                    'type'               => 'drink',
+                ]);
+
+            } else {
+
                 $this->reserveDrinkStock(
                     orderUuid: $order->uuid,
                     drinkOrderUuid: $drink->uuid,
-                    productUuid: $item->product_uuid,
+                    productUuid: $productUuid,
                     quantity: $finalQuantity,
                     auth: $auth,
-                    warehouseUuid: $transformationWarehouse->uuid,
-                    quantityUsed: $totalQtyUsed,
+                    warehouseUuid: $barWarehouse->uuid,
+                    quantityUsed: $finalQuantity,
                 );
 
-                DrinksVirtualTemp::create([
-                    'order_menu_restaurant_uuid' => $order->uuid,
-                    'reservation_uuid'           => $order->reservation_uuid,
-                    'drink_restaurant_uuid'      => $drink->drink_restaurant_uuid,
-                    'product_uuid'               => $item->product_uuid,
-                    'quantity'                   => $finalQuantity,
-                    'quantity_used'              => $totalQtyUsed,
-                    'type'                       => 'initial',
-                    'status'                     => 'pending',
-                    'created_by'                 => $auth->id,
-                    'updated_by'                 => $auth->id,
+                VirtualOrderMenuRestaurant::create([
+                    'orders_menu_restaurant_uuid' => $order->uuid,
+                    'item_uuid'                   => $drink->uuid,
+                    'product_uuid'                => $productUuid,
+                    'quantity_reserved'           => $finalQuantity,
+                    'quantity_exactly'            => $finalQuantity,
+                    'quantity'                    => $finalQuantity,
+                    'status'                      => 'pending',
+                    'type'                        => 'drink',
+                    'created_by'                  => $auth->id,
+                    'updated_by'                  => $auth->id,
                 ]);
             }
-        }
-        /**
-         * 3. CAS BOISSON SIMPLE
-         */
-        else {
-            $productUuid = $drinkConfig->product_uuid ?? $drink->product_uuid;
 
-            $this->reserveDrinkStock(
-                orderUuid: $order->uuid,
-                drinkOrderUuid: $drink->uuid,
-                productUuid: $productUuid,
-                quantity: $finalQuantity,
-                auth: $auth,
-                warehouseUuid: $barWarehouse->uuid,
-                quantityUsed: $finalQuantity,
+            DrinksVirtualTemp::updateOrCreate(
+                [
+                    'order_menu_restaurant_uuid' => $order->uuid,
+                    'drink_restaurant_uuid'      => $drink->drink_restaurant_uuid,
+                    'product_uuid'               => $productUuid,
+                ],
+                [
+                    'reservation_uuid' => $order->reservation_uuid,
+                    'quantity'         => $finalQuantity,
+                    'quantity_used'    => $finalQuantity,
+                    'type'             => 'initial',
+                    'status'           => 'pending',
+                    'updated_by'       => $auth->id,
+                    'created_by'       => $auth->id,
+                ]
             );
-
-            DrinksVirtualTemp::create([
-                'order_menu_restaurant_uuid' => $order->uuid,
-                'reservation_uuid'           => $order->reservation_uuid,
-                'drink_restaurant_uuid'      => $drink->drink_restaurant_uuid,
-                'product_uuid'               => $productUuid,
-                'quantity'                   => $finalQuantity,
-                'quantity_used'              => $finalQuantity,
-                'type'                       => 'initial',
-                'status'                     => 'pending',
-                'created_by'                 => $auth->id,
-                'updated_by'                 => $auth->id,
-            ]);
         }
     }
     private function handleDeliveredOrPartialDrink(OrderRestaurantDrink $drink, array $data, float $unitPrice, $auth, OrderMenuRestaurant $order) {
@@ -4627,14 +4713,15 @@ class OrderMenuRestaurantController extends Controller
 
             MenuVirtualTemp::where('menus_restaurant_uuid', $item_uuid)->where('order_menu_restaurant_uuid', $order_uuid)
                 ->delete();
+
             $item->statuses()->delete();
             $item->statistics()->delete();
             $item->delete();
 
-            $remainingItems = OrderMenuRestaurantItem::where('order_menu_restaurant_uuid', $order->uuid)->count();
+            $remainingItems = OrderMenuRestaurantItem::where('order_menu_restaurant_uuid', $order_uuid)->count();
 
             if ($remainingItems === 0) {
-                VirtualOrderMenuRestaurant::where('orders_menu_restaurant_uuid', $order->uuid)->delete();
+                VirtualOrderMenuRestaurant::where('orders_menu_restaurant_uuid', $order_uuid)->delete();
                 $order->delete();
                 DB::commit();
                 return response()->json([
@@ -4680,7 +4767,7 @@ class OrderMenuRestaurantController extends Controller
             $order = OrderMenuRestaurant::where('uuid', $order_uuid)->firstOrFail();
             $drink = OrderRestaurantDrink::where('uuid', $drink_uuid)
                 ->where('order_menu_restaurant_uuid', $order->uuid)
-                ->first();
+                ->with(['virtuals', 'statuses','drinkConfig'])->first();
 
             if (!$drink) {
                 return response()->json([
@@ -4714,17 +4801,14 @@ class OrderMenuRestaurantController extends Controller
             }
 
             $drink->virtuals()->delete();
-
-            DrinksVirtualTemp::where('drink_restaurant_uuid', $drink_uuid)
-                ->where('order_menu_restaurant_uuid', $order->uuid)
-                ->delete();
-
+            DrinksVirtualTemp::where('drink_restaurant_uuid', $drink_uuid)->where('order_menu_restaurant_uuid', $order_uuid)->delete();
             $drink->statuses()->delete();
             $drink->statistics()->delete();
             $drink->delete();
 
-            $remainingDrinks = OrderRestaurantDrink::where('order_menu_restaurant_uuid', $order->uuid)->count();
-            $remainingMenus = OrderMenuRestaurantItem::where('order_menu_restaurant_uuid', $order->uuid)->count();
+
+            $remainingDrinks = OrderRestaurantDrink::where('order_menu_restaurant_uuid', $order_uuid)->count();
+            $remainingMenus = OrderMenuRestaurantItem::where('order_menu_restaurant_uuid', $order_uuid)->count();
 
             if ($remainingDrinks === 0 && $remainingMenus === 0) {
                 VirtualOrderMenuRestaurant::where('orders_menu_restaurant_uuid', $order->uuid)->delete();

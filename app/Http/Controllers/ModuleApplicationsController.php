@@ -53,15 +53,10 @@ class ModuleApplicationsController extends Controller
                     ->orWhere('name', 'like', "%{$search}%")
                     ->orWhere('slug', 'like', "%{$search}%")
                     ->orWhere('description', 'like', "%{$search}%")
-                    ->orWhere('icon', 'like', "%{$search}%")
-                    ->orWhereHas('creator', function ($qc) use ($search) {
-                        $qc->where('nom_utilisateur', 'like', "%{$search}%")
-                            ->orWhere('email', 'like', "%{$search}%");
-                    });
+                    ->orWhere('icon', 'like', "%{$search}%");
             });
         }
 
-        // 🔹 Pagination
         $data = $query->latest()->paginate($perPage, ['*'], 'page', $page);
         return response()->json([
             'data'         => $data->items(),
