@@ -4861,10 +4861,6 @@ class OrderMenuRestaurantController extends Controller
 
         $perPage = $request->input('limit', 25);
         $page = $request->input('page', 1);
-        $roleIds = $auth->roles->pluck('id');
-        $start_date = Carbon::parse($request->input('start_date'))->startOfDay();
-        $end_date = Carbon::parse($request->input('end_date'))->endOfDay();
-
 
         $query = OrderMenuRestaurant::with([
             'restaurantTable',
@@ -4963,71 +4959,7 @@ class OrderMenuRestaurantController extends Controller
                     ->orWhere('warehouse_uuid', 'like', "%{$search}%")
                     ->orWhere('restaurant_room_uuid', 'like', "%{$search}%")
                     ->orWhere('menu_restaurant_uuid', 'like', "%{$search}%")
-                    ->orWhere('quantity', 'like', "%{$search}%")
-
-
-                    ->orWhereHas('warehouse', function ($qw) use ($search) {
-                        $qw->where('ref', 'like', "%{$search}%")
-                            ->orWhere('name', 'like', "%{$search}%")
-                            ->orWhere('stock_type', 'like', "%{$search}%")
-                            ->orWhere('address', 'like', "%{$search}%");
-                    })
-
-                    ->orWhereHas('restaurantTable', function ($rt) use ($search) {
-                        $rt->where('uuid', 'like', "%{$search}%")
-                            ->orWhere('code', 'like', "%{$search}%")
-                            ->orWhere('table_number', 'like', "%{$search}%")
-                            ->orWhere('capacity', 'like', "%{$search}%");
-                    })
-
-                    ->orWhereHas('partners_restaurant', function ($pr) use ($search) {
-                        $columns = ['uuid', 'code', 'first_name', 'last_name', 'full_name', 'email', 'phone_number',
-                            'second_phone_number', 'address', 'description', 'cni_number',];
-                        foreach ($columns as $column) {
-                            $pr->orWhere($column, 'like', "%{$search}%");
-                        }
-                    })
-
-                    ->orWhereHas('restaurant_room', function ($rr) use ($search) {
-                        $rr->where('uuid', 'like', "%{$search}%")
-                            ->orWhere('code', 'like', "%{$search}%")
-                            ->orWhere('rooms_number', 'like', "%{$search}%")
-                            ->orWhere('description', 'like', "%{$search}%")
-                            ->orWhere('type', 'like', "%{$search}%")
-                            ->orWhere('capacity', 'like', "%{$search}%");
-                    })
-
-                    ->orWhereHas('menu_restaurant', function ($mr) use ($search) {
-                        $mr->where('uuid', 'like', "%{$search}%")
-                            ->orWhere('code', 'like', "%{$search}%")
-                            ->orWhere('name', 'like', "%{$search}%")
-                            ->orWhere('description', 'like', "%{$search}%");
-                    })
-
-                    ->orWhereHas('free_client_for_restaurant', function ($fr) use ($search) {
-                        $fr->where('uuid', 'like', "%{$search}%")
-                            ->orWhere('code', 'like', "%{$search}%")
-                            ->orWhere('full_name', 'like', "%{$search}%")
-                            ->orWhere('first_name', 'like', "%{$search}%")
-                            ->orWhere('last_name', 'like', "%{$search}%")
-                            ->orWhere('phone_number', 'like', "%{$search}%")
-                            ->orWhere('description', 'like', "%{$search}%");
-                    })
-
-                    ->orWhereHas('creator', function ($qc) use ($search) {
-                        $qc->where('nom_utilisateur', 'like', "%{$search}%")
-                            ->orWhere('email', 'like', "%{$search}%");
-                    })
-
-                    ->orWhereHas('updater', function ($qu) use ($search) {
-                        $qu->where('nom_utilisateur', 'like', "%{$search}%")
-                            ->orWhere('email', 'like', "%{$search}%");
-                    })
-
-                    ->orWhereHas('validator', function ($qv) use ($search) {
-                        $qv->where('nom_utilisateur', 'like', "%{$search}%")
-                            ->orWhere('email', 'like', "%{$search}%");
-                    });
+                    ->orWhere('quantity', 'like', "%{$search}%");
 
 
             });

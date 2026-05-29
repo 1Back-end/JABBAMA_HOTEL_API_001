@@ -16,11 +16,12 @@ class ApiResponseTimeMiddleware
      */
     public function handle(Request $request, Closure $next): Response
     {
-        $startTime = microtime(true);
         $response = $next($request);
-        $endTime = microtime(true);
-        $executionTime = round(($endTime - $startTime) * 1000, 2);
-        $response->headers->set('X-Response-Time', $executionTime . 'ms');
+        $executionTime = round((microtime(true) - LARAVEL_START) * 1000, 2);
+
+        if (method_exists($response, 'headers') && $response->headers !== null) {
+            $response->headers->set('X-Response-Time', $executionTime . 'ms');
+        }
 
         Log::info('Route exécutée', [
             'method' => $request->method(),
@@ -28,6 +29,8 @@ class ApiResponseTimeMiddleware
             'execution_time' => $executionTime . 'ms',
             'user_id' => auth()->id(),
         ]);
+
+
         if ($executionTime > 500) {
             Log::warning(
                 "Route lente détectée : {$request->method()} {$request->getRequestUri()} - Temps : {$executionTime}ms"
