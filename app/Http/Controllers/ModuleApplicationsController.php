@@ -23,32 +23,55 @@ class ModuleApplicationsController extends Controller
     {
         $auth = auth()->user();
         $roleIds = $auth->roles->pluck('id');
+
         $perPage = $request->input('limit', 5);
         $page = $request->input('page', 1);
 
-        $query = ModuleApplications::with([
-            'permissions',
-            'creator',
-            'updater',
+        $query = ModuleApplications::select([
+            'uuid',
+            'name',
+            'slug',
+            'icon',
+            'description',
+            'is_active',
+            'created_by',
+            'updated_by',
+            'is_first_module'
         ])
-            ->whereNotIn('name', ['Autres Modules']);
+            ->with([
+                'permissions:id,name',
+                'creator:id,nom_utilisateur',
+                'updater:id,nom_utilisateur',
+            ])
+            ->where('name', '!=', 'Autres Modules');
 
+        // 🔥 filtre actif
         if ($request->has('is_active')) {
-            $isActive = $request->input('is_active') === 'true' ? true : false;
-            $query->where('is_active', $isActive);
+            $query->where(
+                'is_active',
+                $request->input('is_active') === 'true'
+            );
         }
 
+        // 🔥 permissions
+        if (
+            !$auth->hasRole('SUPER_ADMIN') &&
+            !$auth->can('view_all_orders_module_applications')
+        ) {
 
-        if (!$auth->hasRole('SUPER_ADMIN') && !$auth->can('view_all_orders_module_applications')) {
-            $query->where(function ($q) use ($auth, $roleIds) {
-                if ($auth->can('view_role_related_data')) {
-                    $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
-                }
-            });
+            if ($auth->can('view_role_related_data')) {
+
+                $query->whereHas('creator.roles', function ($qr) use ($roleIds) {
+                    $qr->whereIn('roles.id', $roleIds);
+                });
+            }
         }
 
+        // 🔥 recherche
         if ($search = trim($request->input('search'))) {
+
             $query->where(function ($q) use ($search) {
+
                 $q->where('uuid', 'like', "%{$search}%")
                     ->orWhere('name', 'like', "%{$search}%")
                     ->orWhere('slug', 'like', "%{$search}%")
@@ -57,7 +80,10 @@ class ModuleApplicationsController extends Controller
             });
         }
 
-        $data = $query->latest()->paginate($perPage, ['*'], 'page', $page);
+        $data = $query
+            ->latest()
+            ->paginate($perPage, ['*'], 'page', $page);
+
         return response()->json([
             'data'         => $data->items(),
             'current_page' => $data->currentPage(),
