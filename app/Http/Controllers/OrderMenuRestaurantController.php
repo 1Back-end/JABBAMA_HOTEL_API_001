@@ -6780,7 +6780,6 @@ class OrderMenuRestaurantController extends Controller
 
         $item->update([
             'status'       => OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value,
-            'is_rejected'  => true,
             'rejected_by'  => $auth->id,
             'rejected_at'  => now(),
             'updated_by'   => $auth->id
@@ -6865,7 +6864,6 @@ class OrderMenuRestaurantController extends Controller
 
         $item->update([
             'status' => OrderMenuRestaurantItemStatus::REJECTED_AFTER_VALIDATION->value,
-            'is_rejected' => true,
             'rejected_by' => $auth->id,
             'rejected_at' => now(),
             'updated_by' => $auth->id

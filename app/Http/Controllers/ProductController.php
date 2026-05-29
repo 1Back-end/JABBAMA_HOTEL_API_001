@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\MenuOrderStatus;
 use App\Enums\PurchaseOrdersStatus;
 use App\Enums\StockAdjustmentAction;
 use App\Enums\StocksAdjustmentStatus;
@@ -13,6 +14,7 @@ use App\Models\StockAdjustment;
 use App\Models\StockAdjustmentItem;
 use App\Models\StockDeductionItem;
 use App\Models\SupplyItem;
+use App\Models\VirtualOrderMenuRestaurant;
 use App\Models\Warehouse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -725,6 +727,7 @@ class ProductController extends Controller
                         ->where('status', StocksDeductionsStatus::VALIDATED->value)
                         ->where('created_at', '<=', $end_date))
                     ->sum('quantity');
+
 
                 // Principal : ajouter approvisionnements internes aux sorties
                 if ($isPrimary) {
