@@ -8,7 +8,7 @@ use App\Http\Controllers\NatureEntrepotController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth:sanctum'])->group(function () {
-    Route::middleware(['user.change_password', 'check.permission'])->group(function () {
+    Route::middleware(['user.change_password', 'check.permission','response.time'])->group(function () {
         require __DIR__ . '/authorization.php';
         require __DIR__ . '/admin.php';
 
@@ -46,6 +46,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
          | GESTION DU RESTAURANT
          |---------------------------------------------------------------------------
        */
+        require __DIR__ . '/configurations_complements.php';
         require __DIR__.'/floors_services.php';
         require __DIR__.'/menus_restaurants.php';
         require __DIR__.'/restaurant_drink_configurations.php';
