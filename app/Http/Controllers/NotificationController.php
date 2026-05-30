@@ -18,20 +18,10 @@ class NotificationController extends Controller
     {
         $user = auth()->user();
 
-        $query = \App\Models\OrderNotification::select([
-            'id',
-            'uuid',
-            'order_uuid',
-            'status',
-            'target',
-            'message',
-            'created_at',
-            'created_by',
-            'updated_by',
-        ])->with([
-            'creator:id,nom_utilisateur',
-            'updater:id,nom_utilisateur',
-            'order:uuid,code,status',
+        $query = \App\Models\OrderNotification::with([
+            'creator',
+            'updater',
+            'order',
         ]);
 
 
