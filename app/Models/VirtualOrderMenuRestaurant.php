@@ -35,7 +35,8 @@ class VirtualOrderMenuRestaurant extends Model
         'is_last_items',
         'quantity',
         'quantity_to_remove',
-        'virtual_uuid'
+        'virtual_uuid',
+        'warehouse_uuid'
     ];
 
     protected static function boot()
@@ -92,5 +93,13 @@ class VirtualOrderMenuRestaurant extends Model
     public function updater()
     {
         return $this->belongsTo(User::class, 'updated_by');
+    }
+    public function warehouse()
+    {
+        return $this->belongsTo(
+            Warehouse::class,
+            'warehouse_uuid',
+            'uuid'
+        );
     }
 }

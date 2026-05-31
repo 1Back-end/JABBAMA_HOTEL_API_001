@@ -665,15 +665,12 @@ class ProductController extends Controller
         try {
             $warehouse_uuid = $warehouse_uuid ?? $request->query('warehouse_uuid');
 
-            // 📅 Date de référence
             $end_date = $request->filled('end_date')
                 ? Carbon::parse($request->end_date)->endOfDay()
                 : now()->endOfDay();
 
-            // 🔹 Collection finale
             $all_products_points = collect();
 
-            // 🔹 Récupérer tous les entrepôts
             $warehouses = $warehouse_uuid === 'all'
                 ? Warehouse::all()
                 : Warehouse::where('uuid', $warehouse_uuid)->get();
@@ -691,10 +688,12 @@ class ProductController extends Controller
                             ->where('supply_date', '<=', $end_date))
                         ->sum('quantity_supplied');
                 } else {
-                    // Secondaire : approvisionnements internes
                     $approved = SupplyItem::where('product_uuid', $productUuid)
-                        ->whereHas('supply.purchaseOrder', fn($q) => $q->where('warehouse_from', $warehouse->uuid))
-                        ->whereHas('supply', fn($q) => $q->whereIn('status', [SupplyStatus::VALIDATED, SupplyStatus::PARTIALLY_VALIDATED])
+                        ->whereHas('supply.purchaseOrder', fn($q) => $q
+                            ->where('type', 'internal')
+                            ->where('warehouse_from', $warehouse->uuid))
+                        ->whereHas('supply', fn($q) => $q
+                            ->whereIn('status', [SupplyStatus::VALIDATED, SupplyStatus::PARTIALLY_VALIDATED])
                             ->where('supply_date', '<=', $end_date))
                         ->sum('quantity_supplied');
                 }
@@ -728,8 +727,13 @@ class ProductController extends Controller
                         ->where('created_at', '<=', $end_date))
                     ->sum('quantity');
 
+                $orders_restaurants = VirtualOrderMenuRestaurant::where('product_uuid', $productUuid)
+                    ->where('status', MenuOrderStatus::DELIVERED->value)
+                    ->where('warehouse_uuid', $warehouse->uuid)
+                    ->where('created_at', '<=', $end_date)
+                    ->sum('quantity_delivered');
 
-                // Principal : ajouter approvisionnements internes aux sorties
+
                 if ($isPrimary) {
                     $internalSupplies = SupplyItem::where('product_uuid', $productUuid)
                         ->whereHas('supply.purchaseOrder', fn($q) => $q->where('type', 'internal'))
@@ -740,7 +744,7 @@ class ProductController extends Controller
                     $adjustMinus += $internalSupplies;
                 }
 
-                return max(0, $approved + $adjustPlus - $adjustMinus - $avaries - $deducted);
+                return max(0, $approved + $adjustPlus - $adjustMinus - $avaries - $deducted - $orders_restaurants);
             };
 
             // 🔹 Récupérer tous les produits (ProductPoint)

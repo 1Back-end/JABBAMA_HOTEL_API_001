@@ -31,7 +31,13 @@ class OrderNotification extends Model
         'kitchen_user_id',
         'bar_user_id',
         'is_read',
-        'read_at'
+        'read_at',
+        'is_operational',
+        'is_decisional',
+        'is_operational_read',
+        'operational_read_at',
+        'is_decisional_read',
+        'decisional_read_at',
     ];
 
     protected $appends = ['status_label'];
@@ -73,6 +79,16 @@ class OrderNotification extends Model
                 'view_all_notification_in_cancel_for_new_update' => 'cancel_for_new_update',
                 'view_all_notification_in_partial_completed' => 'partial_completed',
                 'view_all_notification_in_partial_delivered' => 'partial_delivered',
+                'view_all_notification_in_preparation_by_admin' => 'in_preparation',
+                'view_all_notification_transferred_by_admin' => 'transferred',
+                'view_all_notification_rejected_by_admin' => 'rejected',
+                'view_all_notification_in_defective_by_admin' => 'defective',
+                'view_all_notification_in_ready_by_admin' => 'ready',
+                'view_all_notification_in_delivered_by_admin' => 'delivered',
+                'view_all_notification_in_rejected_after_validation_by_admin' => 'rejected_after_validation',
+                'view_all_notification_in_cancel_for_new_update_by_admin' => 'cancel_for_new_update',
+                'view_all_notification_in_partial_completed_by_admin' => 'partial_completed',
+                'view_all_notification_in_partial_delivered_by_admin' => 'partial_delivered',
             ];
 
             $allowedStatuses = [];
@@ -120,42 +136,15 @@ class OrderNotification extends Model
             ->where('target', $target)
             ->forceDelete();
 
-        $barUserId = null;
-        $kitchenUserId = null;
-        $barmanRole = Role::where('name', 'BARMAN')->first();
-        $cuisinierRole = Role::where('name', 'CUISINIER')->first();
-
-        if ($target === 'bar' && $barmanRole) {
-            $firstBarman = $barmanRole->first();
-            $barUserId = $firstBarman?->id;
-        }
-
-        if ($target === 'kitchen' && $cuisinierRole) {
-            $firstCuisinier = $cuisinierRole->first();
-            $kitchenUserId = $firstCuisinier?->id;
-        }
-        if ($target === 'all') {
-            if ($barmanRole) {
-                $firstBarman = $barmanRole->first();
-                $barUserId = $firstBarman?->id;
-            }
-            if ($cuisinierRole) {
-                $firstCuisinier = $cuisinierRole->first();
-                $kitchenUserId = $firstCuisinier?->id;
-            }
-        }
-
         return self::create([
             'order_menu_restaurant_uuid' => $orderUuid,
             'status' => $status,
             'target' => $target,
             'message' => $message,
-            'is_read' => false,
-            'read_at' => null,
             'created_by' => $userId,
             'updated_by' => $userId,
-            'bar_user_id' => $barUserId,
-            'kitchen_user_id' => $kitchenUserId,
+            'is_operational' => true,
+            'is_decisional' => false,
         ]);
     }
     public function kitchen_users()
@@ -166,5 +155,11 @@ class OrderNotification extends Model
     public function editing_orders()
     {
         return $this->belongsToMany(User::class, 'editing_by', 'editing_by');
+    }
+
+    public function myNotification()
+    {
+        return $this->hasOne(UserOrderNotification::class, 'order_notification_uuid', 'uuid')
+            ->where('user_id', auth()->id());
     }
 }

@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\OrderNotification;
+use App\Models\UserOrderNotification;
 use Illuminate\Http\Request;
 /**
  * @permission_category Gestion des notifications du restaurant
@@ -18,32 +20,25 @@ class NotificationController extends Controller
     {
         $user = auth()->user();
 
-        $query = \App\Models\OrderNotification::with([
-            'creator',
-            'updater',
-            'order',
-        ]);
+        $query = OrderNotification::with(['creator', 'updater', 'order']);
 
-
-        $statuses = [];
-
-        if ($user->can('view_all_notification_in_preparation')) $statuses[] = 'in_preparation';
-        if ($user->can('view_all_notification_transferred')) $statuses[] = 'transferred';
-        if ($user->can('view_all_notification_rejected')) $statuses[] = 'rejected';
-        if ($user->can('view_all_notification_in_defective')) $statuses[] = 'defective';
-        if ($user->can('view_all_notification_in_ready')) $statuses[] = 'ready';
-        if ($user->can('view_all_notification_in_delivered')) $statuses[] = 'delivered';
-        if ($user->can('view_all_notification_in_rejected_after_validation')) $statuses[] = 'rejected_after_validation';
-        if ($user->can('view_all_notification_in_cancel_for_new_update')) $statuses[] = 'cancel_for_new_update';
-        if ($user->can('view_all_notification_in_partial_completed')) $statuses[] = 'partial_completed';
-        if ($user->can('view_all_notification_in_partial_delivered')) $statuses[] = 'partial_delivered';
+        $statusPermissions = [
+            'in_preparation' => ['view_all_notification_in_preparation', 'view_all_notification_in_preparation_by_admin',],
+            'transferred' => ['view_all_notification_transferred', 'view_all_notification_transferred_by_admin',],
+            'rejected' => ['view_all_notification_rejected', 'view_all_notification_rejected_by_admin',],
+            'defective' => ['view_all_notification_in_defective', 'view_all_notification_in_defective_by_admin',],
+            'ready' => ['view_all_notification_in_ready', 'view_all_notification_in_ready_by_admin',],
+            'delivered' => ['view_all_notification_in_delivered', 'view_all_notification_in_delivered_by_admin',],
+            'rejected_after_validation' => ['view_all_notification_in_rejected_after_validation', 'view_all_notification_in_rejected_after_validation_by_admin',],
+            'cancel_for_new_update' => ['view_all_notification_in_cancel_for_new_update', 'view_all_notification_in_cancel_for_new_update_by_admin',],
+            'partial_completed' => ['view_all_notification_in_partial_completed', 'view_all_notification_in_partial_completed_by_admin',],
+            'partial_delivered' => ['view_all_notification_partial_delivered', 'view_all_notification_partial_delivered_by_admin',],
+        ];
+        $statuses = collect($statusPermissions)->filter(fn($perms) => collect($perms)->contains(fn($p) => $user->can($p)))->keys()
+            ->toArray();
 
         if (empty($statuses)) {
-
-            return response()->json([
-                'status' => 'success',
-                'data' => []
-            ]);
+            return response()->json(['data' => []]);
         }
 
         $query->whereIn('status', $statuses);
@@ -52,112 +47,19 @@ class NotificationController extends Controller
 
             if ($user->can('view_kitchen_notifications')) {
                 $q->orWhere(function ($sub) {
-                    $sub->whereIn('target', ['all', 'kitchen'])
-                        ->orWhere(function ($q2) {
-                            $q2->where('target', 'kitchen')
-                                ->whereHas('order', function ($order) {
-                                    $order->whereHas('items');
-                                });
-                        });
+                    $sub->whereIn('target', ['kitchen', 'all']);
                 });
             }
 
             if ($user->can('view_bar_notifications')) {
                 $q->orWhere(function ($sub) {
-                    $sub->whereIn('target', ['all', 'bar'])
-                        ->orWhere(function ($q2) {
-                            $q2->where('target', 'bar')
-                                ->whereHas('order', function ($order) {
-                                    $order->whereHas('drinks');
-                                });
-                        });
+                    $sub->whereIn('target', ['bar', 'all']);
                 });
             }
-
         });
 
         return response()->json([
-            'status' => 'success',
-            'data' => $query
-                ->latest()
-                ->limit(50)
-                ->get()
-        ]);
-    }
-
-    /**
-     * Display a listing of the resource.
-     * @permission NotificationController::unread
-     * @permission_desc Afficher les notifications non lues
-     */
-    public function unread()
-    {
-        $user = auth()->user();
-
-        $query = \App\Models\OrderNotification::with([
-            'creator',
-            'updater',
-            'order'
-        ]);
-
-        if ($user->can('view_all_notification')) {
-            return response()->json([
-                'status' => 'success',
-                'data' => $query->oldest()->get()
-            ]);
-        }
-
-        $statuses = [];
-
-        if ($user->can('view_all_notification_in_preparation')) $statuses[] = 'in_preparation';
-        if ($user->can('view_all_notification_transferred')) $statuses[] = 'transferred';
-        if ($user->can('view_all_notification_rejected')) $statuses[] = 'rejected';
-        if ($user->can('view_all_notification_in_defective')) $statuses[] = 'defective';
-        if ($user->can('view_all_notification_in_ready')) $statuses[] = 'ready';
-        if ($user->can('view_all_notification_in_delivered')) $statuses[] = 'delivered';
-        if ($user->can('view_all_notification_in_rejected_after_validation')) $statuses[] = 'rejected_after_validation';
-        if ($user->can('view_all_notification_in_cancel_for_new_update')) $statuses[] = 'cancel_for_new_update';
-        if ($user->can('view_all_notification_in_partial_completed')) $statuses[] = 'partial_completed';
-        if ($user->can('view_all_notification_in_partial_delivered')) $statuses[] = 'partial_delivered';
-        if (empty($statuses)) {
-            $statuses[] = 'transferred';
-        }
-        $query->whereIn('status', $statuses);
-        $query->where(function ($q) use ($user) {
-
-            if ($user->can('view_kitchen_notifications')) {
-
-                $q->orWhere(function ($sub) {
-
-                    $sub->where('target', 'kitchen')
-                        ->whereHas('order', function ($order) {
-                            $order->whereHas('items');
-                        });
-
-                });
-            }
-
-            if ($user->can('view_bar_notifications')) {
-
-                $q->orWhere(function ($sub) {
-                    $sub->where('target', 'bar')
-                        ->whereHas('order', function ($order) {
-                            $order->whereHas('drinks');
-                        });
-                });
-            }
-
-            if ($user->can('view_bar_and_kitchen_notifications')) {
-                $q->orWhere(function ($sub) {
-                    $sub->where('target', 'all');
-                });
-            }
-
-        });
-
-        return response()->json([
-            'status' => 'success',
-            'data' => $query->oldest()->get()
+            'data' => $query->latest()->limit(50)->get()
         ]);
     }
 
@@ -183,27 +85,52 @@ class NotificationController extends Controller
             'is_read' => true,
             'read_at' => now()
         ]);
-
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Notification marquée comme lue'
-        ]);
     }
 
-    /**
-     * Display a listing of the resource.
-     * @permission NotificationController::markAllAsRead
-     * @permission_desc Marquer toutes notifications comme lues
-     */
+
     public function markAllAsRead()
     {
         $user = auth()->user();
+        if (!$user->can('mark_all_notifications_as_read')) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Permission refusée'
+            ], 403);
+        }
 
-        $user->unreadNotifications->markAsRead();
+        $statusPermissions = [
+            'in_preparation' => ['view_all_notification_in_preparation', 'view_all_notification_in_preparation_by_admin'],
+            'transferred' => ['view_all_notification_transferred', 'view_all_notification_transferred_by_admin'],
+            'rejected' => ['view_all_notification_rejected', 'view_all_notification_rejected_by_admin'],
+            'defective' => ['view_all_notification_in_defective', 'view_all_notification_in_defective_by_admin'],
+            'ready' => ['view_all_notification_in_ready', 'view_all_notification_in_ready_by_admin'],
+            'delivered' => ['view_all_notification_in_delivered', 'view_all_notification_in_delivered_by_admin'],
+            'rejected_after_validation' => ['view_all_notification_in_rejected_after_validation', 'view_all_notification_in_rejected_after_validation_by_admin'],
+            'cancel_for_new_update' => ['view_all_notification_in_cancel_for_new_update', 'view_all_notification_in_cancel_for_new_update_by_admin'],
+            'partial_completed' => ['view_all_notification_in_partial_completed', 'view_all_notification_in_partial_completed_by_admin'],
+            'partial_delivered' => ['view_all_notification_partial_delivered', 'view_all_notification_partial_delivered_by_admin'],
+        ];
+
+        $statuses = collect($statusPermissions)->filter(fn ($perms) => collect($perms)->contains(fn ($p) => $user->can($p)))
+            ->keys()->values()->toArray();
+
+        if (empty($statuses)) {
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Aucune notification à marquer'
+            ]);
+        }
+
+        OrderNotification::whereIn('status', $statuses)->whereNull('read_at')
+            ->update([
+                'is_read' => true,
+                'read_at' => now(),
+                'updated_by' => $user->id
+            ]);
 
         return response()->json([
             'status' => 'success',
-            'message' => 'Toutes les notifications sont marquées comme lues'
+            'message' => 'Toutes les notifications ont été marquées comme lues'
         ]);
     }
 

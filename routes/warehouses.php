@@ -19,4 +19,5 @@ Route::patch('natures_warehouses/{uuid}/is_active', [WarehouseController::class,
 Route::get('get_warehouses_is_used_for_restaurant', [WarehouseController::class, 'get_warehouses_is_used_for_restaurant']);
 Route::get('get_warehouses_is_bar_warehouse', [WarehouseController::class, 'get_warehouses_is_bar_warehouse']);
 Route::get('get_warehouses_is_used_for_drinks_transformation', [WarehouseController::class, 'get_warehouses_is_used_for_drinks_transformation']);
+Route::get('get_warehouses_is_drinks_or_is_cuisine', [WarehouseController::class, 'get_warehouses_is_drinks_or_is_cuisine']);
 

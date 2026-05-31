@@ -1668,7 +1668,8 @@ class OrderMenuRestaurantController extends Controller
             'status' => 'pending',
             'created_by' => $auth->id,
             'updated_by' => $auth->id,
-            'is_last_items' => true
+            'is_last_items' => true,
+            'warehouse_uuid' => $warehouseUuid
         ]);
     }
     public function releaseStock($orderUuid, $itemUuid, $itemType, $productUuid, $quantity, $auth, $warehouseUuid)
@@ -1734,6 +1735,7 @@ class OrderMenuRestaurantController extends Controller
             'created_by' => $auth->id,
             'updated_by' => $auth->id,
             'is_last_items' => true,
+            'warehouse_uuid' => $warehouseUuid
         ]);
     }
     public function cancelRervationsAfterValidation(Request $request)
@@ -4863,18 +4865,17 @@ class OrderMenuRestaurantController extends Controller
         $page = $request->input('page', 1);
 
         $query = OrderMenuRestaurant::with([
-            'restaurantTable',
-            'creator',
-            'updater',
-            'validator',
-            'cancelor',
-            'partners_restaurant',
-            'warehouse',
-            'restaurant_room',
-            'menu_restaurant',
+            'restaurantTable:uuid,code,table_number',
+            'creator:id,nom_utilisateur,email',
+            'updater:id,nom_utilisateur,email',
+            'validator:id,nom_utilisateur,email',
+            'cancelor:id,nom_utilisateur,email',
+            'partners_restaurant:uuid,code,full_name',
+            'restaurant_room:uuid,code,rooms_number',
+            'menu_restaurant:uuid,name,code,type_complement_boisson',
             'items.menu',
             'drinks.drinkConfig.product',
-            'free_client_for_restaurant',
+            'free_client_for_restaurant:uuid,code,full_name,cni_number_file',
             'notifications.userNotifications'
         ]);
 
