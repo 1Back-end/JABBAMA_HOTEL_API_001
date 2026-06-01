@@ -10486,10 +10486,8 @@ class OrderMenuRestaurantController extends Controller
             $query->where('full_name', 'LIKE', "%{$debtor}%");
         }
 
-        if ($auth->can('change_order_payment_date') && $request->filled('start_date') && $request->filled('end_date')) {
-            $startDate = Carbon::parse($request->start_date)->startOfDay();
-            $endDate = Carbon::parse($request->end_date)->endOfDay();
-            $query->whereBetween('created_at', [$startDate, $endDate]);
+        if ($auth->can('change_order_payment_date') && $request->filled('date')) {
+            $query->whereDate('created_at', $request->date);
         } else {
             $query->whereDate('created_at', Carbon::today());
         }

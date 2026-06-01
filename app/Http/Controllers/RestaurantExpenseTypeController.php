@@ -418,30 +418,50 @@ class RestaurantExpenseTypeController extends Controller
             });
         }
 
-        $paginated = $query
-            ->latest()
-            ->paginate($perPage, ['*'], 'page', $page);
+        $paginated = $query->latest()->paginate($perPage, ['*'], 'page', $page);
+
 
         $groupedData = collect($paginated->items())
             ->groupBy('restaurant_expense_uuid')
             ->map(function ($families) {
-
                 $first = $families->first();
-
                 return [
                     'type' => $first->type,
                     'restaurant_expense' => $first->type,
                     'families' => $families->values(),
                 ];
-            })
-            ->values();
+            });
+
+        $includedTypeUuids = $groupedData->keys()->filter()->toArray();
+
+        $emptyTypesQuery = \App\Models\RestaurantExpenseType::query();
+
+
+        if ($search = trim($request->input('search'))) {
+            $emptyTypesQuery->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('code', 'like', "%{$search}%");
+            });
+        }
+
+        $emptyTypes = $emptyTypesQuery->whereNotIn('uuid', $includedTypeUuids)->get();
+
+        foreach ($emptyTypes as $type) {
+            $groupedData->push([
+                'type' => $type,
+                'restaurant_expense' => $type,
+                'families' => collect([]),
+            ]);
+        }
+        $finalData = $groupedData->values();
+
 
         return response()->json([
-            'data' => $groupedData,
+            'data' => $finalData,
             'current_page' => $paginated->currentPage(),
             'last_page' => $paginated->lastPage(),
             'per_page' => $paginated->perPage(),
-            'total' => $paginated->total(),
+            'total' => $paginated->total() + $emptyTypes->count(),
         ]);
     }
 

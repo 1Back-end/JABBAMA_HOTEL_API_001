@@ -17,6 +17,7 @@ use App\Models\RegulationMethod;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 
 class PaymentController extends Controller
@@ -224,6 +225,7 @@ class PaymentController extends Controller
                     'reference' => $regulation['reference'] ?? null,
                     'detail' => $regulation['detail'] ?? null,
                     'created_by' => auth()->id(),
+                    'updated_by' => auth()->id(),
                 ]);
 
 
@@ -245,6 +247,7 @@ class PaymentController extends Controller
                             'reference' => $regulation['reference'] ?? null,
                             'detail' => $regulation['detail'] ?? null,
                             'created_by' => auth()->id(),
+                            'updated_by' => auth()->id(),
                         ]);
                     }
                 }
@@ -316,10 +319,19 @@ class PaymentController extends Controller
 
     public function cancel(Request $request, $uuid)
     {
+        $auth = auth()->user();
+
         $request->validate([
             'type' => 'required|in:item,drink,order,regulation',
-            'reason_for_cancel_or_update' => 'required|string',
+            'password' => 'required|string'
         ]);
+
+        if (!Hash::check($request->password, $auth->password)) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Mot de passe incorrect.'
+            ], 422);
+        }
 
         DB::beginTransaction();
 
@@ -353,6 +365,7 @@ class PaymentController extends Controller
                             $regulation->delete();
                         } else {
                             $regulation->save();
+                            $regulation->updated_by = auth()->id();
                         }
                     }
                     $line->delete();
@@ -392,6 +405,7 @@ class PaymentController extends Controller
                             $regulation->delete();
                         } else {
                             $regulation->save();
+                            $regulation->updated_by = auth()->id();
                         }
                     }
                     $line->delete();
@@ -504,79 +518,83 @@ class PaymentController extends Controller
 
     public function get_cash_register_sheet(Request $request)
     {
-        $auth = auth()->user();
-
         $perPage = (int) $request->input('limit', 25);
         $page = (int) $request->input('page', 1);
 
+        $date = $request->filled('date')
+            ? Carbon::parse($request->date)->toDateString()
+            : Carbon::today()->toDateString();
+
         $query = PaymentRegulation::query()
+            ->join(
+                'regulation_methods',
+                'payment_regulations.regulation_method_uuid',
+                '=',
+                'regulation_methods.uuid'
+            )
             ->select([
-                DB::raw('DATE(created_at) as date'),
-                DB::raw('MIN(created_at) as created_at'),
-                'created_by',
-                DB::raw('SUM(amount) as total_amount'),
+                DB::raw('DATE(payment_regulations.created_at) as date'),
+                DB::raw('MIN(payment_regulations.created_at) as created_at'),
+                'payment_regulations.created_by',
+                'regulation_methods.uuid as regulation_method_uuid',
+                'regulation_methods.name as regulation_method_name',
+                'payment_regulations.type',
+                DB::raw('SUM(payment_regulations.amount) as total_amount'),
             ])
             ->with(['creator:id,nom_utilisateur'])
+            ->whereDate('payment_regulations.created_at', $date)
             ->groupBy(
-                DB::raw('DATE(created_at)'),
-                'created_by'
+                DB::raw('DATE(payment_regulations.created_at)'),
+                'payment_regulations.created_by',
+                'regulation_methods.uuid',
+                'regulation_methods.name',
+                'payment_regulations.type'
             )
-            ->orderByDesc(DB::raw('DATE(created_at)'))
+            ->orderByDesc(DB::raw('DATE(payment_regulations.created_at)'));
 
-            ->when(
-                $request->filled('date'),
-                function ($q) use ($request) {
-                    $q->whereBetween('created_at', [
-                        Carbon::parse($request->date)->startOfDay(),
-                        Carbon::parse($request->date)->endOfDay(),
-                    ]);
-                },
-                function ($q) {
-                    $q->whereBetween('created_at', [
-                        Carbon::today()->startOfDay(),
-                        Carbon::today()->endOfDay(),
-                    ]);
-                }
-            )
+        $totalsQuery = PaymentRegulation::whereDate('created_at', $date);
 
-            ->when(
-                $request->cash_register_filter_type === CashRegisterFilterType::PAYMENT_TYPE->value
-                && $request->filled('cash_receipt_type_uuid'),
-                function ($q) use ($request) {
-                    $q->where('cash_receipt_type_uuid', $request->cash_receipt_type_uuid);
-                }
-            )
+        if ($request->cash_register_filter_type === CashRegisterFilterType::PAYMENT_TYPE->value && $request->filled('cash_receipt_type_uuid')) {
+            $query->where('cash_receipt_type_uuid', $request->cash_receipt_type_uuid);
+            $totalsQuery->where('cash_receipt_type_uuid', $request->cash_receipt_type_uuid);
+        }
 
-            ->when(
-                $request->cash_register_filter_type === CashRegisterFilterType::PAYMENT_METHOD->value
-                && $request->filled('regulation_method_uuid'),
-                function ($q) use ($request) {
-                    $q->where(
-                        'regulation_method_uuid',
-                        $request->regulation_method_uuid
-                    );
-                }
-            )
+        if ($request->cash_register_filter_type === CashRegisterFilterType::PAYMENT_METHOD->value && $request->filled('regulation_method_uuid')) {
+            $query->where('regulation_method_uuid', $request->regulation_method_uuid);
+            $totalsQuery->where('regulation_method_uuid', $request->regulation_method_uuid);
+        }
 
-            ->when(
-                $request->cash_register_filter_type === CashRegisterFilterType::CASHIER_AGENT->value
-                && $request->filled('created_by'),
-                function ($q) use ($request) {
-                    $q->where('created_by', $request->created_by);
-                }
-            );
+        if ($request->cash_register_filter_type === CashRegisterFilterType::EXPENSE_TYPE->value && $request->filled('restaurant_expense_type_uuid')) {
+            $query->where('restaurant_expense_type_uuid', $request->restaurant_expense_type_uuid);
+            $totalsQuery->where('restaurant_expense_type_uuid', $request->restaurant_expense_type_uuid);
+        }
+
+        if ($request->cash_register_filter_type === CashRegisterFilterType::CASHIER_AGENT->value && $request->filled('created_by')) {
+            $query->where('payment_regulations.created_by', $request->created_by);
+            $totalsQuery->where('payment_regulations.created_by', $request->created_by);
+        }
 
         $data = $query->paginate($perPage, ['*'], 'page', $page);
-        $totalEncaissements = (clone $query)->get()->sum('total_amount');
+
+        $totals = $totalsQuery->select('type', DB::raw('SUM(amount) as total'))
+            ->groupBy('type')
+            ->get()
+            ->keyBy('type');
+
+        $totalEncaissements = (float) ($totals->get('encaissement')?->total ?? 0);
+        $totalDepenses      = (float) ($totals->get('expense')?->total ?? 0);
+        $soldeNet           = $totalEncaissements - $totalDepenses;
 
         return response()->json([
-            'success'      => true,
-            'data'         => $data->items(),
-            'current_page' => $data->currentPage(),
-            'last_page'    => $data->lastPage(),
-            'per_page'     => $data->perPage(),
-            'total'        => $data->total(),
+            'success'             => true,
+            'data'                => $data->items(),
+            'current_page'        => $data->currentPage(),
+            'last_page'           => $data->lastPage(),
+            'per_page'            => $data->perPage(),
+            'total'               => $data->total(),
             'total_encaissements' => $totalEncaissements,
+            'total_depenses'      => $totalDepenses,
+            'solde_net'           => $soldeNet,
         ]);
     }
 

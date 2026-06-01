@@ -8,7 +8,7 @@ enum SupplyStatus: string
     case CANCELLED           = 'cancelled';
     case REJECTED            = 'rejected';
     case VALIDATED           = 'validated';
-    case TRANSFERRED         = 'transferred';
+    case IN_PROGRESS         = 'in_progress';
     case IN_DISCUSS          = 'in_discuss';
     case PARTIALLY_VALIDATED = 'partially_validated';
 
@@ -22,7 +22,7 @@ enum SupplyStatus: string
             self::CANCELLED           => 'Annulé',
             self::REJECTED            => 'Rejetée',
             self::VALIDATED           => 'Validation complète',
-            self::TRANSFERRED         => 'En cours d\'approvi....',
+            self::IN_PROGRESS         => 'En cours d\'approvi....',
             self::IN_DISCUSS          => 'En discussion',
             self::PARTIALLY_VALIDATED => 'Validé partiellement',
         };
@@ -38,7 +38,7 @@ enum SupplyStatus: string
             self::CANCELLED           => 'danger',
             self::REJECTED            => 'danger',
             self::VALIDATED           => 'success',
-            self::TRANSFERRED         => 'warning',
+            self::IN_PROGRESS         => 'warning',
             self::IN_DISCUSS          => 'info',
             self::PARTIALLY_VALIDATED => 'warning',
         };

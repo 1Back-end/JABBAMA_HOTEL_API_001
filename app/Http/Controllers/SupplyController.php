@@ -1212,7 +1212,7 @@ class SupplyController extends Controller
             'transferred_at' => now(),
             'transferred_by' => $auth->id,
             'receiver_by' => $purchaseOrder->created_by,
-            'status' => 'transferred',
+            'status' => 'in_progress',
         ]);
 
         return response()->json([
