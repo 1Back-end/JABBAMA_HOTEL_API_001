@@ -2,10 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ComplementComposition;
+use App\Models\ComplementCompositionItem;
 use App\Models\ConfigurationsComplement;
 use App\Models\MenuRestaurant;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+
 /**
  * @permission_category Compléments des menus
  * @permission_module Gestion du restaurant
@@ -24,7 +28,6 @@ class ConfigurationsComplementController extends Controller
         $page = $request->input('page', 1);
 
         $query = ConfigurationsComplement::with([
-            'menuRestaurant',
             'creator',
             'updater',
         ]);
@@ -96,8 +99,6 @@ class ConfigurationsComplementController extends Controller
                 'is_active' => ['nullable', 'boolean'],
 
                 'default_price' => ['nullable', 'numeric', 'min:0'],
-
-                'menus_restaurant_uuid' => ['nullable', 'string', 'exists:menus_restaurants,uuid'],
 
                 'menus_complement_type' => ['nullable', 'string'],
             ]);
@@ -174,7 +175,6 @@ class ConfigurationsComplementController extends Controller
         try {
 
             $config = ConfigurationsComplement::with([
-                'menuRestaurant',
                 'creator',
                 'updater'
             ])->where('uuid', $uuid)->first();
@@ -290,11 +290,6 @@ class ConfigurationsComplementController extends Controller
 
                 'default_price' => ['nullable', 'numeric', 'min:0'],
 
-                'menus_restaurant_uuid' => [
-                    'nullable',
-                    'string',
-                    'exists:menus_restaurants,uuid'
-                ],
 
                 'menus_complement_type' => ['nullable', 'string'],
             ]);
@@ -358,6 +353,114 @@ class ConfigurationsComplementController extends Controller
                 'status' => 'error',
                 'message' => 'Une erreur est survenue',
                 'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+
+    public function getCompositionByComplementUuid(string $commplements_restaurant_uuid)
+    {
+        $composition = ComplementComposition::with([
+            'complement',
+            'items.product',
+            'creator',
+            'updater',
+            'warehouse'
+        ])
+            ->where('commplements_restaurant_uuid', $commplements_restaurant_uuid)
+            ->first();
+
+        if (!$composition) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Aucune composition trouvée pour ce complément.'
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'composition' => $composition,
+            'message' => 'Composition du complément récupérée avec succès.'
+        ]);
+    }
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission ConfigurationsComplementController::upsert
+     * @permission_desc Effectuer la confection des compléments
+     */
+    public function upsert(Request $request, string $commplements_restaurant_uuid)
+    {
+        $request->validate([
+            'warehouse_uuid' => 'required|uuid',
+            'items' => 'required|array|min:1',
+            'items.*.product_uuid' => 'required|uuid',
+            'items.*.quantity_used' => 'required|numeric|min:0',
+            'items.*.is_optional' => 'nullable|boolean',
+        ]);
+
+        $userId = auth()->id();
+
+        DB::beginTransaction();
+
+        try {
+
+            $composition = ComplementComposition::updateOrCreate(
+                [
+                    'commplements_restaurant_uuid' => $commplements_restaurant_uuid,
+                    'warehouse_uuid' => $request->warehouse_uuid,
+                ],
+                [
+                    'created_by' => $userId,
+                    'updated_by' => $userId,
+                ]
+            );
+
+            ConfigurationsComplement::where('uuid', $commplements_restaurant_uuid)
+                ->update([
+                    'is_confectioned' => true,
+                    'updated_by' => $userId,
+                ]);
+
+            ComplementCompositionItem::where(
+                'complement_uuid',
+                $composition->uuid
+            )->delete();
+
+            foreach ($request->items as $item) {
+
+                ComplementCompositionItem::create([
+                    'complement_uuid' => $composition->uuid,
+                    'product_uuid' => $item['product_uuid'],
+                    'quantity_used' => $item['quantity_used'],
+                    'is_optional' => $item['is_optional'] ?? false,
+                    'created_by' => $userId,
+                    'updated_by' => $userId,
+                ]);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Composition du complément enregistrée avec succès.',
+                'data' => $composition->load([
+                    'warehouse',
+                    'complement',
+                    'items.product',
+                    'creator',
+                    'updater',
+                ]),
+            ]);
+
+        } catch (\Exception $e) {
+
+            DB::rollBack();
+
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
             ], 500);
         }
     }

@@ -17,6 +17,7 @@ use App\Models\MenuOrder;
 use App\Models\MenuOrderItem;
 use App\Models\MenuRestaurant;
 use App\Models\MenuVirtualTemp;
+use App\Models\NotificationOrderRestaurantForDecisional;
 use App\Models\OrderMenuItemStatus;
 use App\Models\OrderMenuItemStatusForDrink;
 use App\Models\OrderMenuRestaurant;
@@ -1641,18 +1642,16 @@ class OrderMenuRestaurantController extends Controller
 
         $reservedStock = (float) VirtualOrderMenuRestaurant::where('product_uuid', $productUuid)
             ->where('status', 'pending')
-            ->where('orders_menu_restaurant_uuid', '!=', $orderUuid)
+            ->where('item_type', 'menu')
             ->sum('quantity_reserved');
 
         $availableStock = max(0, $realStock - $reservedStock);
 
-        if ($quantity > $availableStock) {
-
-            $productName = Product::where('uuid', $productUuid)->value('name')
-                ?? 'Produit inconnu';
+        if ($quantityUsed > $availableStock) {
+            $productName = Product::where('uuid', $productUuid)->value('name') ?? 'Produit inconnu';
 
             throw new \Exception(
-                "Stock insuffisant pour « {$productName} ». Disponible : {$availableStock}, Requis : {$quantity}"
+                "Stock insuffisant pour « {$productName} ». Disponible : {$availableStock}, Requis : {$quantityUsed}"
             );
         }
 
@@ -2253,6 +2252,15 @@ class OrderMenuRestaurantController extends Controller
                     $auth->id,
                     $target
                 );
+
+                $decisionnel = User::findOrFail(1);
+                NotificationOrderRestaurantForDecisional::createDecisionalOrUpdateNotification(
+                    orderUuid: $order->uuid,
+                    status: MenuOrderStatus::TRANSFERRED->value,
+                    message: $message,
+                    recipientId: $decisionnel->id,
+                    updatedBy: $auth->id
+                );
             }
 
             $reservationUuid = $request->reservation_uuid;
@@ -2775,6 +2783,15 @@ class OrderMenuRestaurantController extends Controller
                     $auth->id,
                     'kitchen'
                 );
+
+                $decisionnel = User::findOrFail(1);
+                NotificationOrderRestaurantForDecisional::createDecisionalOrUpdateNotification(
+                    orderUuid: $order->uuid,
+                    status: MenuOrderStatus::REJECTED->value,
+                    message: "Les menus de la commande {$order->code} ont été mis à jour (Statut : {$statusLabel}).",
+                    recipientId: $decisionnel->id,
+                    updatedBy: $auth->id
+                );
             }
 
             if ($drinkWasProcessed) {
@@ -2784,6 +2801,14 @@ class OrderMenuRestaurantController extends Controller
                     "Les boissons de la commande {$order->code} ont été mises à jour (Statut : {$statusLabel}).",
                     $auth->id,
                     'bar'
+                );
+                $decisionnel = User::findOrFail(1);
+                NotificationOrderRestaurantForDecisional::createDecisionalOrUpdateNotification(
+                    orderUuid: $order->uuid,
+                    status: MenuOrderStatus::REJECTED->value,
+                    message:  "Les boissons de la commande {$order->code} ont été mises à jour (Statut : {$statusLabel}).",
+                    recipientId: $decisionnel->id,
+                    updatedBy: $auth->id
                 );
             }
 
@@ -3310,7 +3335,6 @@ class OrderMenuRestaurantController extends Controller
             'quantity' => $newQtyRequested,
             'quantity_exactly' => $newQtyRequested,
             'total_price' => $newQtyRequested * $unitPrice,
-            'is_rejected' => false,
             'updated_by' => $auth->id,
         ]);
 
@@ -4130,7 +4154,6 @@ class OrderMenuRestaurantController extends Controller
             'quantity' => $newQty,
             'quantity_exactly' => $newQty,
             'total_price' => $newQty * $unitPrice,
-            'is_rejected' => false,
             'updated_by' => $auth->id,
         ]);
         $newStatus = $this->resolveItemStatus($item, $diff, $newQty, $auth);
@@ -5133,6 +5156,15 @@ class OrderMenuRestaurantController extends Controller
                 'kitchen'
             );
 
+            $decisionnel = User::findOrFail(1);
+            NotificationOrderRestaurantForDecisional::createDecisionalOrUpdateNotification(
+                orderUuid: $order->uuid,
+                status: MenuOrderStatus::REJECTED->value,
+                message: "La commande {$order->code} est de nouveau au statut : " . MenuOrderStatus::safeLabel($order->status) . ".",
+                recipientId: $decisionnel->id,
+                updatedBy: $auth->id
+            );
+
             $this->refreshOrderStatus($order);
             $order->update(['updated_by' => $auth->id]);
 
@@ -5314,6 +5346,16 @@ class OrderMenuRestaurantController extends Controller
                 $auth->id,
                 'bar'
             );
+
+            $decisionnel = User::findOrFail(1);
+            NotificationOrderRestaurantForDecisional::createDecisionalOrUpdateNotification(
+                orderUuid: $order->uuid,
+                status: MenuOrderStatus::REJECTED->value,
+                message: "La commande {$order->code} est de nouveau au statut : " . MenuOrderStatus::safeLabel($order->status) . ".",
+                recipientId: $decisionnel->id,
+                updatedBy: $auth->id
+            );
+
             $this->refreshOrderStatus($order);
             $order->update(['updated_by' => $auth->id]);
 
@@ -5475,6 +5517,17 @@ class OrderMenuRestaurantController extends Controller
                 $auth->id,
                 'kitchen'
             );
+
+            $decisionnel = User::findOrFail(1);
+            NotificationOrderRestaurantForDecisional::createDecisionalOrUpdateNotification(
+                orderUuid: $order->uuid,
+                status: MenuOrderStatus::IN_PREPARATION->value,
+                message: "Commande {$order->code} mise en préparation. Veuillez commencer.",
+                recipientId: $decisionnel->id,
+                updatedBy: $auth->id
+            );
+
+
 
             $this->refreshOrderStatus($order);
             DB::commit();
@@ -6020,6 +6073,14 @@ class OrderMenuRestaurantController extends Controller
                 $auth->id,
                 'bar'
             );
+            $decisionnel = User::findOrFail(1);
+            NotificationOrderRestaurantForDecisional::createDecisionalOrUpdateNotification(
+                orderUuid: $order->uuid,
+                status: MenuOrderStatus::IN_PREPARATION->value,
+                message: "Commande {$order->code} mise en préparation. Veuillez commencer.",
+                recipientId: $decisionnel->id,
+                updatedBy: $auth->id
+            );
 
             $this->refreshOrderStatus($order);
 
@@ -6359,6 +6420,18 @@ class OrderMenuRestaurantController extends Controller
                 $auth->id,
                 'kitchen'
             );
+
+            $decisionnel = User::findOrFail(1);
+            NotificationOrderRestaurantForDecisional::createDecisionalOrUpdateNotification(
+                orderUuid: $order->uuid,
+                status: $notificationStatus,
+                message: $allFinished
+                    ? "La commande commande {$order->code} est déjà prête."
+                    : "La commande {$order->code} est déjà prête partiellement.",
+                recipientId: $decisionnel->id,
+                updatedBy: $auth->id
+            );
+
             $this->refreshOrderStatus($order);
 
             $order->update([
@@ -6558,6 +6631,17 @@ class OrderMenuRestaurantController extends Controller
                     : "La commande {$order->code} est déjà prête partiellement.",
                 $auth->id,
                 'bar'
+            );
+
+            $decisionnel = User::findOrFail(1);
+            NotificationOrderRestaurantForDecisional::createDecisionalOrUpdateNotification(
+                orderUuid: $order->uuid,
+                status: $notificationStatus,
+                message: $allFinished
+                    ? "La commande commande {$order->code} est déjà prête."
+                    : "La commande {$order->code} est déjà prête partiellement.",
+                recipientId: $decisionnel->id,
+                updatedBy: $auth->id
             );
 
             $this->refreshOrderStatus($order);
@@ -7019,6 +7103,15 @@ class OrderMenuRestaurantController extends Controller
                 'kitchen'
             );
 
+            $decisionnel = User::findOrFail(1);
+            NotificationOrderRestaurantForDecisional::createDecisionalOrUpdateNotification(
+                orderUuid: $order->uuid,
+                status: $notificationStatus,
+                message: $message,
+                recipientId: $decisionnel->id,
+                updatedBy: $auth->id
+            );
+
             $this->refreshOrderStatus($order);
             $order->update(['updated_by' => $auth->id]);
 
@@ -7116,6 +7209,15 @@ class OrderMenuRestaurantController extends Controller
                 'bar'
             );
 
+            $decisionnel = User::findOrFail(1);
+            NotificationOrderRestaurantForDecisional::createDecisionalOrUpdateNotification(
+                orderUuid: $order->uuid,
+                status: $notificationStatus,
+                message: $message,
+                recipientId: $decisionnel->id,
+                updatedBy: $auth->id
+            );
+
             $order->update([
                 'updated_by' => $auth->id,
             ]);
@@ -7208,6 +7310,15 @@ class OrderMenuRestaurantController extends Controller
                 'kitchen'
             );
 
+            $decisionnel = User::findOrFail(1);
+            NotificationOrderRestaurantForDecisional::createDecisionalOrUpdateNotification(
+                orderUuid: $order->uuid,
+                status: MenuOrderStatus::REJECTED_FOR_NEW_UPDATE->value,
+                message: "La commande {$order->code} est de nouveau au statut : " . MenuOrderStatus::safeLabel($order->status) . ".",
+                recipientId: $decisionnel->id,
+                updatedBy: $auth->id
+            );
+
 
             $this->refreshOrderStatus($order);
             DB::commit();
@@ -7287,6 +7398,16 @@ class OrderMenuRestaurantController extends Controller
                 'kitchen'
             );
 
+            $decisionnel = User::findOrFail(1);
+            NotificationOrderRestaurantForDecisional::createDecisionalOrUpdateNotification(
+                orderUuid: $order->uuid,
+                status: MenuOrderStatus::REJECTED_AFTER_VALIDATION->value,
+                message: "La commande {$order->code} est de nouveau au statut : " . MenuOrderStatus::safeLabel($order->status) . ".",
+                recipientId: $decisionnel->id,
+                updatedBy: $auth->id
+            );
+
+
             $this->refreshOrderStatus($order);
             DB::commit();
 
@@ -7359,6 +7480,15 @@ class OrderMenuRestaurantController extends Controller
                 "La commande {$order->code} est de nouveau au statut : " . MenuOrderStatus::safeLabel($order->status) . ".",
                 $auth->id,
                 'bar'
+            );
+
+            $decisionnel = User::findOrFail(1);
+            NotificationOrderRestaurantForDecisional::createDecisionalOrUpdateNotification(
+                orderUuid: $order->uuid,
+                status: MenuOrderStatus::REJECTED_AFTER_VALIDATION->value,
+                message: "La commande {$order->code} est de nouveau au statut : " . MenuOrderStatus::safeLabel($order->status) . ".",
+                recipientId: $decisionnel->id,
+                updatedBy: $auth->id
             );
 
             $order->update([
@@ -7450,6 +7580,15 @@ class OrderMenuRestaurantController extends Controller
                 "La commande {$order->code} est de nouveau au statut : " . MenuOrderStatus::safeLabel($order->status) . ".",
                 $auth->id,
                 'bar'
+            );
+
+            $decisionnel = User::findOrFail(1);
+            NotificationOrderRestaurantForDecisional::createDecisionalOrUpdateNotification(
+                orderUuid: $order->uuid,
+                status: MenuOrderStatus::REJECTED_FOR_NEW_UPDATE->value,
+                message: "La commande {$order->code} est de nouveau au statut : " . MenuOrderStatus::safeLabel($order->status) . ".",
+                recipientId: $decisionnel->id,
+                updatedBy: $auth->id
             );
 
             $order->update([
@@ -7724,6 +7863,15 @@ class OrderMenuRestaurantController extends Controller
                 'kitchen'
             );
 
+            $decisionnel = User::findOrFail(1);
+            NotificationOrderRestaurantForDecisional::createDecisionalOrUpdateNotification(
+                orderUuid: $order->uuid,
+                status: MenuOrderStatus::DEFECTIVE->value,
+                message: "Commande {$order->code} marquée comme défectueuse en cuisine. Action requise",
+                recipientId: $decisionnel->id,
+                updatedBy: $auth->id
+            );
+
             $this->refreshOrderStatus($order->fresh());
             $order->update([
                 'updated_by' => $auth->id,
@@ -7885,6 +8033,15 @@ class OrderMenuRestaurantController extends Controller
                 'kitchen'
             );
 
+            $decisionnel = User::findOrFail(1);
+            NotificationOrderRestaurantForDecisional::createDecisionalOrUpdateNotification(
+                orderUuid: $order->uuid,
+                status:  MenuOrderStatus::TRANSFERRED->value,
+                message: "Commande {$order->code} restaurée avec succès en cuisine.",
+                recipientId: $decisionnel->id,
+                updatedBy: $auth->id
+            );
+
             $this->refreshOrderStatus($order);
             $order->update([
                 'updated_by' => $auth->id,
@@ -7997,6 +8154,15 @@ class OrderMenuRestaurantController extends Controller
                 "Commande {$order->code} restaurée avec succès.",
                 $auth->id,
                 'bar'
+            );
+
+            $decisionnel = User::findOrFail(1);
+            NotificationOrderRestaurantForDecisional::createDecisionalOrUpdateNotification(
+                orderUuid: $order->uuid,
+                status:  MenuOrderStatus::TRANSFERRED->value,
+                message: "Commande {$order->code} restaurée avec succès en au bar.",
+                recipientId: $decisionnel->id,
+                updatedBy: $auth->id
             );
 
             $this->refreshOrderStatus($order->fresh());
@@ -8238,6 +8404,15 @@ class OrderMenuRestaurantController extends Controller
                 "Commande {$order->code} marquée comme défectueuse. Action requise",
                 $auth->id,
                 'bar'
+            );
+
+            $decisionnel = User::findOrFail(1);
+            NotificationOrderRestaurantForDecisional::createDecisionalOrUpdateNotification(
+                orderUuid: $order->uuid,
+                status: MenuOrderStatus::DEFECTIVE->value,
+                message: "Commande {$order->code} marquée comme défectueuse. Action requise",
+                recipientId: $decisionnel->id,
+                updatedBy: $auth->id
             );
 
             $this->refreshOrderStatus($order->fresh());
@@ -8528,6 +8703,14 @@ class OrderMenuRestaurantController extends Controller
             $message,
             $auth->id,
             'kitchen'
+        );
+        $decisionnel = User::findOrFail(1);
+        NotificationOrderRestaurantForDecisional::createDecisionalOrUpdateNotification(
+            orderUuid: $order->uuid,
+            status: $notificationStatus,
+            message: $message,
+            recipientId: $decisionnel->id,
+            updatedBy: $auth->id
         );
     }
 
