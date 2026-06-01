@@ -238,6 +238,81 @@ class WarehouseController extends Controller
     }
 
 
+
+    /**
+     * Display a listing of the resource.
+     * @permission WarehouseController::get_warehouses_is_drinks_or_is_cuisine
+     * @permission_desc Afficher la liste des entrepôts (Bar Transformation & cuisinie) utilisés pour la confection des compléments
+     */
+    public function get_warehouses_is_drinks_or_is_cuisine(Request $request)
+    {
+        $auth = auth()->user();
+        $perPage = $request->input('limit', 25);
+        $page = $request->input('page', 1);
+        $roleIds = $auth->roles->pluck('id');
+
+        $query = Warehouse::with([
+            'creator',
+            'updater',
+            'natures',
+            'managers'
+        ])
+            ->where(function ($q) {
+                $q->where('is_used_for_drinks_transformation', 1)
+                    ->orWhere('is_used_for_restaurant', 1);
+            });
+
+        if (!$auth->hasRole('SUPER_ADMIN') && !$auth->can('view_all_warehouses')) {
+
+            $query->where(function ($q) use ($auth, $roleIds) {
+                if ($auth->can('view_role_related_data')) {
+                    $q->whereHas('managers.roles', function ($qr) use ($roleIds) {
+                        $qr->whereIn('roles.id', $roleIds);
+                    });
+                }
+                else {
+                    $q->whereHas('managers', function ($qr) use ($auth) {
+                        $qr->where('user_id', $auth->id);
+                    });
+                }
+
+            });
+        }
+
+        if ($request->has('is_active')) {
+            $query->where('is_active', filter_var($request->input('is_active'), FILTER_VALIDATE_BOOLEAN));
+        }
+
+        if ($search = trim($request->input('search'))) {
+            $query->where(function ($q) use ($search) {
+                $q->where('ref', 'like', "%{$search}%")
+                    ->orWhere('name', 'like', "%{$search}%")
+                    ->orWhere('stock_type', 'like', "%{$search}%")
+                    ->orWhere('address', 'like', "%{$search}%")
+                    ->orWhere('total_stock', 'like', "%{$search}%"); // ✅ corrigé
+            })
+                ->orWhereHas('natures', function ($qw) use ($search) {
+                    $qw->where('code', 'like', "%{$search}%")
+                        ->orWhere('name', 'like', "%{$search}%")
+                        ->orWhere('abbreviation', 'like', "%{$search}%");
+                })
+                ->orWhereHas('managers', function ($ma) use ($search) {
+                    $ma->where('nom_utilisateur', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%");
+                });
+        }
+
+        $warehouses = $query->latest()->paginate($perPage, ['*'], 'page', $page);
+
+        return response()->json([
+            'data'         => $warehouses->items(),
+            'current_page' => $warehouses->currentPage(),
+            'last_page'    => $warehouses->lastPage(),
+            'total'        => $warehouses->total(),
+        ]);
+    }
+
+
     /**
      * Display a listing of the resource.
      * @permission WarehouseController::get_warehouses_is_bar_warehouse

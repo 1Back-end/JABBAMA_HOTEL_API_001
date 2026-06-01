@@ -255,6 +255,71 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des notifications du restaurant',
             'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
+        'mark_all_notifications_as_read' => [
+            'description' => 'Marquer comme lues toutes les notifications visibles en un seule clic',
+            'category' => 'Gestion des notifications du restaurant',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'view_all_notification_transferred_by_admin' => [
+            'description' => 'Afficher les notifications d\'une commande transférée',
+            'category' => 'Gestion des notifications des décisionnaires du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'view_all_notification_in_preparation_by_admin' => [
+            'description' => 'Afficher les notifications d\'une commande en cours de préparation',
+            'category' => 'Gestion des notifications des décisionnaires du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'view_all_notification_rejected_by_admin' => [
+            'description' => 'Afficher les notifications d\'une commande en rejetée',
+            'category' => 'Gestion des notifications des décisionnaires du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'view_all_notification_in_defective_by_admin' => [
+            'description' => 'Afficher les notifications d\'une commande en défectieux',
+            'category' => 'Gestion des notifications des décisionnaires du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'view_all_notification_in_ready_by_admin' => [
+            'description' => 'Afficher les notifications d\'une commande en prêt',
+            'category' => 'Gestion des notifications des décisionnaires du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'view_all_notification_in_delivered_by_admin' => [
+            'description' => 'Afficher les notifications d\'une commande en servie',
+            'category' => 'Gestion des notifications des décisionnaires du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'view_all_notification_in_rejected_after_validation_by_admin' => [
+            'description' => 'Afficher les notifications d\'une commande en rejet du servi',
+            'category' => 'Gestion des notifications des décisionnaires du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'view_all_notification_in_cancel_for_new_update_by_admin' => [
+            'description' => 'Afficher les notifications d\'une commande en rejet du prêt',
+            'category' => 'Gestion des notifications des décisionnaires du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'view_all_notification_in_partial_delivered_by_admin' => [
+            'description' => 'Afficher les notifications d\'une commande en servie partiellement',
+            'category' => 'Gestion des notifications des décisionnaires du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'view_all_notification_in_partial_completed_by_admin' => [
+            'description' => 'Afficher les notifications d\'une commande en prêt partiellement',
+            'category' => 'Gestion des notifications des décisionnaires du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'view_kitchen_notifications_by_admin' => [
+            'description' => 'Afficher les notifications des commandes contenant des menus/plats',
+            'category' => 'Gestion des notifications des décisionnaires du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'view_bar_notifications_by_admin' => [
+            'description' => 'Afficher les notifications des commandes contenant des boissons',
+            'category' => 'Gestion des notifications des décisionnaires du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
     ];
 
     public function handle(): void
@@ -338,7 +403,7 @@ class ExtractPermissions extends Command
                 }
 
                 // ✅ Attachement au super admin
-                if ($superAdminRole && !$superAdminRole->permissions()->where('permission_id', $permission->id)->exists()) {
+                if ($permission->wasRecentlyCreated && $superAdminRole) {
                     $superAdminRole->permissions()->attach($permission->id, [
                         'created_by' => $systemId,
                         'updated_by' => $systemId,
@@ -407,7 +472,7 @@ class ExtractPermissions extends Command
                 $permission->save();
             }
 
-            if ($superAdminRole && !$superAdminRole->permissions()->where('permission_id', $permission->id)->exists()) {
+            if ($permission->wasRecentlyCreated && $superAdminRole) {
                 $superAdminRole->permissions()->attach($permission->id, [
                     'created_by' => $systemId,
                     'updated_by' => $systemId,
