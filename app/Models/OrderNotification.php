@@ -65,45 +65,6 @@ class OrderNotification extends Model
             }
         });
 
-        static::addGlobalScope('view_permissions', function (\Illuminate\Database\Eloquent\Builder $builder) {
-            $user = auth()->user();
-
-            $permissionsMap = [
-                'view_all_notification_in_preparation' => 'in_preparation',
-                'view_all_notification_transferred' => 'transferred',
-                'view_all_notification_rejected' => 'rejected',
-                'view_all_notification_in_defective' => 'defective',
-                'view_all_notification_in_ready' => 'ready',
-                'view_all_notification_in_delivered' => 'delivered',
-                'view_all_notification_in_rejected_after_validation' => 'rejected_after_validation',
-                'view_all_notification_in_cancel_for_new_update' => 'cancel_for_new_update',
-                'view_all_notification_in_partial_completed' => 'partial_completed',
-                'view_all_notification_in_partial_delivered' => 'partial_delivered',
-                'view_all_notification_in_preparation_by_admin' => 'in_preparation',
-                'view_all_notification_transferred_by_admin' => 'transferred',
-                'view_all_notification_rejected_by_admin' => 'rejected',
-                'view_all_notification_in_defective_by_admin' => 'defective',
-                'view_all_notification_in_ready_by_admin' => 'ready',
-                'view_all_notification_in_delivered_by_admin' => 'delivered',
-                'view_all_notification_in_rejected_after_validation_by_admin' => 'rejected_after_validation',
-                'view_all_notification_in_cancel_for_new_update_by_admin' => 'cancel_for_new_update',
-                'view_all_notification_in_partial_completed_by_admin' => 'partial_completed',
-                'view_all_notification_in_partial_delivered_by_admin' => 'partial_delivered',
-            ];
-
-            $allowedStatuses = [];
-
-            foreach ($permissionsMap as $permission => $status) {
-                if ($user->can($permission)) {
-                    $allowedStatuses[] = $status;
-                }
-            }
-            if (empty($allowedStatuses)) {
-                $allowedStatuses = ['transferred'];
-            }
-
-            $builder->whereIn('status', $allowedStatuses);
-        });
     }
 
     // 🔥 relations
@@ -161,5 +122,13 @@ class OrderNotification extends Model
     {
         return $this->hasOne(UserOrderNotification::class, 'order_notification_uuid', 'uuid')
             ->where('user_id', auth()->id());
+    }
+    public function reads()
+    {
+        return $this->hasMany(
+            NotificationRead::class,
+            'notification_uuid',
+            'uuid'
+        );
     }
 }

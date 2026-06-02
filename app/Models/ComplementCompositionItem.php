@@ -2,16 +2,16 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
-class ComplementComposition extends Model
+class ComplementCompositionItem extends Model
 {
     use HasFactory, SoftDeletes;
 
-    protected $table = 'complements_compositions';
+    protected $table = 'complements_compositions_items';
 
     protected $primaryKey = 'uuid';
     public $incrementing = false;
@@ -19,10 +19,17 @@ class ComplementComposition extends Model
 
     protected $fillable = [
         'uuid',
-        'commplements_restaurant_uuid',
-        'warehouse_uuid',
+        'complement_uuid',
+        'product_uuid',
+        'quantity_used',
+        'is_optional',
         'created_by',
         'updated_by',
+    ];
+
+    protected $casts = [
+        'quantity_used' => 'integer',
+        'is_optional' => 'boolean',
     ];
 
     protected static function boot()
@@ -34,33 +41,20 @@ class ComplementComposition extends Model
         });
     }
 
-    /* =======================
-       RELATIONS
-    ======================= */
-
-    public function complement()
+    public function composition()
     {
         return $this->belongsTo(
-            ConfigurationsComplement::class,
-            'commplements_restaurant_uuid',
-            'uuid'
-        );
-    }
-
-    public function items()
-    {
-        return $this->hasMany(
-            ComplementCompositionItem::class,
+            ComplementComposition::class,
             'complement_uuid',
             'uuid'
         );
     }
 
-    public function warehouse()
+    public function product()
     {
         return $this->belongsTo(
-            Warehouse::class,
-            'warehouse_uuid',
+            Product::class,
+            'product_uuid',
             'uuid'
         );
     }

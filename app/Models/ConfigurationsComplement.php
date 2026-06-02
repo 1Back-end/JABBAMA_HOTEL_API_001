@@ -30,8 +30,8 @@ class ConfigurationsComplement extends Model
         'description',
         'is_active',
         'created_by',
+        'is_confectioned',
         'updated_by',
-        'menus_restaurant_uuid',
         'menus_complement_type',
     ];
 
@@ -74,15 +74,6 @@ class ConfigurationsComplement extends Model
         }
 
         return $prefix . str_pad($number, 6, '0', STR_PAD_LEFT);
-    }
-
-    public function menuRestaurant()
-    {
-        return $this->belongsTo(
-            MenuRestaurant::class,
-            'menus_restaurant_uuid',
-            'uuid'
-        );
     }
 
     public function creator()
