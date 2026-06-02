@@ -15,7 +15,7 @@
         "vite": "^7.0.4"
     },
     "dependencies": {
-        "puppeteer": "^24.34.0"
+        "puppeteer": "^24.43.1"
     },
     "name": "jabbama_hotel_api_001",
     "version": "1.0.0",
