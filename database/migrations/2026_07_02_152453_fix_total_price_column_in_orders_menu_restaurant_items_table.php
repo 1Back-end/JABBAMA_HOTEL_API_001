@@ -12,23 +12,19 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // 1. Suppression de la colonne virtuelle actuelle qui bloque l'importation SQL
         if (Schema::hasColumn('orders_menu_restaurant_items', 'total_price')) {
             Schema::table('orders_menu_restaurant_items', function (Blueprint $table) {
                 $table->dropColumn('total_price');
             });
         }
 
-        // 2. Création de la colonne en tant que colonne physique (normale)
         Schema::table('orders_menu_restaurant_items', function (Blueprint $table) {
             $table->integer('total_price')->nullable()->after('unit_price');
         });
 
-        // 3. Suppression des anciens triggers s'ils existent (sécurité)
         DB::unprepared('DROP TRIGGER IF EXISTS before_insert_orders_menu_total_price');
         DB::unprepared('DROP TRIGGER IF EXISTS before_update_orders_menu_total_price');
 
-        // 4. Déclencheur AVANT INSERTION : Calcule automatiquement si aucune valeur n'est envoyée
         DB::unprepared('
             CREATE TRIGGER before_insert_orders_menu_total_price
             BEFORE INSERT ON orders_menu_restaurant_items

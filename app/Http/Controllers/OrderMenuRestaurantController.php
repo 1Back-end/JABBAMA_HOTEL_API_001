@@ -10428,7 +10428,8 @@ class OrderMenuRestaurantController extends Controller
             ->whereIn('regulation_status', [
                 PaymentOrderMenusStatus::PARTIALLY_PAID->value,
                 PaymentOrderMenusStatus::PAID->value,
-                PaymentOrderMenusStatus::NOT_PAID->value
+                PaymentOrderMenusStatus::NOT_PAID->value,
+                PaymentOrderMenusStatus::FACTURATE->value,
             ]);
 
         if ($request->filled('free_client_for_restaurant_uuid')) {
