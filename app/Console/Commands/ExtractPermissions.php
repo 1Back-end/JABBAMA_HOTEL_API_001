@@ -297,12 +297,12 @@ class ExtractPermissions extends Command
             'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
         'read_notification_by_admin' => [
-            'description' => 'Marquer comme lue les notifications des postes décisionnels',
+            'description' => 'Marquer comme lue les notifications des décisionnaires un à un',
             'category' => 'Gestion des notifications des décisionnaires du restaurant',
             'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
         'mark_all_decisional_notifications_as_read' => [
-            'description' => 'Marquer comme lue toute les notifications des postes décisionnels en un clic',
+            'description' => 'Marquer comme lue toute les notifications des décisionnaires en un clic',
             'category' => 'Gestion des notifications des décisionnaires du restaurant',
             'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
@@ -321,16 +321,7 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des notifications des décisionnaires du restaurant',
             'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
-        'view_kitchen_notifications_by_admin' => [
-            'description' => 'Afficher les notifications des commandes contenant des menus/plats',
-            'category' => 'Gestion des notifications des décisionnaires du restaurant',
-            'modules' => ['Gestion du restaurant','Autres Modules'],
-        ],
-        'view_bar_notifications_by_admin' => [
-            'description' => 'Afficher les notifications des commandes contenant des boissons',
-            'category' => 'Gestion des notifications des décisionnaires du restaurant',
-            'modules' => ['Gestion du restaurant','Autres Modules'],
-        ],
+
     ];
 
     public function handle(): void

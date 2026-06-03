@@ -239,7 +239,7 @@ class NotificationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission NotificationController::markAsRead
-     * @permission_desc Marquer comme lues les notifications des postes opérationnels
+     * @permission_desc Marquer comme lues les notifications des postes opérationnels un à un
      */
     public function markAsRead(string $uuid)
     {
