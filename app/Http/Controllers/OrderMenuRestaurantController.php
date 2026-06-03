@@ -4899,7 +4899,7 @@ class OrderMenuRestaurantController extends Controller
             'items.menu',
             'drinks.drinkConfig.product',
             'free_client_for_restaurant:uuid,code,full_name,cni_number_file',
-            'notifications.userNotifications'
+            'notifications'
         ]);
 
         if ($request->filled('restaurant_table_uuid')) {
@@ -5011,42 +5011,30 @@ class OrderMenuRestaurantController extends Controller
     {
         try {
             $OrderMenu = OrderMenuRestaurant::with([
-                'restaurantTable',
-                'creator',
-                'updater',
-                'validator',
-                'cancelor',
-                'partners_restaurant',
-                'warehouse',
-                'restaurant_room',
-                'menu_restaurant',
-                'free_client_for_restaurant',
-                'notifications',
-
-                // ITEMS
-                'items' => function ($query) {
-                    $query->orderByDesc('created_at');
-                },
-                'items.menu',
-                'items.virtuals.product',
-                'items.rejector',
+                'restaurantTable:uuid,code,table_number',
+                'creator:id,nom_utilisateur',
+                'updater:id,nom_utilisateur',
+                'validator:id,nom_utilisateur',
+                'cancelor:id,nom_utilisateur',
+                'partners_restaurant:uuid,code,full_name',
+                'restaurant_room:uuid,code,type',
+                'menu_restaurant:uuid,code,name',
+                'free_client_for_restaurant:uuid,code,full_name',
+                'items.menu:uuid,code,name',
+                'items.virtuals.product:uuid,name,code',
+                'items.rejector:id,nom_utilisateur',
                 'items.statuses',
-                'items.defectiveByUser',
-                'items.restoredByUser',
-                'items.cancelForNewUpdateBy',
-                'items.rejectedAfterValidationByUser',
-
-                // DRINKS
-                'drinks' => function ($query) {
-                    $query->orderByDesc('created_at');
-                },
+                'items.defectiveByUser:id,nom_utilisateur',
+                'items.restoredByUser:id,nom_utilisateur',
+                'items.cancelForNewUpdateBy:id,nom_utilisateur',
+                'items.rejectedAfterValidationByUser:id,nom_utilisateur',
                 'drinks.drinkConfig.product',
-                'drinks.rejector',
+                'drinks.rejector:id,nom_utilisateur',
                 'drinks.statuses',
-                'drinks.defectiveByUser',
-                'drinks.restoredByUser',
-                'drinks.cancelForNewUpdateBy',
-                'drinks.rejectedAfterValidationByUser',
+                'drinks.defectiveByUser:id,nom_utilisateur',
+                'drinks.restoredByUser:id,nom_utilisateur',
+                'drinks.cancelForNewUpdateBy:id,nom_utilisateur',
+                'drinks.rejectedAfterValidationByUser:id,nom_utilisateur',
             ])
                 ->where('uuid', $uuid)
                 ->firstOrFail();
@@ -5605,8 +5593,6 @@ class OrderMenuRestaurantController extends Controller
                 );
 
                 $transferred->quantity += $qtyToTransfer;
-                $transferred->quantity_exactly = $item->quantity_exactly;
-                $transferred->quantity_accumulated += $qtyToTransfer;
                 $transferred->updated_by = $auth->id;
                 $transferred->save();
 
@@ -5907,9 +5893,7 @@ class OrderMenuRestaurantController extends Controller
 
                 $transferred->update([
                     'quantity' => $transferred->quantity + $qtyToTransfer,
-                    'quantity_accumulated' => $transferred->quantity_accumulated + $qtyToTransfer,
                     'updated_by' => $auth->id,
-                    'quantity_exactly' => $drink->quantity_exactly,
                 ]);
 
                 // 🔥 4. update DRINK PRINCIPAL
@@ -6875,7 +6859,6 @@ class OrderMenuRestaurantController extends Controller
 
         $rejectedStatus->update([
             'quantity' => $rejectedStatus->quantity + $qtyToProcess,
-            'quantity_accumulated' => $rejectedStatus->quantity_accumulated + $qtyToProcess,
             'updated_by' => $auth->id,
         ]);
 
@@ -6930,7 +6913,6 @@ class OrderMenuRestaurantController extends Controller
 
         $rejectedStatus->update([
             'quantity' => $rejectedStatus->quantity + $qtyToProcess,
-            'quantity_accumulated' => $rejectedStatus->quantity_accumulated + $qtyToProcess,
             'updated_by' => $auth->id,
         ]);
 
@@ -7807,8 +7789,6 @@ class OrderMenuRestaurantController extends Controller
                     );
 
                     $defective->quantity += $take;
-                    $defective->quantity_exactly = $defective->quantity;
-                    $defective->quantity_accumulated += $take;
                     $defective->updated_by = $auth->id;
                     $defective->save();
 
@@ -7950,9 +7930,7 @@ class OrderMenuRestaurantController extends Controller
                     );
 
                     $statusRow->increment('quantity', $take);
-                    $statusRow->increment('quantity_accumulated', $take);
                     $statusRow->update([
-                        'quantity_exactly' => $statusRow->quantity,
                         'updated_by' => $auth->id,
                     ]);
 
@@ -8130,9 +8108,7 @@ class OrderMenuRestaurantController extends Controller
                         ]
                     );
                     $statusRow->increment('quantity', $takeDrinks);
-                    $statusRow->increment('quantity_exactly', $takeDrinks);
                     $defectiveRow->decrement('quantity', $takeDrinks);
-                    $defectiveRow->decrement('quantity_exactly', $takeDrinks);
                     $this->syncVirtualStockAndHistory($order, $drink, $history, $takeDrinks, $auth);
                     $remainingToRestore -= $takeDrinks;
                 }
@@ -8366,11 +8342,6 @@ class OrderMenuRestaurantController extends Controller
                     );
 
                     $defective->quantity += $takeDrinks;
-
-                    $defective->quantity_exactly = $defective->quantity;
-
-                    $defective->quantity_accumulated += $takeDrinks;
-
                     $defective->updated_by = $auth->id;
 
                     $defective->save();

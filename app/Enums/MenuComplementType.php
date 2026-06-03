@@ -10,8 +10,8 @@ enum MenuComplementType: string
     public function label(): string
     {
         return match ($this) {
-            self::COMPLEMENT => 'Menu',
-            self::BOISSON => 'Boisson',
+            self::COMPLEMENT => 'Complément',
+            self::BOISSON => 'Boisson chaude',
         };
     }
 

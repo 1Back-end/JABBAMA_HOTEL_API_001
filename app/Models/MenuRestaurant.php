@@ -118,6 +118,16 @@ class MenuRestaurant extends Model
         )->withPivot('quantity_used'); // quantité utilisée par menu
     }
 
+    public function complements()
+    {
+        return $this->belongsToMany(
+            ConfigurationsComplement::class,
+            'menu_restaurant_complements',
+            'menu_restaurant_uuid',
+            'complement_uuid'
+        )->distinct();
+    }
+
 
 
 

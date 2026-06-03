@@ -5,11 +5,13 @@ namespace App\Http\Controllers;
 use App\Enums\MenuTypeComplementBoisson;
 use App\Enums\TypeClientsForPaiment;
 use App\Models\MenuRestaurant;
+use App\Models\MenuRestaurantComplement;
 use App\Models\RestaurantDrinkConfiguration;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rules\Enum;
 
@@ -19,6 +21,72 @@ use Illuminate\Validation\Rules\Enum;
  */
 class MenuRestaurantController extends Controller
 {
+
+    /**
+     * Display a listing of the resource.
+     * @permission MenuRestaurantController::index
+     * @permission_desc Afficher la liste des menus du restaurant
+     */
+    public function index(Request $request)
+    {
+        $perPage = (int) $request->input('limit', 25);
+        $page = (int) $request->input('page', 1);
+
+        $query = MenuRestaurant::with([
+            'creator',
+            'updater',
+            'medias',
+            'category',
+            'complements'
+        ]);
+
+        if ($request->has('is_active')) {
+            $isActive = $request->input('is_active') === 'true' ? true : false;
+            $query->where('is_active', $isActive);
+        }
+
+        if ($request->has('is_confectioned')) {
+            $isConfectioned = $request->input('is_confectioned') === 'true' ? true : false;
+            $query->where('is_confectioned', $isConfectioned);
+        }
+
+
+        if ($request->filled('category_uuid')) {
+            $query->where('category_uuid', $request->category_uuid);
+        }
+
+        if ($request->filled('start_date') && $request->filled('end_date')) {
+            $start = \Illuminate\Support\Carbon::parse($request->start_date)->startOfDay();
+            $end = Carbon::parse($request->end_date)->endOfDay();
+
+            $query->whereBetween('created_at', [$start, $end]);
+        }
+
+        if ($search = trim($request->input('search'))) {
+            $query->where(function ($q) use ($search) {
+                $q->where('uuid', 'like', "%{$search}%")
+                    ->orWhere('name', 'like', "%{$search}%")
+                    ->orWhere('code', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%")
+                    ->orWhereHas('creator', function ($qc) use ($search) {
+                        $qc->where('nom_utilisateur', 'like', "%{$search}%")
+                            ->orWhere('email', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        // 🔹 Pagination
+        $data = $query->latest()->paginate($perPage, ['*'], 'page', $page);
+
+        Log::info($data);
+
+        return response()->json([
+            'data'         => $data->items(),
+            'current_page' => $data->currentPage(),
+            'last_page'    => $data->lastPage(),
+            'total'        => $data->total(),
+        ]);
+    }
 
     /**
      * Display a listing of the resource.
@@ -51,7 +119,12 @@ class MenuRestaurantController extends Controller
                 ]);
             }
 
-            // ✅ LAISSER Laravel gérer la validation
+            if ($request->filled('complements')) {
+                $request->merge([
+                    'complements' => json_decode($request->complements, true),
+                ]);
+            }
+
             $validated = $request->validate([
                 'name'            => 'required|string|max:255|unique:menus_restaurants,name',
                 'category_uuid'   => 'required|exists:menu_categories,uuid',
@@ -64,11 +137,27 @@ class MenuRestaurantController extends Controller
                 'type_complement_boisson' => 'nullable|array',
                 'type_complement_boisson.*.type' => 'required|string',
                 'type_complement_boisson.*.quantity' => 'nullable|integer|min:0',
+
+                'complements' => 'nullable|array',
+                'complements.*' => 'exists:configurations_complements,uuid',
+
             ]);
 
             $validated['created_by'] = $auth->id;
 
             $menu = MenuRestaurant::create($validated);
+
+            if (!empty($validated['complements'])) {
+
+                foreach ($validated['complements'] as $complementUuid) {
+
+                    $menu->complements()->create([
+                        'complement_uuid' => $complementUuid,
+                        'created_by'      => $auth->id,
+                        'updated_by'      => $auth->id,
+                    ]);
+                }
+            }
 
             if ($request->hasFile('image_file')) {
                 $file = $request->file('image_file');
@@ -84,11 +173,12 @@ class MenuRestaurantController extends Controller
                 ]);
             }
 
+
             DB::commit();
 
             return response()->json([
                 'message' => 'Menu restaurant créé avec succès.',
-                'data'    => $menu->fresh()
+                'data'    => $menu->load('complements')
             ], 201);
 
         } catch (\Throwable $e) {
@@ -144,6 +234,12 @@ class MenuRestaurantController extends Controller
                 ]);
             }
 
+            if ($request->filled('complements')) {
+                $request->merge([
+                    'complements' => json_decode($request->complements, true),
+                ]);
+            }
+
             // 🔹 Validation
             $validated = $request->validate([
                 'name' => 'required|string|max:255|unique:menus_restaurants,name,' . $menu->uuid . ',uuid',
@@ -157,12 +253,33 @@ class MenuRestaurantController extends Controller
                 'type_complement_boisson' => 'nullable|array',
                 'type_complement_boisson.*.type' => 'required|string',
                 'type_complement_boisson.*.quantity' => 'nullable|integer|min:0',
+
+                'complements' => 'nullable|array',
+                'complements.*' => 'exists:configurations_complements,uuid',
             ]);
 
             $validated['updated_by'] = $auth->id;
 
             // 🔹 Mise à jour des champs
             $menu->update($validated);
+
+            MenuRestaurantComplement::where(
+                'menu_restaurant_uuid',
+                $menu->uuid
+            )->delete();
+
+            if (!empty($validated['complements'])) {
+
+                foreach ($validated['complements'] as $complementUuid) {
+
+                    MenuRestaurantComplement::create([
+                        'menu_restaurant_uuid' => $menu->uuid,
+                        'complement_uuid'      => $complementUuid,
+                        'created_by'           => $auth->id,
+                        'updated_by'           => $auth->id,
+                    ]);
+                }
+            }
 
             // 🔹 Gestion de l'image
             if ($request->hasFile('image_file')) {
@@ -217,7 +334,7 @@ class MenuRestaurantController extends Controller
      */
     public function show(string $uuid)
     {
-        $menu_restaurant = MenuRestaurant::with(["creator","updater","category"])->where("uuid", $uuid)->firstOrFail();
+        $menu_restaurant = MenuRestaurant::with(["creator","updater","category","complements"])->where("uuid", $uuid)->firstOrFail();
         if (!$menu_restaurant) {
             return response()->json([
                 'status' => 'error',
@@ -272,7 +389,8 @@ class MenuRestaurantController extends Controller
             'creator',
             'updater',
             'medias',
-            'category'
+            'category',
+            'complements:uuid,name'
         ])
             ->where('is_confectioned', true);
 
@@ -329,77 +447,7 @@ class MenuRestaurantController extends Controller
         ]);
     }
 
-    /**
-     * Display a listing of the resource.
-     * @permission MenuRestaurantController::index
-     * @permission_desc Afficher la liste des menus du restaurant
-     */
-    public function index(Request $request)
-    {
-        $auth = auth()->user();
-        $roleIds = $auth->roles->pluck('id');
-        $perPage = $request->input('limit', 25);
-        $page = $request->input('page', 1);
 
-        $query = MenuRestaurant::with([
-            'creator',
-            'updater',
-            'medias',
-            'category'
-        ]);
-
-        if ($request->has('is_active')) {
-            $isActive = $request->input('is_active') === 'true' ? true : false;
-            $query->where('is_active', $isActive);
-        }
-
-        if ($request->has('is_confectioned')) {
-            $isConfectioned = $request->input('is_confectioned') === 'true' ? true : false;
-            $query->where('is_confectioned', $isConfectioned);
-        }
-
-
-        if ($request->filled('category_uuid')) {
-            $query->where('category_uuid', $request->category_uuid);
-        }
-
-        if ($request->filled('start_date') && $request->filled('end_date')) {
-            $start = \Illuminate\Support\Carbon::parse($request->start_date)->startOfDay();
-            $end = Carbon::parse($request->end_date)->endOfDay();
-
-            $query->whereBetween('created_at', [$start, $end]);
-        }
-
-        if (!$auth->hasRole('SUPER_ADMIN') && !$auth->can('view_all_menus_restaurants')) {
-            $query->where(function ($q) use ($auth, $roleIds) {
-                if ($auth->can('view_role_related_data')) {
-                    $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
-                }
-            });
-        }
-
-        if ($search = trim($request->input('search'))) {
-            $query->where(function ($q) use ($search) {
-                $q->where('uuid', 'like', "%{$search}%")
-                    ->orWhere('name', 'like', "%{$search}%")
-                    ->orWhere('code', 'like', "%{$search}%")
-                    ->orWhere('description', 'like', "%{$search}%")
-                    ->orWhereHas('creator', function ($qc) use ($search) {
-                        $qc->where('nom_utilisateur', 'like', "%{$search}%")
-                            ->orWhere('email', 'like', "%{$search}%");
-                    });
-            });
-        }
-
-        // 🔹 Pagination
-        $data = $query->latest()->paginate($perPage, ['*'], 'page', $page);
-        return response()->json([
-            'data'         => $data->items(),
-            'current_page' => $data->currentPage(),
-            'last_page'    => $data->lastPage(),
-            'total'        => $data->total(),
-        ]);
-    }
 
 
 
@@ -506,6 +554,27 @@ class MenuRestaurantController extends Controller
             'min_price' => count($prices) ? min($prices) : 0,
             'max_price' => count($prices) ? max($prices) : 0,
         ]);
+    }
+
+
+    public function get_complements_for_menu(Request $request, string $menu_uuid)
+    {
+        $menu = MenuRestaurant::where('uuid', $menu_uuid)->first();
+
+        if (!$menu) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Menu introuvable.'
+            ], 404);
+        }
+
+        $complementsUniques = $menu->complements()->get()->unique('uuid')->values();
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $complementsUniques
+        ], 200);
+
     }
 
 

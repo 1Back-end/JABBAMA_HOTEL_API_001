@@ -260,6 +260,7 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des notifications du restaurant',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],
+
         'view_all_notification_transferred_by_admin' => [
             'description' => 'Afficher les notifications d\'une commande transférée',
             'category' => 'Gestion des notifications des décisionnaires du restaurant',
@@ -292,6 +293,16 @@ class ExtractPermissions extends Command
         ],
         'view_all_notification_in_rejected_after_validation_by_admin' => [
             'description' => 'Afficher les notifications d\'une commande en rejet du servi',
+            'category' => 'Gestion des notifications des décisionnaires du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'read_notification_by_admin' => [
+            'description' => 'Marquer comme lue les notifications des postes décisionnels',
+            'category' => 'Gestion des notifications des décisionnaires du restaurant',
+            'modules' => ['Gestion du restaurant','Autres Modules'],
+        ],
+        'mark_all_decisional_notifications_as_read' => [
+            'description' => 'Marquer comme lue toute les notifications des postes décisionnels en un clic',
             'category' => 'Gestion des notifications des décisionnaires du restaurant',
             'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
