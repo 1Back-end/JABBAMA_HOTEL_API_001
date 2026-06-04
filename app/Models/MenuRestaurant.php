@@ -115,7 +115,7 @@ class MenuRestaurant extends Model
             'menu_restaurant_products',
             'menus_restaurant_uuid',
             'product_uuid'
-        )->withPivot('quantity_used'); // quantité utilisée par menu
+        )->withPivot('quantity_used');
     }
 
     public function complements()
@@ -125,7 +125,9 @@ class MenuRestaurant extends Model
             'menu_restaurant_complements',
             'menu_restaurant_uuid',
             'complement_uuid'
-        )->distinct();
+        )
+            ->wherePivotNull('deleted_at')
+            ->distinct();
     }
 
 

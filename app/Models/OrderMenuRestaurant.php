@@ -242,6 +242,11 @@ class OrderMenuRestaurant extends Model
         return $this->hasMany(OrderNotification::class, 'order_menu_restaurant_uuid', 'uuid');
     }
 
+    public function complements()
+    {
+        return $this->hasMany(ComplementVirtualTemp::class, 'order_menu_restaurant_uuid', 'uuid');
+    }
+
     public function bar_users()
     {
         return $this->belongsToMany(User::class, 'bar_user_id', 'bar_user_id');
