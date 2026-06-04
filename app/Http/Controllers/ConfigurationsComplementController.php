@@ -117,7 +117,8 @@ class ConfigurationsComplementController extends Controller
 
             $validated['prices_for_clients_debtor'] = array_values(
                 array_unique(
-                    array_filter(
+                    array_map(
+                        fn($v) => (float) ($v ?? 0),
                         $validated['prices_for_clients_debtor'] ?? []
                     )
                 )
@@ -125,7 +126,8 @@ class ConfigurationsComplementController extends Controller
 
             $validated['prices_for_clients_partner'] = array_values(
                 array_unique(
-                    array_filter(
+                    array_map(
+                        fn($v) => (float) ($v ?? 0),
                         $validated['prices_for_clients_partner'] ?? []
                     )
                 )
@@ -133,7 +135,8 @@ class ConfigurationsComplementController extends Controller
 
             $validated['prices_for_clients_free'] = array_values(
                 array_unique(
-                    array_filter(
+                    array_map(
+                        fn($v) => (float) ($v ?? 0),
                         $validated['prices_for_clients_free'] ?? []
                     )
                 )
@@ -309,7 +312,8 @@ class ConfigurationsComplementController extends Controller
 
             $validated['prices_for_clients_debtor'] = array_values(
                 array_unique(
-                    array_filter(
+                    array_map(
+                        fn($v) => (float) ($v ?? 0),
                         $validated['prices_for_clients_debtor'] ?? []
                     )
                 )
@@ -317,7 +321,8 @@ class ConfigurationsComplementController extends Controller
 
             $validated['prices_for_clients_partner'] = array_values(
                 array_unique(
-                    array_filter(
+                    array_map(
+                        fn($v) => (float) ($v ?? 0),
                         $validated['prices_for_clients_partner'] ?? []
                     )
                 )
@@ -325,7 +330,8 @@ class ConfigurationsComplementController extends Controller
 
             $validated['prices_for_clients_free'] = array_values(
                 array_unique(
-                    array_filter(
+                    array_map(
+                        fn($v) => (float) ($v ?? 0),
                         $validated['prices_for_clients_free'] ?? []
                     )
                 )
