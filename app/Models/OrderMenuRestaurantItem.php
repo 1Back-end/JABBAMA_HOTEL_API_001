@@ -161,4 +161,8 @@ class OrderMenuRestaurantItem extends Model
     {
         return $this->belongsTo(User::class, 'rejected_after_validation_by');
     }
+    public function complements()
+    {
+        return $this->hasMany(ComplementVirtualTemp::class, 'order_menu_restaurant_uuid', 'order_menu_restaurant_uuid');
+    }
 }

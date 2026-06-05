@@ -44,11 +44,6 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des commandes',
             'modules' => ['Gestion des stocks','Autres Modules'],
         ],
-        'view_transferred_orders_for_restaurant' => [
-            'description' => 'Permettre aux cuisiniers  de voir toutes les commandes du restaurant qui leur ont été transférées.',
-            'category' => 'Gestion des commandes du restaurant',
-            'modules' => ['Gestion du restaurant','Autres Modules'],
-        ],
         'view_transferred_supplies' => [
             'description' => 'Permettre aux gestionnaires de stock de voir tous les approvisionnements qui leur ont été transférées.',
             'category' => 'Gestion des approvisionnements',
@@ -260,7 +255,6 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des notifications du restaurant',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],
-
         'view_all_notification_transferred_by_admin' => [
             'description' => 'Afficher les notifications d\'une commande transférée',
             'category' => 'Gestion des notifications des décisionnaires du restaurant',
