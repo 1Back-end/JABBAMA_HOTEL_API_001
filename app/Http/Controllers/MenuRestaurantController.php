@@ -144,13 +144,12 @@ class MenuRestaurantController extends Controller
             ]);
 
             $validated['created_by'] = $auth->id;
+            $validated['has_complements'] = !empty($validated['complements']);
 
             $menu = MenuRestaurant::create($validated);
 
-            if (!empty($validated['complements'])) {
-
+            if ($validated['has_complements']) {
                 foreach ($validated['complements'] as $complementUuid) {
-
                     $menu->complements()->create([
                         'complement_uuid' => $complementUuid,
                         'created_by'      => $auth->id,
@@ -260,15 +259,16 @@ class MenuRestaurantController extends Controller
 
             $validated['updated_by'] = $auth->id;
 
-            // 🔹 Mise à jour des champs
+            // 🔥 HAS COMPLEMENTS AUTO CALCUL
+            $validated['has_complements'] = !empty($validated['complements']);
+
+
             $menu->update($validated);
 
-            MenuRestaurantComplement::where(
-                'menu_restaurant_uuid',
-                $menu->uuid
-            )->delete();
+            // 🔹 Sync complements propre
+            MenuRestaurantComplement::where('menu_restaurant_uuid', $menu->uuid)->delete();
 
-            if (!empty($validated['complements'])) {
+            if ($validated['has_complements']) {
 
                 foreach ($validated['complements'] as $complementUuid) {
 
@@ -280,6 +280,10 @@ class MenuRestaurantController extends Controller
                     ]);
                 }
             }
+
+            $menu->update([
+                'has_complements' => MenuRestaurantComplement::where('menu_restaurant_uuid', $menu->uuid)->exists()
+            ]);
 
             // 🔹 Gestion de l'image
             if ($request->hasFile('image_file')) {
@@ -568,13 +572,14 @@ class MenuRestaurantController extends Controller
             ], 404);
         }
 
-        $complementsUniques = $menu->complements()->get()->unique('uuid')->values();
+        $complements = $menu->complements()
+            ->where('is_confectioned', true)
+            ->get();
 
         return response()->json([
             'status' => 'success',
-            'data' => $complementsUniques
+            'data' => $complements
         ], 200);
-
     }
 
 

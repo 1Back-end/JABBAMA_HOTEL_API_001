@@ -156,11 +156,11 @@ class OrderMenuRestaurantController extends Controller
                 ->groupBy('commplements_restaurant_uuid');
 
 
-            foreach ($validated['complements'] as $MenusInput) {
-                ComplementVirtualTemp::where('reservation_uuid', $reservationUuid)
-                    ->where('menu_uuid', $menuUuid)
-                    ->where('status', 'pending')->forceDelete();
-            }
+            ComplementVirtualTemp::where('reservation_uuid', $reservationUuid)
+                ->where('menu_uuid', $menuUuid)
+                ->whereIn('complement_uuid', $complementUuids)
+                ->where('status', 'pending')
+                ->forceDelete();
 
             $missing = [];
 
@@ -260,23 +260,204 @@ class OrderMenuRestaurantController extends Controller
 
                         $totalUsed = $quantity * $item->quantity_used;
 
-                        ComplementVirtualTemp::updateOrCreate(
-                            [
-                                'reservation_uuid' => $reservationUuid,
-                                'menu_uuid' => $menuUuid,
+                        ComplementVirtualTemp::create([
+                            'reservation_uuid'  => $reservationUuid,
+                            'menu_uuid'         => $menuUuid,
+                            'complement_uuid'   => $complementUuid,
+                            'product_uuid'      => $item->product_uuid,
+                            'type'              => 'initial',
+                            'status'            => 'pending',
+                            'quantity'          => $quantity,
+                            'quantity_used'     => $totalUsed,
+                            'updated_by'        => $auth->id,
+                            'created_by'        => $auth->id,
+                            'last_activity_at'  => now(),
+                        ]);
+                    }
+                }
+            }
+
+            /* =====================================================
+               🎉 SUCCESS
+            ===================================================== */
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Stock OK pour les compléments',
+                'reservation_uuid' => $reservationUuid,
+            ]);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+
+            return response()->json([
+                'status' => 'validation_error',
+                'errors' => $e->errors(),
+            ], 422);
+
+        } catch (\Exception $e) {
+
+            Log::error('check_stock_form_complement ERROR', [
+                'message' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Erreur serveur',
+            ], 500);
+        }
+    }
+
+
+
+
+    public function check_stock_form_complement_update(Request $request)
+    {
+        $auth = auth()->user();
+
+        try {
+
+            // 🔹 VALIDATION
+            $validated = $request->validate([
+                'order_menu_restaurant_uuid' => ['required', 'uuid'],
+                'menu_uuid' => ['required', 'uuid', 'exists:menus_restaurants,uuid'],
+                'complements' => ['required', 'array', 'min:0'],
+                'complements.*.uuid' => ['required', 'uuid'],
+                'complements.*.quantity' => ['required', 'integer', 'min:0'],
+            ]);
+
+            $orderUuid = $validated['order_menu_restaurant_uuid'];
+            $order = OrderMenuRestaurant::where('uuid', $orderUuid)->firstOrFail();
+            $reservationUuid = $order->reservation_uuid;
+
+            $menuUuid = $validated['menu_uuid'];
+
+            $complementUuids = collect($validated['complements'])
+                ->pluck('uuid')
+                ->toArray();
+
+            $compositions = ComplementComposition::with(['items.product', 'warehouse'])
+                ->whereIn('commplements_restaurant_uuid', $complementUuids)
+                ->get()
+                ->groupBy('commplements_restaurant_uuid');
+
+
+            ComplementVirtualTemp::where('order_menu_restaurant_uuid', $orderUuid)
+                ->where('menu_uuid', $menuUuid)
+                ->whereIn('complement_uuid', $complementUuids)
+                ->where('status', 'pending')
+                ->forceDelete();
+
+            $missing = [];
+
+            foreach ($validated['complements'] as $input) {
+
+                $uuid = $input['uuid'];
+
+                if (!isset($compositions[$uuid]) || $compositions[$uuid]->isEmpty()) {
+
+                    $complement = ConfigurationsComplement::where('uuid', $uuid)->first();
+
+                    $missing[] = [
+                        'complement_uuid' => $uuid,
+                        'complement_name' => $complement?->name ?? 'Inconnu',
+                        'error' => "Aucune composition configurée pour « " .
+                            ($complement?->name ?? $uuid) . " »"
+                    ];
+                }
+            }
+
+            if (!empty($missing)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => collect($missing)->pluck('error')->implode(' | '),
+                    'details' => $missing
+                ], 422);
+            }
+
+            foreach ($validated['complements'] as $input) {
+
+                foreach ($compositions[$input['uuid']] as $composition) {
+
+                    if ($composition->items->isEmpty()) {
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => "Un complément contient une composition vide"
+                        ], 422);
+                    }
+                }
+            }
+
+            $stockErrors = [];
+
+            foreach ($validated['complements'] as $input) {
+
+                $complementUuid = $input['uuid'];
+                $quantity = (int) $input['quantity'];
+
+                foreach ($compositions[$complementUuid] as $composition) {
+
+                    $warehouseUuid = $composition->warehouse_uuid;
+
+                    foreach ($composition->items as $item) {
+
+                        $totalUsed = $quantity * $item->quantity_used;
+
+                        try {
+                            $this->checkStockComplement(
+                                $item->product_uuid,
+                                $warehouseUuid,
+                                $totalUsed,
+                                $orderUuid
+                            );
+                        } catch (\Exception $e) {
+
+                            $stockErrors[] = [
                                 'complement_uuid' => $complementUuid,
-                                'product_uuid' => $item->product_uuid,
-                                'type' => 'initial',
-                                'status' => 'pending',
-                            ],
-                            [
-                                'quantity' => $quantity,
-                                'quantity_used' => $totalUsed,
-                                'updated_by' => $auth->id,
-                                'created_by' => $auth->id,
-                                'last_activity_at' => now(),
-                            ]
-                        );
+                                'product_name' => $item->product?->name ?? 'Inconnu',
+                                'quantity_required' => $totalUsed,
+                                'warehouse_uuid' => $warehouseUuid,
+                                'error' => $e->getMessage(),
+                            ];
+                        }
+                    }
+                }
+            }
+
+            if (!empty($stockErrors)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => collect($stockErrors)->pluck('error')->implode(' | '),
+                    'details' => $stockErrors
+                ], 422);
+            }
+
+            /* =====================================================
+               ✅ 5. UPSERT SAVE
+            ===================================================== */
+            foreach ($validated['complements'] as $input) {
+
+                $complementUuid = $input['uuid'];
+                $quantity = (int) $input['quantity'];
+
+                foreach ($compositions[$complementUuid] as $composition) {
+
+                    foreach ($composition->items as $item) {
+
+                        $totalUsed = $quantity * $item->quantity_used;
+
+                        ComplementVirtualTemp::create([
+                            'reservation_uuid'           => $reservationUuid,
+                            'menu_uuid'                  => $menuUuid,
+                            'complement_uuid'            => $complementUuid,
+                            'product_uuid'               => $item->product_uuid,
+                            'type'                       => 'initial',
+                            'status'                     => 'pending',
+                            'order_menu_restaurant_uuid' => $orderUuid,
+                            'quantity'                   => $quantity,
+                            'quantity_used'              => $totalUsed,
+                            'updated_by'                 => $auth->id,
+                            'created_by'                 => $auth->id,
+                            'last_activity_at'           => now(),
+                        ]);
                     }
                 }
             }
