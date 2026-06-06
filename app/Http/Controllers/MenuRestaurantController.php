@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Enum;
 
 /**
@@ -100,8 +101,7 @@ class MenuRestaurantController extends Controller
         DB::beginTransaction();
 
         try {
-
-
+            // Décodage des tableaux JSON légitimes
             if ($request->has('unit_price')) {
                 $request->merge([
                     'unit_price' => json_decode($request->unit_price, true),
@@ -113,11 +113,6 @@ class MenuRestaurantController extends Controller
                     'special_price' => json_decode($request->special_price, true),
                 ]);
             }
-            if ($request->has('type_complement_boisson')) {
-                $request->merge([
-                    'type_complement_boisson' => json_decode($request->type_complement_boisson, true),
-                ]);
-            }
 
             if ($request->filled('complements')) {
                 $request->merge([
@@ -126,73 +121,90 @@ class MenuRestaurantController extends Controller
             }
 
             $validated = $request->validate([
-                'name'            => 'required|string|max:255|unique:menus_restaurants,name',
-                'category_uuid'   => 'required|exists:menu_categories,uuid',
-                'image_file'      => 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
-                'unit_price'      => 'required|array|min:1',
-                'unit_price.*'    => 'required|numeric|min:0',
-                'special_price'   => 'nullable|array',
+                'name' => 'required|string|max:255|unique:menus_restaurants,name',
+                'category_uuid' => 'required|exists:menu_categories,uuid',
+                'image_file' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
+
+                'unit_price' => 'required|array|min:1',
+                'unit_price.*' => 'required|numeric|min:0',
+
+                'special_price' => 'nullable|array',
                 'special_price.*' => 'numeric|min:0',
-                'description'     => 'nullable|string',
-                'type_complement_boisson' => 'nullable|array',
-                'type_complement_boisson.*.type' => 'required|string',
-                'type_complement_boisson.*.quantity' => 'nullable|integer|min:0',
+
+                'description' => 'nullable|string',
+
+                'type_complement_menu' => 'nullable|string',
+                'quantity_for_type_complement_menu' => 'nullable|integer|min:0',
+
+                'type_complement_boisson' => 'nullable|string',
+                'quantity_for_type_complement_boisson' => 'nullable|integer|min:0',
 
                 'complements' => 'nullable|array',
                 'complements.*' => 'exists:configurations_complements,uuid',
-
             ]);
 
             $validated['created_by'] = $auth->id;
+            $haveComplements = false;
+            $haveDrinks = false;
+            if (!empty($validated['complements'])) {
+                $complementsTypes = \DB::table('configurations_complements')
+                    ->whereIn('uuid', $validated['complements'])
+                    ->pluck('menus_complement_type')
+                    ->toArray();
+                $haveComplements = in_array('complement', $complementsTypes);
+                $haveDrinks = in_array('boisson', $complementsTypes);
+            }
+            $validated['have_complements'] = $haveComplements;
+            $validated['have_drinks'] = $haveDrinks;
             $validated['has_complements'] = !empty($validated['complements']);
 
             $menu = MenuRestaurant::create($validated);
 
-            if ($validated['has_complements']) {
+            if (!empty($validated['complements'])) {
+                $pivotData = [];
                 foreach ($validated['complements'] as $complementUuid) {
-                    $menu->complements()->create([
-                        'complement_uuid' => $complementUuid,
-                        'created_by'      => $auth->id,
-                        'updated_by'      => $auth->id,
-                    ]);
+                    $pivotData[$complementUuid] = [
+                        'uuid' => (string) Str::uuid(),
+                        'created_by' => $auth->id,
+                        'updated_by' => $auth->id,
+                    ];
                 }
+                $menu->complements()->attach($pivotData);
             }
 
+            // Traitement de l'image
             if ($request->hasFile('image_file')) {
                 $file = $request->file('image_file');
                 $path = $file->store('menus_restaurants', 'public');
 
                 $menu->medias()->create([
-                    'name'      => $file->getClientOriginalName(),
-                    'disk'      => 'public',
-                    'path'      => $path,
-                    'filename'  => basename($path),
-                    'mimetype'  => $file->getClientMimeType(),
+                    'name' => $file->getClientOriginalName(),
+                    'disk' => 'public',
+                    'path' => $path,
+                    'filename' => basename($path),
+                    'mimetype' => $file->getClientMimeType(),
                     'extension' => $file->getClientOriginalExtension(),
                 ]);
             }
-
 
             DB::commit();
 
             return response()->json([
                 'message' => 'Menu restaurant créé avec succès.',
-                'data'    => $menu->load('complements')
+                'data' => $menu->load('complements'),
             ], 201);
 
         } catch (\Throwable $e) {
             DB::rollBack();
 
-            \Log::error('Erreur création menu:', [
+            \Log::error('Erreur création menu', [
                 'message' => $e->getMessage(),
-                'trace'   => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return response()->json([
                 'message' => 'Erreur serveur',
-                'error'   => $e->getMessage(),
-                'file'    => $e->getFile(),
-                'line'    => $e->getLine(),
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -211,10 +223,10 @@ class MenuRestaurantController extends Controller
         DB::beginTransaction();
 
         try {
-            // 🔹 Récupérer le menu à mettre à jour
+
             $menu = MenuRestaurant::where('uuid', $uuid)->firstOrFail();
 
-            // 🔹 Décoder les tableaux JSON envoyés depuis Angular
+
             if ($request->has('unit_price')) {
                 $request->merge([
                     'unit_price' => json_decode($request->unit_price, true),
@@ -227,67 +239,69 @@ class MenuRestaurantController extends Controller
                 ]);
             }
 
-            if ($request->has('type_complement_boisson')) {
-                $request->merge([
-                    'type_complement_boisson' => json_decode($request->type_complement_boisson, true),
-                ]);
-            }
-
             if ($request->filled('complements')) {
                 $request->merge([
                     'complements' => json_decode($request->complements, true),
                 ]);
             }
 
-            // 🔹 Validation
             $validated = $request->validate([
                 'name' => 'required|string|max:255|unique:menus_restaurants,name,' . $menu->uuid . ',uuid',
-                'category_uuid'   => 'required|exists:menu_categories,uuid',
-                'image_file'      => 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
-                'unit_price'      => 'required|array|min:1',
-                'unit_price.*'    => 'required|numeric|min:0',
+                'category_uuid' => 'required|exists:menu_categories,uuid',
+                'image_file'    => 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
+
+                'unit_price'    => 'required|array|min:1',
+                'unit_price.*'  => 'required|numeric|min:0',
+
                 'special_price'   => 'nullable|array',
                 'special_price.*' => 'numeric|min:0',
-                'description'     => 'nullable|string',
-                'type_complement_boisson' => 'nullable|array',
-                'type_complement_boisson.*.type' => 'required|string',
-                'type_complement_boisson.*.quantity' => 'nullable|integer|min:0',
 
-                'complements' => 'nullable|array',
+                'description'   => 'nullable|string',
+
+                'type_complement_menu'              => 'nullable|string',
+                'quantity_for_type_complement_menu' => 'nullable|integer|min:0',
+
+                'type_complement_boisson'              => 'nullable|string',
+                'quantity_for_type_complement_boisson' => 'nullable|integer|min:0',
+
+                'complements'   => 'nullable|array',
                 'complements.*' => 'exists:configurations_complements,uuid',
             ]);
 
             $validated['updated_by'] = $auth->id;
+            $haveComplements = false;
+            $haveDrinks = false;
 
-            // 🔥 HAS COMPLEMENTS AUTO CALCUL
+            if (!empty($validated['complements'])) {
+                $complementsTypes = \DB::table('configurations_complements')
+                    ->whereIn('uuid', $validated['complements'])
+                    ->pluck('menus_complement_type')
+                    ->toArray();
+
+                $haveComplements = in_array('complement', $complementsTypes);
+                $haveDrinks = in_array('boisson', $complementsTypes);
+            }
+
+            $validated['have_complements'] = $haveComplements;
+            $validated['have_drinks']      = $haveDrinks;
             $validated['has_complements'] = !empty($validated['complements']);
-
 
             $menu->update($validated);
 
-            // 🔹 Sync complements propre
-            MenuRestaurantComplement::where('menu_restaurant_uuid', $menu->uuid)->delete();
-
-            if ($validated['has_complements']) {
-
+            $pivotData = [];
+            if (!empty($validated['complements'])) {
                 foreach ($validated['complements'] as $complementUuid) {
-
-                    MenuRestaurantComplement::create([
-                        'menu_restaurant_uuid' => $menu->uuid,
-                        'complement_uuid'      => $complementUuid,
-                        'created_by'           => $auth->id,
-                        'updated_by'           => $auth->id,
-                    ]);
+                    $pivotData[$complementUuid] = [
+                        'uuid'       => (string) \Illuminate\Support\Str::uuid(),
+                        'created_by' => $auth->id,
+                        'updated_by' => $auth->id,
+                    ];
                 }
             }
 
-            $menu->update([
-                'has_complements' => MenuRestaurantComplement::where('menu_restaurant_uuid', $menu->uuid)->exists()
-            ]);
+            $menu->complements()->sync($pivotData);
 
-            // 🔹 Gestion de l'image
             if ($request->hasFile('image_file')) {
-                // Supprimer l'ancienne image si nécessaire
                 if ($menu->medias()->exists()) {
                     $menu->medias()->delete();
                 }
@@ -309,7 +323,7 @@ class MenuRestaurantController extends Controller
 
             return response()->json([
                 'message' => 'Menu restaurant mis à jour avec succès.',
-                'data'    => $menu->fresh()
+                'data'    => $menu->load('complements')
             ], 200);
 
         } catch (\Throwable $e) {
@@ -323,8 +337,6 @@ class MenuRestaurantController extends Controller
             return response()->json([
                 'message' => 'Erreur serveur',
                 'error'   => $e->getMessage(),
-                'file'    => $e->getFile(),
-                'line'    => $e->getLine(),
             ], 500);
         }
     }
@@ -563,7 +575,18 @@ class MenuRestaurantController extends Controller
 
     public function get_complements_for_menu(Request $request, string $menu_uuid)
     {
-        $menu = MenuRestaurant::where('uuid', $menu_uuid)->first();
+        $menu = MenuRestaurant::where('uuid', $menu_uuid)
+            ->select([
+                'uuid',
+                'name',
+                'have_complements',
+                'have_drinks',
+                'type_complement_menu',
+                'quantity_for_type_complement_menu',
+                'type_complement_boisson',
+                'quantity_for_type_complement_boisson'
+            ])
+            ->first();
 
         if (!$menu) {
             return response()->json([
@@ -578,6 +601,15 @@ class MenuRestaurantController extends Controller
 
         return response()->json([
             'status' => 'success',
+            'menu_config' => [
+                'name' => $menu->name,
+                'have_complements'                     => (bool) $menu->have_complements,
+                'have_drinks'                          => (bool) $menu->have_drinks,
+                'type_complement_menu'                 => $menu->type_complement_menu,
+                'quantity_for_type_complement_menu'    => (int) $menu->quantity_for_type_complement_menu,
+                'type_complement_boisson'              => $menu->type_complement_boisson,
+                'quantity_for_type_complement_boisson' => (int) $menu->quantity_for_type_complement_boisson,
+            ],
             'data' => $complements
         ], 200);
     }

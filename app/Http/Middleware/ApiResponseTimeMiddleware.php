@@ -23,18 +23,18 @@ class ApiResponseTimeMiddleware
             $response->headers->set('X-Response-Time', $executionTime . 'ms');
         }
 
-        Log::info('Route exécutée', [
-            'method' => $request->method(),
-            'route' => $request->getRequestUri(),
-            'execution_time' => $executionTime . 'ms',
-            'user_id' => auth()->id(),
-        ]);
+//        Log::info('Route exécutée', [
+//            'method' => $request->method(),
+//            'route' => $request->getRequestUri(),
+//            'execution_time' => $executionTime . 'ms',
+//            'user_id' => auth()->id(),
+//        ]);
 
 
         if ($executionTime > 500) {
-            Log::warning(
-                "Route lente détectée : {$request->method()} {$request->getRequestUri()} - Temps : {$executionTime}ms"
-            );
+//            Log::warning(
+//                "Route lente détectée : {$request->method()} {$request->getRequestUri()} - Temps : {$executionTime}ms"
+//            );
         }
 
         return $response;

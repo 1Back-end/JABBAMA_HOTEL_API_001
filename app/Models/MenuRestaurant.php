@@ -36,13 +36,18 @@ class MenuRestaurant extends Model
         'type_complement_boisson',
         'is_confectioned',
         'quantity',
-        'has_complements'
+        'has_complements',
+        'type_complement_menu',
+        'quantity_for_type_complement_menu',
+        'quantity_for_type_complement_boisson',
+        'have_complements',
+        'have_drinks'
     ];
 
     protected $casts = [
         'unit_price'    => 'array',
         'special_price' => 'array',
-        'type_complement_boisson' => 'array',
+
     ];
 
 
