@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 /**
  * @permission_category Gestion des notifications du restaurant
  * @permission_module Gestion du restaurant
+ * @permission_module Gestion des stocks
  */
 class NotificationController extends Controller
 {
