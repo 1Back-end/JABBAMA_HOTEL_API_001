@@ -163,6 +163,10 @@ class OrderMenuRestaurantItem extends Model
     }
     public function complements()
     {
-        return $this->hasMany(ComplementVirtualTemp::class, 'order_menu_restaurant_uuid', 'order_menu_restaurant_uuid');
+        return $this->hasMany(
+            OrderMenuRestaurantItemComplement::class,
+            'order_menu_restaurant_item_uuid',
+            'uuid'
+        );
     }
 }
