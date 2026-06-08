@@ -261,4 +261,9 @@ class OrderMenuRestaurant extends Model
         return $this->belongsToMany(User::class, 'editing_by', 'editing_by');
     }
 
+    public function complementVirtualTemps()
+    {
+        return $this->hasMany(ComplementVirtualTemp::class, 'order_menu_restaurant_uuid', 'uuid');
+    }
+
 }

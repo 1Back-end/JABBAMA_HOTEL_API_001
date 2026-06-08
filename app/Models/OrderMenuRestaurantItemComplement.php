@@ -19,8 +19,12 @@ class OrderMenuRestaurantItemComplement extends Model
         'uuid',
         'created_by',
         'updated_by',
+        'quantity',
         'order_menu_restaurant_item_uuid',
         'configuration_complement_uuid',
+        'menu_uuid',
+        'reservation_uuid',
+        'order_menu_restaurant_uuid'
     ];
 
     protected static function boot()
@@ -50,6 +54,16 @@ class OrderMenuRestaurantItemComplement extends Model
             'configuration_complement_uuid',
             'uuid'
         );
+    }
+
+    public function order()
+    {
+        return $this->belongsTo(OrderMenuRestaurant::class, 'order_menu_restaurant_uuid', 'uuid');
+    }
+
+    public function menu()
+    {
+        return $this->belongsTo(MenuRestaurant::class, 'menu_uuid', 'uuid');
     }
 
     public function creator()
