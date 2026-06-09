@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 Route::apiResource('orders_menu_restaurants', \App\Http\Controllers\OrderMenuRestaurantController::class);
 Route::post('orders_menu_restaurants/check_stock_complements', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'check_stock_form_complement']);
 Route::post('orders_menu_restaurants/check_stock_complements_orders', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'check_stock_form_complement_update']);
+Route::post('orders_menu_restaurants/check_stock_form_complement_to_new', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'check_stock_form_complement_to_new']);
 Route::post('orders_menu_restaurants/check_stock', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'checkStockOnly']);
 Route::post('orders_menu_restaurants/check_stock_orders', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'checkStockByOrder']);
 Route::post('orders_menu_restaurants/check_new_stock_orders', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'appendMenusToOrder']);

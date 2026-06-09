@@ -169,4 +169,5 @@ class OrderMenuRestaurantItem extends Model
             'uuid'
         );
     }
+
 }

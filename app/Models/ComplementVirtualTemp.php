@@ -33,7 +33,8 @@ class ComplementVirtualTemp extends Model
         'last_activity_at',
         'type',
         'menu_uuid',
-        'cart_line_uuid'
+        'cart_line_uuid',
+        'is_new'
     ];
 
     protected static function boot()
