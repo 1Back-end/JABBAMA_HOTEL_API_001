@@ -39,7 +39,8 @@ class MenuRestaurantController extends Controller
             'medias',
             'category',
             'complements'
-        ]);
+        ])
+            ->where('is_generated_from_complement', false);
 
         if ($request->has('is_active')) {
             $isActive = $request->input('is_active') === 'true' ? true : false;
@@ -398,7 +399,7 @@ class MenuRestaurantController extends Controller
     {
         $auth = auth()->user();
         $roleIds = $auth->roles->pluck('id');
-        $perPage = $request->input('limit', 5);
+        $perPage = $request->input('limit', 25);
         $page = $request->input('page', 1);
 
         $query = MenuRestaurant::with([
@@ -408,29 +409,9 @@ class MenuRestaurantController extends Controller
             'category',
             'complements:uuid,name'
         ])
-            ->where('is_confectioned', true);
+            ->where('is_confectioned', true)
+            ->where('is_active', true);
 
-        if ($request->has('is_active')) {
-            $isActive = $request->input('is_active') === 'true' ? true : false;
-            $query->where('is_active', $isActive);
-        }
-
-        if ($request->has('is_confectioned')) {
-            $isConfectioned = $request->input('is_confectioned') === 'true' ? true : false;
-            $query->where('is_confectioned', $isConfectioned);
-        }
-
-
-        if ($request->filled('category_uuid')) {
-            $query->where('category_uuid', $request->category_uuid);
-        }
-
-        if ($request->filled('start_date') && $request->filled('end_date')) {
-            $start = \Illuminate\Support\Carbon::parse($request->start_date)->startOfDay();
-            $end = Carbon::parse($request->end_date)->endOfDay();
-
-            $query->whereBetween('created_at', [$start, $end]);
-        }
 
         if (!$auth->hasRole('SUPER_ADMIN') && !$auth->can('view_all_menus_restaurants')) {
             $query->where(function ($q) use ($auth, $roleIds) {
@@ -597,6 +578,7 @@ class MenuRestaurantController extends Controller
 
         $complements = $menu->complements()
             ->where('is_confectioned', true)
+            ->where('is_active', true)
             ->get();
 
         return response()->json([

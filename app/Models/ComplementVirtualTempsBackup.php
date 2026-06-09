@@ -7,11 +7,11 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
-class ComplementVirtualTemp extends Model
+class ComplementVirtualTempsBackup extends Model
 {
     use HasFactory, SoftDeletes;
 
-    protected $table = 'complement_virtual_temps';
+    protected $table = 'complement_virtual_temps_backup';
 
     protected $primaryKey = 'uuid';
     public $incrementing = false;

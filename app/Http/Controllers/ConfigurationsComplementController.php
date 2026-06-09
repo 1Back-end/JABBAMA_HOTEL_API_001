@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Category;
 use App\Models\ComplementComposition;
 use App\Models\ComplementCompositionItem;
 use App\Models\ConfigurationsComplement;
+use App\Models\MenuCategory;
 use App\Models\MenuRestaurant;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -40,6 +42,11 @@ class ConfigurationsComplementController extends Controller
         if ($request->has('is_confectioned')) {
             $isConfectioned = $request->input('is_confectioned') === 'true' ? true : false;
             $query->where('is_confectioned', $isConfectioned);
+        }
+
+        if ($request->has('is_sellable_directly')) {
+            $isSellingDirectly = $request->input('is_sellable_directly') === 'true' ? true : false;
+            $query->where('is_sellable_directly', $isSellingDirectly);
         }
 
         if ($request->filled('menus_restaurant_uuid')) {
@@ -101,6 +108,7 @@ class ConfigurationsComplementController extends Controller
                 'default_price' => ['nullable', 'numeric', 'min:0'],
 
                 'menus_complement_type' => ['nullable', 'string'],
+                'is_sellable_directly' => ['nullable', 'boolean'],
             ]);
 
             $existingConfig = ConfigurationsComplement::where('name', $validated['name'])
@@ -143,6 +151,30 @@ class ConfigurationsComplementController extends Controller
             );
 
             $config = ConfigurationsComplement::create($validated);
+
+            if ($config->is_sellable_directly) {
+
+                $category = MenuCategory::first();
+
+                MenuRestaurant::updateOrCreate(
+                    [
+                        'uuid' => $config->uuid,
+                    ],
+                    [
+                        'name' => $config->name,
+                        'description' => $config->description,
+                        'created_by' => $auth->id,
+                        'category_uuid' => $category?->uuid,
+
+                        'unit_price' => $config->prices_for_clients_debtor ?: [$config->default_price ?? 0],
+                        'special_price' => $config->prices_for_clients_partner ?: [$config->default_price ?? 0],
+
+                        'is_active' => true,
+                        'is_confectioned' => false,
+                        'is_generated_from_complement' => true,
+                    ]
+                );
+            }
 
             return response()->json([
                 'status' => 'success',
@@ -293,8 +325,8 @@ class ConfigurationsComplementController extends Controller
 
                 'default_price' => ['nullable', 'numeric', 'min:0'],
 
-
                 'menus_complement_type' => ['nullable', 'string'],
+                'is_sellable_directly' => ['nullable', 'boolean'],
             ]);
 
             $existingConfig = ConfigurationsComplement::where('name', $validated['name'])
@@ -310,34 +342,66 @@ class ConfigurationsComplementController extends Controller
 
             $validated['updated_by'] = $auth?->id;
 
+            // 🔥 normalisation des prix
             $validated['prices_for_clients_debtor'] = array_values(
-                array_unique(
-                    array_map(
-                        fn($v) => (float) ($v ?? 0),
-                        $validated['prices_for_clients_debtor'] ?? []
-                    )
-                )
+                array_unique(array_map(
+                    fn($v) => (float) ($v ?? 0),
+                    $validated['prices_for_clients_debtor'] ?? []
+                ))
             );
 
             $validated['prices_for_clients_partner'] = array_values(
-                array_unique(
-                    array_map(
-                        fn($v) => (float) ($v ?? 0),
-                        $validated['prices_for_clients_partner'] ?? []
-                    )
-                )
+                array_unique(array_map(
+                    fn($v) => (float) ($v ?? 0),
+                    $validated['prices_for_clients_partner'] ?? []
+                ))
             );
 
             $validated['prices_for_clients_free'] = array_values(
-                array_unique(
-                    array_map(
-                        fn($v) => (float) ($v ?? 0),
-                        $validated['prices_for_clients_free'] ?? []
-                    )
-                )
+                array_unique(array_map(
+                    fn($v) => (float) ($v ?? 0),
+                    $validated['prices_for_clients_free'] ?? []
+                ))
             );
 
+            // 💡 update complément
             $config->update($validated);
+
+            /*
+            |--------------------------------------------------------------------------
+            | 🔥 SYNC MENU SI COMPLÉMENT VENDABLE DIRECTEMENT
+            |--------------------------------------------------------------------------
+            */
+            if ($config->is_sellable_directly) {
+
+                $category = MenuCategory::first();
+
+                $menu = MenuRestaurant::where('is_generated_from_complement', true)
+                    ->where('name', $config->name)
+                    ->first();
+
+                $dataMenu = [
+                    'uuid' => $config->uuid,
+                    'name' => $config->name,
+                    'description' => $config->description,
+                    'updated_by' => $auth->id,
+                    'category_uuid' => $category?->uuid,
+
+                    'unit_price' => $config->prices_for_clients_debtor ?: [$config->default_price ?? 0],
+                    'special_price' => $config->prices_for_clients_partner ?: [$config->default_price ?? 0],
+
+                    'is_active' => true,
+                    'is_confectioned' => false,
+                    'is_generated_from_complement' => true,
+                ];
+
+                if ($menu) {
+                    $menu->update($dataMenu);
+                } else {
+                    $dataMenu['created_by'] = $auth->id;
+                    MenuRestaurant::create($dataMenu);
+                }
+            }
 
             return response()->json([
                 'status' => 'success',

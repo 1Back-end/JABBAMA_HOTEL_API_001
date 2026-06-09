@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Models\NotificationOrderRestaurantForDecisional;
 use App\Models\OrderNotification;
-use App\Models\UserOrderNotification;
 use Illuminate\Http\Request;
 /**
  * @permission_category Gestion des notifications du restaurant
@@ -13,11 +12,7 @@ use Illuminate\Http\Request;
  */
 class NotificationController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     * @permission NotificationController::index
-     * @permission_desc Afficher l'icone des notifications
-     */
+
     public function index()
     {
         $user = auth()->user();

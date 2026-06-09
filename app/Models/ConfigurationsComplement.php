@@ -33,6 +33,7 @@ class ConfigurationsComplement extends Model
         'is_confectioned',
         'updated_by',
         'menus_complement_type',
+        'is_sellable_directly'
     ];
 
     protected $casts = [
