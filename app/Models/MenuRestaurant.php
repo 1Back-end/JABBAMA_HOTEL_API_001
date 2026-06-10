@@ -41,12 +41,14 @@ class MenuRestaurant extends Model
         'quantity_for_type_complement_menu',
         'quantity_for_type_complement_boisson',
         'have_complements',
-        'have_drinks'
+        'have_drinks',
+        'is_generated_from_complement'
     ];
 
     protected $casts = [
         'unit_price'    => 'array',
         'special_price' => 'array',
+        'free_price'    => 'array',
 
     ];
 
@@ -60,7 +62,10 @@ class MenuRestaurant extends Model
         parent::boot();
 
         static::creating(function ($menu_restaurant) {
-            $menu_restaurant->uuid = (string) Str::uuid();
+            if (empty($menu_restaurant->uuid)) {
+                $menu_restaurant->uuid = (string) Str::uuid();
+            }
+
             $menu_restaurant->code = self::generateCode();
         });
     }

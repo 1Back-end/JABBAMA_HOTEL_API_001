@@ -12,6 +12,18 @@ Route::middleware(['auth:sanctum'])->group(function () {
         require __DIR__ . '/authorization.php';
         require __DIR__ . '/admin.php';
 
+        Route::post('/restaurant/clean_abandoned', function () {
+            try {
+                Artisan::call('restaurant:clean-abandoned');
+                return response()->json([
+                    'status' => 'success',
+                    'result' => trim(Artisan::output())
+                ]);
+            } catch (\Exception $e) {
+                return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+            }
+        });
+
 
         Route::get("/get_users_where_role_is_gestionnaire_stock",[UserController::class,'get_users_where_role_is_gestionnaire_stock']);
         Route::get("/get_users_where_role_is_cuisinier",[UserController::class,'get_users_where_role_is_cuisinier']);

@@ -318,7 +318,10 @@ class ExtractPermissions extends Command
         'view_icons_notificatins_for_decisional' => [
             'description' => 'Afficher l\'icone des notifications décisionnelles',
             'category' => 'Gestion des notifications des décisionnaires du restaurant',
-            'modules' => ['Gestion du restaurant','Autres Modules','Gestion des stocks'],
+        ],
+        'view_icons_notificatins_for_user' => [
+            'description' => 'Afficher l\'icône des notifications opérationnelles',
+            'category' => 'Gestion des notifications du restaurant',
         ],
 
     ];

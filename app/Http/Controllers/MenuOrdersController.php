@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\MenuComplementType;
 use App\Enums\MenuOrderStatus;
 use App\Enums\TypeClientsForPaiment;
+use App\Models\ConfigurationsComplement;
 use App\Models\MenuOrder;
 use App\Models\MenuOrderItem;
 use App\Models\MenuRestaurant;
@@ -88,10 +89,8 @@ class MenuOrdersController extends Controller
                 'description'           => 'nullable|string',
             ]);
 
-            // 🔹 Entrepôt par défaut si non fourni
             $warehouseUuid = $validated['warehouse_uuid'] ?? Warehouse::where('is_used_for_restaurant', true)->firstOrFail()->uuid;
 
-            // 🔹 Vérifier si une composition existe déjà pour ce menu
             $menuOrder = MenuOrder::firstOrCreate(
                 ['menus_restaurant_uuid' => $menus_restaurant_uuid],
                 [
@@ -102,7 +101,6 @@ class MenuOrdersController extends Controller
                 ]
             );
 
-            // 🔹 Mise à jour du menuOrder si déjà existant
             $menuOrder->update([
                 'warehouse_uuid' => $warehouseUuid,
                 'description'   => $validated['description'] ?? $menuOrder->description ?? 'Confection du menu ' . trim($menu_restaurant->name),
@@ -110,23 +108,20 @@ class MenuOrdersController extends Controller
                 'updated_by'    => $auth->id,
             ]);
 
-            // 🔹 Gestion des items
             $existingItems = $menuOrder->items()->pluck('uuid')->toArray();
             $submittedItemUuids = [];
 
             foreach ($validated['items'] as $item) {
                 if (!empty($item['uuid']) && in_array($item['uuid'], $existingItems)) {
-                    // Mise à jour item existant
                     $menuOrderItem = MenuOrderItem::find($item['uuid']);
                     $menuOrderItem->update([
                         'product_uuid'  => $item['product_uuid'],
                         'quantity_used' => $item['quantity_used'],
-                        'menus_restaurant_uuid'=> $menus_restaurant_uuid, // 🔹 ajout ici
+                        'menus_restaurant_uuid'=> $menus_restaurant_uuid,
                         'updated_by'    => $auth->id,
                     ]);
                     $submittedItemUuids[] = $item['uuid'];
                 } else {
-                    // Création nouveau item
                     $newItem = MenuOrderItem::create([
                         'menu_order_uuid' => $menuOrder->uuid,
                         'product_uuid'    => $item['product_uuid'],
@@ -139,11 +134,16 @@ class MenuOrdersController extends Controller
                 }
             }
 
-            // 🔹 Supprimer les items qui n'ont pas été soumis
             $menuOrder->items()->whereNotIn('uuid', $submittedItemUuids)->delete();
 
-            // 🔹 Mettre à jour le menu comme confectionné
             $menu_restaurant->update(['is_confectioned' => true]);
+            if ($menu_restaurant->is_generated_from_complement) {
+                ConfigurationsComplement::where('uuid', $menu_restaurant->uuid)
+                    ->update([
+                        'is_confectioned' => true,
+                        'updated_by' => $auth->id,
+                    ]);
+            }
 
             DB::commit();
 
