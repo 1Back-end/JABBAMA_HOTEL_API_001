@@ -7,7 +7,10 @@ use App\Models\ComplementComposition;
 use App\Models\ComplementCompositionItem;
 use App\Models\ConfigurationsComplement;
 use App\Models\MenuCategory;
+use App\Models\MenuOrder;
+use App\Models\MenuOrderItem;
 use App\Models\MenuRestaurant;
+use App\Models\Warehouse;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -102,17 +105,15 @@ class ConfigurationsComplementController extends Controller
                 'prices_for_clients_free' => ['nullable', 'array'],
 
                 'description' => ['nullable', 'string'],
-
                 'is_active' => ['nullable', 'boolean'],
-
                 'default_price' => ['nullable', 'numeric', 'min:0'],
-
                 'menus_complement_type' => ['nullable', 'string'],
-                'is_sellable_directly' => ['nullable', 'boolean'],
             ]);
 
-            $existingConfig = ConfigurationsComplement::where('name', $validated['name'])
-                ->first();
+            // =========================
+            // CHECK EXISTING COMPLEMENT
+            // =========================
+            $existingConfig = ConfigurationsComplement::where('name', $validated['name'])->first();
 
             if ($existingConfig) {
                 return response()->json([
@@ -121,64 +122,55 @@ class ConfigurationsComplementController extends Controller
                 ], 400);
             }
 
-            $validated['created_by'] = $auth?->id;
+            // =========================
+            // CLEAN PRICES
+            // =========================
+            $cleanPrices = function ($arr, $default) {
+                $arr = array_filter($arr ?? [], fn($v) => $v !== null);
 
-            $validated['prices_for_clients_debtor'] = array_values(
-                array_unique(
-                    array_map(
-                        fn($v) => (float) ($v ?? 0),
-                        $validated['prices_for_clients_debtor'] ?? []
-                    )
-                )
-            );
+                $arr = array_map(fn($v) => (float) $v, $arr);
 
-            $validated['prices_for_clients_partner'] = array_values(
-                array_unique(
-                    array_map(
-                        fn($v) => (float) ($v ?? 0),
-                        $validated['prices_for_clients_partner'] ?? []
-                    )
-                )
-            );
+                $arr = array_values(array_unique($arr));
 
-            $validated['prices_for_clients_free'] = array_values(
-                array_unique(
-                    array_map(
-                        fn($v) => (float) ($v ?? 0),
-                        $validated['prices_for_clients_free'] ?? []
-                    )
-                )
-            );
+                return count($arr) ? $arr : [(float) $default];
+            };
+
+            $validated['prices_for_clients_debtor'] =
+                $cleanPrices($validated['prices_for_clients_debtor'] ?? null, $validated['default_price'] ?? 0);
+
+            $validated['prices_for_clients_partner'] =
+                $cleanPrices($validated['prices_for_clients_partner'] ?? null, $validated['default_price'] ?? 0);
+
+            $validated['prices_for_clients_free'] =
+                $cleanPrices($validated['prices_for_clients_free'] ?? null, $validated['default_price'] ?? 0);
+
+            $validated['created_by'] = $auth->id;
 
             $config = ConfigurationsComplement::create($validated);
 
-            if ($config->is_sellable_directly) {
-
-                $category = MenuCategory::first();
-
-                MenuRestaurant::updateOrCreate(
-                    [
-                        'uuid' => $config->uuid,
-                    ],
-                    [
-                        'name' => $config->name,
-                        'description' => $config->description,
-                        'created_by' => $auth->id,
-                        'category_uuid' => $category?->uuid,
-
-                        'unit_price' => $config->prices_for_clients_debtor ?: [$config->default_price ?? 0],
-                        'special_price' => $config->prices_for_clients_partner ?: [$config->default_price ?? 0],
-
-                        'is_active' => true,
-                        'is_confectioned' => false,
-                        'is_generated_from_complement' => true,
-                    ]
-                );
-            }
+            $category = MenuCategory::first();
+            MenuRestaurant::updateOrCreate(
+                [
+                    'uuid' => $config->uuid,
+                ],
+                [
+                    'name' => $config->name,
+                    'description' => $config->description,
+                    'created_by' => $auth->id,
+                    'category_uuid' => $category?->uuid,
+                    'unit_price' => $config->prices_for_clients_debtor,
+                    'special_price' => $config->prices_for_clients_partner,
+                    'is_active' => true,
+                    'is_confectioned' => false,
+                    'is_generated_from_complement' => true,
+                    'have_complements' => false,
+                    'have_drinks' => false,
+                ]
+            );
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Complément enregistré avec succès',
+                'message' => 'Complément et menu créés avec succès',
                 'data' => $config
             ], 201);
 
@@ -266,6 +258,19 @@ class ConfigurationsComplementController extends Controller
                 'updated_by' => $auth?->id,
             ]);
 
+
+            if ($config->is_menu_and_complement) {
+
+                $menu = MenuRestaurant::where('uuid', $config->uuid)->first();
+
+                if ($menu) {
+                    $menu->update([
+                        'is_active' => $validated['is_active'],
+                        'updated_by' => $auth?->id,
+                    ]);
+                }
+            }
+
             return response()->json([
                 'status' => 'success',
                 'message' => $validated['is_active']
@@ -297,7 +302,7 @@ class ConfigurationsComplementController extends Controller
      * @permission ConfigurationsComplementController::update
      * @permission_desc Modifier un complément
      */
-    public function update(Request $request, string $uuid)
+    public function update(Request $request, $uuid)
     {
         try {
 
@@ -320,93 +325,71 @@ class ConfigurationsComplementController extends Controller
                 'prices_for_clients_free' => ['nullable', 'array'],
 
                 'description' => ['nullable', 'string'],
-
                 'is_active' => ['nullable', 'boolean'],
-
                 'default_price' => ['nullable', 'numeric', 'min:0'],
-
                 'menus_complement_type' => ['nullable', 'string'],
-                'is_sellable_directly' => ['nullable', 'boolean'],
             ]);
 
-            $existingConfig = ConfigurationsComplement::where('name', $validated['name'])
+
+            $exists = ConfigurationsComplement::where('name', $validated['name'])
                 ->where('uuid', '!=', $uuid)
                 ->first();
 
-            if ($existingConfig) {
+            if ($exists) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Ce complément existe déjà.'
+                    'message' => 'Ce nom existe déjà'
                 ], 400);
             }
 
-            $validated['updated_by'] = $auth?->id;
+            $cleanPrices = function ($arr, $default) {
+                $arr = array_filter($arr ?? [], fn($v) => $v !== null);
+                $arr = array_map(fn($v) => (float) $v, $arr);
+                $arr = array_values(array_unique($arr));
 
-            // 🔥 normalisation des prix
-            $validated['prices_for_clients_debtor'] = array_values(
-                array_unique(array_map(
-                    fn($v) => (float) ($v ?? 0),
-                    $validated['prices_for_clients_debtor'] ?? []
-                ))
-            );
+                return count($arr) ? $arr : [(float) $default];
+            };
 
-            $validated['prices_for_clients_partner'] = array_values(
-                array_unique(array_map(
-                    fn($v) => (float) ($v ?? 0),
-                    $validated['prices_for_clients_partner'] ?? []
-                ))
-            );
+            $validated['prices_for_clients_debtor'] =
+                $cleanPrices($validated['prices_for_clients_debtor'] ?? null, $validated['default_price'] ?? 0);
 
-            $validated['prices_for_clients_free'] = array_values(
-                array_unique(array_map(
-                    fn($v) => (float) ($v ?? 0),
-                    $validated['prices_for_clients_free'] ?? []
-                ))
-            );
+            $validated['prices_for_clients_partner'] =
+                $cleanPrices($validated['prices_for_clients_partner'] ?? null, $validated['default_price'] ?? 0);
 
-            // 💡 update complément
+            $validated['prices_for_clients_free'] =
+                $cleanPrices($validated['prices_for_clients_free'] ?? null, $validated['default_price'] ?? 0);
+
+            $validated['updated_by'] = $auth->id;
+
             $config->update($validated);
 
-            /*
-            |--------------------------------------------------------------------------
-            | 🔥 SYNC MENU SI COMPLÉMENT VENDABLE DIRECTEMENT
-            |--------------------------------------------------------------------------
-            */
-            if ($config->is_sellable_directly) {
-
-                $category = MenuCategory::first();
-
-                $menu = MenuRestaurant::where('is_generated_from_complement', true)
-                    ->where('name', $config->name)
-                    ->first();
-
-                $dataMenu = [
+            MenuRestaurant::updateOrCreate(
+                [
                     'uuid' => $config->uuid,
+                ],
+                [
                     'name' => $config->name,
                     'description' => $config->description,
+                    'created_by' => $config->created_by,
                     'updated_by' => $auth->id,
-                    'category_uuid' => $category?->uuid,
 
-                    'unit_price' => $config->prices_for_clients_debtor ?: [$config->default_price ?? 0],
-                    'special_price' => $config->prices_for_clients_partner ?: [$config->default_price ?? 0],
+                    'category_uuid' => MenuCategory::first()?->uuid,
 
-                    'is_active' => true,
+                    'unit_price' => $config->prices_for_clients_debtor,
+                    'special_price' => $config->prices_for_clients_partner,
+
+                    'is_active' => $config->is_active,
                     'is_confectioned' => false,
                     'is_generated_from_complement' => true,
-                ];
-
-                if ($menu) {
-                    $menu->update($dataMenu);
-                } else {
-                    $dataMenu['created_by'] = $auth->id;
-                    MenuRestaurant::create($dataMenu);
-                }
-            }
+                    'have_complements' => false,
+                    'have_drinks' => false,
+                ]
+            );
 
             return response()->json([
                 'status' => 'success',
                 'message' => 'Complément mis à jour avec succès',
-                'data' => $config->fresh()
+                'data' => $config
             ]);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -421,7 +404,7 @@ class ConfigurationsComplementController extends Controller
 
             return response()->json([
                 'status' => 'error',
-                'message' => 'Une erreur est survenue',
+                'message' => 'Erreur serveur',
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -470,7 +453,7 @@ class ConfigurationsComplementController extends Controller
             'items.*.is_optional' => 'nullable|boolean',
         ]);
 
-        $userId = auth()->id();
+        $auth = auth()->user();
 
         DB::beginTransaction();
 
@@ -482,39 +465,110 @@ class ConfigurationsComplementController extends Controller
                     'warehouse_uuid' => $request->warehouse_uuid,
                 ],
                 [
-                    'created_by' => $userId,
-                    'updated_by' => $userId,
+                    'created_by' => $auth->id,
+                    'updated_by' => $auth->id,
                 ]
             );
 
-            ConfigurationsComplement::where('uuid', $commplements_restaurant_uuid)
-                ->update([
-                    'is_confectioned' => true,
-                    'updated_by' => $userId,
-                ]);
 
-            ComplementCompositionItem::where(
-                'complement_uuid',
-                $composition->uuid
-            )->delete();
+            $complement = ConfigurationsComplement::where('uuid', $commplements_restaurant_uuid)->firstOrFail();
+
+            $complement->update([
+                'is_confectioned' => true,
+                'updated_by' => $auth->id,
+            ]);
+
+            ComplementCompositionItem::where('complement_uuid', $composition->uuid)->delete();
 
             foreach ($request->items as $item) {
-
                 ComplementCompositionItem::create([
                     'complement_uuid' => $composition->uuid,
                     'product_uuid' => $item['product_uuid'],
                     'quantity_used' => $item['quantity_used'],
                     'is_optional' => $item['is_optional'] ?? false,
-                    'created_by' => $userId,
-                    'updated_by' => $userId,
+                    'created_by' => $auth->id,
+                    'updated_by' => $auth->id,
                 ]);
+            }
+
+            if ($complement->is_menu_and_complement) {
+
+                $menu_restaurant = MenuRestaurant::where('uuid', $commplements_restaurant_uuid)->first();
+
+                if ($menu_restaurant) {
+
+                    $warehouseUuid = $request->warehouse_uuid
+                        ?? Warehouse::where('is_used_for_restaurant', true)->firstOrFail()->uuid;
+
+
+                    $menuOrder = MenuOrder::firstOrCreate(
+                        ['menus_restaurant_uuid' => $menu_restaurant->uuid],
+                        [
+                            'warehouse_uuid' => $warehouseUuid,
+                            'status' => \App\Enums\MenuOrderStatus::TRANSFERRED->value,
+                            'created_by' => $auth->id,
+                            'description' => $request->description
+                                ?? 'Confection du menu ' . trim($menu_restaurant->name),
+                        ]
+                    );
+
+                    $menuOrder->update([
+                        'warehouse_uuid' => $warehouseUuid,
+                        'description' => $request->description
+                            ?? $menuOrder->description
+                                ?? 'Confection du menu ' . trim($menu_restaurant->name),
+                        'status' => \App\Enums\MenuOrderStatus::TRANSFERRED->value,
+                        'updated_by' => $auth->id,
+                    ]);
+
+                    $existingItems = $menuOrder->items()->pluck('uuid')->toArray();
+                    $submittedItemUuids = [];
+
+                    foreach ($request->items as $item) {
+
+                        if (!empty($item['uuid']) && in_array($item['uuid'], $existingItems)) {
+
+                            $menuOrderItem = MenuOrderItem::find($item['uuid']);
+
+                            $menuOrderItem?->update([
+                                'product_uuid' => $item['product_uuid'],
+                                'quantity_used' => $item['quantity_used'],
+                                'menus_restaurant_uuid' => $menu_restaurant->uuid,
+                                'updated_by' => $auth->id,
+                            ]);
+
+                            $submittedItemUuids[] = $item['uuid'];
+
+                        } else {
+
+                            $newItem = MenuOrderItem::create([
+                                'menu_order_uuid' => $menuOrder->uuid,
+                                'product_uuid' => $item['product_uuid'],
+                                'quantity_used' => $item['quantity_used'],
+                                'menus_restaurant_uuid' => $menu_restaurant->uuid,
+                                'created_by' => $auth->id,
+                                'updated_by' => $auth->id,
+                            ]);
+
+                            $submittedItemUuids[] = $newItem->uuid;
+                        }
+                    }
+
+                    $menuOrder->items()
+                        ->whereNotIn('uuid', $submittedItemUuids)
+                        ->delete();
+
+                    $menu_restaurant->update([
+                        'is_confectioned' => true
+                    ]);
+                }
             }
 
             DB::commit();
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Composition du complément enregistrée avec succès.',
+                'message' => 'Composition enregistrée avec succès.',
                 'data' => $composition->load([
                     'warehouse',
                     'complement',
