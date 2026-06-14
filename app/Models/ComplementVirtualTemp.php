@@ -35,7 +35,8 @@ class ComplementVirtualTemp extends Model
         'menu_uuid',
         'cart_line_uuid',
         'is_new',
-        'menu_quantity'
+        'menu_quantity',
+        'quantity_in_defective'
     ];
 
     protected static function boot()

@@ -20,6 +20,7 @@ class OrderMenuRestaurantItem extends Model
 
     protected $fillable = [
         'uuid',
+        'cart_line_uuid',
         'order_menu_restaurant_uuid',
         'menus_restaurant_uuid',
         'quantity',
