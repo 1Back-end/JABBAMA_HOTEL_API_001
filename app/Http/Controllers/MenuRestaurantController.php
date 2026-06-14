@@ -578,7 +578,6 @@ class MenuRestaurantController extends Controller
 
         $complements = $menu->complements()
             ->where('is_confectioned', true)
-            ->where('is_sellable_directly', false)
             ->where('is_active', true)
             ->get();
 
