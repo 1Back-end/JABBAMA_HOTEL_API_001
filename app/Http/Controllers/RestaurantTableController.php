@@ -319,11 +319,7 @@ class RestaurantTableController extends Controller
                 $q->where('uuid', 'like', "%{$search}%")
                     ->orWhere('table_number', 'like', "%{$search}%")
                     ->orWhere('code', 'like', "%{$search}%")
-                    ->orWhere('capacity', 'like', "%{$search}%")
-                    ->orWhereHas('creator', function ($qc) use ($search) {
-                        $qc->where('nom_utilisateur', 'like', "%{$search}%")
-                            ->orWhere('email', 'like', "%{$search}%");
-                    });
+                    ->orWhere('capacity', 'like', "%{$search}%");
             });
         }
 

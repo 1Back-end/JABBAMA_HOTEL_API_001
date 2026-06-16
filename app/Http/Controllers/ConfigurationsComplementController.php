@@ -65,16 +65,7 @@ class ConfigurationsComplementController extends Controller
                     ->orWhere('name', 'like', "%{$search}%")
                     ->orWhere('code', 'like', "%{$search}%")
                     ->orWhere('description', 'like', "%{$search}%")
-                    ->orWhereHas('creator', function ($qc) use ($search) {
-                        $qc->where('nom_utilisateur', 'like', "%{$search}%")
-                            ->orWhere('email', 'like', "%{$search}%");
-                    })
-                    ->orWhereHas('menuRestaurant', function ($qm) use ($search) {
-                        $qm->where('name', 'like', "%{$search}%")
-                            ->orWhere('code', 'like', "%{$search}%")
-                            ->orWhere('description', 'like', "%{$search}%");
-
-                    });
+                    ->orWhere('menus_complement_type', 'like', "%{$search}%");
             });
         }
         $data = $query->latest()->paginate($perPage, ['*'], 'page', $page);
