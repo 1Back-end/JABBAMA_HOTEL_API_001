@@ -511,8 +511,17 @@ if (! function_exists('upload_media')) {
 }
 
 
-function save_browser_shot_pdf(string $view, array $data, string $folderPath, string $path, string $format = 'a4', string $direction = '', string $header = '', string $footer = '', array $margins = [0, 0, 0, 0]): void
-{
+function save_browser_shot_pdf(
+    string $view,
+    array $data,
+    string $folderPath,
+    string $path,
+           $format = 'a4', // ◄ Supprime le type string ici pour accepter array OU string
+    string $direction = '',
+    string $header = '',
+    string $footer = '',
+    array $margins = [0, 0, 0, 0]
+): void {
     $bootstrapPath = public_path('assets/bootstrap/css/bootstrap.min.css');
     $bootstrapContent = file_get_contents($bootstrapPath);
     $data = array_merge($data, ['bootstrap' => $bootstrapContent]);
@@ -525,18 +534,21 @@ function save_browser_shot_pdf(string $view, array $data, string $folderPath, st
     $html = view($view, $data)->render();
 
     $browserShot = Browsershot::html($html)
-        ->format($format)
         ->margins($margins[0], $margins[1], $margins[2], $margins[3])
-        ->timeout(120) // ✅ FIX TIMEOUT
+        ->timeout(120)
         ->waitUntilNetworkIdle()
         ->printBackground();
 
-
+    // ◄ AJUSTEMENT ICI : Si c'est un tableau [largeur, hauteur], on utilise paperSize
+    if (is_array($format)) {
+        $browserShot->paperSize($format[0], $format[1], 'mm');
+    } else {
+        $browserShot->format($format);
+    }
 
     if (env('APP_ENV') == "production") {
         $browserShot->setChromePath('C:\chrome-headless\chrome-headless-shell.exe');
     }
-
 
     if ($header) {
         $browserShot->showBrowserHeaderAndFooter()
