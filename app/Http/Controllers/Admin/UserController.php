@@ -194,10 +194,8 @@ class UserController extends Controller
     {
         DB::beginTransaction();
         try {
-            // Mot de passe par défaut
-            $defaultPassword = '1234567';
 
-            // Créer l'utilisateur avec le mot de passe hashé et default = true
+            $defaultPassword = '1234567';
             $user = User::create(array_merge(
                 $request->validated(),
                 [
@@ -206,7 +204,6 @@ class UserController extends Controller
                 ]
             ));
 
-            // Associer les rôles
             foreach ($request->roles as $role) {
                 $user->roles()->attach($role, [
                     'created_by' => auth()->id(),
@@ -219,7 +216,7 @@ class UserController extends Controller
             return response()->json([
                 'message' => __("L'utilisateur a été créé avec succès !"),
                 'login'   => $user->login,
-                'password'=> $defaultPassword // optionnel, pour retour front si nécessaire
+                'password'=> $defaultPassword
             ], Response::HTTP_CREATED);
 
         } catch (\Exception $th) {
@@ -270,7 +267,6 @@ class UserController extends Controller
             $user->update($data);
 
             $user->roles()->detach();
-            // Associée aux roles
             foreach ($request->roles as $role) {
                 $user->roles()->attach($role, [
                     'created_by' => auth()->id(),

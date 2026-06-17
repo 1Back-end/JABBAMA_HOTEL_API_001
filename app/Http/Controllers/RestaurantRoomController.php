@@ -31,7 +31,6 @@ class RestaurantRoomController extends Controller
         DB::beginTransaction();
 
         try {
-            // 🔹 Validation des données
             $validated = $request->validate([
                 'rooms_number' => ['required', 'string', 'max:255', 'unique:restaurant_rooms,rooms_number'],
                 'description'  => ['nullable', 'string', 'max:255'],
@@ -40,10 +39,8 @@ class RestaurantRoomController extends Controller
                 'floor_uuid'   => ['required', 'string', 'max:255','exists:floors,uuid'],
             ]);
 
-            // 🔹 Ajout de l'utilisateur créateur
             $validated['created_by'] = $auth->id;
 
-            // 🔹 Création de la chambre
             $room = RestaurantRoom::create($validated);
 
             DB::commit();
@@ -95,10 +92,8 @@ class RestaurantRoomController extends Controller
         DB::beginTransaction();
 
         try {
-            // 🔹 Récupération de la chambre
             $room = RestaurantRoom::findOrFail($uuid);
 
-            // 🔹 Validation des données
             $validated = $request->validate([
                 'rooms_number' => ['required', 'string', 'max:255', "unique:restaurant_rooms,rooms_number,{$uuid},uuid"],
                 'description'  => ['nullable', 'string', 'max:255'],
@@ -108,7 +103,6 @@ class RestaurantRoomController extends Controller
                 'floor_uuid'   => ['required', 'string', 'max:255','exists:floors,uuid'],
             ]);
 
-            // 🔹 Ajout de l'utilisateur qui met à jour
             $validated['updated_by'] = $auth->id;
 
             // 🔹 Mise à jour
@@ -161,15 +155,12 @@ class RestaurantRoomController extends Controller
         $auth = auth()->user();
 
         try {
-            // 🔹 Récupérer la chambre
             $room = RestaurantRoom::findOrFail($uuid);
 
-            // 🔹 Validation du statut
             $validated = $request->validate([
                 'is_active' => ['required', 'boolean'],
             ]);
-
-            // 🔹 Mise à jour du statut
+            
             $room->update([
                 'is_active' => $validated['is_active'],
                 'updated_by' => $auth->id,
