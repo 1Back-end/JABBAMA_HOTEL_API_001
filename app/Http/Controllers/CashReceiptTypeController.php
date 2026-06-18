@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CashReceiptFamily;
 use App\Models\CashReceiptType;
 use App\Models\Category;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 
@@ -31,6 +33,7 @@ class CashReceiptTypeController extends Controller
         $query = CashReceiptType::with([
             'creator',
             'updater',
+            'families'
         ]);
 
         if ($search = trim($request->input('search'))) {
@@ -58,7 +61,6 @@ class CashReceiptTypeController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'code' => ['required', 'string','unique:cash_receipt_types,code'],
             'name' => ['required', 'string', 'unique:cash_receipt_types,name'],
             'is_linked_to_turnover' => ['nullable', 'boolean'],
         ]);
@@ -68,7 +70,7 @@ class CashReceiptTypeController extends Controller
         try {
 
             $type = CashReceiptType::create([
-                'code' => strtoupper($validated['code']),
+                'code' => Str::slug($validated['name'], '_'),
                 'name' => $validated['name'],
                 'is_linked_to_turnover' => $validated['is_linked_to_turnover'],
                 'created_by' => auth()->id(),
@@ -117,7 +119,6 @@ class CashReceiptTypeController extends Controller
         }
 
         $validated = $request->validate([
-            'code' => ['required', 'string',Rule::unique('cash_receipt_types', 'code')->ignore($uuid, 'uuid')],
             'name' => ['required', 'string',  Rule::unique('cash_receipt_types', 'name')->ignore($uuid, 'uuid')],
             'is_linked_to_turnover' => ['nullable', 'boolean'],
         ]);
@@ -127,7 +128,7 @@ class CashReceiptTypeController extends Controller
         try {
 
             $type->update([
-                'code' => strtoupper($validated['code']),
+                'code' => Str::slug($validated['name'], '_'),
                 'name' => $validated['name'],
                 'is_linked_to_turnover' => $validated['is_linked_to_turnover'],
                 'updated_by' => auth()->id(),
@@ -193,5 +194,84 @@ class CashReceiptTypeController extends Controller
             'success' => true,
             "message" => "Statut modifié avec succès"
         ]);
+    }
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission CashReceiptTypeController::store_family
+     * @permission_desc Créer une famille d'encaissement
+     */
+    public function store_family(Request $request)
+    {
+        $validated = $request->validate([
+            'cash_receipt_type_uuid' => ['required', 'uuid', 'exists:cash_receipt_types,uuid'],
+            'families' => ['required', 'array', 'min:1'],
+            'families.*.name' => ['required', 'string', 'max:255'],
+        ]);
+
+        DB::beginTransaction();
+
+        try {
+
+            $createdBy = auth()->id();
+            $typeUuid = $validated['cash_receipt_type_uuid'];
+
+            // 🔥 1. SUPPRESSION FORCÉE (IMPORTANT)
+            CashReceiptFamily::where('cash_receipt_type_uuid', $typeUuid)->delete();
+
+            // 🔥 OPTION BONUS : sécurité anti doublon global (très important)
+            DB::table('cash_receipt_families')
+                ->where('cash_receipt_type_uuid', $typeUuid)
+                ->delete();
+
+            $data = [];
+
+            foreach ($validated['families'] as $family) {
+
+                $name = strtoupper(trim($family['name']));
+                $baseCode = Str::slug($name, '_');
+
+                $data[] = [
+                    'uuid' => (string) Str::uuid(),
+                    'name' => $name,
+                    'code' => $baseCode,
+                    'cash_receipt_type_uuid' => $typeUuid,
+                    'created_by' => $createdBy,
+                    'updated_by' => $createdBy,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+            }
+
+            // 🔥 2. INSERT SAFE
+            if (!empty($data)) {
+                DB::table('cash_receipt_families')->insert($data);
+            }
+
+            // 🔥 3. UPDATE PARENT
+            CashReceiptType::where('uuid', $typeUuid)
+                ->update([
+                    'have_family' => true,
+                    'updated_by' => $createdBy,
+                    'updated_at' => now(),
+                ]);
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Sync complète réussie',
+            ]);
+
+        } catch (\Exception $e) {
+
+            DB::rollBack();
+
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
     }
 }

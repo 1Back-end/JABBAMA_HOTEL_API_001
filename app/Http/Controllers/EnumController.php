@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\ChooseRubriquesSall;
 use App\Enums\ConsumptionType;
 use App\Enums\MenuOrderStatus;
 use App\Enums\PurchaseOrdersStatus;
@@ -41,6 +42,14 @@ class EnumController extends Controller
         return response()->json([
             'status' => 'success',
             'data'   => MenuOrderStatus::toArray(),
+        ]);
+    }
+
+    public function ChooseRubriquesSall()
+    {
+        return response()->json([
+            'status' => 'success',
+            'data'   => ChooseRubriquesSall::toArray(),
         ]);
     }
     //

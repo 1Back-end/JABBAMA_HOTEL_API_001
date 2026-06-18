@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\ChooseRubriquesSall;
 use App\Enums\ConsumptionType;
 use App\Enums\MenuOrderStatus;
 use App\Enums\OrderMenuRestaurantItemStatus;
@@ -35,6 +36,7 @@ use App\Models\Product;
 use App\Models\ProductPoint;
 use App\Models\RestaurantDrinkConfiguration;
 use App\Models\Role;
+use App\Models\SalesCategory;
 use App\Models\SettingRestaurant;
 use App\Models\StatisticsOrderStatusDrink;
 use App\Models\StatisticsOrderStatusMenuRestaurant;
@@ -593,7 +595,7 @@ class OrderMenuRestaurantController extends Controller
                 ->values();
 
             ComplementVirtualTemp::where('order_menu_restaurant_uuid', $order->uuid)
-                ->whereIn('complement_uuid', $complementUuids)
+                ->where('cart_line_uuid', $cartLineUuid)
                 ->where('status', 'pending')
                 ->forceDelete();
 
@@ -2696,6 +2698,9 @@ class OrderMenuRestaurantController extends Controller
                 'drinks.*.drink_restaurant_uuid' => ['required_with:drinks', 'uuid', 'exists:restaurant_drink_configurations,uuid'],
                 'drinks.*.quantity' => ['required_with:drinks', 'numeric', 'min:1'],
                 'drinks.*.unit_price' => ['nullable', 'numeric', 'min:0'],
+
+                'sales_category_type' => ['required', new Enum(ChooseRubriquesSall::class)],
+                'sales_category_uuid' => ['nullable', 'uuid', 'exists:sales_categories,uuid'],
             ]);
 
             $warehouse = Warehouse::where('is_used_for_restaurant', true)->firstOrFail();
@@ -2756,7 +2761,64 @@ class OrderMenuRestaurantController extends Controller
                 }
             }
 
-            // 5. Création de la commande principale
+            $salesCategoryUuid = null;
+            $now = Carbon::now('Africa/Douala');
+            $orderTimeStr = $now->format('H:i:s');
+
+            Log::info('ORDER DEBUG (BASED ON NOW)', [
+                'type_frontend' => $validated['sales_category_type'],
+                'current_server_datetime' => $now->toDateTimeString(),
+                'extracted_time_str' => $orderTimeStr,
+            ]);
+
+            if ($validated['sales_category_type'] === ChooseRubriquesSall::MANUAL->value) {
+                $salesCategoryUuid = $validated['sales_category_uuid'] ?? null;
+                Log::info('MANUAL SELECTED', ['uuid' => $salesCategoryUuid]);
+            } else {
+                $salesCategories = SalesCategory::where('type', 'time_based')
+                    ->where('is_active', true)
+                    ->get();
+
+                Log::info('CATEGORIES TROUVEES EN BDD: ' . $salesCategories->count());
+
+                foreach ($salesCategories as $category) {
+                    $startStr = Carbon::parse($category->start_time)->format('H:i:s');
+                    $endStr   = Carbon::parse($category->end_time)->format('H:i:s');
+
+                    Log::info("Verification: {$orderTimeStr} entre-t-il dans {$startStr} -> {$endStr} ?");
+
+                    // 🔥 CAS NORMAL : Intervalle classique sur la même journée (ex: 03:00:00 -> 10:59:59)
+                    if ($startStr <= $endStr) {
+                        if ($orderTimeStr >= $startStr && $orderTimeStr <= $endStr) {
+                            $salesCategoryUuid = $category->uuid;
+                            Log::info("MATCH TROUVÉ : " . $category->name);
+                            break;
+                        }
+                    }
+                    else {
+                        if ($orderTimeStr >= $startStr || $orderTimeStr <= $endStr) {
+                            $salesCategoryUuid = $category->uuid;
+                            Log::info("MATCH TROUVÉ (Minuit) : " . $category->name);
+                            break;
+                        }
+                    }
+                }
+
+                if (!$salesCategoryUuid) {
+                    Log::warning("Aucun match horaire trouvé. Passage au premier fallback 'time_based'.");
+                    $salesCategoryUuid = SalesCategory::where('type', 'time_based')
+                        ->where('is_active', true)
+                        ->orderBy('start_time')
+                        ->first()?->uuid;
+                }
+
+                if (!$salesCategoryUuid) {
+                    $salesCategoryUuid = SalesCategory::where('is_active', true)->first()?->uuid;
+                }
+
+                Log::info('FINAL VALUE ASSIGNED', ['uuid' => $salesCategoryUuid]);
+            }
+
             $order = OrderMenuRestaurant::create([
                 'status' => \App\Enums\MenuOrderStatus::TRANSFERRED->value,
                 'type_clients_for_payment' => $validated['type_clients_for_payment'],
@@ -2773,6 +2835,8 @@ class OrderMenuRestaurantController extends Controller
                 'created_by' => $auth->id,
                 'updated_by' => $auth->id,
                 'reservation_uuid' => $validated['reservation_uuid'] ?? null,
+                'sales_category_uuid' => $salesCategoryUuid,
+                'sales_category_type' => $validated['sales_category_type'],
             ]);
 
 
@@ -3325,23 +3389,42 @@ class OrderMenuRestaurantController extends Controller
 
     private function syncItemComplements($orderItem, $menu, $order, $m, $auth)
     {
-        if ($orderItem && $menu) {
-            OrderMenuRestaurantItemComplement::where('order_menu_restaurant_item_uuid', $orderItem->uuid)
-                ->forceDelete();
+        if (!$orderItem || !$menu) {
+            return;
+        }
 
-            if (!empty($m['complements']) && is_array($m['complements'])) {
-                foreach ($m['complements'] as $compInput) {
-                    OrderMenuRestaurantItemComplement::create([
-                        'order_menu_restaurant_item_uuid' => $orderItem->uuid,
-                        'configuration_complement_uuid'  => $compInput['complement_uuid'],
-                        'quantity'                        => $compInput['quantity'] ?? 0,
-                        'menu_uuid'                       => $menu->uuid,
-                        'reservation_uuid'                => $order->reservation_uuid,
-                        'order_menu_restaurant_uuid'      => $order->uuid,
-                        'created_by'                      => $auth->id,
-                        'updated_by'                      => $auth->id,
-                    ]);
-                }
+        if (empty($m['complements']) || !is_array($m['complements'])) {
+            return;
+        }
+
+        foreach ($m['complements'] as $compInput) {
+
+            $existing = OrderMenuRestaurantItemComplement::where([
+                'order_menu_restaurant_item_uuid' => $orderItem->uuid,
+                'configuration_complement_uuid' => $compInput['complement_uuid'],
+            ])->first();
+
+            if ($existing) {
+
+                // UPDATE (au lieu de delete)
+                $existing->update([
+                    'quantity' => $compInput['quantity'] ?? 0,
+                    'updated_by' => $auth->id,
+                ]);
+
+            } else {
+
+                // CREATE
+                OrderMenuRestaurantItemComplement::create([
+                    'order_menu_restaurant_item_uuid' => $orderItem->uuid,
+                    'configuration_complement_uuid'  => $compInput['complement_uuid'],
+                    'quantity' => $compInput['quantity'] ?? 0,
+                    'menu_uuid' => $menu->uuid,
+                    'reservation_uuid' => $order->reservation_uuid,
+                    'order_menu_restaurant_uuid' => $order->uuid,
+                    'created_by' => $auth->id,
+                    'updated_by' => $auth->id,
+                ]);
             }
         }
     }
@@ -3422,7 +3505,69 @@ class OrderMenuRestaurantController extends Controller
                 'drinks.*.drink_restaurant_uuid' => ['required', 'uuid', 'exists:restaurant_drink_configurations,uuid'],
                 'drinks.*.quantity' => ['required', 'numeric', 'min:1'],
                 'drinks.*.unit_price' => ['nullable', 'numeric', 'min:0'],
+
+                'sales_category_type' => ['required', new Enum(ChooseRubriquesSall::class)],
+                'sales_category_uuid' => ['nullable', 'uuid', 'exists:sales_categories,uuid'],
             ]);
+
+
+            $salesCategoryUuid = null;
+            $now = Carbon::now('Africa/Douala');
+            $orderTimeStr = $now->format('H:i:s');
+
+            Log::info('ORDER DEBUG (BASED ON NOW)', [
+                'type_frontend' => $validated['sales_category_type'],
+                'current_server_datetime' => $now->toDateTimeString(),
+                'extracted_time_str' => $orderTimeStr,
+            ]);
+
+            if ($validated['sales_category_type'] === ChooseRubriquesSall::MANUAL->value) {
+                $salesCategoryUuid = $validated['sales_category_uuid'] ?? null;
+                Log::info('MANUAL SELECTED', ['uuid' => $salesCategoryUuid]);
+            } else {
+                $salesCategories = SalesCategory::where('type', 'time_based')
+                    ->where('is_active', true)
+                    ->get();
+
+                Log::info('CATEGORIES TROUVEES EN BDD: ' . $salesCategories->count());
+
+                foreach ($salesCategories as $category) {
+                    $startStr = Carbon::parse($category->start_time)->format('H:i:s');
+                    $endStr   = Carbon::parse($category->end_time)->format('H:i:s');
+
+                    Log::info("Verification: {$orderTimeStr} entre-t-il dans {$startStr} -> {$endStr} ?");
+
+                    // 🔥 CAS NORMAL : Intervalle classique sur la même journée (ex: 03:00:00 -> 10:59:59)
+                    if ($startStr <= $endStr) {
+                        if ($orderTimeStr >= $startStr && $orderTimeStr <= $endStr) {
+                            $salesCategoryUuid = $category->uuid;
+                            Log::info("MATCH TROUVÉ : " . $category->name);
+                            break;
+                        }
+                    }
+                    else {
+                        if ($orderTimeStr >= $startStr || $orderTimeStr <= $endStr) {
+                            $salesCategoryUuid = $category->uuid;
+                            Log::info("MATCH TROUVÉ (Minuit) : " . $category->name);
+                            break;
+                        }
+                    }
+                }
+
+                if (!$salesCategoryUuid) {
+                    Log::warning("Aucun match horaire trouvé. Passage au premier fallback 'time_based'.");
+                    $salesCategoryUuid = SalesCategory::where('type', 'time_based')
+                        ->where('is_active', true)
+                        ->orderBy('start_time')
+                        ->first()?->uuid;
+                }
+
+                if (!$salesCategoryUuid) {
+                    $salesCategoryUuid = SalesCategory::where('is_active', true)->first()?->uuid;
+                }
+
+                Log::info('FINAL VALUE ASSIGNED', ['uuid' => $salesCategoryUuid]);
+            }
 
             $order->update([
                 'type_clients_for_payment' => $validated['type_clients_for_payment'],
@@ -3436,6 +3581,8 @@ class OrderMenuRestaurantController extends Controller
                 'full_name' => $validated['full_name'] ?? null,
                 'full_name_for_client_free' => $validated['full_name_for_client_free'] ?? null,
                 'updated_by' => $auth->id,
+                'sales_category_uuid' => $salesCategoryUuid,
+                'sales_category_type' => $validated['sales_category_type'],
             ]);
 
 
@@ -5944,6 +6091,7 @@ class OrderMenuRestaurantController extends Controller
                 'drinks.cancelForNewUpdateBy:id,nom_utilisateur',
                 'drinks.rejectedAfterValidationByUser:id,nom_utilisateur',
                 'items.complements.complement',
+                'salesCategory:uuid,name,start_time,end_time'
             ])
                 ->where('uuid', $uuid)
                 ->firstOrFail();
@@ -10050,7 +10198,7 @@ class OrderMenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::generate_facture
-     * @permission_desc Générer les factures des commandes
+     * @permission_desc Imprimer les factures des commandes
      */
     public function generate_facture(Request $request, string $uuid)
     {
@@ -10101,6 +10249,119 @@ class OrderMenuRestaurantController extends Controller
                 path: $filePath,
                 format: [80, 200],
                 margins: [5, 2, 5, 2],
+                footer: $footer
+            );
+
+            DB::commit();
+
+            if (!file_exists($filePath)) {
+                return response()->json(['message' => "Le fichier PDF n'a pas été généré."], 500);
+            }
+
+            // Chercher si le document existe déjà
+            $pdf = PdfDocument::where('order_uuid', $order->uuid)
+                ->where('name', 'DETAILS-ORDERS')
+                ->first();
+
+            // S'il existe → on met à jour le fichier
+            if ($pdf) {
+                $pdf->update([
+                    'path'       => $filePath,
+                    'filename'   => $fileName,
+                    'updated_by' => $auth->id,
+                ]);
+            }
+            // Sinon → on crée un nouvel enregistrement
+            else {
+                $pdf = PdfDocument::create([
+                    'name'       => 'DETAILS-ORDERS-RESTAURANTS',
+                    'order_uuid' => $order->uuid,
+                    'disk'       => 'public',
+                    'path'       => $filePath,
+                    'filename'   => $fileName,
+                    'mimetype'   => 'application/pdf',
+                    'extension'  => 'pdf',
+                    'created_by' => auth()->id(),
+                ]);
+            }
+
+
+            $pdfContent = file_get_contents($filePath);
+            $base64     = base64_encode($pdfContent);
+
+            return response()->json([
+                'data'     => $data,
+                'base64'   => $base64,
+                'url'      => $filePath,
+                'filename' => $fileName,
+                'document' => $pdf,
+            ], 200);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            \Log::error("Erreur génération PDF commande : " . $e->getMessage());
+
+            return response()->json([
+                'status'  => 'error',
+                'message' => "Erreur lors de la génération du fichier PDF.",
+                'details' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+
+
+
+    public function generate_factureA4(Request $request, string $uuid)
+    {
+        $auth = auth()->user();
+        try {
+            DB::beginTransaction();
+
+            $order = OrderMenuRestaurant::with([
+                'restaurantTable:uuid,code,table_number',
+                'creator:id,nom_utilisateur',
+                'updater:id,nom_utilisateur',
+                'validator:id,nom_utilisateur',
+                'cancelor:id,nom_utilisateur',
+                'partners_restaurant:uuid,code,full_name',
+                'restaurant_room:uuid,code,type',
+                'menu_restaurant:uuid,code,name',
+                'free_client_for_restaurant:uuid,code,full_name',
+                'items.menu:uuid,code,name,have_complements,type_complement_menu,have_complements,have_drinks',
+                'items.virtuals.product:uuid,name,code',
+                'items.rejector:id,nom_utilisateur',
+                'items.statuses',
+                'drinks.drinkConfig.product',
+                'drinks.rejector:id,nom_utilisateur',
+                'drinks.statuses',
+                'items.complements.complement',
+            ])->findOrFail($uuid);
+
+
+            $fileName   = strtoupper('COMMANDE-RESTAURANTS-N°-' . strtoupper($order->code) . '-'. '.pdf');
+            $folderPath = 'storage/details-orders-restaurants-a4/' . $order->uuid;
+            $filePath   = $folderPath . '/' . $fileName;
+
+            if (!is_dir($folderPath)) {
+                if (!mkdir($folderPath, 0755, true) && !is_dir($folderPath)) {
+                    throw new \RuntimeException("Impossible de créer le répertoire : {$folderPath}");
+                }
+            }
+
+
+            $data = ['order' => $order];
+
+            $footer = 'pdfs.reports.factures.footer';
+
+            save_browser_shot_pdf(
+                view: 'pdfs.details-orders-restaurants-a4.details-orders-restaurants-a4',
+                data: $data,
+                folderPath: $folderPath,
+                path: $filePath,
+                format: 'A4',
+                margins: [10, 10, 10, 10],
                 footer: $footer
             );
 

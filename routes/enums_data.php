@@ -7,3 +7,4 @@ Route::get('enums/room_type', [\App\Http\Controllers\EnumController::class, 'roo
 Route::get('enums/menu_orders_status', [\App\Http\Controllers\EnumController::class, 'menu_orders_status']);
 Route::get('menus_orders_actions', [\App\Http\Controllers\MenuOrdersController::class, 'MenuOrderStatus']);
 Route::get('enums/menus_complement_type', [\App\Http\Controllers\MenuOrdersController::class, 'MenuComplementType']);
+Route::get('enums/rubriques_salle_types', [\App\Http\Controllers\EnumController::class, 'ChooseRubriquesSall']);

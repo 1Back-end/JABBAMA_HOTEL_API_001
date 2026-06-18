@@ -450,8 +450,7 @@ class ProductController extends Controller
                 }
             }
             if ($request->hasFile('image_file')) {
-                // Optionnel : Supprimer l'ancien média physiquement ici si nécessaire
-                $product->medias()->delete(); // Supprime l'enregistrement en base
+                $product->medias()->delete();
 
                 $file = $request->file('image_file');
                 $filename = time() . '_' . $file->getClientOriginalName();

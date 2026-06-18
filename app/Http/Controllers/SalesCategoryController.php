@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\ChooseRubriquesSall;
 use App\Models\SalesCategory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 /**
  * @permission_category Gestion des rubriques de ventes
@@ -46,6 +48,35 @@ class SalesCategoryController extends Controller
     }
 
 
+    public function GetCategoryManualSall(Request $request)
+    {
+        $auth = auth()->user();
+        $perPage = $request->input('limit', 5);
+        $page = $request->input('page', 1);
+
+        $query = SalesCategory::with([
+            'creator',
+            'updater',
+        ])->where('type', ChooseRubriquesSall::MANUAL->value);
+
+        if ($search = trim($request->input('search'))) {
+            $query->where(function ($q) use ($search) {
+                $q->where('uuid', 'like', "%{$search}%")
+                    ->orWhere('name', 'like', "%{$search}%")
+                    ->orWhere('code', 'like', "%{$search}%");
+            });
+        }
+        $data = $query->latest()->paginate($perPage, ['*'], 'page', $page);
+
+        return response()->json([
+            'data'         => $data->items(),
+            'current_page' => $data->currentPage(),
+            'last_page'    => $data->lastPage(),
+            'total'        => $data->total(),
+        ]);
+    }
+
+
     /**
      * Display a listing of the resource.
      * @permission SalesCategoryController::store
@@ -56,7 +87,6 @@ class SalesCategoryController extends Controller
         try {
 
             $validated = $request->validate([
-                'code' => ['required', 'string', 'max:50', 'unique:sales_categories,code'],
                 'name' => ['required', 'string', 'max:150', 'unique:sales_categories,name'],
                 'type' => ['required', 'in:time_based,manual'],
                 'start_time' => ['nullable', 'date_format:H:i'],
@@ -96,7 +126,7 @@ class SalesCategoryController extends Controller
 
             // ✔️ Création
             $salesCategory = SalesCategory::create([
-                'code' => strtoupper($validated['code']),
+                'code' => Str::slug($validated['name'], '_'),
                 'name' => $validated['name'],
                 'type' => $validated['type'],
                 'start_time' => $validated['start_time'],
@@ -153,13 +183,6 @@ class SalesCategoryController extends Controller
             }
 
             $validated = $request->validate([
-                'code' => [
-                    'required',
-                    'string',
-                    'max:50',
-                    Rule::unique('sales_categories', 'code')
-                        ->ignore($salesCategory->uuid, 'uuid')
-                ],
                 'name' => [
                     'required',
                     'string',
@@ -205,7 +228,7 @@ class SalesCategoryController extends Controller
 
             // ✔️ UPDATE
             $salesCategory->update([
-                'code' => strtoupper($validated['code']),
+                'code' => Str::slug($validated['name'], '_'),
                 'name' => $validated['name'],
                 'type' => $validated['type'],
                 'start_time' => $validated['start_time'],

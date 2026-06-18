@@ -33,8 +33,8 @@ class SalesCategory extends Model
 
     protected $casts = [
         'is_active' => 'boolean',
-        'start_time' => 'datetime:H:i:s',
-        'end_time' => 'datetime:H:i:s',
+        'start_time' => 'string',
+        'end_time' => 'string',
     ];
     protected $appends = [
         'duration_minutes',
@@ -109,5 +109,9 @@ class SalesCategory extends Model
     public function isManual(): bool
     {
         return $this->type === 'manual';
+    }
+    public function orders()
+    {
+        return $this->hasMany(OrderMenuRestaurant::class, 'sales_category_uuid', 'uuid');
     }
 }

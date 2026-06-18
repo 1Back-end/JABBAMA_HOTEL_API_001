@@ -23,6 +23,7 @@ class CashReceiptType extends Model
         'code',
         'name',
         'is_linked_to_turnover',
+        'have_family',
         'status',
         'created_by',
         'updated_by',
@@ -30,6 +31,7 @@ class CashReceiptType extends Model
 
     protected $casts = [
         'is_linked_to_turnover' => 'boolean',
+        'have_family' => 'boolean',
         'status' => 'boolean',
     ];
 
@@ -50,6 +52,20 @@ class CashReceiptType extends Model
     public function updater()
     {
         return $this->belongsTo(User::class, 'updated_by');
+    }
+
+    public function families()
+    {
+        return $this->hasMany(
+            CashReceiptFamily::class,
+            'cash_receipt_type_uuid',
+            'uuid'
+        );
+    }
+
+    public function cashReceiptFamily()
+    {
+        return $this->hasMany(CashCollectionFamily::class, 'cash_receipt_type_uuid');
     }
 
 }
