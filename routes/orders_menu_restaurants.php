@@ -51,3 +51,4 @@ Route::delete('/orders_menu_restaurants/remove_abandoned_reservation', [\App\Htt
 Route::post('/orders_menu_restaurants/update_activity', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'updateActivity']);
 Route::post('/orders_menu_restaurants/update_orders_activity', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'updateActivityForOrder']);
 Route::post('/orders_menu_restaurants/clean_reservations_abandoned', [\App\Http\Controllers\RestaurantMaintenanceController::class, 'cleanAbandoned']);
+Route::get('/orders_menu_restaurants/{uuid}/facture', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'generate_facture']);

@@ -160,7 +160,7 @@ class RestaurantRoomController extends Controller
             $validated = $request->validate([
                 'is_active' => ['required', 'boolean'],
             ]);
-            
+
             $room->update([
                 'is_active' => $validated['is_active'],
                 'updated_by' => $auth->id,

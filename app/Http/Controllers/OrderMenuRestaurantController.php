@@ -10047,4 +10047,121 @@ class OrderMenuRestaurantController extends Controller
 
 
 
+    /**
+     * Display a listing of the resource.
+     * @permission OrderMenuRestaurantController::generate_facture
+     * @permission_desc Générer les factures des commandes
+     */
+    public function generate_facture(Request $request, string $uuid)
+    {
+        $auth = auth()->user();
+        try {
+            DB::beginTransaction();
+
+            $order = OrderMenuRestaurant::with([
+                'restaurantTable:uuid,code,table_number',
+                'creator:id,nom_utilisateur',
+                'updater:id,nom_utilisateur',
+                'validator:id,nom_utilisateur',
+                'cancelor:id,nom_utilisateur',
+                'partners_restaurant:uuid,code,full_name',
+                'restaurant_room:uuid,code,type',
+                'menu_restaurant:uuid,code,name',
+                'free_client_for_restaurant:uuid,code,full_name',
+                'items.menu:uuid,code,name,have_complements,type_complement_menu,have_complements,have_drinks',
+                'items.virtuals.product:uuid,name,code',
+                'items.rejector:id,nom_utilisateur',
+                'items.statuses',
+                'drinks.drinkConfig.product',
+                'drinks.rejector:id,nom_utilisateur',
+                'drinks.statuses',
+                'items.complements.complement',
+            ])->findOrFail($uuid);
+
+
+            $fileName   = strtoupper('COMMANDE-RESTAURANTS-N°-' . strtoupper($order->code) . '-'. '.pdf');
+            $folderPath = 'storage/details-orders-restaurants/' . $order->uuid;
+            $filePath   = $folderPath . '/' . $fileName;
+
+            if (!is_dir($folderPath)) {
+                if (!mkdir($folderPath, 0755, true) && !is_dir($folderPath)) {
+                    throw new \RuntimeException("Impossible de créer le répertoire : {$folderPath}");
+                }
+            }
+
+
+            $data = ['order' => $order];
+
+            $footer = 'pdfs.reports.factures.footer';
+
+            save_browser_shot_pdf(
+                view: 'pdfs.details-orders-restaurants.details-orders-restaurants',
+                data: $data,
+                folderPath: $folderPath,
+                path: $filePath,
+                format: [80, 200],
+                margins: [5, 2, 5, 2],
+                footer: $footer
+            );
+
+            DB::commit();
+
+            if (!file_exists($filePath)) {
+                return response()->json(['message' => "Le fichier PDF n'a pas été généré."], 500);
+            }
+
+            // Chercher si le document existe déjà
+            $pdf = PdfDocument::where('order_uuid', $order->uuid)
+                ->where('name', 'DETAILS-ORDERS')
+                ->first();
+
+            // S'il existe → on met à jour le fichier
+            if ($pdf) {
+                $pdf->update([
+                    'path'       => $filePath,
+                    'filename'   => $fileName,
+                    'updated_by' => $auth->id,
+                ]);
+            }
+            // Sinon → on crée un nouvel enregistrement
+            else {
+                $pdf = PdfDocument::create([
+                    'name'       => 'DETAILS-ORDERS-RESTAURANTS',
+                    'order_uuid' => $order->uuid,
+                    'disk'       => 'public',
+                    'path'       => $filePath,
+                    'filename'   => $fileName,
+                    'mimetype'   => 'application/pdf',
+                    'extension'  => 'pdf',
+                    'created_by' => auth()->id(),
+                ]);
+            }
+
+
+            $pdfContent = file_get_contents($filePath);
+            $base64     = base64_encode($pdfContent);
+
+            return response()->json([
+                'data'     => $data,
+                'base64'   => $base64,
+                'url'      => $filePath,
+                'filename' => $fileName,
+                'document' => $pdf,
+            ], 200);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            \Log::error("Erreur génération PDF commande : " . $e->getMessage());
+
+            return response()->json([
+                'status'  => 'error',
+                'message' => "Erreur lors de la génération du fichier PDF.",
+                'details' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+
+
 }
