@@ -24,7 +24,8 @@ class CashCollectionFamily extends Model
         'description',
         'is_active',
         'created_by',
-        'updated_by'
+        'updated_by',
+        'cash_receipt_type_uuid'
     ];
 
     protected $casts = [
@@ -59,5 +60,14 @@ class CashCollectionFamily extends Model
     public function updater()
     {
         return $this->belongsTo(User::class, 'updated_by');
+    }
+    public function cashReceiptType()
+    {
+        return $this->belongsTo(CashReceiptType::class, 'cash_receipt_type_uuid');
+    }
+
+    public function SubcashCollectionFamily()
+    {
+        return $this->belongsTo(SubCashCollectionFamily::class, 'cash_collection_family_uuid');
     }
 }

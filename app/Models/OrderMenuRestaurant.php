@@ -66,7 +66,9 @@ class OrderMenuRestaurant extends Model
         'editing_by',
         'editing_started_at',
         'rollback_at',
-        'is_restored'
+        'is_restored',
+        'sales_category_type',
+        'sales_category_uuid'
     ];
 
     /**
@@ -265,6 +267,10 @@ class OrderMenuRestaurant extends Model
     public function complementVirtualTemps()
     {
         return $this->hasMany(ComplementVirtualTemp::class, 'order_menu_restaurant_uuid', 'uuid');
+    }
+    public function salesCategory()
+    {
+        return $this->belongsTo(SalesCategory::class, 'sales_category_uuid', 'uuid');
     }
 
 }

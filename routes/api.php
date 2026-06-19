@@ -58,6 +58,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
          | GESTION DU RESTAURANT
          |---------------------------------------------------------------------------
        */
+        require __DIR__ . '/cash_receipt_families.php';
         require __DIR__ . '/cash_collection_families.php';
         require __DIR__ . '/sales_categories.php';
         require __DIR__ . '/restaurant_expense_types.php';

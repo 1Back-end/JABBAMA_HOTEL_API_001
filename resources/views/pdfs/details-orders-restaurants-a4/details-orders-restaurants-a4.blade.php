@@ -170,8 +170,8 @@
                 </thead>
                 <tbody>
                 @foreach($order->items as $index => $item)
-                    <tr style="border-bottom: 1px dashed #dddddd; width: 100%; {{ $item->is_rejected ? 'color: #777777;' : '' }}">
-                        <td class="text-uppercase" style="padding: 3px 0; vertical-align: top; word-wrap: break-word;">
+                    <tr style="border-bottom: 1px dashed #dddddd; width: 100%;">
+                        <td class="text-uppercase" style="padding: 3px 0; font-size: 12px; vertical-align: top; word-wrap: break-word;">
                             {{ $item->menu->name ?? 'Menu inconnu' }}
 
                             @if(isset($item->complements) && count($item->complements) > 0)
@@ -216,8 +216,8 @@
                 </thead>
                 <tbody>
                 @foreach($order->drinks as $index => $drink)
-                    <tr style="border-bottom: 1px dashed #dddddd; width: 100%; {{ $drink->is_rejected ? 'color: #777777;' : '' }}">
-                        <td class="text-uppercase" style="padding: 3px 0; vertical-align: top; word-wrap: break-word;">
+                    <tr style="border-bottom: 1px dashed #dddddd; width: 100%;">
+                        <td class="text-uppercase" style="padding: 3px 0; font-size: 12px; vertical-align: top; word-wrap: break-word;">
                             {{ $drink->drink_config->product->name ?? $drink->drink_config->drink_name ?? $drink->drinkConfig->product->name ?? $drink->drinkConfig->drink_name ?? 'Boisson inconnue' }}
                         </td>
                         <td class="text-center" style="padding: 3px 0; vertical-align: top;">
