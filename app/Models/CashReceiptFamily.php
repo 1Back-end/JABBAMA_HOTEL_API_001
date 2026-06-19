@@ -25,6 +25,10 @@ class CashReceiptFamily extends Model
         'name',
         'code',
         'cash_receipt_type_uuid',
+        'indexation',
+        'is_family',
+        'is_sub_family',
+        'description',
         'created_by',
         'updated_by',
     ];
