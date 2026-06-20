@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\CashReceiptFamily;
 use App\Models\CashReceiptType;
 use App\Models\Category;
+use App\Models\SubCashCollectionFamily;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -13,7 +14,7 @@ use Illuminate\Validation\Rule;
 
 
 /**
- * @permission_category Gestion des types d'encaissements
+ * @permission_category Gestion des catégories d'encaissements
  * @permission_module Gestion du restaurant
  */
 
@@ -22,7 +23,7 @@ class CashReceiptTypeController extends Controller
     /**
      * Display a listing of the resource.
      * @permission CashReceiptTypeController::index
-     * @permission_desc Afficher la liste des types d'encaissements
+     * @permission_desc Afficher la liste des catégories d'encaissements
      */
     public function index(Request $request)
     {
@@ -56,7 +57,7 @@ class CashReceiptTypeController extends Controller
     /**
      * Display a listing of the resource.
      * @permission CashReceiptTypeController::store
-     * @permission_desc Créer les types d'encaissements
+     * @permission_desc Créer les catégories d'encaissements
      */
     public function store(Request $request)
     {
@@ -105,7 +106,7 @@ class CashReceiptTypeController extends Controller
     /**
      * Display a listing of the resource.
      * @permission CashReceiptTypeController::update
-     * @permission_desc Modifier les types d'encaissements
+     * @permission_desc Modifier les catégories d'encaissements
      */
     public function update(Request $request, string $uuid)
     {
@@ -154,7 +155,7 @@ class CashReceiptTypeController extends Controller
     /**
      * Display a listing of the resource.
      * @permission CashReceiptTypeController::show
-     * @permission_desc Afficher les détails d'un type d'encaissement
+     * @permission_desc Afficher les détails d'une catégorie d'encaissement
      */
     public function show(string $uuid)
     {
@@ -176,7 +177,7 @@ class CashReceiptTypeController extends Controller
     /**
      * Display a listing of the resource.
      * @permission CashReceiptTypeController::updateStatus
-     * @permission_desc Acriver/Désactiver les types d'encaissements
+     * @permission_desc Acriver/Désactiver les catégories d'encaissements
      */
     public function updateStatus(Request $request, string $uuid)
     {
@@ -200,7 +201,7 @@ class CashReceiptTypeController extends Controller
     /**
      * Display a listing of the resource.
      * @permission CashReceiptTypeController::store_family
-     * @permission_desc Créer une famille d'encaissement
+     * @permission_desc Créer une sous catégorie d'encaissement pour les activités liées au restaurant
      */
     public function store_family(Request $request)
     {
@@ -208,6 +209,7 @@ class CashReceiptTypeController extends Controller
             'cash_receipt_type_uuid' => ['required', 'uuid', 'exists:cash_receipt_types,uuid'],
             'families' => ['required', 'array', 'min:1'],
             'families.*.name' => ['required', 'string', 'max:255'],
+            'families.*.indexation' => ['required'],
         ]);
 
         DB::beginTransaction();
@@ -217,54 +219,55 @@ class CashReceiptTypeController extends Controller
             $createdBy = auth()->id();
             $typeUuid = $validated['cash_receipt_type_uuid'];
 
-            // 🔥 1. SUPPRESSION FORCÉE (IMPORTANT)
-            CashReceiptFamily::where('cash_receipt_type_uuid', $typeUuid)->delete();
+            $incomingNames = collect($validated['families'])
+                ->map(fn($f) => strtolower(trim($f['name'])))
+                ->values();
 
-            // 🔥 OPTION BONUS : sécurité anti doublon global (très important)
-            DB::table('cash_receipt_families')
-                ->where('cash_receipt_type_uuid', $typeUuid)
-                ->delete();
+            $existing = CashReceiptFamily::where('cash_receipt_type_uuid', $typeUuid)
+                ->where('is_family', true)
+                ->whereIn(DB::raw('LOWER(name)'), $incomingNames)
+                ->pluck('name')
+                ->map(fn($n) => strtoupper($n))
+                ->toArray();
 
-            $data = [];
+            // ❌ SI DOUBLONS → STOP AVANT INSERT
+            if (!empty($existing)) {
+                DB::rollBack();
 
+                return response()->json([
+                    'status' => 'warning',
+                    'message' => 'Certaines familles existent déjà',
+                    'data' => $existing
+                ], 409);
+            }
+
+            // ✅ INSERT SEULEMENT SI TOUT EST OK
             foreach ($validated['families'] as $family) {
 
                 $name = strtoupper(trim($family['name']));
                 $baseCode = Str::slug($name, '_');
 
-                $data[] = [
+                CashReceiptFamily::create([
                     'uuid' => (string) Str::uuid(),
                     'name' => $name,
                     'code' => $baseCode,
+                    'indexation' => $family['indexation'],
                     'cash_receipt_type_uuid' => $typeUuid,
                     'created_by' => $createdBy,
                     'updated_by' => $createdBy,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ];
-            }
-
-            // 🔥 2. INSERT SAFE
-            if (!empty($data)) {
-                DB::table('cash_receipt_families')->insert($data);
-            }
-
-            // 🔥 3. UPDATE PARENT
-            CashReceiptType::where('uuid', $typeUuid)
-                ->update([
-                    'have_family' => true,
-                    'updated_by' => $createdBy,
-                    'updated_at' => now(),
+                    'is_family' => true,
+                    'is_sub_family' => false,
                 ]);
+            }
 
             DB::commit();
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Sync complète réussie',
+                'message' => 'Familles enregistrées avec succès',
             ]);
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
 
             DB::rollBack();
 
@@ -274,4 +277,165 @@ class CashReceiptTypeController extends Controller
             ], 500);
         }
     }
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission CashReceiptTypeController::store_sub_family
+     * @permission_desc Créer une sous catégorie d'encaissement pour les activités non liées au restaurant
+     */
+        public function store_sub_family(Request $request)
+        {
+        $validated = $request->validate([
+            'cash_receipt_type_uuid' => ['required', 'uuid', 'exists:cash_receipt_types,uuid'],
+            'sub_families' => ['required', 'array', 'min:1'],
+
+            'sub_families.*.name' => ['required', 'string', 'max:255'],
+            'sub_families.*.description' => ['nullable', 'string'],
+        ]);
+
+        DB::beginTransaction();
+
+        try {
+
+            $createdBy = auth()->id();
+            $typeUuid = $validated['cash_receipt_type_uuid'];
+
+            $incomingNames = collect($validated['sub_families'])
+                ->map(fn($s) => strtolower(trim($s['name'])))
+                ->values();
+
+            // 🔴 EXISTANTS EN BASE
+            $existing = CashReceiptFamily::where('cash_receipt_type_uuid', $typeUuid)
+                ->where('is_sub_family', true)
+                ->whereIn(DB::raw('LOWER(name)'), $incomingNames)
+                ->pluck('name')
+                ->map(fn($n) => strtoupper($n))
+                ->toArray();
+
+            // ❌ STOP SI DOUBLONS
+            if (!empty($existing)) {
+                DB::rollBack();
+
+                return response()->json([
+                    'status' => 'warning',
+                    'message' => 'Certaines sous-familles existent déjà',
+                    'data' => $existing
+                ], 409);
+            }
+
+            // ✅ INSERT
+            foreach ($validated['sub_families'] as $sub) {
+
+                $name = trim($sub['name']);
+                $baseCode = Str::slug($name, '_');
+
+                CashReceiptFamily::create([
+                    'uuid' => (string) Str::uuid(),
+                    'cash_receipt_type_uuid' => $typeUuid,
+                    'name' => $name,
+                    'code' => $baseCode,
+                    'description' => $sub['description'] ?? null,
+                    'is_family' => false,
+                    'is_sub_family' => true,
+                    'created_by' => $createdBy,
+                    'updated_by' => $createdBy,
+                ]);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Sous-familles enregistrées avec succès',
+            ]);
+
+        } catch (\Throwable $e) {
+
+            DB::rollBack();
+
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission CashReceiptTypeController::updateStatusFamilyAndSubFamily
+     * @permission_desc Activer/Désactiver sous catégorie d'encaissement
+     */
+    public function updateStatusFamilyAndSubFamily(Request $request, $uuid)
+    {
+        $auth = auth()->user();
+        $request->validate([
+            'is_active' => 'required|boolean',
+        ],[
+            'is_active.required' => 'Le statut est obligatoire.',
+        ]);
+        $type = CashReceiptFamily::where('uuid', $uuid)->first();
+        $type->is_active = $request->is_active;
+        $type->updated_by = $auth->id;
+        $type->save();
+        return response()->json([
+            'success' => true,
+            "message" => "Statut modifié avec succès"
+        ]);
+    }
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission CashReceiptTypeController::get_all_families_and_sub_families
+     * @permission_desc Afficher la liste des sous catégories d'encaissements
+     */
+    public function get_all_families_and_sub_families(Request $request)
+    {
+        $perPage = $request->input('limit', 25);
+        $page = $request->input('page', 1);
+
+        $query = CashReceiptFamily::with([
+            'creator',
+            'updater',
+            'cashReceiptType'
+        ]);
+
+        if ($search = trim($request->input('search'))) {
+            $query->where(function ($q) use ($search) {
+                $q->where('uuid', 'like', "%{$search}%")
+                    ->orWhere('name', 'like', "%{$search}%")
+                    ->orWhere('code', 'like', "%{$search}%")
+                    ->orWhere('indexation', 'like', "%{$search}%");
+            });
+        }
+
+        $families = $query->latest()->get();
+
+        // 🔥 GROUP BY TYPE
+        $grouped = $families->groupBy(fn($item) => $item->cashReceiptType->uuid);
+
+        $result = $grouped->map(function ($items) {
+
+            return [
+                'cash_receipt_type' => $items->first()->cashReceiptType,
+                'families' => $items->filter(fn($i) => $i->is_family == 1)->values(),
+                'sub_families' => $items->filter(fn($i) => $i->is_sub_family == 1)->values(),
+            ];
+        })->values();
+
+        $paginated = $result->forPage($page, $perPage);
+
+        return response()->json([
+            'data'         => $paginated->values(),
+            'current_page' => $page,
+            'last_page'    => ceil($result->count() / $perPage),
+            'total'        => $result->count(),
+        ]);
+    }
+
+
+
+
 }
