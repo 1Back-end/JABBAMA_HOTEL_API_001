@@ -281,73 +281,86 @@ class CashReceiptTypeController extends Controller
 
     /**
      * Display a listing of the resource.
-     * @permission CashReceiptTypeController::store_sub_family
-     * @permission_desc Créer une sous catégorie d'encaissement pour les activités non liées au restaurant
+     * @permission CashReceiptTypeController::update_family
+     * @permission_desc Modifier une sous catégorie d'encaissement pour les activités liées au restaurant
      */
-        public function store_sub_family(Request $request)
-        {
+    public function update_family(Request $request)
+    {
         $validated = $request->validate([
             'cash_receipt_type_uuid' => ['required', 'uuid', 'exists:cash_receipt_types,uuid'],
-            'sub_families' => ['required', 'array', 'min:1'],
+            'families' => ['required', 'array', 'min:1'],
 
-            'sub_families.*.name' => ['required', 'string', 'max:255'],
-            'sub_families.*.description' => ['nullable', 'string'],
+            'families.*.uuid' => ['nullable', 'uuid', 'exists:cash_receipt_families,uuid'],
+            'families.*.name' => ['required', 'string', 'max:255'],
+            'families.*.indexation' => ['required', 'string'],
         ]);
 
         DB::beginTransaction();
 
         try {
 
-            $createdBy = auth()->id();
+            $userId = auth()->id();
             $typeUuid = $validated['cash_receipt_type_uuid'];
 
-            $incomingNames = collect($validated['sub_families'])
-                ->map(fn($s) => strtolower(trim($s['name'])))
-                ->values();
+            $keptUuids = [];
 
-            // 🔴 EXISTANTS EN BASE
-            $existing = CashReceiptFamily::where('cash_receipt_type_uuid', $typeUuid)
-                ->where('is_sub_family', true)
-                ->whereIn(DB::raw('LOWER(name)'), $incomingNames)
-                ->pluck('name')
-                ->map(fn($n) => strtoupper($n))
-                ->toArray();
+            foreach ($validated['families'] as $family) {
 
-            // ❌ STOP SI DOUBLONS
-            if (!empty($existing)) {
-                DB::rollBack();
+                $uuid = $family['uuid'] ?? null;
+                $name = strtoupper(trim($family['name']));
 
-                return response()->json([
-                    'status' => 'warning',
-                    'message' => 'Certaines sous-familles existent déjà',
-                    'data' => $existing
-                ], 409);
+
+                $exists = CashReceiptFamily::where('cash_receipt_type_uuid', $typeUuid)
+                    ->where('is_family', true)
+                    ->whereRaw('LOWER(name) = ?', [strtolower($family['name'])])
+                    ->when($uuid, fn($q) => $q->where('uuid', '!=', $uuid))
+                    ->exists();
+
+                if ($exists) {
+                    throw new \Exception("La famille '{$family['name']}' existe déjà.");
+                }
+
+                if ($uuid) {
+
+                    $model = CashReceiptFamily::where('uuid', $uuid)->first();
+
+                    if (!$model) {
+                        throw new \Exception("Famille introuvable: {$uuid}");
+                    }
+
+                    $model->update([
+                        'name' => $name,
+                        'code' => Str::slug($name, '_') . '_' . substr($uuid ?? Str::uuid(), 0, 8),
+                        'indexation' => $family['indexation'],
+                        'cash_receipt_type_uuid' => $typeUuid,
+                        'updated_by' => $userId,
+                    ]);
+
+                } else {
+
+                    $model = CashReceiptFamily::create([
+                        'uuid' => (string) Str::uuid(),
+                        'name' => $name,
+                        'code' => Str::slug($name, '_') . '_' . substr($uuid ?? Str::uuid(), 0, 8),
+                        'indexation' => $family['indexation'],
+                        'cash_receipt_type_uuid' => $typeUuid,
+                        'created_by' => $userId,
+                        'updated_by' => $userId,
+                        'is_family' => true,
+                        'is_sub_family' => false,
+                        'is_used' => true,
+                    ]);
+                }
+
+                $keptUuids[] = $model->uuid;
             }
 
-            // ✅ INSERT
-            foreach ($validated['sub_families'] as $sub) {
-
-                $name = trim($sub['name']);
-                $baseCode = Str::slug($name, '_');
-
-                CashReceiptFamily::create([
-                    'uuid' => (string) Str::uuid(),
-                    'cash_receipt_type_uuid' => $typeUuid,
-                    'name' => $name,
-                    'code' => $baseCode,
-                    'description' => $sub['description'] ?? null,
-                    'is_family' => false,
-                    'is_sub_family' => true,
-                    'created_by' => $createdBy,
-                    'updated_by' => $createdBy,
-                ]);
-            }
 
             DB::commit();
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Sous-familles enregistrées avec succès',
+                'message' => 'Familles mises à jour avec succès',
             ]);
 
         } catch (\Throwable $e) {
@@ -361,6 +374,251 @@ class CashReceiptTypeController extends Controller
         }
     }
 
+
+    /**
+     * Display a listing of the resource.
+     * @permission CashReceiptTypeController::store_sub_family
+     * @permission_desc Créer une sous catégorie d'encaissement pour les activités non liées au restaurant
+     */
+    public function store_sub_family(Request $request)
+    {
+        $validated = $request->validate([
+            'cash_receipt_type_uuid' => ['required', 'uuid', 'exists:cash_receipt_types,uuid'],
+            'sub_families' => ['required', 'array', 'min:1'],
+
+            'sub_families.*.name' => ['required', 'string', 'max:255'],
+            'sub_families.*.description' => ['nullable', 'string'],
+            'sub_families.*.children' => ['nullable', 'array'],
+        ]);
+
+        DB::beginTransaction();
+
+        try {
+
+            $createdBy = auth()->id();
+            $typeUuid = $validated['cash_receipt_type_uuid'];
+
+            $insertTree = function ($items, $parentUuid = null, $level = 1) use (&$insertTree, $createdBy, $typeUuid) {
+
+                foreach ($items as $item) {
+
+                    $name = trim($item['name']);
+
+                    $exists = CashReceiptFamily::where('cash_receipt_type_uuid', $typeUuid)
+                        ->where('parent_uuid', $parentUuid)
+                        ->where('is_used', true)
+                        ->whereRaw('LOWER(name) = ?', [strtolower($name)])
+                        ->exists();
+
+                    if ($exists) {
+                        throw new \Exception("La catégorie '{$name}' existe déjà");
+                    }
+
+                    $model = CashReceiptFamily::create([
+                        'uuid' => (string) Str::uuid(),
+                        'cash_receipt_type_uuid' => $typeUuid,
+                        'parent_uuid' => $parentUuid,
+                        'level' => $level,
+                        'name' => $name,
+                        'code' => Str::slug($name, '_') . '_' . substr($uuid ?? Str::uuid(), 0, 8),
+                        'description' => $item['description'] ?? null,
+                        'created_by' => $createdBy,
+                        'updated_by' => $createdBy,
+                        'is_family' => false,
+                        'is_sub_family' => true,
+                    ]);
+
+                    if (!empty($item['children'])) {
+                        $insertTree($item['children'], $model->uuid, $level + 1);
+                    }
+                }
+            };
+
+            $insertTree($validated['sub_families']);
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Sous-catégories enregistrées avec succès',
+            ]);
+
+        } catch (\Throwable $e) {
+
+            DB::rollBack();
+
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Display a listing of the resource.
+     * @permission CashReceiptTypeController::Update_Sub_Family
+     * @permission_desc Modifier une sous catégorie d'encaissement pour les activités non liées au restaurant
+     */
+    public function Update_Sub_Family(Request $request)
+    {
+        $validated = $request->validate([
+            'cash_receipt_type_uuid' => ['required', 'uuid', 'exists:cash_receipt_types,uuid'],
+            'sub_families' => ['required', 'array', 'min:1'],
+
+            'sub_families.*.uuid' => ['nullable', 'uuid', 'exists:cash_receipt_families,uuid'],
+            'sub_families.*.name' => ['required', 'string', 'max:255'],
+            'sub_families.*.description' => ['nullable', 'string'],
+            'sub_families.*.children' => ['nullable', 'array'],
+        ]);
+
+        DB::beginTransaction();
+
+        try {
+            $userId = auth()->id();
+            $typeUuid = $validated['cash_receipt_type_uuid'];
+            $keptUuids = [];
+
+            $updateTree = function ($items, $parentUuid = null, $level = 1)
+            use (&$updateTree, $userId, $typeUuid, &$keptUuids) {
+
+                foreach ($items as $item) {
+                    if (!is_array($item) || empty($item['name'])) {
+                        continue;
+                    }
+
+                    $name = trim($item['name']);
+                    $uuid = $item['uuid'] ?? null;
+                    $model = null;
+
+                    // On cherche d'abord par UUID ou par Nom + Parent
+                    if ($uuid) {
+                        $model = CashReceiptFamily::where('uuid', $uuid)->first();
+                    } else {
+                        $model = CashReceiptFamily::where('cash_receipt_type_uuid', $typeUuid)
+                            ->where('parent_uuid', $parentUuid)
+                            ->whereRaw('LOWER(TRIM(name)) = ?', [strtolower($name)])
+                            ->first();
+
+                        if ($model) {
+                            $uuid = $model->uuid;
+                        }
+                    }
+
+                    // ENREGISTREMENT (UPDATE OU CREATE) DIRECT SANS AUCUN BLOCAGE
+                    if ($model) {
+                        $model->update([
+                            'cash_receipt_type_uuid' => $typeUuid,
+                            'parent_uuid' => $parentUuid,
+                            'level' => $level,
+                            'name' => $name,
+                            'code' => Str::slug($name, '_') . '_' . substr($uuid, 0, 8),
+                            'description' => $item['description'] ?? null,
+                            'is_used' => true,
+                            'updated_by' => $userId,
+                        ]);
+                    } else {
+                        $generatedUuid = (string) Str::uuid();
+                        $model = CashReceiptFamily::create([
+                            'uuid' => $generatedUuid,
+                            'cash_receipt_type_uuid' => $typeUuid,
+                            'parent_uuid' => $parentUuid,
+                            'level' => $level,
+                            'name' => $name,
+                            'code' => Str::slug($name, '_') . '_' . substr($generatedUuid, 0, 8),
+                            'description' => $item['description'] ?? null,
+                            'is_family' => false,
+                            'is_sub_family' => true,
+                            'is_used' => true,
+                            'created_by' => $userId,
+                            'updated_by' => $userId,
+                        ]);
+                    }
+
+                    $keptUuids[] = $model->uuid;
+
+                    if (!empty($item['children']) && is_array($item['children'])) {
+                        $updateTree($item['children'], $model->uuid, $level + 1);
+                    }
+                }
+            };
+
+            // START TREE
+            $updateTree($validated['sub_families']);
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Arbre mis à jour correctement',
+            ]);
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            Log::error('UPDATE FAILED', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function toggleStatus(string $uuid)
+    {
+        DB::beginTransaction();
+
+        try {
+
+            $userId = auth()->id();
+
+            $family = CashReceiptFamily::where('uuid', $uuid)->firstOrFail();
+
+            $newStatus = !$family->is_used;
+
+            $this->toggleChildren($family->uuid, $newStatus, $userId);
+
+            // 🔥 update parent lui-même
+            $family->update([
+                'is_used' => $newStatus,
+                'updated_by' => $userId,
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Statut mis à jour avec succès',
+            ]);
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    private function toggleChildren($parentUuid, $status, $userId)
+    {
+        $children = CashReceiptFamily::where('parent_uuid', $parentUuid)->get();
+
+        foreach ($children as $child) {
+
+            $child->update([
+                'is_used' => $status,
+                'updated_by' => $userId,
+            ]);
+
+            // recursion
+            $this->toggleChildren($child->uuid, $status, $userId);
+        }
+    }
 
     /**
      * Display a listing of the resource.
@@ -385,6 +643,21 @@ class CashReceiptTypeController extends Controller
         ]);
     }
 
+    private function buildHierarchy($items, $parentId = null)
+    {
+        return $items
+            ->where('parent_uuid', $parentId)
+            ->where('is_used', true)
+            ->map(function ($item) use ($items) {
+
+                $item->children = $this->buildHierarchy($items, $item->uuid);
+
+                return $item;
+            })
+            ->sortBy('level')
+            ->values();
+    }
+
 
     /**
      * Display a listing of the resource.
@@ -397,8 +670,8 @@ class CashReceiptTypeController extends Controller
         $page = $request->input('page', 1);
 
         $query = CashReceiptFamily::with([
-            'creator',
-            'updater',
+            'creator:id,nom_utilisateur',
+            'updater:id,nom_utilisateur',
             'cashReceiptType'
         ]);
 
@@ -418,10 +691,17 @@ class CashReceiptTypeController extends Controller
 
         $result = $grouped->map(function ($items) {
 
+            $items = $items->values();
+            $subFamiliesCollection = $items->filter(fn($i) => $i->is_sub_family == 1)->values();
+
             return [
                 'cash_receipt_type' => $items->first()->cashReceiptType,
-                'families' => $items->filter(fn($i) => $i->is_family == 1)->values(),
-                'sub_families' => $items->filter(fn($i) => $i->is_sub_family == 1)->values(),
+
+                'families' => $items
+                    ->filter(fn($i) => $i->is_family == 1)
+                    ->values(),
+
+                'sub_families' => $this->buildHierarchy($subFamiliesCollection, null),
             ];
         })->values();
 

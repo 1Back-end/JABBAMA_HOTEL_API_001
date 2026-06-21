@@ -29,9 +29,6 @@ class Medias extends Model
         'validity'
     ];
 
-    /**
-     * Relation morph to parent model (Product, Warehouse, etc.)
-     */
     public function mediable(): MorphTo
     {
         return $this->morphTo();

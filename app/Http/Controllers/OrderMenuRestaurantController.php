@@ -10425,4 +10425,61 @@ class OrderMenuRestaurantController extends Controller
 
 
 
+    public function get_facture_for_clients(Request $request)
+    {
+        $auth = auth()->user();
+
+        $perPage = $request->input('limit', 25);
+        $page = $request->input('page', 1);
+
+        $query = OrderMenuRestaurant::with([
+            'restaurantTable:uuid,code,table_number',
+            'creator:id,nom_utilisateur,email',
+            'updater:id,nom_utilisateur,email',
+            'validator:id,nom_utilisateur,email',
+            'cancelor:id,nom_utilisateur,email',
+            'partners_restaurant:uuid,code,full_name',
+            'restaurant_room:uuid,code,rooms_number',
+            'menu_restaurant:uuid,name,code,type_complement_boisson',
+            'items.menu',
+            'drinks.drinkConfig.product',
+            'free_client_for_restaurant:uuid,code,full_name,cni_number_file',
+            'notifications'
+        ])
+            ->where('status',MenuOrderStatus::FACTURATE->value);
+
+        if ($request->filled('free_client_for_restaurant_uuid')) {
+            $query->where('free_client_for_restaurant_uuid', $request->free_client_for_restaurant_uuid);
+        }
+        if ($request->filled('partners_restaurant_uuid')) {
+            $query->where('partners_restaurant_uuid', $request->partners_restaurant_uuid);
+        }
+
+        if ($request->filled('free')) {
+            $query->where('full_name_for_client_free', $request->free);
+        }
+
+        if ($request->filled('start_date') && $request->filled('end_date')) {
+            $start_date = Carbon::parse($request->start_date)->startOfDay();
+            $end_date = Carbon::parse($request->end_date)->endOfDay();
+
+            $query->whereBetween('created_at', [$start_date, $end_date]);
+        }
+
+        $data = $query->latest()->paginate($perPage, ['*'], 'page', $page);
+
+        return response()->json([
+            'data'         => $data->items(),
+            'current_page' => $data->currentPage(),
+            'last_page'    => $data->lastPage(),
+            'total'        => $data->total(),
+        ]);
+
+    }
+
+
+
+
+
+
 }

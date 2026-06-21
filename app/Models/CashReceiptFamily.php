@@ -31,6 +31,9 @@ class CashReceiptFamily extends Model
         'description',
         'created_by',
         'updated_by',
+        'parent_uuid',
+        'level',
+        'is_used'
     ];
 
     protected static function boot()
@@ -67,5 +70,25 @@ class CashReceiptFamily extends Model
             User::class,
             'updated_by'
         );
+    }
+    public function parent()
+    {
+        return $this->belongsTo(
+            CashReceiptFamily::class,
+            'parent_uuid',
+            'uuid'
+        );
+    }
+    public function children()
+    {
+        return $this->hasMany(
+            CashReceiptFamily::class,
+            'parent_uuid',
+            'uuid'
+        );
+    }
+    public function childrenRecursive()
+    {
+        return $this->children()->with('childrenRecursive');
     }
 }
