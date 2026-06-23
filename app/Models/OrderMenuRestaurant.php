@@ -82,8 +82,15 @@ class OrderMenuRestaurant extends Model
         'order_menu_restaurant_date' => 'datetime',
     ];
 
-    protected $appends = ['consumption_type_label','clients_for_payment_label','status_label','total_items','total_drinks','total_order','summary_items'];
+    protected $appends = ['consumption_type_label','clients_for_payment_label','status_label','total_items','total_drinks','total_order','summary_items','remaining_amount'];
 
+
+    public function getRemainingAmountAttribute(): int
+    {
+        $paid = $this->payment->paid_amount ?? 0;
+
+        return max(0, $this->total_order - $paid);
+    }
     public function getConsumptionTypeLabelAttribute(): string
     {
         return ConsumptionType::safeLabel($this->consumption_type);
@@ -270,6 +277,11 @@ class OrderMenuRestaurant extends Model
     public function salesCategory()
     {
         return $this->belongsTo(SalesCategory::class, 'sales_category_uuid', 'uuid');
+    }
+
+    public function payment()
+    {
+        return $this->hasOne(Payment::class, 'order_menu_restaurant_uuid', 'uuid');
     }
 
 }

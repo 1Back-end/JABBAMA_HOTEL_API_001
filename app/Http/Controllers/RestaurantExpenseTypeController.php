@@ -205,6 +205,7 @@ class RestaurantExpenseTypeController extends Controller
                         'code' => Str::slug($name, '_') . '_' . Str::random(6),
 
                         'description' => $item['description'] ?? null,
+                        'operation_type' => $item['operation_type'] ?? null,
 
                         'indexation' =>
                             $level === 1
@@ -273,6 +274,7 @@ class RestaurantExpenseTypeController extends Controller
             'sub_families.*.name' => ['required', 'string', 'max:255'],
             'sub_families.*.description' => ['nullable', 'string'],
             'sub_families.*.indexation' => ['nullable', 'string'],
+            'sub_families.*.operation_type' => ['nullable', 'string'],
             'sub_families.*.children' => ['nullable', 'array'],
         ]);
 
@@ -322,6 +324,7 @@ class RestaurantExpenseTypeController extends Controller
                             'code' => Str::slug($name, '_') . '_' . substr($uuid, 0, 6),
                             'description' => $item['description'] ?? null,
                             'indexation' => $level === 1 ? ($item['indexation'] ?? null) : null,
+                            'operation_type' => $item['operation_type'] ?? null,
                             'level' => $level,
                             'updated_by' => $userId,
                         ]);
@@ -335,6 +338,7 @@ class RestaurantExpenseTypeController extends Controller
                             'code' => Str::slug($name, '_') . '_' . Str::random(6),
                             'description' => $item['description'] ?? null,
                             'indexation' => $level === 1 ? ($item['indexation'] ?? null) : null,
+                            'operation_type' => $item['operation_type'] ?? null,
                             'level' => $level,
                             'is_used' => true,
                             'is_active' => true,

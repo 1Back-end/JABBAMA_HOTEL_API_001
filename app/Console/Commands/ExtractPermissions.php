@@ -230,8 +230,38 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des commandes du restaurant',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],
+        'view_factures_for_orders' => [
+            'description' => 'Effectuer les encaissements des factures',
+            'category' => 'Gestion des commandes du restaurant',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'change_order_payment_date' => [
+            'description' => 'Changer la date pour effectuer les encaissements des factures antérieures',
+            'category' => 'Gestion des commandes du restaurant',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
         'view_kitchen_and_bar_orders' => [
             'description' => 'Afficher les commandes contenant des menus et/ou des boissons (cuisine + bar)',
+            'category' => 'Gestion des commandes du restaurant',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'delete_regulations_for_orders' => [
+            'description' => 'Supprimer les encaissements d\'une commande',
+            'category' => 'Gestion des commandes du restaurant',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'update_regulations_for_orders' => [
+            'description' => 'Modifier les encaissements d\'une commande',
+            'category' => 'Gestion des commandes du restaurant',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'view_regulations_for_orders' => [
+            'description' => 'Afficher les encaissements d\'une commande',
+            'category' => 'Gestion des commandes du restaurant',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'save_regulations_for_orders' => [
+            'description' => 'Enregistrer les encaissements d\'une commande',
             'category' => 'Gestion des commandes du restaurant',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],

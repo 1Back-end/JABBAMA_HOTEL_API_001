@@ -16,14 +16,14 @@ class UserRequest extends FormRequest
         } else {
             $uniqueEmail = 'unique:users,email';
             $uniqueLogin = 'unique:users,login';
-            $requiredPassword = 'required';
+            $requiredPassword = 'nullable';
         }
 
         return [
             'prenom' => ['nullable'],
             'nom_utilisateur' => ['required'],
             'password' => [$requiredPassword],
-            'email' => ['required', 'email', 'max:254', $uniqueEmail],
+            'email' => ['nullable', 'email', 'max:254', $uniqueEmail],
             'login' => ['required', $uniqueLogin],
             'roles' => ['array'],
             'roles.*' => ['int', 'required', 'exists:roles,id'],

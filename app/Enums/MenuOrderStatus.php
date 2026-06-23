@@ -20,6 +20,8 @@ enum MenuOrderStatus : string
     case REJECTED_AFTER_VALIDATION = 'rejected_after_validation';
 
     case FACTURATE = 'facture';
+    case PARTIALLY_PAID = 'partially_paid';
+    case PAID = 'paid';
     public function label(): string
     {
         return match ($this) {
@@ -35,6 +37,8 @@ enum MenuOrderStatus : string
             self::DEFECTIVE => 'Défectieuse',
             self::REJECTED_AFTER_VALIDATION => 'Rejet du servi(s)',
             self::FACTURATE => 'Facturée',
+            self::PARTIALLY_PAID => 'Réglé partiellement',
+            self::PAID => 'Réglé totalement',
         };
     }
 
