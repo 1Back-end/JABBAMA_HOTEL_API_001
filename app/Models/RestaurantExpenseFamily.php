@@ -24,6 +24,7 @@ class RestaurantExpenseFamily extends Model
         'name',
         'code',
         'indexation',
+        'operation_type',
         'description',
         'level',
         'is_used',

@@ -33,7 +33,6 @@ return new class extends Migration
             $table->boolean('is_used')->default(true);
             $table->integer('level')->default(1);
 
-            // FK Parent
             $table->foreign('parent_uuid', 'ref_parent_fk')
                 ->references('uuid')
                 ->on('restaurant_expense_types_families')

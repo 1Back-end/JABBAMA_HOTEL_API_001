@@ -5935,7 +5935,8 @@ class OrderMenuRestaurantController extends Controller
             'items.menu',
             'drinks.drinkConfig.product',
             'free_client_for_restaurant:uuid,code,full_name,cni_number_file',
-            'notifications'
+            'notifications',
+            'payment.regulations.method'
         ]);
 
         if ($request->filled('restaurant_table_uuid')) {
@@ -10429,8 +10430,8 @@ class OrderMenuRestaurantController extends Controller
     {
         $auth = auth()->user();
 
-        $perPage = $request->input('limit', 25);
-        $page = $request->input('page', 1);
+        $perPage = (int) $request->input('limit', 25);
+        $page = (int) $request->input('page', 1);
 
         $query = OrderMenuRestaurant::with([
             'restaurantTable:uuid,code,table_number',
@@ -10444,37 +10445,57 @@ class OrderMenuRestaurantController extends Controller
             'items.menu',
             'drinks.drinkConfig.product',
             'free_client_for_restaurant:uuid,code,full_name,cni_number_file',
-            'notifications'
+            'payment.regulations.method'
         ])
-            ->where('status',MenuOrderStatus::FACTURATE->value);
+            ->whereIn('status', [
+                MenuOrderStatus::FACTURATE->value,
+                MenuOrderStatus::PARTIALLY_PAID->value,
+                MenuOrderStatus::PAID->value
+            ]);
 
         if ($request->filled('free_client_for_restaurant_uuid')) {
             $query->where('free_client_for_restaurant_uuid', $request->free_client_for_restaurant_uuid);
         }
+
         if ($request->filled('partners_restaurant_uuid')) {
             $query->where('partners_restaurant_uuid', $request->partners_restaurant_uuid);
         }
 
-        if ($request->filled('free')) {
-            $query->where('full_name_for_client_free', $request->free);
+        if ($request->filled('invoice_code')) {
+            $query->where('code', $request->invoice_code);
         }
 
-        if ($request->filled('start_date') && $request->filled('end_date')) {
-            $start_date = Carbon::parse($request->start_date)->startOfDay();
-            $end_date = Carbon::parse($request->end_date)->endOfDay();
+        Log::info('Filtres reçus', $request->all());
 
-            $query->whereBetween('created_at', [$start_date, $end_date]);
+        if ($request->filled('debtor')) {
+
+            $debtor = trim($request->debtor);
+
+            Log::info('Débiteur recherché', [
+                'debtor' => $debtor
+            ]);
+
+            $query->where('full_name', 'LIKE', "%{$debtor}%");
         }
 
-        $data = $query->latest()->paginate($perPage, ['*'], 'page', $page);
+        if ($auth->can('change_order_payment_date') && $request->filled('start_date') && $request->filled('end_date')) {
+            $startDate = Carbon::parse($request->start_date)->startOfDay();
+            $endDate = Carbon::parse($request->end_date)->endOfDay();
+            $query->whereBetween('created_at', [$startDate, $endDate]);
+        } else {
+            $query->whereDate('created_at', Carbon::today());
+        }
+
+        $data = $query->latest('created_at')->paginate($perPage, ['*'], 'page', $page);
 
         return response()->json([
+            'success'      => true,
             'data'         => $data->items(),
             'current_page' => $data->currentPage(),
             'last_page'    => $data->lastPage(),
+            'per_page'     => $data->perPage(),
             'total'        => $data->total(),
         ]);
-
     }
 
 
