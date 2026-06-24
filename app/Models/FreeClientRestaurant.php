@@ -31,7 +31,9 @@ class FreeClientRestaurant extends Model
         'is_active',
         'created_by',
         'updated_by',
-        'profession'
+        'profession',
+        'amount_allocated',
+        'amount_allocated_total'
     ];
 
     protected $appends = ['cni_file_url'];

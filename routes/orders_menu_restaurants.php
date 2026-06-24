@@ -54,3 +54,4 @@ Route::post('/orders_menu_restaurants/clean_reservations_abandoned', [\App\Http\
 Route::get('/orders_menu_restaurants/{uuid}/facture', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'generate_facture']);
 Route::get('/orders_menu_restaurants/{uuid}/facture_a4', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'generate_factureA4']);
 Route::get('/restaurant/orders/invoices', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'get_facture_for_clients']);
+Route::post('orders_menu_restaurants/allocate_amount', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'addAllocation']);

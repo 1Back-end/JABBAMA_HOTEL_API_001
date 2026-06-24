@@ -6072,10 +6072,10 @@ class OrderMenuRestaurantController extends Controller
                 'updater:id,nom_utilisateur',
                 'validator:id,nom_utilisateur',
                 'cancelor:id,nom_utilisateur',
-                'partners_restaurant:uuid,code,full_name',
+                'partners_restaurant:uuid,code,full_name,amount_allocated,amount_allocated_total',
                 'restaurant_room:uuid,code,type',
                 'menu_restaurant:uuid,code,name',
-                'free_client_for_restaurant:uuid,code,full_name',
+                'free_client_for_restaurant:uuid,code,full_name,amount_allocated,amount_allocated_total',
                 'items.menu:uuid,code,name,have_complements,type_complement_menu,have_complements,have_drinks',
                 'items.virtuals.product:uuid,name,code',
                 'items.rejector:id,nom_utilisateur',
@@ -10439,12 +10439,12 @@ class OrderMenuRestaurantController extends Controller
             'updater:id,nom_utilisateur,email',
             'validator:id,nom_utilisateur,email',
             'cancelor:id,nom_utilisateur,email',
-            'partners_restaurant:uuid,code,full_name',
+            'partners_restaurant:uuid,code,full_name,amount_allocated,amount_allocated_total',
             'restaurant_room:uuid,code,rooms_number',
             'menu_restaurant:uuid,name,code,type_complement_boisson',
             'items.menu',
             'drinks.drinkConfig.product',
-            'free_client_for_restaurant:uuid,code,full_name,cni_number_file',
+            'free_client_for_restaurant:uuid,code,full_name,cni_number_file,amount_allocated,amount_allocated_total',
             'payment.regulations.method'
         ])
             ->whereIn('status', [
@@ -10495,6 +10495,37 @@ class OrderMenuRestaurantController extends Controller
             'last_page'    => $data->lastPage(),
             'per_page'     => $data->perPage(),
             'total'        => $data->total(),
+        ]);
+    }
+
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission FreeClientRestaurantController::addAllocation
+     * @permission_desc Enregistrer le montant des arrhes pour les clients divers
+     */
+    public function addAllocation(Request $request)
+    {
+        $auth = auth()->user();
+        $request->validate([
+            'order_menu_restaurant_uuid' => 'required|uuid',
+            'amount_allocated' => 'required|numeric|min:1',
+        ]);
+
+        $order = OrderMenuRestaurant::where('uuid', $request->order_menu_restaurant_uuid)->firstOrFail();
+
+        $order->amount_allocated = ($order->amount_allocated ?? 0) + $request->amount_allocated;
+
+        $order->save();
+        $order->update([
+            'updated_by' => $auth->id,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Arrhes ajoutées avec succès',
+            'data' => $order
         ]);
     }
 

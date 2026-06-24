@@ -49,6 +49,7 @@ class OrderMenuRestaurant extends Model
         'free_client_for_restaurant_uuid',
         'quantity',
         'full_name',
+        'amount_allocated',
         'transfered_at',
         'received_by',
         'transfered_by',
@@ -82,8 +83,16 @@ class OrderMenuRestaurant extends Model
         'order_menu_restaurant_date' => 'datetime',
     ];
 
-    protected $appends = ['consumption_type_label','clients_for_payment_label','status_label','total_items','total_drinks','total_order','summary_items','remaining_amount'];
+    protected $appends = ['free_client_amount_allocated','partner_amount_allocated','consumption_type_label','clients_for_payment_label','status_label','total_items','total_drinks','total_order','summary_items','remaining_amount'];
 
+    public function getFreeClientAmountAllocatedAttribute()
+    {
+        return $this->free_client_for_restaurant?->amount_allocated ?? 0;
+    }
+    public function getPartnerAmountAllocatedAttribute()
+    {
+        return $this->partners_restaurant?->amount_allocated ?? 0;
+    }
 
     public function getRemainingAmountAttribute(): int
     {
