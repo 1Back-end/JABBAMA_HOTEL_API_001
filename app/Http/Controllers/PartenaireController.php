@@ -314,6 +314,48 @@ class PartenaireController extends Controller
     }
 
 
+    /**
+     * Display a listing of the resource.
+     * @permission PartenaireController::allocateAmount
+     * @permission_desc Enregistrer le montant des arrhes
+     */
+    public function allocateAmount(Request $request, $uuid)
+    {
+        $request->validate([
+            'amount' => 'required|numeric|min:1',
+        ]);
+
+        DB::beginTransaction();
+
+        try {
+
+            $partner = RestaurantPartner::where('uuid', $uuid)->firstOrFail();
+
+            $amount = (float) $request->amount;
+
+            $partner->increment('amount_allocated', $amount);
+            $partner->increment('amount_allocated_total', $amount);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Montant ajouté avec succès',
+                'data' => $partner->fresh()
+            ]);
+
+        } catch (\Exception $e) {
+
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+
 
 
 }

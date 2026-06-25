@@ -268,5 +268,31 @@ class FreeClientRestaurantController extends Controller
     }
 
 
+    /**
+     * Display a listing of the resource.
+     * @permission FreeClientRestaurantController::allocateAmount
+     * @permission_desc Enregistrer le montant des arrhes
+     */
+    public function allocateAmount(Request $request, $uuid)
+    {
+        $request->validate([
+            'amount' => 'required|numeric|min:1'
+        ]);
+
+        $client = FreeClientRestaurant::where('uuid', $uuid)->firstOrFail();
+
+        $client->amount_allocated += $request->amount;
+        $client->amount_allocated_total += $request->amount;
+
+        $client->save();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Montant alloué avec succès',
+            'data' => $client
+        ]);
+    }
+
+
 
 }

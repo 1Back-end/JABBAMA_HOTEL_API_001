@@ -10,9 +10,12 @@ use App\Models\PaymentRegulation;
 use App\Models\RegulationMethod;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class PaymentController extends Controller
 {
+
+
     public function store(Request $request)
     {
         $request->validate([
@@ -27,13 +30,14 @@ class PaymentController extends Controller
 
         try {
 
-            $order = OrderMenuRestaurant::where('uuid', $request->order_menu_restaurant_uuid)
+            $order = OrderMenuRestaurant::with([
+                'free_client_for_restaurant',
+                'partners_restaurant'
+            ])->where('uuid', $request->order_menu_restaurant_uuid)
                 ->firstOrFail();
 
             $payment = Payment::firstOrCreate(
-                [
-                    'order_menu_restaurant_uuid' => $order->uuid,
-                ],
+                ['order_menu_restaurant_uuid' => $order->uuid],
                 [
                     'total_amount' => $request->total_amount,
                     'paid_amount' => 0,
@@ -43,44 +47,57 @@ class PaymentController extends Controller
                 ]
             );
 
-            // 🔥 IMPORTANT : montant déjà payé en base
             $alreadyPaid = (float) $payment->paid_amount;
             $totalNewPaid = 0;
-
             $errors = [];
 
-            // =========================
-            // VALIDATION + CALCUL
-            // =========================
+
+            $client = $order->free_client_for_restaurant
+                ?? $order->partners_restaurant;
+
+            $isClientAdvance = false;
+            if ($client && isset($client->amount_allocated)) {
+                $availableAdvance = (float) $client->amount_allocated;
+                $isClientAdvance = true;
+            } else {
+                $availableAdvance = (float) ($order->amount_allocated ?? 0);
+            }
+
+            if ($availableAdvance <= 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Montant des arrhes insuffisant. Veuillez recharger le solde.",
+                ], 422);
+            }
+
             foreach ($request->regulations as $index => $regulation) {
 
                 $method = RegulationMethod::where('uuid', $regulation['method_uuid'])->first();
 
                 if (!$method) {
-                    $errors["regulations.$index.method_uuid"][] = "Méthode de règlement invalide";
+                    $errors["regulations.$index.method_uuid"][] = "Méthode invalide";
                     continue;
                 }
 
                 if ($method->comment_required && empty($regulation['reference'])) {
-                    $errors["regulations.$index.reference"][] = "La référence est obligatoire";
+                    $errors["regulations.$index.reference"][] = "Référence obligatoire";
                 }
 
                 if ($method->phone_method && empty($regulation['phone_number'])) {
-                    $errors["regulations.$index.phone_number"][] = "Le numéro est obligatoire";
+                    $errors["regulations.$index.phone_number"][] = "Numéro obligatoire";
                 }
 
                 if ($method->comment_required && empty($regulation['detail'])) {
                     $errors["regulations.$index.detail"][] = "Le commentaire est obligatoire";
                 }
 
-                if (!isset($regulation['amount']) || !is_numeric($regulation['amount']) || $regulation['amount'] <= 0) {
+                if (!isset($regulation['amount']) || $regulation['amount'] <= 0) {
                     $errors["regulations.$index.amount"][] = "Montant invalide";
                 }
 
                 $totalNewPaid += (float) $regulation['amount'];
             }
 
-            // ❌ stop si erreurs
             if (!empty($errors)) {
                 return response()->json([
                     'success' => false,
@@ -89,22 +106,23 @@ class PaymentController extends Controller
                 ], 422);
             }
 
-            // 🔥 sécurité : éviter dépassement facture
-            $totalPaid = $alreadyPaid + $totalNewPaid;
 
-            if ($totalPaid > $payment->total_amount) {
+            if ($totalNewPaid > $availableAdvance) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Le montant dépasse le total de la facture',
-                    'errors' => [
-                        'regulations' => ['Montant supérieur au reste à payer']
-                    ]
+                    'message' => "Montant des arrhes insuffisant. Disponible: {$availableAdvance}, demandé: {$totalNewPaid}. Veuillez recharger le solde.",
                 ], 422);
             }
 
-            // =========================
-            // CREATE REGULATIONS
-            // =========================
+            $remainingToPay = $payment->total_amount - $alreadyPaid;
+
+            if ($totalNewPaid > $remainingToPay) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Montant supérieur au reste à payer ($remainingToPay)",
+                ], 422);
+            }
+
             foreach ($request->regulations as $regulation) {
 
                 $method = RegulationMethod::where('uuid', $regulation['method_uuid'])->first();
@@ -112,7 +130,7 @@ class PaymentController extends Controller
                 PaymentRegulation::create([
                     'payment_uuid' => $payment->uuid,
                     'regulation_method_uuid' => $method->uuid,
-                    'amount' => $regulation['amount'],
+                    'amount' => (float) $regulation['amount'],
                     'phone_number' => $regulation['phone_number'] ?? null,
                     'reference' => $regulation['reference'] ?? null,
                     'detail' => $regulation['detail'] ?? null,
@@ -120,9 +138,8 @@ class PaymentController extends Controller
                 ]);
             }
 
-            // =========================
-            // UPDATE PAYMENT
-            // =========================
+            $totalPaid = $alreadyPaid + $totalNewPaid;
+
             $payment->paid_amount = $totalPaid;
             $payment->remaining_amount = max(0, $payment->total_amount - $totalPaid);
 
@@ -143,6 +160,16 @@ class PaymentController extends Controller
 
             $order->updated_by = auth()->id();
             $order->save();
+
+            $usedAdvance = min($availableAdvance, $totalNewPaid);
+
+            if ($usedAdvance > 0) {
+                if ($client) {
+                    $client->decrement('amount_allocated', $usedAdvance);
+                } else {
+                    $order->decrement('amount_allocated', $usedAdvance);
+                }
+            }
 
             DB::commit();
 
@@ -180,46 +207,73 @@ class PaymentController extends Controller
 
             $payment = Payment::where('uuid', $regulation->payment_uuid)->firstOrFail();
 
-            $order = OrderMenuRestaurant::where('uuid', $payment->order_menu_restaurant_uuid)->firstOrFail();
+            $order = OrderMenuRestaurant::with([
+                'free_client_for_restaurant',
+                'partners_restaurant'
+            ])->where('uuid', $payment->order_menu_restaurant_uuid)->firstOrFail();
+
+            $oldAmount = (float) $regulation->amount;
+            $newAmount = (float) $request->amount;
+
 
             $method = RegulationMethod::where('uuid', $request->method_uuid)->firstOrFail();
 
             $regulation->update([
                 'regulation_method_uuid' => $method->uuid,
-                'amount' => (float) $request->amount,
-                'phone_number' => $request->phone_number,
-                'reference' => $request->reference,
-                'detail' => $request->detail,
+                'amount' => $newAmount,
+                'phone_number' => $request->phone_number ?? null,
+                'reference' => $request->reference ?? null,
+                'detail' => $request->detail ?? null,
                 'reason_for_cancel_or_update' => $request->reason_for_cancel_or_update,
+                'updated_by' => auth()->id(),
             ]);
 
 
-            $payment->paid_amount = PaymentRegulation::where('payment_uuid', $payment->uuid)->sum('amount');
+            $paidAmount = PaymentRegulation::where('payment_uuid', $payment->uuid)->sum('amount');
 
-            $payment->remaining_amount = max(0, $payment->total_amount - $payment->paid_amount);
+            $payment->paid_amount = $paidAmount;
+            $payment->remaining_amount = max(0, $payment->total_amount - $paidAmount);
 
-            if ($payment->paid_amount <= 0) {
+            if ($paidAmount <= 0) {
                 $payment->status = PaymentStatus::UNPAID->value;
+                $order->status = MenuOrderStatus::FACTURATE->value;
 
-            } elseif ($payment->paid_amount < $payment->total_amount) {
+            } elseif ($paidAmount < $payment->total_amount) {
                 $payment->status = PaymentStatus::PARTIALLY_PAID->value;
+                $order->status = MenuOrderStatus::PARTIALLY_PAID->value;
 
             } else {
                 $payment->status = PaymentStatus::PAID->value;
+                $order->status = MenuOrderStatus::PAID->value;
             }
 
             $payment->save();
 
-            if ($payment->paid_amount <= 0) {
-                $order->status = MenuOrderStatus::FACTURATE->value;
+            $difference = $newAmount - $oldAmount;
 
-            } elseif ($payment->paid_amount < $payment->total_amount) {
-                $order->status = MenuOrderStatus::PARTIALLY_PAID->value;
+            if ($difference != 0) {
 
-            } else {
-                $order->status = MenuOrderStatus::PAID->value;
+                $client = $order->free_client_for_restaurant
+                    ?? $order->partners_restaurant;
+
+                if ($client) {
+                    if ($difference > 0) {
+                        // on consomme plus d’arrhes
+                        $client->decrement('amount_allocated', $difference);
+                    } else {
+                        // on restitue des arrhes
+                        $client->increment('amount_allocated', abs($difference));
+                    }
+                } else {
+                    if ($difference > 0) {
+                        $order->decrement('amount_allocated', $difference);
+                    } else {
+                        $order->increment('amount_allocated', abs($difference));
+                    }
+                }
             }
 
+            $order->updated_by = auth()->id();
             $order->save();
 
             DB::commit();
@@ -242,7 +296,7 @@ class PaymentController extends Controller
     }
 
 
-    public function destroyRegulation(Request $request, string $uuid)
+    public function destroyRegulation(Request $request, $uuid)
     {
         $request->validate([
             'reason_for_cancel_or_update' => ['required', 'string']
@@ -252,7 +306,7 @@ class PaymentController extends Controller
 
         try {
 
-            $regulation = PaymentRegulation::with('payment.order')
+            $regulation = PaymentRegulation::with(['payment.order'])
                 ->where('uuid', $uuid)
                 ->firstOrFail();
 
@@ -260,12 +314,10 @@ class PaymentController extends Controller
             $order = $payment->order;
 
             $regulation->reason_for_cancel_or_update = $request->reason_for_cancel_or_update;
-
             $regulation->updated_by = auth()->id();
             $regulation->save();
 
             $regulation->delete();
-
 
             $paidAmount = PaymentRegulation::where('payment_uuid', $payment->uuid)->sum('amount');
 
@@ -275,15 +327,32 @@ class PaymentController extends Controller
             if ($paidAmount <= 0) {
                 $payment->status = PaymentStatus::UNPAID->value;
                 $order->status = MenuOrderStatus::FACTURATE->value;
+
             } elseif ($paidAmount < $payment->total_amount) {
                 $payment->status = PaymentStatus::PARTIALLY_PAID->value;
                 $order->status = MenuOrderStatus::PARTIALLY_PAID->value;
+
             } else {
                 $payment->status = PaymentStatus::PAID->value;
                 $order->status = MenuOrderStatus::PAID->value;
             }
 
             $payment->save();
+
+            $order->load(['free_client_for_restaurant', 'partners_restaurant']);
+
+            $client = $order->free_client_for_restaurant
+                ?? $order->partners_restaurant;
+
+            $restoredAmount = (float) $regulation->amount;
+
+            if ($client) {
+                $client->increment('amount_allocated', $restoredAmount);
+            } else {
+                $order->increment('amount_allocated', $restoredAmount);
+            }
+
+            $order->updated_by = auth()->id();
             $order->save();
 
             DB::commit();

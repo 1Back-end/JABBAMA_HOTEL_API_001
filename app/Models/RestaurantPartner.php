@@ -36,7 +36,9 @@ class RestaurantPartner extends Model
         'updated_by',
         'cni_number',
         'is_whatsapp',
-        'is_second_whatsapp'
+        'is_second_whatsapp',
+        'amount_allocated',
+        'amount_allocated_total'
     ];
 
     protected $appends = ['logo_partners'];
