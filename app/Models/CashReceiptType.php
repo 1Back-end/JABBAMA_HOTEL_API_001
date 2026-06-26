@@ -68,5 +68,13 @@ class CashReceiptType extends Model
     {
         return $this->hasMany(CashCollectionFamily::class, 'cash_receipt_type_uuid');
     }
+    public function paymentRegulations()
+    {
+        return $this->hasMany(
+            PaymentRegulation::class,
+            'cash_receipt_type_uuid',
+            'uuid'
+        );
+    }
 
 }

@@ -409,7 +409,6 @@ class MenuRestaurantController extends Controller
             'category',
             'complements:uuid,name'
         ])
-            ->where('is_confectioned', true)
             ->where('is_active', true);
 
 
@@ -426,16 +425,40 @@ class MenuRestaurantController extends Controller
                 $q->where('uuid', 'like', "%{$search}%")
                     ->orWhere('name', 'like', "%{$search}%")
                     ->orWhere('code', 'like', "%{$search}%")
-                    ->orWhere('description', 'like', "%{$search}%")
-                    ->orWhereHas('creator', function ($qc) use ($search) {
-                        $qc->where('nom_utilisateur', 'like', "%{$search}%")
-                            ->orWhere('email', 'like', "%{$search}%");
-                    });
+                    ->orWhere('description', 'like', "%{$search}%");
             });
         }
 
-        // 🔹 Pagination
-        $data = $query->latest()->paginate($perPage, ['*'], 'page', $page);
+        $query->orderByRaw("
+            CASE
+
+                -- 1. Menus confectionnés COMPLETS (non générés)
+                WHEN is_confectioned = 1
+                     AND have_complements = 1
+                     AND have_drinks = 1
+                     AND is_generated_from_complement = 0 THEN 1
+
+                -- 2. Menus confectionnés simples (non générés)
+                WHEN is_confectioned = 1
+                     AND have_complements = 0
+                     AND have_drinks = 0
+                     AND is_generated_from_complement = 0 THEN 2
+
+                -- 3. Compléments générés
+                WHEN is_generated_from_complement = 1
+                     AND is_menu = 1 THEN 3
+
+                -- 4. Boissons générées
+                WHEN is_generated_from_complement = 1
+                     AND is_drinks = 1 THEN 4
+
+                -- fallback
+                ELSE 5
+            END
+        ");
+
+        $data = $query->paginate($perPage, ['*'], 'page', $page);
+
         return response()->json([
             'data'         => $data->items(),
             'current_page' => $data->currentPage(),

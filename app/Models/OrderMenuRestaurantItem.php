@@ -171,4 +171,13 @@ class OrderMenuRestaurantItem extends Model
         );
     }
 
+    public function paymentLines()
+    {
+        return $this->hasMany(
+            PaymentLine::class,
+            'payable_uuid',
+            'uuid'
+        )->where('payable_type', OrderMenuRestaurantItem::class);
+    }
+
 }

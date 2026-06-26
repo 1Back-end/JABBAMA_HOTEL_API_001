@@ -97,16 +97,6 @@
                     Réf: <span class="fw-bold text-dark">{{ $order->code }}</span>
                 </div>
             </div>
-
-            <div class="text-end" style="font-size: 7pt; line-height: 1.1;">
-                <div>
-                    <span class="text-muted">Par:</span>
-                    <span class="fw-bold text-uppercase">{{ $order->updater->nom_utilisateur ?? $order->updater->login ?? $order->creator->login ?? '' }}</span>
-                </div>
-                <div class="text-muted" style="font-size: 6.5pt;">
-                    {{ $order->created_at->format('d/m/Y H:i') }}
-                </div>
-            </div>
         </div>
     </header>
 
@@ -241,14 +231,45 @@
 
     <div class="total-block">
         <span>TOTAL À PAYER :</span>
-        <span>{{ number_format($order->total_order ?? 0, 0, ',', ' ') }} F CFA</span>
+        <span>{{ \App\Helpers\FormatPrice::format($order->total_order) }}</span>
     </div>
+
+    @if(isset($order->payment) && $order->payment)
+        <div class="total-block" style="font-size: 8pt;">
+            <span>AVANCE :</span>
+            <span>{{ \App\Helpers\FormatPrice::format($order->payment->paid_amount) }}</span>
+        </div>
+
+        <div class="total-block" style="font-size: 8pt;">
+            <span>RESTE À PAYER :</span>
+            <span>{{ \App\Helpers\FormatPrice::format($order->payment->remaining_amount) }}</span>
+        </div>
+    @endif
 
     <div style="font-size: 6.3pt; color: #555555; font-style: italic; margin-top: 4px; text-align: center; line-height: 1.1;">
         * T.V.A et taxes incluses.
     </div>
 
     <div class="ticket-divider"></div>
+
+    <div class="mt-3">
+        <div class="row text-center">
+            <div class="col-6">
+                <strong>Caissier</strong>
+                <div class="mt-5">
+                    <span class="border-top border-dark d-inline-block" style="width: 140px;"></span>
+                </div>
+            </div>
+
+            <div class="col-6">
+                <strong>Client</strong>
+                <div class="mt-5">
+                    <span class="border-top border-dark d-inline-block" style="width: 140px;"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
 
     <div class="text-center text-muted small my-1" style="font-size: 6.5pt !important; letter-spacing: 0.5px;">
         * MERCI POUR VOTRE VISITE *

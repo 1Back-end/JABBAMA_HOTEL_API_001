@@ -2,7 +2,7 @@
 
 use App\Http\Controllers\RestaurantExpenseTypeController;
 use Illuminate\Support\Facades\Route;
-Route::apiResource('restaurant_expense_types', RestaurantExpenseTypeController::class)->except(['show']);;
+Route::apiResource('restaurant_expense_types', RestaurantExpenseTypeController::class)->except(['show']);
 Route::patch('restaurant_expense_types/{uuid}/is_active', [RestaurantExpenseTypeController::class, 'updateStatus']);
 Route::post('/restaurant_expense_types/store_sub_family', [RestaurantExpenseTypeController::class, 'storeSubFamily']);
 Route::put('restaurant_expense_update_sub_family', [RestaurantExpenseTypeController::class, 'Update_Sub_Family']);

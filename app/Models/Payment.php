@@ -11,7 +11,7 @@ use Illuminate\Support\Str;
 class Payment extends Model
 {
     protected $table = 'payments';
-    use SoftDeletes,HasFactory,HasUlids;
+    use SoftDeletes,HasFactory;
 
     protected $primaryKey = 'uuid';
     public $incrementing = false;

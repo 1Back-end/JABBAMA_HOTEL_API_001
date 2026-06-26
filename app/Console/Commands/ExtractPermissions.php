@@ -260,11 +260,43 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des commandes du restaurant',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],
-        'save_regulations_for_orders' => [
-            'description' => 'Enregistrer les encaissements d\'une commande',
+        'save_regulations_for_orders_items' => [
+            'description' => 'Effectuer les encaissements des menus d\'une commande',
             'category' => 'Gestion des commandes du restaurant',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],
+        'save_regulations_for_orders_items_and_drinks' => [
+            'description' => 'Effectuer l\'encaissement d\'une facture globale',
+            'category' => 'Gestion des commandes du restaurant',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'save_regulations_for_orders_drinks' => [
+            'description' => 'Effectuer les encaissements des boissons d\'une commande',
+            'category' => 'Gestion des commandes du restaurant',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'cancel_regulations_for_orders_drinks' => [
+            'description' => 'Annuler les encaissements des boissons d\'une commande',
+            'category' => 'Gestion des commandes du restaurant',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'cancel_regulations_for_orders_items' => [
+            'description' => 'Annuler les encaissements des menus d\'une commande',
+            'category' => 'Gestion des commandes du restaurant',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'cancel_regulations_for_orders_items_and_drinks' => [
+            'description' => 'Annuler les encaissements d\'une facture globale',
+            'category' => 'Gestion des commandes du restaurant',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+
+        'view_cash_register_sheet' => [
+            'description' => 'Afficher la fiche de caisse',
+            'category' => 'Gestion des commandes du restaurant',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+
         'view_unit_price_and_total_price' => [
             'description' => 'Afficher le prix unitaire, le prix total des items et le montant total d\'une commande',
             'category' => 'Gestion des commandes du restaurant',

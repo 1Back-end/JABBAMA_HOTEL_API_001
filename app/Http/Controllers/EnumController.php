@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\CashRegisterFilterType;
 use App\Enums\ChooseRubriquesSall;
 use App\Enums\ConsumptionType;
 use App\Enums\MenuOrderStatus;
@@ -52,5 +53,13 @@ class EnumController extends Controller
             'data'   => ChooseRubriquesSall::toArray(),
         ]);
     }
-    //
+
+    public function CashRegisterFilterType()
+    {
+        return response()->json([
+            'status' => 'success',
+            'data'   => CashRegisterFilterType::toArray(),
+        ]);
+    }
+
 }

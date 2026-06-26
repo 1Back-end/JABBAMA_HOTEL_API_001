@@ -14,6 +14,7 @@ use App\Models\Warehouse;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * @permission_category Compléments des menus
@@ -101,9 +102,6 @@ class ConfigurationsComplementController extends Controller
                 'menus_complement_type' => ['nullable', 'string'],
             ]);
 
-            // =========================
-            // CHECK EXISTING COMPLEMENT
-            // =========================
             $existingConfig = ConfigurationsComplement::where('name', $validated['name'])->first();
 
             if ($existingConfig) {
@@ -113,9 +111,6 @@ class ConfigurationsComplementController extends Controller
                 ], 400);
             }
 
-            // =========================
-            // CLEAN PRICES
-            // =========================
             $cleanPrices = function ($arr, $default) {
                 $arr = array_filter($arr ?? [], fn($v) => $v !== null);
 
@@ -149,13 +144,19 @@ class ConfigurationsComplementController extends Controller
                     'description' => $config->description,
                     'created_by' => $auth->id,
                     'category_uuid' => $category?->uuid,
+
                     'unit_price' => $config->prices_for_clients_debtor,
                     'special_price' => $config->prices_for_clients_partner,
+
                     'is_active' => true,
                     'is_confectioned' => false,
                     'is_generated_from_complement' => true,
+
                     'have_complements' => false,
                     'have_drinks' => false,
+
+                    'is_menu' => $config->menus_complement_type === 'complement',
+                    'is_drinks' => $config->menus_complement_type === 'boisson',
                 ]
             );
 
@@ -353,7 +354,6 @@ class ConfigurationsComplementController extends Controller
             $validated['updated_by'] = $auth->id;
 
             $config->update($validated);
-
             MenuRestaurant::updateOrCreate(
                 [
                     'uuid' => $config->uuid,
@@ -361,21 +361,25 @@ class ConfigurationsComplementController extends Controller
                 [
                     'name' => $config->name,
                     'description' => $config->description,
-                    'created_by' => $config->created_by,
-                    'updated_by' => $auth->id,
-
+                    'created_by' => $auth->id,
                     'category_uuid' => MenuCategory::first()?->uuid,
 
                     'unit_price' => $config->prices_for_clients_debtor,
                     'special_price' => $config->prices_for_clients_partner,
 
-                    'is_active' => $config->is_active,
+                    'is_active' => true,
                     'is_confectioned' => false,
                     'is_generated_from_complement' => true,
+
                     'have_complements' => false,
                     'have_drinks' => false,
+
+                    'is_menu' => $config->menus_complement_type === 'complement',
+                    'is_drinks' => $config->menus_complement_type === 'boisson',
                 ]
             );
+
+            Log::info('MENU SYNC DONE', ['uuid' => $config->uuid]);
 
             return response()->json([
                 'status' => 'success',
@@ -392,6 +396,11 @@ class ConfigurationsComplementController extends Controller
             ], 422);
 
         } catch (\Exception $e) {
+
+            Log::error('UPDATE COMPLEMENT ERROR', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
 
             return response()->json([
                 'status' => 'error',

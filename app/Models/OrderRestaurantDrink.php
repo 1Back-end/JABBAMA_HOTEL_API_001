@@ -169,4 +169,12 @@ class OrderRestaurantDrink extends Model
     {
         return $this->hasMany(StatisticsOrderStatusDrink::class, 'order_restaurant_drink_uuid', 'uuid');
     }
+    public function paymentLines()
+    {
+        return $this->hasMany(
+            PaymentLine::class,
+            'payable_uuid',
+            'uuid'
+        )->where('payable_type', self::class);
+    }
 }
