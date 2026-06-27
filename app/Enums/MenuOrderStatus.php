@@ -22,6 +22,9 @@ enum MenuOrderStatus : string
     case FACTURATE = 'facture';
     case PARTIALLY_PAID = 'partially_paid';
     case PAID = 'paid';
+    case NOT_PAID = 'not_paid';
+
+
     public function label(): string
     {
         return match ($this) {
@@ -37,8 +40,9 @@ enum MenuOrderStatus : string
             self::DEFECTIVE => 'Défectieuse',
             self::REJECTED_AFTER_VALIDATION => 'Rejet du servi(s)',
             self::FACTURATE => 'Facturée',
-            self::PARTIALLY_PAID => 'Réglé partiellement',
-            self::PAID => 'Réglé totalement',
+            self::PARTIALLY_PAID => 'Réglée partiellement',
+            self::PAID => 'Réglée',
+            self::NOT_PAID => 'Non réglée',
         };
     }
 

@@ -42,7 +42,9 @@ class MenuRestaurant extends Model
         'quantity_for_type_complement_boisson',
         'have_complements',
         'have_drinks',
-        'is_generated_from_complement'
+        'is_generated_from_complement',
+        'is_menu',
+        'is_drinks',
     ];
 
     protected $casts = [

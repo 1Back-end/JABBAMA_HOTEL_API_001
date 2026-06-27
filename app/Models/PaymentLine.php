@@ -2,14 +2,15 @@
 
 namespace App\Models;
 
-use App\Enums\PaymentStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
-class PaymentRegulation extends Model
+class PaymentLine extends Model
 {
     use SoftDeletes;
+
+    protected $table = 'payment_lines';
 
     protected $primaryKey = 'uuid';
     public $incrementing = false;
@@ -18,13 +19,13 @@ class PaymentRegulation extends Model
     protected $fillable = [
         'uuid',
         'payment_uuid',
-        'regulation_method_uuid',
-        'cash_receipt_type_uuid',
+        'payable_type',
+        'payable_uuid',
         'amount',
+        'regulation_method_uuid',
         'phone_number',
         'reference',
         'detail',
-        'reason_for_cancel_or_update',
         'created_by',
         'updated_by',
     ];
@@ -40,11 +41,6 @@ class PaymentRegulation extends Model
         });
     }
 
-    protected $casts = [
-        'status' => PaymentStatus::class,
-    ];
-
-
     public function payment()
     {
         return $this->belongsTo(Payment::class, 'payment_uuid', 'uuid');
@@ -59,6 +55,30 @@ class PaymentRegulation extends Model
         );
     }
 
+
+    public function payable()
+    {
+        return $this->morphTo(null, 'payable_type', 'payable_uuid');
+    }
+
+    public function item()
+    {
+        return $this->belongsTo(
+            OrderMenuRestaurantItem::class,
+            'payable_uuid',
+            'uuid'
+        )->where('payable_type', OrderMenuRestaurantItem::class);
+    }
+
+    public function drink()
+    {
+        return $this->belongsTo(
+            OrderRestaurantDrink::class,
+            'payable_uuid',
+            'uuid'
+        )->where('payable_type', OrderRestaurantDrink::class);
+    }
+
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
@@ -67,13 +87,5 @@ class PaymentRegulation extends Model
     public function updater()
     {
         return $this->belongsTo(User::class, 'updated_by');
-    }
-    public function cashReceiptType()
-    {
-        return $this->belongsTo(
-            CashReceiptType::class,
-            'cash_receipt_type_uuid',
-            'uuid'
-        );
     }
 }

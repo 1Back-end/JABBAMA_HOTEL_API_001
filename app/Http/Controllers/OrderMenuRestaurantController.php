@@ -4687,7 +4687,7 @@ class OrderMenuRestaurantController extends Controller
         $statuses = $drink->statuses;
 
         // Récupération des deux groupes
-        $rejectedStatuses = $statuses->whereIn('status', OrderMenuRestaurantItemStatus::REJECTED->value,);
+        $rejectedStatuses = $statuses->whereIn('status', OrderMenuRestaurantItemStatus::REJECTED->value);
         $transferredStatuses = $statuses->where('status', OrderMenuRestaurantItemStatus::TRANSFERRED->value);
 
         $qtyRejected = $rejectedStatuses->sum('quantity');
@@ -6092,7 +6092,10 @@ class OrderMenuRestaurantController extends Controller
                 'drinks.cancelForNewUpdateBy:id,nom_utilisateur',
                 'drinks.rejectedAfterValidationByUser:id,nom_utilisateur',
                 'items.complements.complement',
-                'salesCategory:uuid,name,start_time,end_time'
+                'salesCategory:uuid,name,start_time,end_time',
+                'payment.regulations.method',
+                'items.paymentLines',
+                'drinks.paymentLines'
             ])
                 ->where('uuid', $uuid)
                 ->firstOrFail();
@@ -8809,6 +8812,9 @@ class OrderMenuRestaurantController extends Controller
 
 
 
+
+
+
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::markItemsDefective
@@ -10225,6 +10231,7 @@ class OrderMenuRestaurantController extends Controller
                 'drinks.rejector:id,nom_utilisateur',
                 'drinks.statuses',
                 'items.complements.complement',
+                'payment.regulations.method'
             ])->findOrFail($uuid);
 
 
@@ -10450,7 +10457,8 @@ class OrderMenuRestaurantController extends Controller
             ->whereIn('status', [
                 MenuOrderStatus::FACTURATE->value,
                 MenuOrderStatus::PARTIALLY_PAID->value,
-                MenuOrderStatus::PAID->value
+                MenuOrderStatus::PAID->value,
+                MenuOrderStatus::NOT_PAID->value
             ]);
 
         if ($request->filled('free_client_for_restaurant_uuid')) {
@@ -10528,6 +10536,10 @@ class OrderMenuRestaurantController extends Controller
             'data' => $order
         ]);
     }
+
+
+
+
 
 
 
