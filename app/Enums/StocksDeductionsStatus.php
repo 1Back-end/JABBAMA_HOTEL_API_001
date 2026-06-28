@@ -17,11 +17,11 @@ enum StocksDeductionsStatus: string
     public function label(): string
     {
         return match ($this){
-            self::DRAFT => 'Déduction en brouillon',
-            self::PENDING => 'Déduction en attente',
-            self::VALIDATED => 'Déduction validée',
-            self::REJECTED => 'Déduction rejetté',
-            self::CANCELLED => 'Déduction annulée',
+            self::DRAFT => 'En brouillon',
+            self::PENDING => 'En attente',
+            self::VALIDATED => 'Validée',
+            self::REJECTED => 'Rejetté',
+            self::CANCELLED => 'Annulée',
 
         };
     }
