@@ -250,16 +250,6 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des commandes du restaurant',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],
-        'update_regulations_for_orders' => [
-            'description' => 'Modifier les encaissements d\'une commande',
-            'category' => 'Gestion des commandes du restaurant',
-            'modules' => ['Gestion du restaurant', 'Autres Modules'],
-        ],
-        'view_regulations_for_orders' => [
-            'description' => 'Afficher les encaissements d\'une commande',
-            'category' => 'Gestion des commandes du restaurant',
-            'modules' => ['Gestion du restaurant', 'Autres Modules'],
-        ],
         'save_regulations_for_orders_items' => [
             'description' => 'Effectuer les encaissements des menus d\'une commande',
             'category' => 'Gestion des commandes du restaurant',
@@ -290,7 +280,6 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des commandes du restaurant',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],
-
         'view_cash_register_sheet' => [
             'description' => 'Afficher la fiche de caisse',
             'category' => 'Gestion des commandes du restaurant',
@@ -570,6 +559,15 @@ class ExtractPermissions extends Command
                 $module->delete();
                 $this->warn("🗑️ Module supprimé : {$module->name}");
             });
+
+        \App\Models\ModuleApplications::whereDoesntHave('permissions')
+            ->get()
+            ->each(function ($module) {
+                $module->delete();
+                $this->warn("🗑️ Module supprimé car vide : {$module->name}");
+            });
+
+        $this->info("\n✅ Synchronisation complète et nettoyage terminés !");
 
         $this->info("\n✅ Synchronisation complète terminée !");
     }

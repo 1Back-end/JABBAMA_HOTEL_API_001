@@ -63,8 +63,12 @@ class RestaurantExpenseFamily extends Model
             'parent_uuid',
             'uuid'
         )
-            ->where('is_used', true)
-            ->with('childrenRecursive');
+            ->with([
+                'childrenRecursive',
+                'type',
+                'creator:id,nom_utilisateur',
+                'updater:id,nom_utilisateur',
+            ]);
     }
 
     public function type()
@@ -84,5 +88,16 @@ class RestaurantExpenseFamily extends Model
     public function updater()
     {
         return $this->belongsTo(User::class, 'updated_by');
+    }
+
+    public function families()
+    {
+        return $this->hasMany(
+            RestaurantExpenseFamily::class,
+            'restaurant_expense_uuid',
+            'uuid'
+        )
+            ->whereNull('parent_uuid')
+            ->with('childrenRecursive');
     }
 }

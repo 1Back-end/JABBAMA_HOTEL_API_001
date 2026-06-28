@@ -83,7 +83,7 @@ class OrderMenuRestaurant extends Model
         'order_menu_restaurant_date' => 'datetime',
     ];
 
-    protected $appends = ['free_client_amount_allocated','partner_amount_allocated','consumption_type_label','clients_for_payment_label','status_label','total_items','total_drinks','total_order','summary_items','remaining_amount'];
+    protected $appends = ['free_client_amount_allocated','partner_amount_allocated','consumption_type_label','clients_for_payment_label','status_label','total_items','total_drinks','total_order','summary_items','remaining_amount','computed_paid_amount'];
 
     public function getFreeClientAmountAllocatedAttribute()
     {
@@ -97,7 +97,6 @@ class OrderMenuRestaurant extends Model
     public function getRemainingAmountAttribute(): int
     {
         $paid = $this->payment->paid_amount ?? 0;
-
         return max(0, $this->total_order - $paid);
     }
     public function getConsumptionTypeLabelAttribute(): string
@@ -135,15 +134,18 @@ class OrderMenuRestaurant extends Model
 
     public function getTotalOrderAttribute(): int
     {
-        return $this->total_items + $this->total_drinks;
+        return (int) ($this->total_items + $this->total_drinks);
+    }
+
+    public function getComputedPaidAmountAttribute(): int
+    {
+        return $this->total_order - $this->remaining_amount;
     }
 
     public function getSummaryItemsAttribute(): string
     {
-        // Compter le nombre de menus différents
         $menusCount = $this->items()->count();
 
-        // Compter le nombre de boissons différentes
         $drinksCount = $this->drinks()->count();
 
         $menusLabel = $menusCount > 1 ? 'plats' : 'plat';

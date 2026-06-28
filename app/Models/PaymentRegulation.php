@@ -20,6 +20,7 @@ class PaymentRegulation extends Model
         'payment_uuid',
         'regulation_method_uuid',
         'cash_receipt_type_uuid',
+        'restaurant_expense_type_uuid',
         'amount',
         'phone_number',
         'reference',
@@ -27,6 +28,9 @@ class PaymentRegulation extends Model
         'reason_for_cancel_or_update',
         'created_by',
         'updated_by',
+        'type',
+        'source_type',
+        'source_uuid'
     ];
 
     protected static function boot()
@@ -73,6 +77,23 @@ class PaymentRegulation extends Model
         return $this->belongsTo(
             CashReceiptType::class,
             'cash_receipt_type_uuid',
+            'uuid'
+        );
+    }
+    public function restaurantExpenseType()
+    {
+        return $this->belongsTo(
+            RestaurantExpenseType::class,
+            'restaurant_expense_type_uuid',
+            'uuid'
+        );
+    }
+
+    public function expenseDetails()
+    {
+        return $this->hasMany(
+            RestaurantExpenseDetail::class,
+            'payment_regulation_uuid',
             'uuid'
         );
     }
