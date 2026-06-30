@@ -91,4 +91,12 @@ class CashReceiptFamily extends Model
     {
         return $this->children()->with('childrenRecursive');
     }
+    public function paymentRegulations()
+    {
+        return $this->hasMany(
+            PaymentRegulation::class,
+            'cash_receipt_families_uuid',
+            'uuid'
+        );
+    }
 }

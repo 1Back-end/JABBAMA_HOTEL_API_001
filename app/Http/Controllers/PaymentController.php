@@ -6,7 +6,9 @@ use App\Enums\CashRegisterFilterType;
 use App\Enums\MenuOrderStatus;
 use App\Enums\OrderMenuRestaurantItemStatus;
 use App\Enums\PaymentStatus;
+use App\Models\CashReceiptFamily;
 use App\Models\CashReceiptType;
+use App\Models\ExpensePayment;
 use App\Models\OrderMenuRestaurant;
 use App\Models\OrderMenuRestaurantItem;
 use App\Models\OrderRestaurantDrink;
@@ -216,10 +218,39 @@ class PaymentController extends Controller
                 $cashReceiptType = CashReceiptType::where('is_linked_to_turnover', true)
                     ->first();
 
+                $hasItems = false;
+                $hasDrinks = false;
+
+                if (!empty($regulation['lines'])) {
+                    foreach ($regulation['lines'] as $line) {
+                        if ($line['type'] === 'item') {
+                            $hasItems = true;
+                        }
+
+                        if ($line['type'] === 'drink') {
+                            $hasDrinks = true;
+                        }
+                    }
+                }
+
+                if ($hasItems && $hasDrinks) {
+                    $indexationName = 'Consommation Bar / Restaurant';
+                } elseif ($hasItems) {
+                    $indexationName = 'Consommation Restaurant';
+                } elseif ($hasDrinks) {
+                    $indexationName = 'Consommation Bar';
+                } else {
+                    $indexationName = null;
+                }
+
+                $cashReceiptFamily = $indexationName
+                    ? CashReceiptFamily::where('indexation', $indexationName)->first()
+                    : null;
+
                 $reg = PaymentRegulation::create([
                     'payment_uuid' => $payment->uuid,
                     'regulation_method_uuid' => $method->uuid,
-                    'cash_receipt_type_uuid'  => $cashReceiptType?->uuid,
+                    'cash_receipt_families_uuid'  => $cashReceiptFamily?->uuid,
                     'amount' => (float) $regulation['amount'],
                     'phone_number' => $regulation['phone_number'] ?? null,
                     'reference' => $regulation['reference'] ?? null,
@@ -231,8 +262,6 @@ class PaymentController extends Controller
 
                 if (!empty($regulation['lines'])) {
                     foreach ($regulation['lines'] as $line) {
-
-                        // CORRECTION DYNAMIQUE DU TYPE POLYMORPHIQUE
                         $payableModel = $line['type'] === 'item'
                             ? get_class($order->items()->getModel())
                             : get_class($order->drinks()->getModel());
@@ -533,6 +562,7 @@ class PaymentController extends Controller
                 'regulation_methods.uuid'
             )
             ->select([
+                DB::raw('MIN(payment_regulations.uuid) as uuid'),
                 DB::raw('DATE(payment_regulations.created_at) as date'),
                 DB::raw('MIN(payment_regulations.created_at) as created_at'),
                 'payment_regulations.created_by',
@@ -599,6 +629,63 @@ class PaymentController extends Controller
     }
 
 
+
+    public function show_payments_by_uuid(string $uuid)
+    {
+        $paymentRegulation = PaymentRegulation::with([
+            'creator:id,nom_utilisateur',
+            'updater:id,nom_utilisateur',
+            'expenseDetails',
+            'restaurantExpenseType',
+            'cashReceiptType',
+            'sourceType.family',
+            'cashReceiptFamily',
+            'method',
+            'payment.regulations',
+            'payment.order.items',
+            'payment.order.drinks',
+        ])
+            ->findOrFail($uuid);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Détails du flux de caisse récupérés avec succès',
+            'data'    => $paymentRegulation
+        ], 200);
+    }
+
+
+    public function show_expenses_by_user_today(string $userId)
+    {
+        $today = Carbon::today()->toDateString();
+
+        $expenses = ExpensePayment::with([
+            'creator:id,nom_utilisateur',
+            'updater:id,nom_utilisateur',
+            'expenseType:uuid,name',
+            'family:uuid,name',
+            'method:uuid,name',
+        ])
+            ->where('created_by', $userId)
+            ->whereDate('paid_at', $today)
+            ->orderByDesc('paid_at')
+            ->get()
+            ->groupBy('restaurant_expense_type_uuid')
+            ->map(function ($items) {
+                return [
+                    'expense_type' => $items->first()->expenseType,
+                    'total_amount' => $items->sum('amount'),
+                    'items' => $items->values()
+                ];
+            })
+            ->values();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Dépenses du jour récupérées avec succès',
+            'data'    => $expenses
+        ], 200);
+    }
 
 
     public function destroy($uuid)

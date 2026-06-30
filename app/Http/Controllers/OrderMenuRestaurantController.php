@@ -31,6 +31,7 @@ use App\Models\OrderMenuRestaurantDefectiveItem;
 use App\Models\OrderMenuRestaurantItem;
 use App\Models\OrderMenuRestaurantItemComplement;
 use App\Models\OrderRestaurantDrink;
+use App\Models\Payment;
 use App\Models\PdfDocument;
 use App\Models\Product;
 use App\Models\ProductPoint;
@@ -5939,6 +5940,11 @@ class OrderMenuRestaurantController extends Controller
             'payment.regulations.method'
         ]);
 
+        $dateFilterApplied = false;
+        if ($request->filled('order_menu_restaurant_date')) {
+            $query->where('order_menu_restaurant_date', $request->order_menu_restaurant_date);
+            $dateFilterApplied = true;
+        }
         if ($request->filled('restaurant_table_uuid')) {
             $query->where('restaurant_table_uuid', $request->restaurant_table_uuid);
         }
@@ -5972,6 +5978,11 @@ class OrderMenuRestaurantController extends Controller
             $end_date = Carbon::parse($request->end_date)->endOfDay();
 
             $query->whereBetween('created_at', [$start_date, $end_date]);
+            $dateFilterApplied = true;
+        }
+
+        if (!$dateFilterApplied) {
+            $query->whereDate('created_at', Carbon::today());
         }
 
         if (
@@ -6918,6 +6929,17 @@ class OrderMenuRestaurantController extends Controller
                     'updated_by' => $auth->id
                 ]);
             }
+
+            $order->items()->update([
+                'status' => MenuOrderStatus::NOT_PAID->value,
+                'updated_by' => $auth->id
+            ]);
+
+            $order->drinks()->update([
+                'status' => MenuOrderStatus::NOT_PAID->value,
+                'updated_by' => $auth->id
+            ]);
+
             \App\Models\OrderNotification::createOrUpdateNotification(
                 $order->uuid,
                 MenuOrderStatus::FACTURATE->value,
@@ -10198,6 +10220,7 @@ class OrderMenuRestaurantController extends Controller
         VirtualOrderMenuRestaurant::where('orders_menu_restaurant_uuid', $orderUuid)->delete();
         ComplementVirtualTemp::where('order_menu_restaurant_uuid', $orderUuid)->delete();
         OrderMenuRestaurantItemComplement::where('order_menu_restaurant_uuid', $orderUuid)->delete();
+        Payment::where('order_menu_restaurant_uuid', $orderUuid)->delete();
     }
 
 
