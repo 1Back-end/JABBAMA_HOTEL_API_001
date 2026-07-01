@@ -67,7 +67,7 @@ class RestaurantExpenseController extends Controller
             'expenseType',
             'family',
             'method'
-        ])->firstOrFail();
+        ])->findOrFail($uuid);
 
         if (!$query) {
             return response()->json([

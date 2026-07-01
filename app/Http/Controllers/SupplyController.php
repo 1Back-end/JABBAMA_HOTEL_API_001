@@ -81,7 +81,12 @@ class SupplyController extends Controller
             $query->where('status', $request->status);
         }
         if ($request->filled('start_date') && $request->filled('end_date')) {
+            $start_date = Carbon::parse($request->input('start_date'))->startOfDay();
+            $end_date = Carbon::parse($request->input('end_date'))->endOfDay();
+
             $query->whereBetween('created_at', [$start_date, $end_date]);
+        } else {
+            $query->whereDate('created_at', Carbon::today());
         }
 
         if (!$auth->hasRole('SUPER_ADMIN')) {

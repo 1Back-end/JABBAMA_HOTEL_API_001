@@ -21,6 +21,7 @@ class PaymentRegulation extends Model
         'regulation_method_uuid',
         'cash_receipt_type_uuid',
         'restaurant_expense_type_uuid',
+        'cash_receipt_families_uuid',
         'amount',
         'phone_number',
         'reference',
@@ -94,6 +95,20 @@ class PaymentRegulation extends Model
         return $this->hasMany(
             RestaurantExpenseDetail::class,
             'payment_regulation_uuid',
+            'uuid'
+        );
+    }
+
+    public function sourceType()
+    {
+        return $this->belongsTo(ExpensePayment::class, 'source_uuid', 'uuid');
+    }
+
+    public function cashReceiptFamily()
+    {
+        return $this->belongsTo(
+            CashReceiptFamily::class,
+            'cash_receipt_families_uuid',
             'uuid'
         );
     }

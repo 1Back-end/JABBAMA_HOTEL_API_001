@@ -78,9 +78,13 @@ class PurchaseOrderController extends Controller
             $query->where('warehouse_from', $request->warehouse_from);
         }
 
-        // 🔹 Filtrage par période
         if ($request->filled('start_date') && $request->filled('end_date')) {
+            $start_date = Carbon::parse($request->input('start_date'))->startOfDay();
+            $end_date = Carbon::parse($request->input('end_date'))->endOfDay();
+
             $query->whereBetween('created_at', [$start_date, $end_date]);
+        } else {
+            $query->whereDate('created_at', Carbon::today());
         }
 
         if (!$auth->hasRole('SUPER_ADMIN')) {
@@ -88,16 +92,12 @@ class PurchaseOrderController extends Controller
             $roleIds = $auth->roles->pluck('id');
 
             $query->where(function ($q) use ($auth, $roleIds) {
-
-                // 🔹 Utilisateurs avec la permission view_role_related_data
                 if ($auth->can('view_role_related_data')) {
                     $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
                 }
-                // 🔹 Utilisateurs avec la permission view_transferred_orders
                 if ($auth->can('view_transferred_orders')) {
                     $q->orWhereNotNull('transfered_by');
                 }
-                // 🔹 Utilisateurs sans aucune de ces permissions : seulement leurs propres commandes
                 if (!$auth->can('view_role_related_data') && !$auth->can('view_transferred_orders')) {
                     $q->orWhere('created_by', $auth->id);
                 }
@@ -105,7 +105,6 @@ class PurchaseOrderController extends Controller
             });
         }
 
-        // 🔹 Recherche globale
         if ($search = trim($request->input('search'))) {
             $query->where(function ($q) use ($search) {
                 $q->where('reference', 'like', "%{$search}%")
