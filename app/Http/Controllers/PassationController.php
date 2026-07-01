@@ -61,10 +61,12 @@ class PassationController extends Controller
             $query->where('warehouse_uuid', $request->warehouse_uuid);
         }
         if ($request->filled('start_date') && $request->filled('end_date')) {
-            $start = \Illuminate\Support\Carbon::parse($request->start_date)->startOfDay();
-            $end = Carbon::parse($request->end_date)->endOfDay();
+            $start_date = \Illuminate\Support\Carbon::parse($request->input('start_date'))->startOfDay();
+            $end_date = Carbon::parse($request->input('end_date'))->endOfDay();
 
-            $query->whereBetween('created_at', [$start, $end]);
+            $query->whereBetween('created_at', [$start_date, $end_date]);
+        } else {
+            $query->whereDate('created_at', Carbon::today());
         }
 
         if (!$auth->hasRole('SUPER_ADMIN') && !$auth->can('view_all_passations')) {

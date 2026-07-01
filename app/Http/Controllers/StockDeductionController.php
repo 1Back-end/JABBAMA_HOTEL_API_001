@@ -184,16 +184,20 @@ class StockDeductionController extends Controller
             $deduction->where('warehouse_uuid', $request->warehouse_uuid);
         }
         if ($request->filled('start_date') && $request->filled('end_date')) {
+            $start_date = \Illuminate\Support\Carbon::parse($request->input('start_date'))->startOfDay();
+            $end_date = Carbon::parse($request->input('end_date'))->endOfDay();
+
             $deduction->whereBetween('created_at', [$start_date, $end_date]);
+        } else {
+            $deduction->whereDate('created_at', Carbon::today());
         }
+
         if (!$auth->hasRole('SUPER_ADMIN')) {
 
             $deduction->where(function($q) use ($auth, $roleIds) {
-                // 🔹 Utilisateurs avec la permission view_role_related_data
                 if ($auth->can('view_role_related_data')) {
                     $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
                 }
-                // 🔹 Utilisateurs sans cette permission : seulement leurs propres déductions
                 if (!$auth->can('view_role_related_data')) {
                     $q->orWhere('created_by', $auth->id);
                 }
@@ -209,7 +213,6 @@ class StockDeductionController extends Controller
                     ->orWhere('reason_of_cancel', 'like', "%{$search}%")
                     ->orWhere('reference', 'like', "%{$search}%")
 
-                    // 🔹 Entrepôts
                     ->orWhereHas('warehouse', function ($qw) use ($search) {
                         $qw->where('name', 'like', "%{$search}%")
                             ->orWhere('uuid', 'like', "%{$search}%")

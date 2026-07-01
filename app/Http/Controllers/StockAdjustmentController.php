@@ -203,10 +203,12 @@ class StockAdjustmentController extends Controller
             $stock_adjustment->where('warehouse_uuid', $request->warehouse_uuid);
         }
         if ($request->filled('start_date') && $request->filled('end_date')) {
-            $start = \Illuminate\Support\Carbon::parse($request->start_date)->startOfDay();
-            $end = Carbon::parse($request->end_date)->endOfDay();
+            $start_date = \Illuminate\Support\Carbon::parse($request->input('start_date'))->startOfDay();
+            $end_date = Carbon::parse($request->input('end_date'))->endOfDay();
 
-            $stock_adjustment->whereBetween('created_at', [$start, $end]);
+            $stock_adjustment->whereBetween('created_at', [$start_date, $end_date]);
+        } else {
+            $stock_adjustment->whereDate('created_at', Carbon::today());
         }
 
         if ($search = trim($request->input('search'))) {
