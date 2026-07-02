@@ -7,6 +7,7 @@ enum PaymentOrderMenusStatus: string
     case PARTIALLY_PAID = 'partially_paid';
     case PAID = 'paid';
     case NOT_PAID = 'not_paid';
+    case FACTURATE = 'facture';
 
     public function label(): string
     {
@@ -14,6 +15,8 @@ enum PaymentOrderMenusStatus: string
             self::PARTIALLY_PAID => 'Réglée partiellement',
             self::PAID           => 'Réglée',
             self::NOT_PAID       => 'Non réglée',
+            self::FACTURATE => 'Facturée',
+
         };
     }
 

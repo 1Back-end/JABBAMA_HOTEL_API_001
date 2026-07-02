@@ -86,7 +86,12 @@ class OrderMenuRestaurant extends Model
         'order_menu_restaurant_date' => 'datetime',
     ];
 
-    protected $appends = ['free_client_amount_allocated','status_payment_label','partner_amount_allocated','consumption_type_label','clients_for_payment_label','status_label','status_payment_label','total_items','total_drinks','total_order','summary_items','remaining_amount','computed_paid_amount'];
+    protected $appends = ['free_client_amount_allocated','total_cumul_arrhes','status_payment_label','partner_amount_allocated','consumption_type_label','clients_for_payment_label','status_label','status_payment_label','total_items','total_drinks','total_order','summary_items','remaining_amount','computed_paid_amount'];
+    public function getTotalCumulArrhesAttribute()
+    {
+        return $this->free_client_amount_allocated
+            + $this->partner_amount_allocated;
+    }
 
     public function getFreeClientAmountAllocatedAttribute()
     {
