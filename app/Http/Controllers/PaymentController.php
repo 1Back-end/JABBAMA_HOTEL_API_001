@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Enums\CashRegisterFilterType;
 use App\Enums\MenuOrderStatus;
 use App\Enums\OrderMenuRestaurantItemStatus;
+use App\Enums\PaymentOrderItemStatus;
+use App\Enums\PaymentOrderMenusStatus;
 use App\Enums\PaymentStatus;
 use App\Models\CashReceiptFamily;
 use App\Models\CashReceiptType;
@@ -32,30 +34,25 @@ class PaymentController extends Controller
         $allLines = $order->items->merge($order->drinks);
 
         if ($allLines->isEmpty()) {
-            $order->status = MenuOrderStatus::NOT_PAID->value;
+            $order->status = PaymentOrderMenusStatus::NOT_PAID->value;
             $order->save();
             return;
         }
 
         $total = $allLines->count();
 
-        $paidCount = $allLines->where('status', OrderMenuRestaurantItemStatus::PAID->value)->count();
-
-        $partialCount = $allLines->where('status', OrderMenuRestaurantItemStatus::PARTIALLY_PAID->value)->count();
-
-        $notPaidCount = $allLines->where('status', OrderMenuRestaurantItemStatus::NOT_PAID->value)->count();
-
-        $deliveredCount = $allLines->where('status', OrderMenuRestaurantItemStatus::DELIVERED->value)->count();
+        $paidCount    = $allLines->where('regulation_status', PaymentOrderItemStatus::PAID->value)->count();
+        $partialCount = $allLines->where('regulation_status', PaymentOrderItemStatus::PARTIALLY_PAID->value)->count();
+        $notPaidCount = $allLines->where('regulation_status', PaymentOrderItemStatus::NOT_PAID->value)->count();
 
         if ($paidCount === $total) {
-            $order->status = MenuOrderStatus::PAID->value;
+            $order->regulation_status = PaymentOrderMenusStatus::PAID->value;
         }
-
-        elseif ($deliveredCount === $total || $notPaidCount === $total) {
-            $order->status = MenuOrderStatus::NOT_PAID->value;
+        elseif ($notPaidCount === $total) {
+            $order->regulation_status = PaymentOrderMenusStatus::NOT_PAID->value;
         }
         else {
-            $order->status = MenuOrderStatus::PARTIALLY_PAID->value;
+            $order->regulation_status = PaymentOrderMenusStatus::PARTIALLY_PAID->value;
         }
         $order->save();
     }
@@ -70,19 +67,22 @@ class PaymentController extends Controller
         $lines = $order->items->merge($order->drinks);
 
         foreach ($lines as $line) {
-
+            $total = (float) $line->unit_price * (float) $line->quantity_exactly;
+            if ($total === 0.0) {
+                $line->regulation_status = PaymentOrderItemStatus::PAID->value;
+                $line->save();
+                continue;
+            }
             $paidAmount = (float) $line->paymentLines->sum('amount');
 
-            $total = (float) $line->unit_price * (float) $line->quantity_exactly;
-
             if ($paidAmount <= 0) {
-                $line->status = OrderMenuRestaurantItemStatus::NOT_PAID->value;
+                $line->regulation_status = PaymentOrderMenusStatus::NOT_PAID->value;
             }
             elseif ($paidAmount < $total) {
-                $line->status = OrderMenuRestaurantItemStatus::PARTIALLY_PAID->value;
+                $line->regulation_status = PaymentOrderMenusStatus::PARTIALLY_PAID->value;
             }
             else {
-                $line->status = OrderMenuRestaurantItemStatus::PAID->value;
+                $line->regulation_status = PaymentOrderMenusStatus::PAID->value;
             }
 
             $line->save();
@@ -404,7 +404,7 @@ class PaymentController extends Controller
 
                 OrderMenuRestaurantItem::where('uuid', $request->target_uuid)
                     ->update([
-                        'status' => OrderMenuRestaurantItemStatus::NOT_PAID->value
+                        'regulation_status' => PaymentOrderItemStatus::NOT_PAID->value
                     ]);
 
                 $totalAmountToRefund += $refund;
@@ -444,7 +444,7 @@ class PaymentController extends Controller
 
                 OrderRestaurantDrink::where('uuid', $request->target_uuid)
                     ->update([
-                        'status' => OrderMenuRestaurantItemStatus::NOT_PAID->value
+                        'regulation_status' => PaymentOrderItemStatus::NOT_PAID->value
                     ]);
 
                 $totalAmountToRefund += $refund;
@@ -455,16 +455,18 @@ class PaymentController extends Controller
                 $totalAmountToRefund = $payment->paid_amount;
 
                 $paidItems = $order->items()
-                    ->whereIn('status', [
-                        OrderMenuRestaurantItemStatus::PAID->value,
-                        OrderMenuRestaurantItemStatus::PARTIALLY_PAID->value
+                    ->where('total_price', '>', 0)
+                    ->whereIn('regulation_status', [
+                        PaymentOrderItemStatus::PAID->value,
+                        PaymentOrderItemStatus::PARTIALLY_PAID->value
                     ])
                     ->pluck('uuid');
 
                 $paidDrinks = $order->drinks()
-                    ->whereIn('status', [
-                        OrderMenuRestaurantItemStatus::PAID->value,
-                        OrderMenuRestaurantItemStatus::PARTIALLY_PAID->value
+                    ->where('total_price', '>', 0)
+                    ->whereIn('regulation_status', [
+                        PaymentOrderItemStatus::PAID->value,
+                        PaymentOrderItemStatus::PARTIALLY_PAID->value
                     ])
                     ->pluck('uuid');
 
@@ -472,13 +474,22 @@ class PaymentController extends Controller
                 PaymentRegulation::where('payment_uuid', $payment->uuid)->delete();
 
                 $order->items()->whereIn('uuid', $paidItems)->update([
-                    'status' => OrderMenuRestaurantItemStatus::NOT_PAID->value
+                    'regulation_status' => PaymentOrderItemStatus::NOT_PAID->value
                 ]);
                 $order->drinks()->whereIn('uuid', $paidDrinks)->update([
-                    'status' => OrderMenuRestaurantItemStatus::NOT_PAID->value
+                    'regulation_status' => PaymentOrderItemStatus::NOT_PAID->value
                 ]);
+                $hasOtherPaidItems = $order->items()
+                    ->whereIn('regulation_status', [PaymentOrderItemStatus::PAID->value, PaymentOrderItemStatus::PARTIALLY_PAID->value])
+                    ->exists();
 
-                $order->status = MenuOrderStatus::NOT_PAID->value;
+                $hasOtherPaidDrinks = $order->drinks()
+                    ->whereIn('regulation_status', [PaymentOrderItemStatus::PAID->value, PaymentOrderItemStatus::PARTIALLY_PAID->value])
+                    ->exists();
+
+                $order->regulation_status = ($hasOtherPaidItems || $hasOtherPaidDrinks)
+                    ? PaymentOrderMenusStatus::PARTIALLY_PAID->value
+                    : PaymentOrderMenusStatus::NOT_PAID->value;
                 $order->updated_by = auth()->id();
                 $order->save();
 

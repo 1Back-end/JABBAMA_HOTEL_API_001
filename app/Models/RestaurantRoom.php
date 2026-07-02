@@ -51,16 +51,23 @@ class RestaurantRoom extends Model
     {
         $datePart = now()->format('Ydm');
         $prefix = '#' . $datePart;
-
         $last = self::withTrashed()->orderBy('created_at', 'desc')->first();
 
-        if ($last && preg_match('/(\d{6})$/', $last->code, $matches)) {
+        if ($last && preg_match('/(\d{8})$/', $last->code, $matches)) {
             $number = (int) $matches[1] + 1;
         } else {
             $number = 1;
         }
+        do {
+            $generatedCode = $prefix . str_pad($number, 8, '0', STR_PAD_LEFT);
+            $exists = self::withTrashed()->where('code', $generatedCode)->exists();
 
-        return $prefix . str_pad($number, 6, '0', STR_PAD_LEFT);
+            if ($exists) {
+                $number++;
+            }
+        } while ($exists);
+
+        return $generatedCode;
     }
 
     public function creator()

@@ -147,6 +147,7 @@ class ConfigurationsComplementController extends Controller
 
                     'unit_price' => $config->prices_for_clients_debtor,
                     'special_price' => $config->prices_for_clients_partner,
+                    'free_price' => $config->prices_for_clients_free,
 
                     'is_active' => true,
                     'is_confectioned' => false,
@@ -366,6 +367,7 @@ class ConfigurationsComplementController extends Controller
 
                     'unit_price' => $config->prices_for_clients_debtor,
                     'special_price' => $config->prices_for_clients_partner,
+                    'free_price' => $config->prices_for_clients_free,
 
                     'is_active' => true,
                     'is_confectioned' => false,
@@ -445,15 +447,20 @@ class ConfigurationsComplementController extends Controller
      */
     public function upsert(Request $request, string $commplements_restaurant_uuid)
     {
+        // 🟢 LA CORRECTION EST ICI : Changement des règles pour rendre 'items' facultatif
         $request->validate([
-            'warehouse_uuid' => 'required|uuid',
-            'items' => 'required|array|min:1',
-            'items.*.product_uuid' => 'required|uuid',
-            'items.*.quantity_used' => 'required|numeric|min:0',
-            'items.*.is_optional' => 'nullable|boolean',
+            'warehouse_uuid'        => 'required|uuid',
+            'items'                 => 'nullable|array', // Accepte null ou un tableau vide []
+            'items.*.product_uuid'  => 'required_with:items|uuid', // Requis SEULEMENT si des items sont fournis
+            'items.*.quantity_used' => 'required_with:items|numeric|min:0',
+            'items.*.is_optional'   => 'nullable|boolean',
         ]);
 
         $auth = auth()->user();
+
+        // 🟢 Sécurité : On s'assure d'avoir un tableau propre pour éviter que les boucles crash si items est absent
+        $items = $request->items ?? [];
+        $hasItemsNow = count($items) > 0;
 
         DB::beginTransaction();
 
@@ -470,24 +477,26 @@ class ConfigurationsComplementController extends Controller
                 ]
             );
 
-
             $complement = ConfigurationsComplement::where('uuid', $commplements_restaurant_uuid)->firstOrFail();
 
+            // 🟢 Mis à jour dynamiquement : passe à false si le tableau est vide
             $complement->update([
-                'is_confectioned' => true,
-                'updated_by' => $auth->id,
+                'is_confectioned' => $hasItemsNow,
+                'updated_by'      => $auth->id,
             ]);
 
+            // Nettoyage systématique des anciens articles du complément
             ComplementCompositionItem::where('complement_uuid', $composition->uuid)->delete();
 
-            foreach ($request->items as $item) {
+            // Ajout des nouveaux articles (s'il y en a)
+            foreach ($items as $item) {
                 ComplementCompositionItem::create([
                     'complement_uuid' => $composition->uuid,
-                    'product_uuid' => $item['product_uuid'],
-                    'quantity_used' => $item['quantity_used'],
-                    'is_optional' => $item['is_optional'] ?? false,
-                    'created_by' => $auth->id,
-                    'updated_by' => $auth->id,
+                    'product_uuid'    => $item['product_uuid'],
+                    'quantity_used'   => $item['quantity_used'],
+                    'is_optional'     => $item['is_optional'] ?? false,
+                    'created_by'      => $auth->id,
+                    'updated_by'      => $auth->id,
                 ]);
             }
 
@@ -500,41 +509,40 @@ class ConfigurationsComplementController extends Controller
                     $warehouseUuid = $request->warehouse_uuid
                         ?? Warehouse::where('is_used_for_restaurant', true)->firstOrFail()->uuid;
 
-
                     $menuOrder = MenuOrder::firstOrCreate(
                         ['menus_restaurant_uuid' => $menu_restaurant->uuid],
                         [
                             'warehouse_uuid' => $warehouseUuid,
-                            'status' => \App\Enums\MenuOrderStatus::TRANSFERRED->value,
-                            'created_by' => $auth->id,
-                            'description' => $request->description
+                            'status'         => \App\Enums\MenuOrderStatus::TRANSFERRED->value,
+                            'created_by'     => $auth->id,
+                            'description'    => $request->description
                                 ?? 'Confection du menu ' . trim($menu_restaurant->name),
                         ]
                     );
 
                     $menuOrder->update([
                         'warehouse_uuid' => $warehouseUuid,
-                        'description' => $request->description
+                        'description'    => $request->description
                             ?? $menuOrder->description
                                 ?? 'Confection du menu ' . trim($menu_restaurant->name),
-                        'status' => \App\Enums\MenuOrderStatus::TRANSFERRED->value,
-                        'updated_by' => $auth->id,
+                        'status'         => \App\Enums\MenuOrderStatus::TRANSFERRED->value,
+                        'updated_by'     => $auth->id,
                     ]);
 
                     $existingItems = $menuOrder->items()->pluck('uuid')->toArray();
                     $submittedItemUuids = [];
 
-                    foreach ($request->items as $item) {
+                    foreach ($items as $item) {
 
                         if (!empty($item['uuid']) && in_array($item['uuid'], $existingItems)) {
 
                             $menuOrderItem = MenuOrderItem::find($item['uuid']);
 
                             $menuOrderItem?->update([
-                                'product_uuid' => $item['product_uuid'],
-                                'quantity_used' => $item['quantity_used'],
+                                'product_uuid'          => $item['product_uuid'],
+                                'quantity_used'         => $item['quantity_used'],
                                 'menus_restaurant_uuid' => $menu_restaurant->uuid,
-                                'updated_by' => $auth->id,
+                                'updated_by'            => $auth->id,
                             ]);
 
                             $submittedItemUuids[] = $item['uuid'];
@@ -542,24 +550,26 @@ class ConfigurationsComplementController extends Controller
                         } else {
 
                             $newItem = MenuOrderItem::create([
-                                'menu_order_uuid' => $menuOrder->uuid,
-                                'product_uuid' => $item['product_uuid'],
-                                'quantity_used' => $item['quantity_used'],
+                                'menu_order_uuid'       => $menuOrder->uuid,
+                                'product_uuid'          => $item['product_uuid'],
+                                'quantity_used'         => $item['quantity_used'],
                                 'menus_restaurant_uuid' => $menu_restaurant->uuid,
-                                'created_by' => $auth->id,
-                                'updated_by' => $auth->id,
+                                'created_by'            => $auth->id,
+                                'updated_by'            => $auth->id,
                             ]);
 
                             $submittedItemUuids[] = $newItem->uuid;
                         }
                     }
 
+                    // 🟢 S'il n'y a plus aucun item, cette requête va supprimer tous les anciens enregistrements liés
                     $menuOrder->items()
                         ->whereNotIn('uuid', $submittedItemUuids)
                         ->delete();
 
+                    // 🟢 Idem ici : mis à jour selon l'état réel des articles
                     $menu_restaurant->update([
-                        'is_confectioned' => true
+                        'is_confectioned' => $hasItemsNow
                     ]);
                 }
             }
@@ -583,7 +593,7 @@ class ConfigurationsComplementController extends Controller
             DB::rollBack();
 
             return response()->json([
-                'status' => 'error',
+                'status'  => 'error',
                 'message' => $e->getMessage(),
             ], 500);
         }

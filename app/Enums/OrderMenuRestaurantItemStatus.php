@@ -26,9 +26,6 @@ enum OrderMenuRestaurantItemStatus: string
      case DEFECTIVE = 'defective';
      case FACTURATE = 'facture';
 
-    case PARTIALLY_PAID = 'partially_paid';
-    case PAID = 'paid';
-    case NOT_PAID = 'not_paid';
 
     public function label(): string
     {
@@ -45,9 +42,6 @@ enum OrderMenuRestaurantItemStatus: string
             self::DEFECTIVE => 'Défectieux',
             self::REJECTED_AFTER_VALIDATION => 'Rejet du servi(s)',
             self::FACTURATE => 'Facturée',
-            self::PARTIALLY_PAID => 'Encaissée partiellement',
-            self::PAID => 'Encaissée',
-            self::NOT_PAID => 'Non encaissée',
         };
     }
 

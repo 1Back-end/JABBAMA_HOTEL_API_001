@@ -18,11 +18,8 @@ enum MenuOrderStatus : string
     case TOTAL_DELIVERED = 'ready';
     case DEFECTIVE = 'defective';
     case REJECTED_AFTER_VALIDATION = 'rejected_after_validation';
-
     case FACTURATE = 'facture';
-    case PARTIALLY_PAID = 'partially_paid';
-    case PAID = 'paid';
-    case NOT_PAID = 'not_paid';
+
 
 
     public function label(): string
@@ -40,9 +37,6 @@ enum MenuOrderStatus : string
             self::DEFECTIVE => 'Défectieuse',
             self::REJECTED_AFTER_VALIDATION => 'Rejet du servi(s)',
             self::FACTURATE => 'Facturée',
-            self::PARTIALLY_PAID => 'Réglée partiellement',
-            self::PAID => 'Réglée',
-            self::NOT_PAID => 'Non réglée',
         };
     }
 

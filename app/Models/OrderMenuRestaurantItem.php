@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\OrderMenuRestaurantItemStatus;
+use App\Enums\PaymentOrderItemStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -61,7 +62,8 @@ class OrderMenuRestaurantItem extends Model
         'rejected_after_validation_at',
         'rejected_after_validation_by',
         'reason_of_rejected_after_validation',
-        'is_reason_of_rejected_after_validation'
+        'is_reason_of_rejected_after_validation',
+        'regulation_status'
     ];
 
     /**
@@ -78,12 +80,18 @@ class OrderMenuRestaurantItem extends Model
 
     ];
 
-    protected $appends = ['status_item_order_label','total_reserved_quantity'];
+    protected $appends = ['status_item_order_label','total_reserved_quantity','status_payment_label'];
 
 
     public function getStatusItemOrderLabelAttribute(): string
     {
         return OrderMenuRestaurantItemStatus::safeLabel($this->status);
+    }
+
+
+    public function getStatusPaymentLabelAttribute(): string
+    {
+        return PaymentOrderItemStatus::safeLabel($this->regulation_status);
     }
 
     public function getTotalReservedQuantityAttribute(): array
@@ -102,6 +110,9 @@ class OrderMenuRestaurantItem extends Model
             if (!$model->uuid) {
                 $model->uuid = (string) Str::uuid();
             }
+        });
+        static::saving(function ($model) {
+            unset($model->total_price);
         });
     }
 
