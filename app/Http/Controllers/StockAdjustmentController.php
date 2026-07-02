@@ -208,7 +208,7 @@ class StockAdjustmentController extends Controller
 
             $stock_adjustment->whereBetween('created_at', [$start_date, $end_date]);
         } else {
-            $query->whereDate('created_at', Carbon::today());
+            $stock_adjustment->whereDate('created_at', Carbon::today());
         }
 
         if ($search = trim($request->input('search'))) {

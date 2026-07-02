@@ -51,7 +51,6 @@ class MenuOrdersController extends Controller
     {
         $auth = auth()->user();
 
-        // 🔹 Vérification du mot de passe avant tout
         $request->validate([
             'password' => 'required|string'
         ], [
@@ -59,7 +58,6 @@ class MenuOrdersController extends Controller
             'password.string'   => 'Le mot de passe doit être une chaîne de caractères.'
         ]);
 
-        // 🔹 Vérification du mot de passe
         if (!Hash::check($request->password, $auth->password)) {
             return response()->json([
                 'status'  => 'error',
@@ -67,7 +65,6 @@ class MenuOrdersController extends Controller
             ], 422);
         }
 
-        // 🔹 Vérifier que le menu existe
         $menu_restaurant = MenuRestaurant::where('uuid', $menus_restaurant_uuid)->first();
         if (!$menu_restaurant) {
             return response()->json([
@@ -79,13 +76,13 @@ class MenuOrdersController extends Controller
         DB::beginTransaction();
 
         try {
-            // 🔹 Validation
+
             $validated = $request->validate([
                 'warehouse_uuid'        => 'nullable|exists:warehouses,uuid',
-                'items'                 => 'required|array|min:1',
-                'items.*.uuid'          => 'nullable|exists:menu_order_items,uuid', // pour mise à jour
-                'items.*.product_uuid'  => 'required|exists:produits,uuid',
-                'items.*.quantity_used' => 'required|numeric|min:1',
+                'items'                 => 'nullable|array', // 🟢 Changé de required|min:1 à nullable|array
+                'items.*.uuid'          => 'nullable|exists:menu_order_items,uuid',
+                'items.*.product_uuid'  => 'required_with:items|exists:produits,uuid',
+                'items.*.quantity_used' => 'required_with:items|numeric|min:1',
                 'description'           => 'nullable|string',
             ]);
 
@@ -97,38 +94,39 @@ class MenuOrdersController extends Controller
                     'warehouse_uuid' => $warehouseUuid,
                     'status'         => \App\Enums\MenuOrderStatus::TRANSFERRED->value,
                     'created_by'     => $auth->id,
-                    'description' => $validated['description'] ?? 'Confection du menu ' . trim($menu_restaurant->name),
+                    'description'    => $validated['description'] ?? 'Confection du menu ' . trim($menu_restaurant->name),
                 ]
             );
 
             $menuOrder->update([
                 'warehouse_uuid' => $warehouseUuid,
-                'description'   => $validated['description'] ?? $menuOrder->description ?? 'Confection du menu ' . trim($menu_restaurant->name),
-                'status'        => \App\Enums\MenuOrderStatus::TRANSFERRED->value,
-                'updated_by'    => $auth->id,
+                'description'    => $validated['description'] ?? $menuOrder->description ?? 'Confection du menu ' . trim($menu_restaurant->name),
+                'status'         => \App\Enums\MenuOrderStatus::TRANSFERRED->value,
+                'updated_by'     => $auth->id,
             ]);
 
             $existingItems = $menuOrder->items()->pluck('uuid')->toArray();
             $submittedItemUuids = [];
 
-            foreach ($validated['items'] as $item) {
+            $items = $validated['items'] ?? [];
+            foreach ($items as $item) {
                 if (!empty($item['uuid']) && in_array($item['uuid'], $existingItems)) {
                     $menuOrderItem = MenuOrderItem::find($item['uuid']);
                     $menuOrderItem->update([
-                        'product_uuid'  => $item['product_uuid'],
-                        'quantity_used' => $item['quantity_used'],
-                        'menus_restaurant_uuid'=> $menus_restaurant_uuid,
-                        'updated_by'    => $auth->id,
+                        'product_uuid'          => $item['product_uuid'],
+                        'quantity_used'         => $item['quantity_used'],
+                        'menus_restaurant_uuid' => $menus_restaurant_uuid,
+                        'updated_by'            => $auth->id,
                     ]);
                     $submittedItemUuids[] = $item['uuid'];
                 } else {
                     $newItem = MenuOrderItem::create([
-                        'menu_order_uuid' => $menuOrder->uuid,
-                        'product_uuid'    => $item['product_uuid'],
-                        'quantity_used'   => $item['quantity_used'],
-                        'menus_restaurant_uuid'=> $menus_restaurant_uuid,
-                        'created_by'      => $auth->id,
-                        'updated_by'      => $auth->id,
+                        'menu_order_uuid'       => $menuOrder->uuid,
+                        'product_uuid'          => $item['product_uuid'],
+                        'quantity_used'         => $item['quantity_used'],
+                        'menus_restaurant_uuid' => $menus_restaurant_uuid,
+                        'created_by'            => $auth->id,
+                        'updated_by'            => $auth->id,
                     ]);
                     $submittedItemUuids[] = $newItem->uuid;
                 }
@@ -136,12 +134,14 @@ class MenuOrdersController extends Controller
 
             $menuOrder->items()->whereNotIn('uuid', $submittedItemUuids)->delete();
 
-            $menu_restaurant->update(['is_confectioned' => true]);
+            $hasItemsNow = count($submittedItemUuids) > 0;
+            $menu_restaurant->update(['is_confectioned' => $hasItemsNow]);
+
             if ($menu_restaurant->is_generated_from_complement) {
                 ConfigurationsComplement::where('uuid', $menu_restaurant->uuid)
                     ->update([
-                        'is_confectioned' => true,
-                        'updated_by' => $auth->id,
+                        'is_confectioned' => $hasItemsNow,
+                        'updated_by'      => $auth->id,
                     ]);
             }
 

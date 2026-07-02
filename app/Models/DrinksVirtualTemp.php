@@ -46,16 +46,25 @@ class DrinksVirtualTemp extends Model
 
     public static function generateCode(): string
     {
-        $datePart = now()->format('Ymd'); // ✔ correction du format
+        $datePart = now()->format('Ydm');
         $prefix = '#' . $datePart;
-        $last = self::withTrashed()->where('code', 'like', $prefix . '%')->orderBy('code', 'desc')->first();
+        $last = self::withTrashed()->orderBy('created_at', 'desc')->first();
 
-        if ($last && preg_match('/(\d{10})$/', $last->code, $matches)) {
+        if ($last && preg_match('/(\d{8})$/', $last->code, $matches)) {
             $number = (int) $matches[1] + 1;
         } else {
             $number = 1;
         }
-        return $prefix . str_pad($number, 10, '0', STR_PAD_LEFT);
+        do {
+            $generatedCode = $prefix . str_pad($number, 8, '0', STR_PAD_LEFT);
+            $exists = self::withTrashed()->where('code', $generatedCode)->exists();
+
+            if ($exists) {
+                $number++;
+            }
+        } while ($exists);
+
+        return $generatedCode;
     }
 
 

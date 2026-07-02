@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\ConsumptionType;
 use App\Enums\MenuOrderStatus;
+use App\Enums\PaymentOrderMenusStatus;
 use App\Enums\PurchaseOrdersStatus;
 use App\Enums\TypeClientsForPaiment;
 use Illuminate\Database\Eloquent\Model;
@@ -68,7 +69,9 @@ class OrderMenuRestaurant extends Model
         'rollback_at',
         'is_restored',
         'sales_category_type',
-        'sales_category_uuid'
+        'sales_category_uuid',
+        'others_informations',
+        'regulation_status'
     ];
 
     /**
@@ -83,7 +86,7 @@ class OrderMenuRestaurant extends Model
         'order_menu_restaurant_date' => 'datetime',
     ];
 
-    protected $appends = ['free_client_amount_allocated','partner_amount_allocated','consumption_type_label','clients_for_payment_label','status_label','total_items','total_drinks','total_order','summary_items','remaining_amount','computed_paid_amount'];
+    protected $appends = ['free_client_amount_allocated','status_payment_label','partner_amount_allocated','consumption_type_label','clients_for_payment_label','status_label','status_payment_label','total_items','total_drinks','total_order','summary_items','remaining_amount','computed_paid_amount'];
 
     public function getFreeClientAmountAllocatedAttribute()
     {
@@ -110,6 +113,11 @@ class OrderMenuRestaurant extends Model
     public function getStatusLabelAttribute(): string
     {
         return MenuOrderStatus::safeLabel($this->status);
+    }
+
+    public function getStatusPaymentLabelAttribute(): string
+    {
+        return PaymentOrderMenusStatus::safeLabel($this->regulation_status);
     }
 
     public function getTotalItemsAttribute(): float
@@ -169,19 +177,25 @@ class OrderMenuRestaurant extends Model
 
     public static function generateCode(): string
     {
-        $datePart = now()->format('Ydm'); // Année, jour, mois → ex: 20252611
+        $datePart = now()->format('Ydm');
         $prefix = '#' . $datePart;
-
-        // Chercher le dernier code global (pas par jour)
         $last = self::withTrashed()->orderBy('created_at', 'desc')->first();
 
-        if ($last && preg_match('/(\d{6})$/', $last->code, $matches)) {
+        if ($last && preg_match('/(\d{8})$/', $last->code, $matches)) {
             $number = (int) $matches[1] + 1;
         } else {
             $number = 1;
         }
+        do {
+            $generatedCode = $prefix . str_pad($number, 8, '0', STR_PAD_LEFT);
+            $exists = self::withTrashed()->where('code', $generatedCode)->exists();
 
-        return $prefix . str_pad($number, 8, '0', STR_PAD_LEFT);
+            if ($exists) {
+                $number++;
+            }
+        } while ($exists);
+
+        return $generatedCode;
     }
 
     /**

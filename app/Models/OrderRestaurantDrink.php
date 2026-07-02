@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\MenuOrderStatus;
 use App\Enums\OrderMenuRestaurantItemStatus;
+use App\Enums\PaymentOrderItemStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -25,6 +26,7 @@ class OrderRestaurantDrink extends Model
         'unit_price',
         'total_price',
         'status',
+        'regulation_status',
         'created_by',
         'updated_by',
         'quantity_delivered',
@@ -64,10 +66,14 @@ class OrderRestaurantDrink extends Model
         'is_new_items' => 'boolean',
     ];
 
-    protected $appends = ['status_label','total_reserved_quantity'];
+    protected $appends = ['status_label','total_reserved_quantity','status_payment_label'];
     public function getStatusLabelAttribute(): string
     {
         return OrderMenuRestaurantItemStatus::safeLabel($this->status);
+    }
+    public function getStatusPaymentLabelAttribute(): string
+    {
+        return PaymentOrderItemStatus::safeLabel($this->regulation_status);
     }
 
     public function getTotalReservedQuantityAttribute(): array
@@ -77,6 +83,7 @@ class OrderRestaurantDrink extends Model
         ];
     }
 
+
     protected static function boot()
     {
         parent::boot();
@@ -85,12 +92,9 @@ class OrderRestaurantDrink extends Model
             if (!$model->uuid) {
                 $model->uuid = (string) \Str::uuid();
             }
-
-            $model->total_price = $model->quantity * $model->unit_price;
         });
-
-        static::updating(function ($model) {
-            $model->total_price = $model->quantity * $model->unit_price;
+        static::saving(function ($model) {
+            unset($model->total_price);
         });
     }
 

@@ -115,6 +115,12 @@ class MenuRestaurantController extends Controller
                 ]);
             }
 
+            if ($request->has('free_price')) {
+                $request->merge([
+                    'free_price' => json_decode($request->free_price, true),
+                ]);
+            }
+
             if ($request->filled('complements')) {
                 $request->merge([
                     'complements' => json_decode($request->complements, true),
@@ -131,6 +137,9 @@ class MenuRestaurantController extends Controller
 
                 'special_price' => 'nullable|array',
                 'special_price.*' => 'numeric|min:0',
+
+                'free_price' => 'nullable|array',
+                'free_price.*' => 'numeric|min:0',
 
                 'description' => 'nullable|string',
 
@@ -240,6 +249,12 @@ class MenuRestaurantController extends Controller
                 ]);
             }
 
+            if ($request->has('free_price')) {
+                $request->merge([
+                    'free_price' => json_decode($request->free_price, true),
+                ]);
+            }
+
             if ($request->filled('complements')) {
                 $request->merge([
                     'complements' => json_decode($request->complements, true),
@@ -256,6 +271,9 @@ class MenuRestaurantController extends Controller
 
                 'special_price'   => 'nullable|array',
                 'special_price.*' => 'numeric|min:0',
+
+                'free_price' => 'nullable|array',
+                'free_price.*' => 'numeric|min:0',
 
                 'description'   => 'nullable|string',
 
@@ -411,7 +429,6 @@ class MenuRestaurantController extends Controller
         ])
             ->where('is_active', true);
 
-
         if (!$auth->hasRole('SUPER_ADMIN') && !$auth->can('view_all_menus_restaurants')) {
             $query->where(function ($q) use ($auth, $roleIds) {
                 if ($auth->can('view_role_related_data')) {
@@ -512,13 +529,12 @@ class MenuRestaurantController extends Controller
     {
         $validated = $request->validate([
             'menu_uuid'   => ['required', 'uuid', 'exists:menus_restaurants,uuid'],
-            'client_type' => ['required', 'string', new Enum(TypeClientsForPaiment::class)], // debtor, partner, free
+            'client_type' => ['required', 'string', new Enum(TypeClientsForPaiment::class)],
         ]);
 
         $menu = MenuRestaurant::findOrFail($validated['menu_uuid']);
         $clientType = $validated['client_type'];
 
-        // 🔹 Sélectionner le tableau de prix selon le type de client
         $pricesArray = [];
 
         if ($clientType === TypeClientsForPaiment::DEBTOR->value) {
@@ -529,16 +545,21 @@ class MenuRestaurantController extends Controller
             $pricesArray = is_array($menu->free_price) ? $menu->free_price : [$menu->free_price];
         }
 
-        // 🔹 Nettoyer les valeurs nulles et convertir en int
-        $prices = array_map('intval', array_filter($pricesArray));
+        $filteredPrices = array_filter($pricesArray, function ($value) {
+            return $value !== null && $value !== '';
+        });
+
+        $prices = array_map('intval', $filteredPrices);
+
+        $prices = array_values($prices);
 
         return response()->json([
             'status'      => 'success',
             'menu'        => $menu->name,
             'client_type' => $clientType,
-            'prices'      => $prices,  // 🔹 retourne un tableau de prix
-            'min_price'   => count($prices) ? min($prices) : 0,  // optionnel : prix minimum
-            'max_price'   => count($prices) ? max($prices) : 0,  // optionnel : prix maximum
+            'prices'      => $prices,
+            'min_price'   => count($prices) ? min($prices) : 0,
+            'max_price'   => count($prices) ? max($prices) : 0,
         ]);
     }
 
@@ -600,7 +621,6 @@ class MenuRestaurantController extends Controller
         }
 
         $complements = $menu->complements()
-            ->where('is_confectioned', true)
             ->where('is_active', true)
             ->get();
 

@@ -6,6 +6,8 @@ use App\Enums\ChooseRubriquesSall;
 use App\Enums\ConsumptionType;
 use App\Enums\MenuOrderStatus;
 use App\Enums\OrderMenuRestaurantItemStatus;
+use App\Enums\PaymentOrderItemStatus;
+use App\Enums\PaymentOrderMenusStatus;
 use App\Enums\TypeClientsForPaiment;
 use App\Enums\VirtualOrderMenuRestaurantStatus;
 use App\Models\ComplementComposition;
@@ -123,6 +125,8 @@ class OrderMenuRestaurantController extends Controller
     public function check_stock_form_complement(Request $request)
     {
         $auth = auth()->user();
+        $reservationUuid = null;
+        $menuUuid = null;
 
         try {
 
@@ -183,39 +187,15 @@ class OrderMenuRestaurantController extends Controller
                 ->forceDelete();
 
             $stockErrors = [];
-            $missing = [];
 
-            // 🔥 CHECK COMPOSITION EXIST
-            foreach ($validated['complements'] as $input) {
-
-                $uuid = $input['uuid'];
-
-                if (!isset($compositions[$uuid]) || $compositions[$uuid]->isEmpty()) {
-
-                    $complement = ConfigurationsComplement::where('uuid', $uuid)->first();
-
-                    $missing[] = [
-                        'complement_uuid' => $uuid,
-                        'error' => "Aucune composition pour " . ($complement?->name ?? $uuid)
-                    ];
-                }
-            }
-
-            if (!empty($missing)) {
-                Log::warning('CHECK COMPLEMENT MISSING', $missing);
-
-                return response()->json([
-                    'status' => 'error',
-                    'message' => collect($missing)->pluck('error')->implode(' | '),
-                    'details' => $missing
-                ], 422);
-            }
-
-            // 🔥 STOCK CHECK
             foreach ($validated['complements'] as $input) {
 
                 $complementUuid = $input['uuid'];
                 $quantity = (int) $input['quantity'];
+
+                if (!isset($compositions[$complementUuid]) || $compositions[$complementUuid]->isEmpty()) {
+                    continue;
+                }
 
                 foreach ($compositions[$complementUuid] as $composition) {
 
@@ -266,6 +246,9 @@ class OrderMenuRestaurantController extends Controller
 
                     $complementUuid = $input['uuid'];
                     $complementQty = (int) $input['quantity'];
+                    if (!isset($compositions[$complementUuid]) || $compositions[$complementUuid]->isEmpty()) {
+                        continue;
+                    }
 
                     foreach ($compositions[$complementUuid] as $composition) {
                         foreach ($composition->items as $item) {
@@ -443,34 +426,14 @@ class OrderMenuRestaurantController extends Controller
                 ->where('status', 'pending')
                 ->forceDelete();
 
-            $missing = [];
-            foreach ($normalizedComplements as $input) {
-                $uuid = $input['uuid'];
-
-                if (!isset($compositions[$uuid]) || $compositions[$uuid]->isEmpty()) {
-                    $complement = ConfigurationsComplement::where('uuid', $uuid)->first();
-                    $missing[] = [
-                        'complement_uuid' => $uuid,
-                        'error'           => "Aucune composition pour " . ($complement?->name ?? $uuid)
-                    ];
-                }
-            }
-
-            if (!empty($missing)) {
-                return response()->json([
-                    'status'  => 'error',
-                    'message' => collect($missing)->pluck('error')->implode(' | '),
-                    'details' => $missing
-                ], 422);
-            }
-
             $stockErrors = [];
             foreach ($normalizedComplements as $input) {
                 $complementUuid = $input['uuid'];
                 $quantity       = $input['quantity'];
-
                 if ($quantity <= 0) continue;
-
+                if (!isset($compositions[$complementUuid]) || $compositions[$complementUuid]->isEmpty()) {
+                    continue;
+                }
                 foreach ($compositions[$complementUuid] as $composition) {
                     $warehouseUuid = $composition->warehouse_uuid;
 
@@ -518,6 +481,10 @@ class OrderMenuRestaurantController extends Controller
                 $lineUuid       = $input['cart_line_uuid'];
 
                 if ($quantity <= 0) continue;
+
+                if (!isset($compositions[$complementUuid]) || $compositions[$complementUuid]->isEmpty()) {
+                    continue;
+                }
 
                 if (isset($compositions[$complementUuid])) {
                     foreach ($compositions[$complementUuid] as $composition) {
@@ -605,32 +572,14 @@ class OrderMenuRestaurantController extends Controller
                 ->get()
                 ->groupBy('commplements_restaurant_uuid');
 
-
-            $missing = [];
-            foreach ($validated['complements'] as $input) {
-                $uuid = $input['uuid'];
-
-                if (!isset($compositions[$uuid]) || $compositions[$uuid]->isEmpty()) {
-                    $complement = ConfigurationsComplement::where('uuid', $uuid)->first();
-                    $missing[] = [
-                        'complement_uuid' => $uuid,
-                        'error' => "Aucune composition pour " . ($complement?->name ?? $uuid)
-                    ];
-                }
-            }
-
-            if (!empty($missing)) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => collect($missing)->pluck('error')->implode(' | '),
-                    'details' => $missing
-                ], 422);
-            }
-
             foreach ($validated['complements'] as $input) {
 
                 $complementUuid = $input['uuid'];
                 $quantity = (int) $input['quantity'];
+
+                if (!isset($compositions[$complementUuid]) || $compositions[$complementUuid]->isEmpty()) {
+                    continue;
+                }
 
                 foreach ($compositions[$complementUuid] as $composition) {
 
@@ -681,6 +630,10 @@ class OrderMenuRestaurantController extends Controller
             foreach ($validated['complements'] as $input) {
                 $complementUuid = $input['uuid'];
                 $quantity = (int) $input['quantity'];
+
+                if (!isset($compositions[$complementUuid]) || $compositions[$complementUuid]->isEmpty()) {
+                    continue;
+                }
 
                 if (isset($compositions[$complementUuid])) {
                     foreach ($compositions[$complementUuid] as $composition) {
@@ -1365,9 +1318,12 @@ class OrderMenuRestaurantController extends Controller
 
             // 🔥 TRAITEMENT STOCK + CALCUL
             foreach ($validated['menus'] as $menuInput) {
-
+                $menuUuid = $menuInput['menus_restaurant_uuid'];
                 $menu = MenuRestaurant::find($menuInput['menus_restaurant_uuid']);
                 if (!$menu) continue;
+                if (!isset($menuItems[$menuUuid]) || $menuItems[$menuUuid]->isEmpty()) {
+                    continue;
+                }
 
                 $menuQuantity = (int) $menuInput['quantity'];
 
@@ -1408,9 +1364,12 @@ class OrderMenuRestaurantController extends Controller
 
 
             foreach ($validated['menus'] as $menuInput) {
-
+                $menuUuid = $menuInput['menus_restaurant_uuid'];
                 $menu = MenuRestaurant::find($menuInput['menus_restaurant_uuid']);
                 if (!$menu) continue;
+                if (!isset($menuItems[$menuUuid]) || $menuItems[$menuUuid]->isEmpty()) {
+                    continue;
+                }
 
                 foreach ($menuItems[$menuInput['menus_restaurant_uuid']] ?? [] as $item) {
 
@@ -1574,6 +1533,10 @@ class OrderMenuRestaurantController extends Controller
             ->forceDelete();
 
         foreach ($validated['menus'] as $menuInput) {
+            $menuUuid = $menuInput['menus_restaurant_uuid'];
+            if (!isset($menuItems[$menuUuid]) || $menuItems[$menuUuid]->isEmpty()) {
+                continue;
+            }
 
             foreach ($menuItems[$menuInput['menus_restaurant_uuid']] ?? [] as $item) {
 
@@ -1633,6 +1596,10 @@ class OrderMenuRestaurantController extends Controller
         }
 
         foreach ($validated['menus'] as $menuInput) {
+            $menuUuid = $menuInput['menus_restaurant_uuid'];
+            if (!isset($menuItems[$menuUuid]) || $menuItems[$menuUuid]->isEmpty()) {
+                continue;
+            }
 
             foreach ($menuItems[$menuInput['menus_restaurant_uuid']] ?? [] as $item) {
                 MenuVirtualTemp::create([
@@ -2672,6 +2639,7 @@ class OrderMenuRestaurantController extends Controller
             // 1. Validation
             $validated = $request->validate([
                 'reservation_uuid' => ['nullable', 'uuid'],
+                'others_informations' => ['nullable', 'string'],
                 'type_clients_for_payment' => ['required', 'string', new Enum(TypeClientsForPaiment::class)],
                 'restaurant_table_uuid' => ['nullable','uuid','required_if:type_clients_for_payment,' . ConsumptionType::DINE_IN->value, 'exists:restaurant_tables,uuid'],
                 'order_menu_restaurant_date' => ['required', 'date_format:Y-m-d H:i:s'],
@@ -2822,6 +2790,7 @@ class OrderMenuRestaurantController extends Controller
 
             $order = OrderMenuRestaurant::create([
                 'status' => \App\Enums\MenuOrderStatus::TRANSFERRED->value,
+                'others_informations' => $validated['others_informations'],
                 'type_clients_for_payment' => $validated['type_clients_for_payment'],
                 'consumption_type' => $validated['consumption_type'],
                 'restaurant_table_uuid' => $validated['restaurant_table_uuid'] ?? null,
@@ -2864,9 +2833,7 @@ class OrderMenuRestaurantController extends Controller
 
                     $isFree = $validated['type_clients_for_payment'] === TypeClientsForPaiment::FREE->value;
                     $unitPrice = $mInput['unit_price'] ?? $menu->price ?? 0;
-                    $totalPrice = $isFree ? 0 : ($unitPrice * $mInput['quantity']);
 
-                    // Création de l'item de commande
                     $orderItem = OrderMenuRestaurantItem::create([
                         'order_menu_restaurant_uuid' => $order->uuid,
                         'cart_line_uuid'             => $mInput['cart_line_uuid'] ?? (string) \Illuminate\Support\Str::uuid(),
@@ -2874,7 +2841,6 @@ class OrderMenuRestaurantController extends Controller
                         'quantity'                   => $mInput['quantity'],
                         'quantity_exactly'           => $mInput['quantity'],
                         'unit_price'                 => $unitPrice,
-                        'total_price'                => $totalPrice,
                         'is_free'                    => $isFree,
                         'status'                     => \App\Enums\OrderMenuRestaurantItemStatus::TRANSFERRED->value,
                         'created_by'                 => $auth->id,
@@ -2945,11 +2911,6 @@ class OrderMenuRestaurantController extends Controller
                     $drinkConfig = RestaurantDrinkConfiguration::with(['product'])
                         ->find($drinkInput['drink_restaurant_uuid']);
 
-                    /*
-                    |--------------------------------------------------------------------------
-                    | 🚫 CONFIG INTROUVABLE
-                    |--------------------------------------------------------------------------
-                    */
 
                     if (!$drinkConfig) {
 
@@ -2963,11 +2924,6 @@ class OrderMenuRestaurantController extends Controller
                     $quantity = (float) ($drinkInput['quantity'] ?? 0);
                     $uPrice   = (float) ($drinkInput['unit_price'] ?? 0);
 
-                    /*
-                    |--------------------------------------------------------------------------
-                    | 🚫 QUANTITÉ INVALIDE
-                    |--------------------------------------------------------------------------
-                    */
 
                     if ($quantity <= 0) {
 
@@ -2979,11 +2935,6 @@ class OrderMenuRestaurantController extends Controller
                         continue;
                     }
 
-                    /*
-                    |--------------------------------------------------------------------------
-                    | 🍹 CREATE ORDER DRINK
-                    |--------------------------------------------------------------------------
-                    */
 
                     $drinkOrder = OrderRestaurantDrink::create([
                         'order_menu_restaurant_uuid' => $order->uuid,
@@ -2991,7 +2942,6 @@ class OrderMenuRestaurantController extends Controller
                         'quantity' => $quantity,
                         'quantity_exactly' => $quantity,
                         'unit_price' => $uPrice,
-                        'total_price' => $uPrice * $quantity,
                         'status' => \App\Enums\OrderMenuRestaurantItemStatus::TRANSFERRED->value,
                         'created_by' => $auth->id,
                         'updated_by' => $auth->id,
@@ -3005,7 +2955,6 @@ class OrderMenuRestaurantController extends Controller
                         'quantity' => $quantity,
                         'quantity_exactly' => $quantity,
                         'quantity_accumulated' => $quantity,
-
                         'created_by' => $auth->id,
                         'updated_by' => $auth->id,
                     ]);
@@ -3480,6 +3429,7 @@ class OrderMenuRestaurantController extends Controller
 
             $validated = $request->validate([
                 'type_clients_for_payment' => ['required', 'string', new Enum(TypeClientsForPaiment::class)],
+                'others_informations' => ['nullable', 'string'],
                 'restaurant_table_uuid' => ['nullable','uuid','required_if:type_clients_for_payment,' . ConsumptionType::DINE_IN->value, 'exists:restaurant_tables,uuid'],
                 'order_menu_restaurant_date' => ['required', 'date_format:Y-m-d H:i:s'],
                 'consumption_type' => ['required', 'string', new Enum(ConsumptionType::class)],
@@ -3491,10 +3441,10 @@ class OrderMenuRestaurantController extends Controller
                 'remise' => ['nullable', 'numeric', 'min:0'],
                 'full_name' => ['nullable', 'string', 'max:255'],
 
-                'menus' => ['nullable', 'array'],
+                'menus'                         => ['nullable', 'array'],
                 'menus.*.menus_restaurant_uuid' => ['required_with:menus', 'uuid', 'exists:menus_restaurants,uuid'],
-                'menus.*.quantity' => ['required_with:menus', 'numeric', 'min:0'],
-                'menus.*.unit_price' => ['nullable', 'numeric', 'min:0'],
+                'menus.*.quantity'              => ['required_with:menus', 'numeric', 'min:0'],
+                'menus.*.unit_price'            => ['required_with:menus', 'numeric', 'min:0'],
 
 
                 'menus.*.complements' => ['nullable', 'array'],
@@ -3502,10 +3452,10 @@ class OrderMenuRestaurantController extends Controller
                 'menus.*.complements.*.quantity' => ['nullable', 'numeric', 'min:0'],
                 'menus.*.complements.*.menu_uuid' => ['nullable', 'uuid', 'exists:menus_restaurants,uuid'],
 
-                'drinks' => ['nullable', 'array', 'required_without:menus'],
+                'drinks'                         => ['nullable', 'array', 'required_without:menus'],
                 'drinks.*.drink_restaurant_uuid' => ['required', 'uuid', 'exists:restaurant_drink_configurations,uuid'],
-                'drinks.*.quantity' => ['required', 'numeric', 'min:1'],
-                'drinks.*.unit_price' => ['nullable', 'numeric', 'min:0'],
+                'drinks.*.quantity'              => ['required', 'numeric', 'min:1'],
+                'drinks.*.unit_price'            => ['required', 'numeric', 'min:0'],
 
                 'sales_category_type' => ['required', new Enum(ChooseRubriquesSall::class)],
                 'sales_category_uuid' => ['nullable', 'uuid', 'exists:sales_categories,uuid'],
@@ -3572,6 +3522,7 @@ class OrderMenuRestaurantController extends Controller
 
             $order->update([
                 'type_clients_for_payment' => $validated['type_clients_for_payment'],
+                'others_informations' => $validated['others_informations'],
                 'consumption_type' => $validated['consumption_type'],
                 'restaurant_table_uuid' => $validated['restaurant_table_uuid'] ?? null,
                 'partners_restaurant_uuid' => $validated['partners_restaurant_uuid'] ?? null,
@@ -5471,6 +5422,14 @@ class OrderMenuRestaurantController extends Controller
         $newQty = (int) $data['quantity'];
         $oldQty = (int) $item->quantity_exactly;
 
+        if ($newQty === $oldQty && ((float)$item->unit_price !== (float)$unitPrice)) {
+            $item->update([
+                'unit_price'  => $unitPrice,
+                'total_price' => $unitPrice * $newQty,
+                'updated_by'  => $auth->id,
+            ]);
+        }
+
         if ($newQty === $oldQty) {
             return;
         }
@@ -6706,7 +6665,6 @@ class OrderMenuRestaurantController extends Controller
         ]);
 
         if (!Hash::check($request->password, $auth->password)) {
-
             return response()->json([
                 'status' => 'error',
                 'message' => 'Mot de passe incorrect'
@@ -6740,17 +6698,18 @@ class OrderMenuRestaurantController extends Controller
                 ->firstOrFail();
 
             if (!$warehouseRestaurant || !$warehouseBar || !$warehouseTransformation) {
-                throw new \Exception(
-                    "Configuration des entrepôts incomplète"
-                );
+                throw new \Exception("Configuration des entrepôts incomplète");
             }
 
             foreach ($order->items as $item) {
+                $isFree = ((float) $item->total_price) === 0.0;
+                $itemRegulationStatus = $isFree ? PaymentOrderMenusStatus::PAID->value : PaymentOrderMenusStatus::NOT_PAID->value;
+                $item->update([
+                    'regulation_status' => $itemRegulationStatus,
+                    'updated_by'        => $auth->id
+                ]);
 
-                if (
-                    $item->is_stock_deducted ||
-                    $item->virtuals->isEmpty()
-                ) {
+                if ($item->is_stock_deducted || $item->virtuals->isEmpty()) {
                     continue;
                 }
 
@@ -6760,51 +6719,38 @@ class OrderMenuRestaurantController extends Controller
                         continue;
                     }
 
-                    $stock = ProductPoint::where('point_uuid', $warehouseRestaurant->uuid)->where(
-                        'produit_uuid',
-                            $virtual->product_uuid
-                        )
+                    $stock = ProductPoint::where('point_uuid', $warehouseRestaurant->uuid)
+                        ->where('produit_uuid', $virtual->product_uuid)
                         ->lockForUpdate()
                         ->first();
 
                     if (!$stock) {
-
-                        throw new \Exception(
-                            "Stock RESTAURANT introuvable produit {$virtual->product_uuid}"
-                        );
+                        throw new \Exception("Stock RESTAURANT introuvable produit {$virtual->product_uuid}");
                     }
 
                     if ($stock->quantity < $qty) {
-                        throw new \Exception(
-                            "Stock RESTAURANT insuffisant produit {$virtual->product_uuid}"
-                        );
+                        throw new \Exception("Stock RESTAURANT insuffisant produit {$virtual->product_uuid}");
                     }
 
                     $stock->update([
-                        'quantity' => $stock->quantity - $qty,
+                        'quantity'   => $stock->quantity - $qty,
                         'updated_by' => $auth->id
                     ]);
 
                     $virtual->update([
-                        'status' => OrderMenuRestaurantItemStatus::DELIVERED->value,
+                        'status'     => OrderMenuRestaurantItemStatus::DELIVERED->value,
                         'updated_by' => $auth->id
                     ]);
-                    MenuVirtualTemp::where(
-                        'order_menu_restaurant_uuid',
-                        $order->uuid
-                    )
-                        ->where(
-                            'product_uuid',
-                            $virtual->product_uuid
-                        )
+
+                    MenuVirtualTemp::where('order_menu_restaurant_uuid', $order->uuid)
+                        ->where('product_uuid', $virtual->product_uuid)
                         ->where('status', 'pending')
                         ->where('type', 'initial')
                         ->update([
-                            'status' => OrderMenuRestaurantItemStatus::DELIVERED->value,
+                            'status'     => OrderMenuRestaurantItemStatus::DELIVERED->value,
                             'updated_by' => $auth->id
                         ]);
                 }
-
 
                 $virtualComplements = ComplementVirtualTemp::where([
                     'order_menu_restaurant_uuid' => $order->uuid,
@@ -6856,16 +6802,20 @@ class OrderMenuRestaurantController extends Controller
 
                 $item->update([
                     'is_stock_deducted' => true,
-                    'updated_by' => $auth->id
+                    'updated_by'        => $auth->id
                 ]);
             }
 
             foreach ($order->drinks as $drink) {
+                $isFree = ((float) $drink->total_price) === 0.0;
+                $drinkRegulationStatus = $isFree ? PaymentOrderMenusStatus::PAID->value : PaymentOrderMenusStatus::NOT_PAID->value;
 
-                if (
-                    $drink->is_stock_deducted ||
-                    $drink->virtuals->isEmpty()
-                ) {
+                $drink->update([
+                    'regulation_status' => $drinkRegulationStatus,
+                    'updated_by'        => $auth->id
+                ]);
+
+                if ($drink->is_stock_deducted || $drink->virtuals->isEmpty()) {
                     continue;
                 }
 
@@ -6888,58 +6838,53 @@ class OrderMenuRestaurantController extends Controller
                         ->first();
 
                     if (!$stock) {
-                        throw new \Exception(
-                            "Stock {$warehouseName} introuvable produit {$virtual->product_uuid}"
-                        );
+                        throw new \Exception("Stock {$warehouseName} introuvable produit {$virtual->product_uuid}");
                     }
 
                     if ($stock->quantity < $qty) {
-                        throw new \Exception(
-                            "Stock {$warehouseName} insuffisant produit {$virtual->product_uuid}"
-                        );
+                        throw new \Exception("Stock {$warehouseName} insuffisant produit {$virtual->product_uuid}");
                     }
 
                     $stock->update([
-                        'quantity' => $stock->quantity - $qty,
+                        'quantity'   => $stock->quantity - $qty,
                         'updated_by' => $auth->id
                     ]);
 
                     $virtual->update([
-                        'status' => OrderMenuRestaurantItemStatus::DELIVERED->value,
+                        'status'     => OrderMenuRestaurantItemStatus::DELIVERED->value,
                         'updated_by' => $auth->id
                     ]);
 
-                    DrinksVirtualTemp::where('order_menu_restaurant_uuid',
-                        $order->uuid
-                    )
-                        ->where(
-                            'product_uuid',
-                            $virtual->product_uuid
-                        )
+                    DrinksVirtualTemp::where('order_menu_restaurant_uuid', $order->uuid)
+                        ->where('product_uuid', $virtual->product_uuid)
                         ->where('status', 'pending')
                         ->where('type', 'initial')
                         ->update([
-                            'status' => OrderMenuRestaurantItemStatus::DELIVERED->value,
+                            'status'     => OrderMenuRestaurantItemStatus::DELIVERED->value,
                             'updated_by' => $auth->id
                         ]);
                 }
 
                 $drink->update([
                     'is_stock_deducted' => true,
-                    'updated_by' => $auth->id
+                    'updated_by'        => $auth->id
                 ]);
             }
 
-            $order->items()->update([
-                'status' => MenuOrderStatus::NOT_PAID->value,
-                'updated_by' => $auth->id
-            ]);
+            $paidCount = $order->items()->where('regulation_status', PaymentOrderItemStatus::PAID->value)->count();
+            $paidCount += $order->drinks()->where('regulation_status', PaymentOrderItemStatus::PAID->value)->count();
 
-            $order->drinks()->update([
-                'status' => MenuOrderStatus::NOT_PAID->value,
-                'updated_by' => $auth->id
-            ]);
+            $totalCount = $order->items()->count() + $order->drinks()->count();
 
+            if ($totalCount > 0 && $paidCount === $totalCount) {
+                $orderRegulationStatus = PaymentOrderItemStatus::PAID->value;
+            } elseif ($paidCount > 0) {
+                $orderRegulationStatus = PaymentOrderItemStatus::PARTIALLY_PAID->value;
+            } else {
+                $orderRegulationStatus = PaymentOrderItemStatus::NOT_PAID->value;
+            }
+
+            // Envoi ou rafraîchissement de la notification de facture
             \App\Models\OrderNotification::createOrUpdateNotification(
                 $order->uuid,
                 MenuOrderStatus::FACTURATE->value,
@@ -6947,13 +6892,16 @@ class OrderMenuRestaurantController extends Controller
                 $auth->id,
                 'all'
             );
+
+            // Enregistrement final des statuts sur la commande
             $order->update([
-                'updated_by' => $auth->id,
-                'status' => MenuOrderStatus::FACTURATE->value,
+                'status'            => MenuOrderStatus::FACTURATE->value,
+                'regulation_status' => $orderRegulationStatus,
+                'updated_by'        => $auth->id,
             ]);
 
             return response()->json([
-                'status' => 'success',
+                'status'  => 'success',
                 'message' => 'Facture validée avec succès (items + drinks + stocks synchronisés)'
             ]);
         });
@@ -10195,7 +10143,7 @@ class OrderMenuRestaurantController extends Controller
 
             return response()->json([
                 'status' => 'error',
-                'message' => $e->getMessage(), // 🔥 erreur exacte
+                'message' => $e->getMessage(),
                 'line' => $e->getLine(),
                 'file' => $e->getFile(),
             ], 500);
@@ -10477,11 +10425,10 @@ class OrderMenuRestaurantController extends Controller
             'free_client_for_restaurant:uuid,code,full_name,cni_number_file,amount_allocated,amount_allocated_total',
             'payment.regulations.method'
         ])
-            ->whereIn('status', [
-                MenuOrderStatus::FACTURATE->value,
-                MenuOrderStatus::PARTIALLY_PAID->value,
-                MenuOrderStatus::PAID->value,
-                MenuOrderStatus::NOT_PAID->value
+            ->whereIn('regulation_status', [
+                PaymentOrderMenusStatus::PARTIALLY_PAID->value,
+                PaymentOrderMenusStatus::PAID->value,
+                PaymentOrderMenusStatus::NOT_PAID->value
             ]);
 
         if ($request->filled('free_client_for_restaurant_uuid')) {
