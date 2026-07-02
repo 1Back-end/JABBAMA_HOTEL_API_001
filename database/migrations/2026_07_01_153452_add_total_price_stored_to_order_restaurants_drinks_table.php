@@ -11,14 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // 1. On vérifie d'abord si la colonne existe avant de la supprimer
         if (Schema::hasColumn('order_restaurannts_drinks', 'total_price')) {
             Schema::table('order_restaurannts_drinks', function (Blueprint $table) {
                 $table->dropColumn('total_price');
             });
         }
 
-        // 2. On crée la colonne virtuelle calculée
         Schema::table('order_restaurannts_drinks', function (Blueprint $table) {
             $table->integer('total_price')
                 ->storedAs('unit_price * quantity_exactly')

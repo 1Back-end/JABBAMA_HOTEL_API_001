@@ -699,6 +699,39 @@ class PaymentController extends Controller
     }
 
 
+    public function show_cash_receipts_by_user_today(string $userId)
+    {
+        $today = Carbon::today()->toDateString();
+
+        $receipts = PaymentRegulation::with([
+            'creator:id,nom_utilisateur',
+            'updater:id,nom_utilisateur',
+            'cashReceiptType:uuid,name',
+            'cashReceiptFamily:uuid,name',
+            'method:uuid,name',
+        ])
+            ->where('created_by', $userId)
+            ->whereDate('created_at', $today)
+            ->orderByDesc('created_at')
+            ->get()
+            ->groupBy('cash_receipt_type_uuid')
+            ->map(function ($items) {
+                return [
+                    'receipt_type' => $items->first()->cashReceiptType,
+                    'total_amount' => $items->sum('amount'),
+                    'items'        => $items->values()
+                ];
+            })
+            ->values();
+
+        return response()->json([
+            'success' => true,
+            'message' => "Encaissements du jour récupérés avec succès",
+            'data'    => $receipts
+        ], 200);
+    }
+
+
     public function destroy($uuid)
     {
         return $this->destroyRegulation(request(), $uuid);
