@@ -219,7 +219,6 @@ class RestaurantDrinkConfigurationController extends Controller
                 'is_transformable_product' => ['nullable', 'boolean'],
             ]);
 
-            // 🔒 Vérifier si déjà configuré
             $existingConfig = RestaurantDrinkConfiguration::where(
                 'product_uuid',
                 $validated['product_uuid']
@@ -232,7 +231,6 @@ class RestaurantDrinkConfigurationController extends Controller
                 ], 400);
             }
 
-            // 🔹 Déterminer le default_price (SÉCURISÉ)
             $defaultPrice = $validated['default_price']
                 ?? $this->getLastSellPrice($validated['product_uuid']);
 
@@ -329,7 +327,7 @@ class RestaurantDrinkConfigurationController extends Controller
 
         try {
 
-            // 🔹 Configuration existante
+
             $config = RestaurantDrinkConfiguration::where('uuid', $uuid)->firstOrFail();
 
             // 🔹 Validation
@@ -345,7 +343,6 @@ class RestaurantDrinkConfigurationController extends Controller
                 'is_transformable_product' => ['nullable', 'boolean'],
             ]);
 
-            // 🔒 Unicité produit
             $exists = RestaurantDrinkConfiguration::where('product_uuid', $validated['product_uuid'])
                 ->where('uuid', '!=', $uuid)
                 ->exists();
@@ -372,7 +369,6 @@ class RestaurantDrinkConfigurationController extends Controller
                     : 'approvisionnement'
             ]);
 
-            // 🔁 Injection PROPRE du default_price
             $validated['prices_for_clients_debtor'] = array_values(
                 array_unique(
                     array_filter(
@@ -409,7 +405,6 @@ class RestaurantDrinkConfigurationController extends Controller
                 )
             );
 
-            // 🔹 Métadonnées
             $validated['updated_by'] = $auth->id;
             $validated['has_prices'] = true;
 
@@ -623,7 +618,6 @@ class RestaurantDrinkConfigurationController extends Controller
         DB::beginTransaction();
 
         try {
-
             $validated = $request->validate([
                 'drink_name' => ['required', 'string', 'max:255'],
 
@@ -637,39 +631,36 @@ class RestaurantDrinkConfigurationController extends Controller
                 'image_file' => 'nullable|file|max:2048|mimes:jpg,jpeg,png,svg',
             ]);
 
-            // 🔒 éviter doublon sur le nom
             $existingConfig = RestaurantDrinkConfiguration::where('drink_name', $validated['drink_name'])
                 ->where('is_transformable_product', true)
                 ->first();
 
             if ($existingConfig) {
+                DB::rollBack();
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Cette boisson transformable existe déjà.'
                 ], 400);
             }
 
-            // 🔹 default price
-            $defaultPrice = $validated['default_price']
-                ?? 0;
-
+            $defaultPrice = isset($validated['default_price']) ? $validated['default_price'] : 0;
             $validated['default_price'] = $defaultPrice;
 
-            // 🔁 injection prix sécurisée
-            $validated['prices_for_clients_debtor'] = array_values(array_unique(array_filter(array_merge(
-                [$defaultPrice],
-                $validated['prices_for_clients_debtor'] ?? []
-            ))));
+            $filterPrices = function($value) {
+                return $value !== null && $value !== '';
+            };
 
-            $validated['prices_for_clients_partner'] = array_values(array_unique(array_filter(array_merge(
-                [$defaultPrice],
-                $validated['prices_for_clients_partner'] ?? []
-            ))));
+            $sanitizeAndCastToString = function($prices) use ($defaultPrice, $filterPrices) {
+                $merged = array_merge([$defaultPrice], $prices ?? []);
+                $filtered = array_filter($merged, $filterPrices);
+                $stringified = array_map('strval', $filtered);
 
-            $validated['prices_for_clients_free'] = array_values(array_unique(array_filter(array_merge(
-                [$defaultPrice],
-                $validated['prices_for_clients_free'] ?? []
-            ))));
+                return array_values(array_unique($stringified));
+            };
+
+            $validated['prices_for_clients_debtor'] = $sanitizeAndCastToString($validated['prices_for_clients_debtor'] ?? null);
+            $validated['prices_for_clients_partner'] = $sanitizeAndCastToString($validated['prices_for_clients_partner'] ?? null);
+            $validated['prices_for_clients_free'] = $sanitizeAndCastToString($validated['prices_for_clients_free'] ?? null);
 
             // 🔥 flags métier
             $validated['is_transformable_product'] = true;
@@ -730,7 +721,6 @@ class RestaurantDrinkConfigurationController extends Controller
         DB::beginTransaction();
 
         try {
-
             $config = RestaurantDrinkConfiguration::where('uuid', $uuid)
                 ->where('is_transformable_product', true)
                 ->firstOrFail();
@@ -747,36 +737,43 @@ class RestaurantDrinkConfigurationController extends Controller
                 'default_price' => ['nullable', 'numeric', 'min:0'],
             ]);
 
-            // 🔹 default price
-            $defaultPrice = $validated['default_price']
-                ?? $config->default_price
-                ?? 0;
+            if (array_key_exists('default_price', $validated)) {
+                $validated['default_price'] = $validated['default_price'] !== null
+                    ? (float) $validated['default_price']
+                    : null;
+            }
 
-            $validated['default_price'] = $defaultPrice;
+            $filterPrices = function($value) {
+                return $value !== null && $value !== '';
+            };
 
-            // 🔁 injection prix sécurisée
-            $validated['prices_for_clients_debtor'] = array_values(array_unique(array_filter(array_merge(
-                [$defaultPrice],
-                $validated['prices_for_clients_debtor'] ?? []
-            ))));
+            $sanitizePrices = function($prices) use ($filterPrices) {
+                if ($prices === null) {
+                    return null;
+                }
 
-            $validated['prices_for_clients_partner'] = array_values(array_unique(array_filter(array_merge(
-                [$defaultPrice],
-                $validated['prices_for_clients_partner'] ?? []
-            ))));
+                $filtered = array_filter($prices, $filterPrices);
+                $stringified = array_map('strval', $filtered);
 
-            $validated['prices_for_clients_free'] = array_values(array_unique(array_filter(array_merge(
-                [$defaultPrice],
-                $validated['prices_for_clients_free'] ?? []
-            ))));
+                return array_values(array_unique($stringified));
+            };
 
-            // 🔥 mise à jour flags
+            if ($request->has('prices_for_clients_debtor')) {
+                $validated['prices_for_clients_debtor'] = $sanitizePrices($request->input('prices_for_clients_debtor'));
+            }
+            if ($request->has('prices_for_clients_partner')) {
+                $validated['prices_for_clients_partner'] = $sanitizePrices($request->input('prices_for_clients_partner'));
+            }
+            if ($request->has('prices_for_clients_free')) {
+                $validated['prices_for_clients_free'] = $sanitizePrices($request->input('prices_for_clients_free'));
+            }
+
             $validated['is_transformable_product'] = true;
             $validated['is_finished_product'] = false;
-
             $validated['updated_by'] = $auth->id;
 
             $config->update($validated);
+
             if ($request->hasFile('image_file')) {
                 $oldMedia = $config->medias()->latest()->first();
 
@@ -808,15 +805,12 @@ class RestaurantDrinkConfigurationController extends Controller
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             DB::rollBack();
-
             return response()->json([
                 'status' => 'error',
                 'message' => 'Boisson transformable introuvable.'
             ], 404);
-
         } catch (\Exception $e) {
             DB::rollBack();
-
             return response()->json([
                 'status' => 'error',
                 'message' => $e->getMessage(),

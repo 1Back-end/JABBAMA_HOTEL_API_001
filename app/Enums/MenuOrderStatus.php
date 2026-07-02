@@ -19,6 +19,7 @@ enum MenuOrderStatus : string
     case DEFECTIVE = 'defective';
     case REJECTED_AFTER_VALIDATION = 'rejected_after_validation';
     case FACTURATE = 'facture';
+    case PAID = 'paid';
 
 
 
@@ -37,6 +38,7 @@ enum MenuOrderStatus : string
             self::DEFECTIVE => 'Défectieuse',
             self::REJECTED_AFTER_VALIDATION => 'Rejet du servi(s)',
             self::FACTURATE => 'Facturée',
+            self::PAID           => 'Réglée',
         };
     }
 
