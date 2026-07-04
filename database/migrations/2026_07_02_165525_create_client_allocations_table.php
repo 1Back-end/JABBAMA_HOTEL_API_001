@@ -11,6 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
+        Schema::dropIfExists('client_allocations');
         Schema::create('client_allocations', function (Blueprint $table) {
             $table->uuid('uuid')->primary();
 

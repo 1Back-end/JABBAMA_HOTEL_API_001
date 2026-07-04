@@ -20,12 +20,18 @@ class ClientAllocation extends Model
         'source_uuid',
         'client_name',
         'amount_allocated',
-        'amount_allocated_total'
+        'amount_allocated_total',
+        'order_number',
+        'updated_by'
     ];
 
     protected static function boot()
     {
         parent::boot();
         static::creating(fn ($model) => $model->uuid ??= (string) Str::uuid());
+    }
+    public function updater()
+    {
+        return $this->belongsTo(User::class, 'updated_by');
     }
 }
