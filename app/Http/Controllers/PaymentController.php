@@ -251,6 +251,7 @@ class PaymentController extends Controller
                     'payment_uuid' => $payment->uuid,
                     'regulation_method_uuid' => $method->uuid,
                     'cash_receipt_families_uuid'  => $cashReceiptFamily?->uuid,
+                    'cash_receipt_type_uuid' => $cashReceiptType?->uuid,
                     'amount' => (float) $regulation['amount'],
                     'phone_number' => $regulation['phone_number'] ?? null,
                     'reference' => $regulation['reference'] ?? null,
@@ -666,16 +667,13 @@ class PaymentController extends Controller
     }
 
 
-    public function show_expenses_by_user_today(string $userId)
+    public function show_global_cashflow_by_user_today(string $userId)
     {
         $today = Carbon::today()->toDateString();
 
         $expenses = ExpensePayment::with([
-            'creator:id,nom_utilisateur',
-            'updater:id,nom_utilisateur',
-            'expenseType:uuid,name',
-            'family:uuid,name',
-            'method:uuid,name',
+            'creator:id,nom_utilisateur', 'updater:id,nom_utilisateur',
+            'expenseType:uuid,name', 'family:uuid,name', 'method:uuid,name',
         ])
             ->where('created_by', $userId)
             ->whereDate('paid_at', $today)
@@ -688,29 +686,15 @@ class PaymentController extends Controller
                     'total_amount' => $items->sum('amount'),
                     'items' => $items->values()
                 ];
-            })
-            ->values();
+            })->values();
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Dépenses du jour récupérées avec succès',
-            'data'    => $expenses
-        ], 200);
-    }
-
-
-    public function show_cash_receipts_by_user_today(string $userId)
-    {
-        $today = Carbon::today()->toDateString();
 
         $receipts = PaymentRegulation::with([
-            'creator:id,nom_utilisateur',
-            'updater:id,nom_utilisateur',
-            'cashReceiptType:uuid,name',
-            'cashReceiptFamily:uuid,name',
-            'method:uuid,name',
+            'creator:id,nom_utilisateur', 'updater:id,nom_utilisateur',
+            'cashReceiptType:uuid,name', 'cashReceiptFamily:uuid,name', 'method:uuid,name',
         ])
             ->where('created_by', $userId)
+            ->where('type', 'encaissement')
             ->whereDate('created_at', $today)
             ->orderByDesc('created_at')
             ->get()
@@ -721,13 +705,15 @@ class PaymentController extends Controller
                     'total_amount' => $items->sum('amount'),
                     'items'        => $items->values()
                 ];
-            })
-            ->values();
+            })->values();
 
         return response()->json([
             'success' => true,
-            'message' => "Encaissements du jour récupérés avec succès",
-            'data'    => $receipts
+            'message' => 'Flux de caisse du jour récupéré avec succès',
+            'data'    => [
+                'expenses' => $expenses,
+                'receipts' => $receipts
+            ]
         ], 200);
     }
 

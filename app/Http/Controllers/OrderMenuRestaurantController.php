@@ -17,6 +17,7 @@ use App\Models\ConfigurationsComplement;
 use App\Models\DrinkComposition;
 use App\Models\DrinkCompositionItem;
 use App\Models\DrinksVirtualTemp;
+use App\Models\FreeClientRestaurant;
 use App\Models\InvoiceForMenuOrder;
 use App\Models\LastStatusDrinksMenusRestaurant;
 use App\Models\LastStatusItemsMenusRestaurant;
@@ -38,6 +39,7 @@ use App\Models\PdfDocument;
 use App\Models\Product;
 use App\Models\ProductPoint;
 use App\Models\RestaurantDrinkConfiguration;
+use App\Models\RestaurantPartner;
 use App\Models\Role;
 use App\Models\SalesCategory;
 use App\Models\SettingRestaurant;
@@ -10485,6 +10487,7 @@ class OrderMenuRestaurantController extends Controller
     public function addAllocation(Request $request)
     {
         $auth = auth()->user();
+
         $request->validate([
             'order_menu_restaurant_uuid' => 'required|uuid',
             'amount_allocated' => 'required|numeric|min:1',
@@ -10492,12 +10495,42 @@ class OrderMenuRestaurantController extends Controller
 
         $order = OrderMenuRestaurant::where('uuid', $request->order_menu_restaurant_uuid)->firstOrFail();
 
-        $order->amount_allocated = ($order->amount_allocated ?? 0) + $request->amount_allocated;
+        $amount = $request->amount_allocated;
 
-        $order->save();
-        $order->update([
-            'updated_by' => $auth->id,
-        ]);
+        $isPartner = !empty($order->partners_restaurant_uuid);
+        $isFreeClient = !empty($order->free_client_for_restaurant_uuid);
+
+        if ($isPartner || $isFreeClient) {
+
+            if ($isPartner) {
+
+                $partner = RestaurantPartner::where('uuid', $order->partners_restaurant_uuid)->first();
+
+                if ($partner) {
+                    $partner->amount_allocated = ($partner->amount_allocated ?? 0) + $amount;
+                    $partner->amount_allocated_total = ($partner->amount_allocated_total ?? 0) + $amount;
+                    $partner->save();
+                }
+            }
+
+            if ($isFreeClient) {
+
+                $freeClient = FreeClientRestaurant::where('uuid', $order->free_client_for_restaurant_uuid)->first();
+
+                if ($freeClient) {
+                    $freeClient->amount_allocated = ($freeClient->amount_allocated ?? 0) + $amount;
+                    $freeClient->amount_allocated_total = ($freeClient->amount_allocated_total ?? 0) + $amount;
+                    $freeClient->save();
+                }
+            }
+
+        } else {
+
+
+            $order->amount_allocated = ($order->amount_allocated ?? 0) + $amount;
+            $order->updated_by = $auth->id;
+            $order->save();
+        }
 
         return response()->json([
             'success' => true,

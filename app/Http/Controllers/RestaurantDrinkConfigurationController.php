@@ -205,7 +205,7 @@ class RestaurantDrinkConfigurationController extends Controller
 
         try {
 
-            // 🔹 Validation
+            // 🔹 Validation (default_price retiré)
             $validated = $request->validate([
                 'product_uuid' => ['required', 'uuid', 'exists:produits,uuid'],
                 'prices_for_clients_debtor' => ['nullable', 'array'],
@@ -213,7 +213,6 @@ class RestaurantDrinkConfigurationController extends Controller
                 'prices_for_clients_free' => ['nullable', 'array'],
                 'description' => ['nullable', 'string'],
                 'is_active' => ['nullable', 'boolean'],
-                'default_price' => ['nullable', 'numeric', 'min:0'],
                 'quantity' => ['nullable', 'integer', 'min:0'],
                 'is_finished_product' => ['nullable', 'boolean'],
                 'is_transformable_product' => ['nullable', 'boolean'],
@@ -231,27 +230,11 @@ class RestaurantDrinkConfigurationController extends Controller
                 ], 400);
             }
 
-            $defaultPrice = $validated['default_price']
-                ?? $this->getLastSellPrice($validated['product_uuid']);
-
-            $validated['default_price'] = $defaultPrice;
-
-            Log::info('RestaurantDrinkConfiguration DEFAULT PRICE', [
-                'product_uuid' => $validated['product_uuid'],
-                'default_price' => $defaultPrice,
-                'source' => $request->has('default_price')
-                    ? 'front'
-                    : 'approvisionnement'
-            ]);
-
-            // 🔁 Injection propre du default_price (sans null, sans doublon)
+            // 🔁 Nettoyage des tableaux de prix (uniquement les valeurs du front, sans null, sans doublon)
             $validated['prices_for_clients_debtor'] = array_values(
                 array_unique(
                     array_filter(
-                        array_merge(
-                            [$defaultPrice],
-                            $validated['prices_for_clients_debtor'] ?? []
-                        ),
+                        $validated['prices_for_clients_debtor'] ?? [],
                         fn ($v) => $v !== null
                     )
                 )
@@ -260,10 +243,7 @@ class RestaurantDrinkConfigurationController extends Controller
             $validated['prices_for_clients_partner'] = array_values(
                 array_unique(
                     array_filter(
-                        array_merge(
-                            [$defaultPrice],
-                            $validated['prices_for_clients_partner'] ?? []
-                        ),
+                        $validated['prices_for_clients_partner'] ?? [],
                         fn ($v) => $v !== null
                     )
                 )
@@ -272,10 +252,7 @@ class RestaurantDrinkConfigurationController extends Controller
             $validated['prices_for_clients_free'] = array_values(
                 array_unique(
                     array_filter(
-                        array_merge(
-                            [$defaultPrice],
-                            $validated['prices_for_clients_free'] ?? []
-                        ),
+                        $validated['prices_for_clients_free'] ?? [],
                         fn ($v) => $v !== null
                     )
                 )
@@ -327,10 +304,8 @@ class RestaurantDrinkConfigurationController extends Controller
 
         try {
 
-
             $config = RestaurantDrinkConfiguration::where('uuid', $uuid)->firstOrFail();
 
-            // 🔹 Validation
             $validated = $request->validate([
                 'product_uuid' => ['required', 'uuid', 'exists:produits,uuid'],
                 'prices_for_clients_debtor' => ['nullable', 'array'],
@@ -338,7 +313,6 @@ class RestaurantDrinkConfigurationController extends Controller
                 'prices_for_clients_free' => ['nullable', 'array'],
                 'description' => ['nullable', 'string'],
                 'is_active' => ['nullable', 'boolean'],
-                'default_price' => ['nullable', 'numeric', 'min:0'],
                 'is_finished_product' => ['nullable', 'boolean'],
                 'is_transformable_product' => ['nullable', 'boolean'],
             ]);
@@ -354,28 +328,10 @@ class RestaurantDrinkConfigurationController extends Controller
                 ], 400);
             }
 
-            // 🔹 Déterminer le default_price (FIABLE)
-            $defaultPrice = $validated['default_price']
-                ?? $this->getLastSellPrice($validated['product_uuid']);
-
-            $validated['default_price'] = $defaultPrice;
-
-            // 🧾 LOG du prix utilisé
-            Log::info('RestaurantDrinkConfiguration DEFAULT PRICE', [
-                'product_uuid' => $validated['product_uuid'],
-                'default_price' => $defaultPrice,
-                'source' => $request->has('default_price')
-                    ? 'front'
-                    : 'approvisionnement'
-            ]);
-
             $validated['prices_for_clients_debtor'] = array_values(
                 array_unique(
                     array_filter(
-                        array_merge(
-                            [$defaultPrice],
-                            $validated['prices_for_clients_debtor'] ?? []
-                        ),
+                        $validated['prices_for_clients_debtor'] ?? [],
                         fn ($v) => $v !== null
                     )
                 )
@@ -384,10 +340,7 @@ class RestaurantDrinkConfigurationController extends Controller
             $validated['prices_for_clients_partner'] = array_values(
                 array_unique(
                     array_filter(
-                        array_merge(
-                            [$defaultPrice],
-                            $validated['prices_for_clients_partner'] ?? []
-                        ),
+                        $validated['prices_for_clients_partner'] ?? [],
                         fn ($v) => $v !== null
                     )
                 )
@@ -396,10 +349,7 @@ class RestaurantDrinkConfigurationController extends Controller
             $validated['prices_for_clients_free'] = array_values(
                 array_unique(
                     array_filter(
-                        array_merge(
-                            [$defaultPrice],
-                            $validated['prices_for_clients_free'] ?? []
-                        ),
+                        $validated['prices_for_clients_free'] ?? [],
                         fn ($v) => $v !== null
                     )
                 )
@@ -408,7 +358,6 @@ class RestaurantDrinkConfigurationController extends Controller
             $validated['updated_by'] = $auth->id;
             $validated['has_prices'] = true;
 
-            // 💾 UPDATE
             $config->update($validated);
 
             DB::commit();

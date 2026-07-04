@@ -3,7 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\ClientAllocation;
+use App\Models\FreeClientRestaurant;
+use App\Models\OrderMenuRestaurant;
+use App\Models\RefundHistory;
+use App\Models\RestaurantPartner;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ClientAllocationController extends Controller
 {
@@ -12,7 +17,7 @@ class ClientAllocationController extends Controller
         $perPage = $request->input('limit', 25);
         $page = $request->input('page', 1);
 
-        $query = ClientAllocation::query();
+        $query = ClientAllocation::with(['updater'])->where('amount_allocated', '>', 0);
 
 
         if ($search = trim($request->input('search'))) {
@@ -38,5 +43,90 @@ class ClientAllocationController extends Controller
         ]);
 
 
+    }
+
+    public function store(Request $request)
+    {
+        $auth = auth()->user();
+
+        $request->validate([
+            'uuid' => 'required|uuid',
+            'amount' => 'required|numeric|min:1'
+        ]);
+
+        return DB::transaction(function () use ($request, $auth) {
+
+            $allocation = ClientAllocation::where('uuid', $request->uuid)->firstOrFail();
+
+            $amount = $request->amount;
+
+            if ($amount > $allocation->amount_allocated) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Montant supérieur au solde disponible'
+                ], 400);
+            }
+
+            switch ($allocation->source_type) {
+
+                case 'order':
+
+                    $order = OrderMenuRestaurant::where('uuid', $allocation->source_uuid)->firstOrFail();
+
+                    $order->amount_allocated -= $amount;
+                    $order->updated_by = $auth->id;
+                    $order->save();
+
+                    break;
+
+                case 'free_client':
+
+                    $free = FreeClientRestaurant::where('uuid', $allocation->source_uuid)->firstOrFail();
+
+                    $free->amount_allocated -= $amount;
+                    $free->amount_allocated_total -= $amount;
+                    $free->updated_by = $auth->id;
+                    $free->save();
+
+                    break;
+
+                case 'partner':
+
+                    $partner = RestaurantPartner::where('uuid', $allocation->source_uuid)->firstOrFail();
+
+                    $partner->amount_allocated -= $amount;
+                    $partner->amount_allocated_total -= $amount;
+                    $partner->updated_by = $auth->id;
+                    $partner->save();
+
+                    break;
+
+                default:
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Source inconnue'
+                    ], 400);
+            }
+
+
+            $allocation->amount_allocated -= $amount;
+            $allocation->updated_by = $auth->id;
+            $allocation->save();
+
+
+            RefundHistory::create([
+                'client_allocation_uuid' => $allocation->uuid,
+                'source_type' => $allocation->source_type,
+                'source_uuid' => $allocation->source_uuid,
+                'amount' => $amount,
+                'created_by' => $auth->id,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Remboursement effectué avec succès',
+                'data' => $allocation
+            ]);
+        });
     }
 }
