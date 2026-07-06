@@ -113,6 +113,13 @@ return [
             'visibility' => 'public',
         ],
 
+        'orders_menus_restaurants' => [
+            'driver' => 'local',
+            'root'   => storage_path('app/public/export-orders-menus-restaurant'),
+            'url'    => env('APP_URL') . '/storage/export-orders-menus-restaurant',
+            'visibility' => 'public',
+        ],
+
 
 
         's3' => [

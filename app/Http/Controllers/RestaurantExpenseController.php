@@ -96,6 +96,8 @@ class RestaurantExpenseController extends Controller
             'restaurant_expense_type_uuid'   => 'required|uuid',
             'restaurant_expense_family_uuid' => 'nullable|uuid',
             'payment_method_uuid'            => 'required|uuid',
+            'family_hierarchy_uuids'         => 'nullable|array',
+            'family_hierarchy_uuids.*'       => 'uuid',
             'name'                           => 'required|string|max:255',
             'amount'                         => 'required|numeric|min:0',
             'description'                    => 'nullable|string|max:1000',
@@ -110,6 +112,7 @@ class RestaurantExpenseController extends Controller
                 'restaurant_expense_type_uuid'   => $request->restaurant_expense_type_uuid,
                 'restaurant_expense_family_uuid' => $request->restaurant_expense_family_uuid,
                 'regulation_method_uuid'         => $request->payment_method_uuid,
+                'hierarchy_uuids'                => $request->family_hierarchy_uuids ?? [],
                 'amount'                         => $request->amount,
                 'name'                           => $request->name,
                 'description'                    => $request->description,
@@ -174,6 +177,8 @@ class RestaurantExpenseController extends Controller
         $request->validate([
             'restaurant_expense_type_uuid'   => 'required|uuid',
             'restaurant_expense_family_uuid' => 'nullable|uuid',
+            'family_hierarchy_uuids'         => 'nullable|array', // 💡 Ajout de la validation du tableau
+            'family_hierarchy_uuids.*'       => 'uuid',
             'payment_method_uuid'            => 'required|uuid',
             'name'                           => 'required|string|max:255',
             'amount'                         => 'required|numeric|min:0',
@@ -194,10 +199,10 @@ class RestaurantExpenseController extends Controller
 
         try {
 
-            // 1. UPDATE EXPENSE
             $expense->update([
                 'restaurant_expense_type_uuid'   => $request->restaurant_expense_type_uuid,
                 'restaurant_expense_family_uuid' => $request->restaurant_expense_family_uuid,
+                'hierarchy_uuids'                => $request->family_hierarchy_uuids ?? [],
                 'regulation_method_uuid'         => $request->payment_method_uuid,
                 'amount'                         => $request->amount,
                 'name'                           => $request->name,
@@ -206,28 +211,23 @@ class RestaurantExpenseController extends Controller
                 'updated_by'                     => $auth->id,
             ]);
 
-            // 2. FIND OR CREATE REGULATION (NEW LOGIC)
+            // 2. FIND OR CREATE REGULATION
             $regulation = PaymentRegulation::where('source_uuid', $expense->uuid)
                 ->where('source_type', 'expense')
                 ->first();
 
             if (!$regulation) {
-
                 $regulation = PaymentRegulation::create([
-                    'source_uuid' => $expense->uuid,
-                    'source_type' => 'expense',
-
+                    'source_uuid'                  => $expense->uuid,
+                    'source_type'                  => 'expense',
                     'restaurant_expense_type_uuid' => $request->restaurant_expense_type_uuid,
                     'regulation_method_uuid'       => $request->payment_method_uuid,
                     'amount'                       => $request->amount,
-
                     'type'                         => 'expense',
                     'created_by'                   => $auth->id,
                     'updated_by'                   => $auth->id,
                 ]);
-
             } else {
-
                 $regulation->update([
                     'restaurant_expense_type_uuid' => $request->restaurant_expense_type_uuid,
                     'regulation_method_uuid'       => $request->payment_method_uuid,
@@ -249,20 +249,19 @@ class RestaurantExpenseController extends Controller
             ], 200);
 
         } catch (\Throwable $e) {
-
             DB::rollBack();
 
             Log::error("Erreur update dépense : " . $e->getMessage(), [
                 'exception' => $e,
-                'uuid' => $uuid,
-                'payload' => $request->all(),
-                'user_id' => $auth?->id
+                'uuid'      => $uuid,
+                'payload'   => $request->all(),
+                'user_id'   => $auth?->id
             ]);
 
             return response()->json([
                 'success' => false,
                 'message' => "Erreur lors de la mise à jour",
-                'error' => $e->getMessage(),
+                'error'   => $e->getMessage(),
             ], 500);
         }
     }

@@ -23,6 +23,7 @@ class PaymentLine extends Model
         'payable_uuid',
         'amount',
         'regulation_method_uuid',
+        'payment_regulation_uuid',
         'phone_number',
         'reference',
         'detail',
@@ -77,6 +78,11 @@ class PaymentLine extends Model
             'payable_uuid',
             'uuid'
         )->where('payable_type', OrderRestaurantDrink::class);
+    }
+
+    public function payment_regulation()
+    {
+        return $this->belongsTo(PaymentRegulation::class, 'payment_regulation_uuid', 'uuid');
     }
 
     public function creator()

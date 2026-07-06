@@ -126,9 +126,7 @@ class PaymentController extends Controller
             $payment->total_amount = (float) $order->total_order;
             $payment->save();
 
-            $alreadyPaid = PaymentRegulation::where('payment_uuid', $payment->uuid)
-                ->whereNull('deleted_at')
-                ->sum('amount');
+            $alreadyPaid = PaymentRegulation::where('payment_uuid', $payment->uuid)->whereNull('deleted_at')->sum('amount');
 
             $totalNewPaid = 0;
             $errors = [];
@@ -247,7 +245,7 @@ class PaymentController extends Controller
                     ? CashReceiptFamily::where('indexation', $indexationName)->first()
                     : null;
 
-                $reg = PaymentRegulation::create([
+                $regulationModel  = PaymentRegulation::create([
                     'payment_uuid' => $payment->uuid,
                     'regulation_method_uuid' => $method->uuid,
                     'cash_receipt_families_uuid'  => $cashReceiptFamily?->uuid,
@@ -269,6 +267,7 @@ class PaymentController extends Controller
 
                         PaymentLine::create([
                             'payment_uuid' => $payment->uuid,
+                            'payment_regulation_uuid' => $regulationModel->uuid,
                             'payable_type' => $payableModel,
                             'payable_uuid' => $line['uuid'],
                             'amount' => $line['amount'],
@@ -385,8 +384,7 @@ class PaymentController extends Controller
                 $refund = $lines->sum('amount');
 
                 foreach ($lines as $line) {
-                    $regulation = PaymentRegulation::where('payment_uuid', $payment->uuid)
-                        ->where('regulation_method_uuid', $line->regulation_method_uuid)
+                    $regulation = PaymentRegulation::where('uuid', $line->payment_regulation_uuid)
                         ->first();
 
                     if ($regulation) {
@@ -425,8 +423,7 @@ class PaymentController extends Controller
                 $refund = $lines->sum('amount');
 
                 foreach ($lines as $line) {
-                    $regulation = PaymentRegulation::where('payment_uuid', $payment->uuid)
-                        ->where('regulation_method_uuid', $line->regulation_method_uuid)
+                    $regulation = PaymentRegulation::where('uuid', $line->payment_regulation_uuid)
                         ->first();
 
                     if ($regulation) {
@@ -566,49 +563,51 @@ class PaymentController extends Controller
             ? Carbon::parse($request->date)->toDateString()
             : Carbon::today()->toDateString();
 
-        $query = PaymentRegulation::query()
-            ->join(
-                'regulation_methods',
-                'payment_regulations.regulation_method_uuid',
-                '=',
-                'regulation_methods.uuid'
-            )
-            ->select([
-                DB::raw('MIN(payment_regulations.uuid) as uuid'),
-                DB::raw('DATE(payment_regulations.created_at) as date'),
-                DB::raw('MIN(payment_regulations.created_at) as created_at'),
-                'payment_regulations.created_by',
-                'regulation_methods.uuid as regulation_method_uuid',
-                'regulation_methods.name as regulation_method_name',
-                'payment_regulations.type',
-                DB::raw('SUM(payment_regulations.amount) as total_amount'),
-            ])
-            ->with(['creator:id,nom_utilisateur'])
-            ->whereDate('payment_regulations.created_at', $date)
-            ->groupBy(
-                DB::raw('DATE(payment_regulations.created_at)'),
-                'payment_regulations.created_by',
-                'regulation_methods.uuid',
-                'regulation_methods.name',
-                'payment_regulations.type'
-            )
-            ->orderByDesc(DB::raw('DATE(payment_regulations.created_at)'));
+        $relations = ['creator:id,nom_utilisateur'];
 
+        $selectColumns = [
+            DB::raw('MIN(uuid) as uuid'),
+            DB::raw('DATE(created_at) as date'),
+            DB::raw('MIN(created_at) as created_at'),
+            'created_by',
+            'type',
+            DB::raw('SUM(amount) as total_amount'),
+        ];
+
+        $groupByColumns = [
+            DB::raw('DATE(created_at)'),
+            'created_by',
+            'type'
+        ];
+
+        $query = PaymentRegulation::query();
         $totalsQuery = PaymentRegulation::whereDate('created_at', $date);
 
         if ($request->cash_register_filter_type === CashRegisterFilterType::PAYMENT_TYPE->value && $request->filled('cash_receipt_type_uuid')) {
             $query->where('cash_receipt_type_uuid', $request->cash_receipt_type_uuid);
             $totalsQuery->where('cash_receipt_type_uuid', $request->cash_receipt_type_uuid);
+
+            $selectColumns[] = 'cash_receipt_type_uuid';
+            $groupByColumns[] = 'cash_receipt_type_uuid';
+            $relations[] = 'cashReceiptType:uuid,name';
         }
 
         if ($request->cash_register_filter_type === CashRegisterFilterType::PAYMENT_METHOD->value && $request->filled('regulation_method_uuid')) {
             $query->where('regulation_method_uuid', $request->regulation_method_uuid);
             $totalsQuery->where('regulation_method_uuid', $request->regulation_method_uuid);
+
+            $selectColumns[] = 'regulation_method_uuid';
+            $groupByColumns[] = 'regulation_method_uuid';
+            $relations[] = 'method:uuid,name';
         }
 
         if ($request->cash_register_filter_type === CashRegisterFilterType::EXPENSE_TYPE->value && $request->filled('restaurant_expense_type_uuid')) {
             $query->where('restaurant_expense_type_uuid', $request->restaurant_expense_type_uuid);
             $totalsQuery->where('restaurant_expense_type_uuid', $request->restaurant_expense_type_uuid);
+
+            $selectColumns[] = 'restaurant_expense_type_uuid';
+            $groupByColumns[] = 'restaurant_expense_type_uuid';
+            $relations[] = 'expenseType:uuid,name';
         }
 
         if ($request->cash_register_filter_type === CashRegisterFilterType::CASHIER_AGENT->value && $request->filled('created_by')) {
@@ -616,7 +615,12 @@ class PaymentController extends Controller
             $totalsQuery->where('payment_regulations.created_by', $request->created_by);
         }
 
-        $data = $query->paginate($perPage, ['*'], 'page', $page);
+        $data = $query->select($selectColumns)
+            ->with($relations)
+            ->whereDate('created_at', $date)
+            ->groupBy($groupByColumns)
+            ->orderByDesc(DB::raw('DATE(created_at)'))
+            ->paginate($perPage, ['*'], 'page', $page);
 
         $totals = $totalsQuery->select('type', DB::raw('SUM(amount) as total'))
             ->groupBy('type')
@@ -676,8 +680,10 @@ class PaymentController extends Controller
             'expenseType:uuid,name', 'family:uuid,name', 'method:uuid,name',
         ])
             ->where('created_by', $userId)
+            ->where('status', 'paid')
             ->whereDate('paid_at', $today)
             ->orderByDesc('paid_at')
+            ->whereNull('deleted_at')
             ->get()
             ->groupBy('restaurant_expense_type_uuid')
             ->map(function ($items) {
@@ -690,12 +696,18 @@ class PaymentController extends Controller
 
 
         $receipts = PaymentRegulation::with([
-            'creator:id,nom_utilisateur', 'updater:id,nom_utilisateur',
-            'cashReceiptType:uuid,name', 'cashReceiptFamily:uuid,name', 'method:uuid,name',
+            'creator:id,nom_utilisateur',
+            'updater:id,nom_utilisateur',
+            'cashReceiptType:uuid,name',
+            'cashReceiptFamily:uuid,name',
+            'method:uuid,name',
+            'payment.order.items.menu:uuid,name',
+            'payment.order.drinks.drinkConfig.product:uuid,name',
         ])
             ->where('created_by', $userId)
             ->where('type', 'encaissement')
             ->whereDate('created_at', $today)
+            ->whereNull('deleted_at')
             ->orderByDesc('created_at')
             ->get()
             ->groupBy('cash_receipt_type_uuid')
@@ -703,7 +715,32 @@ class PaymentController extends Controller
                 return [
                     'receipt_type' => $items->first()->cashReceiptType,
                     'total_amount' => $items->sum('amount'),
-                    'items'        => $items->values()
+                    'items'        => $items->map(function ($regulation) {
+                        $order = $regulation->payment?->order;
+
+                        return [
+                            'uuid'                        => $regulation->uuid,
+                            'amount'                      => $regulation->amount,
+                            'type'                        => $regulation->type,
+                            'created_at'                  => $regulation->created_at,
+                            'method'                      => $regulation->method,
+                            'cash_receipt_family'         => $regulation->cashReceiptFamily,
+                            'creator'                     => $regulation->creator,
+
+                            'order_code'                  => $order?->code,
+                            'order_total_price'           => $order?->total_order,
+
+                            'order_details' => $regulation->cashReceiptType?->name === 'ENCAISSEMENT RESTO/BAR'
+                                ? [
+                                    'plats'    => $order?->items->values() ?? [],
+                                    'boissons' => $order?->drinks->values() ?? []
+                                ]
+                                : [
+                                    'plats'    => str_contains(strtoupper($regulation->cashReceiptFamily?->name ?? ''), 'RESTO') ? ($order?->items->values() ?? []) : [],
+                                    'boissons' => str_contains(strtoupper($regulation->cashReceiptFamily?->name ?? ''), 'BAR') ? ($order?->drinks->values() ?? []) : []
+                                ]
+                        ];
+                    })->values()
                 ];
             })->values();
 

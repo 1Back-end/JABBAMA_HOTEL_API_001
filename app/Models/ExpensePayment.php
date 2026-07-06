@@ -27,15 +27,33 @@ class ExpensePayment extends Model
         'paid_at',
         'created_by',
         'updated_by',
-        'status'
+        'status',
+        'hierarchy_uuids'
     ];
 
     protected $casts = [
         'paid_at' => 'datetime',
         'amount'   => 'decimal:2',
+        'hierarchy_uuids' => 'array',
     ];
+    protected $appends = ['hierarchy_families'];
 
-    // 🔑 UUID auto-généré
+    public function getHierarchyFamiliesAttribute()
+    {
+        $uuids = $this->hierarchy_uuids;
+
+        if (empty($uuids) || !is_array($uuids)) {
+            return collect();
+        }
+
+        return RestaurantExpenseFamily::whereIn('uuid', $uuids)
+            ->get()
+            ->sortBy(function ($family) use ($uuids) {
+                return array_search($family->uuid, $uuids);
+            })
+            ->values();
+    }
+
     protected static function boot()
     {
         parent::boot();
@@ -46,6 +64,7 @@ class ExpensePayment extends Model
             }
         });
     }
+
 
 
     public function expenseType()
