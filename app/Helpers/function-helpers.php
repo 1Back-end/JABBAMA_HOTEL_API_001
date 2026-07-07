@@ -1,5 +1,6 @@
 <?php
 
+use App\DTO\OrderMenuRestaurantFilterData;
 use App\DTO\PurchaseOrderFilterData;
 use App\DTO\SupplyFilterData;
 use App\Models\Medias;
@@ -21,6 +22,122 @@ use Spatie\Browsershot\Browsershot;
 use Illuminate\Pagination\LengthAwarePaginator;
 
 
+if (!function_exists('filter_orders_menu_restaurants')) {
+    /**
+     * Filtre les commandes de restaurant et retourne soit la requête, soit la pagination.
+     *
+     * @param Builder $query
+     * @param OrderMenuRestaurantFilterData $data
+     * @param bool $paginate
+     * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Contracts\Pagination\LengthAwarePaginator
+     */
+    function filter_orders_menu_restaurants(Builder $query, OrderMenuRestaurantFilterData $data, bool $paginate = true)
+    {
+        $dateFilterApplied = false;
+
+        if (!empty($data->order_menu_restaurant_date)) {
+            $query->where('order_menu_restaurant_date', $data->order_menu_restaurant_date);
+            $dateFilterApplied = true;
+        }
+        if (!empty($data->restaurant_table_uuid)) {
+            $query->where('restaurant_table_uuid', $data->restaurant_table_uuid);
+        }
+        if (!empty($data->menu_restaurant_uuid)) {
+            $query->where('menu_restaurant_uuid', $data->menu_restaurant_uuid);
+        }
+        if (!empty($data->restaurant_room_uuid)) {
+            $query->where('restaurant_room_uuid', $data->restaurant_room_uuid);
+        }
+        if (!empty($data->partners_restaurant_uuid)) {
+            $query->where('partners_restaurant_uuid', $data->partners_restaurant_uuid);
+        }
+        if (!empty($data->consumption_type)) {
+            $query->where('consumption_type', $data->consumption_type);
+        }
+        if (!empty($data->type_clients_for_payment)) {
+            $query->where('type_clients_for_payment', $data->type_clients_for_payment);
+        }
+        if (!empty($data->status)) {
+            $query->where('status', $data->status);
+        }
+
+        // 2. Gestion de la plage de dates
+        if (!empty($data->start_date) && !empty($data->end_date)) {
+            $start_date = Carbon::parse($data->start_date)->startOfDay();
+            $end_date = Carbon::parse($data->end_date)->endOfDay();
+
+            $query->whereBetween('created_at', [$start_date, $end_date]);
+            $dateFilterApplied = true;
+        }
+
+        if (!$dateFilterApplied) {
+            $query->whereDate('created_at', Carbon::today());
+        }
+
+
+        $auth = $data->auth ?? auth()->user();
+
+        if ($auth && !$auth->hasRole('SUPER_ADMIN') && !$auth->can('view_kitchen_and_bar_orders')) {
+            $roleIds = $auth->roles->pluck('id');
+
+            $query->where(function ($q) use ($auth, $roleIds) {
+                $hasVisibilityPermission = false;
+
+                if ($auth->can('view_role_related_data')) {
+                    $q->whereHas('creator.roles', function ($qr) use ($roleIds) {
+                        $qr->whereIn('roles.id', $roleIds);
+                    });
+                    $hasVisibilityPermission = true;
+                }
+
+                if ($auth->can('view_kitchen_orders')) {
+                    $hasVisibilityPermission ? $q->orWhereNotNull('kitchen_user_id') : $q->whereNotNull('kitchen_user_id');
+                    $hasVisibilityPermission = true;
+                }
+
+                if ($auth->can('view_bar_orders')) {
+                    $hasVisibilityPermission ? $q->orWhereNotNull('bar_user_id') : $q->whereNotNull('bar_user_id');
+                    $hasVisibilityPermission = true;
+                }
+
+                if (!$hasVisibilityPermission) {
+                    $q->where('created_by', $auth->id);
+                }
+            });
+        }
+
+        if ($search = trim($data->search)) {
+            $query->where(function ($q) use ($search) {
+                $q->where('uuid', 'like', "%{$search}%")
+                    ->orWhere('code', 'like', "%{$search}%")
+                    ->orWhere('status', 'like', "%{$search}%")
+                    ->orWhere('unit_price', 'like', "%{$search}%")
+                    ->orWhere('total_price', 'like', "%{$search}%")
+                    ->orWhere('is_for_sale_free', 'like', "%{$search}%")
+                    ->orWhere('consumption_type', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%")
+                    ->orWhere('reason_cancel', 'like', "%{$search}%")
+                    ->orWhere('validated_at', 'like', "%{$search}%")
+                    ->orWhere('cancelled_at', 'like', "%{$search}%")
+                    ->orWhere('restaurant_table_uuid', 'like', "%{$search}%")
+                    ->orWhere('created_by', 'like', "%{$search}%")
+                    ->orWhere('type_clients_for_payment', 'like', "%{$search}%")
+                    ->orWhere('order_menu_restaurant_date', 'like', "%{$search}%")
+                    ->orWhere('remise', 'like', "%{$search}%")
+                    ->orWhere('partners_restaurant_uuid', 'like', "%{$search}%")
+                    ->orWhere('warehouse_uuid', 'like', "%{$search}%")
+                    ->orWhere('restaurant_room_uuid', 'like', "%{$search}%")
+                    ->orWhere('menu_restaurant_uuid', 'like', "%{$search}%")
+                    ->orWhere('quantity', 'like', "%{$search}%");
+            });
+        }
+
+        return $paginate
+            ? $query->latest()->paginate($data->limit, ['*'], 'page', $data->page)
+            : $query;
+    }
+
+}
 
 
 if (!function_exists('filter_stocks_deductions')) {

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\DTO\OrderMenuRestaurantFilterData;
 use App\Enums\ChooseRubriquesSall;
 use App\Enums\ConsumptionType;
 use App\Enums\MenuOrderStatus;
@@ -10,6 +11,7 @@ use App\Enums\PaymentOrderItemStatus;
 use App\Enums\PaymentOrderMenusStatus;
 use App\Enums\TypeClientsForPaiment;
 use App\Enums\VirtualOrderMenuRestaurantStatus;
+use App\Exports\OrderMenuRestaurantExport;
 use App\Models\ComplementComposition;
 use App\Models\ComplementVirtualTemp;
 use App\Models\ComplementVirtualTempsBackup;
@@ -54,9 +56,12 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Enum;
+use Maatwebsite\Excel\Facades\Excel;
+
 /**
  * @permission_category Gestion des commandes du restaurant
  * @permission_module Gestion du restaurant
@@ -1318,7 +1323,7 @@ class OrderMenuRestaurantController extends Controller
 
             $stockErrors = [];
 
-            // 🔥 TRAITEMENT STOCK + CALCUL
+
             foreach ($validated['menus'] as $menuInput) {
                 $menuUuid = $menuInput['menus_restaurant_uuid'];
                 $menu = MenuRestaurant::find($menuInput['menus_restaurant_uuid']);
@@ -2284,7 +2289,6 @@ class OrderMenuRestaurantController extends Controller
         $reservationUuid = null
     ) {
 
-        // 🔥 Stock réel
         $realStock = (float) ProductPoint::where('produit_uuid', $productUuid)
             ->where('point_uuid', $warehouseUuid)
             ->value('quantity') ?? 0;
@@ -2303,7 +2307,6 @@ class OrderMenuRestaurantController extends Controller
             })
 
             ->sum('quantity_used');
-
 
         $ComplementreservedStock = (float) ComplementVirtualTemp::where('product_uuid', $productUuid)
             ->where('status', 'pending')
@@ -2792,6 +2795,7 @@ class OrderMenuRestaurantController extends Controller
 
             $order = OrderMenuRestaurant::create([
                 'status' => \App\Enums\MenuOrderStatus::TRANSFERRED->value,
+                'regulation_status' => \App\Enums\MenuOrderStatus::TRANSFERRED->value,
                 'others_informations' => $validated['others_informations'],
                 'type_clients_for_payment' => $validated['type_clients_for_payment'],
                 'consumption_type' => $validated['consumption_type'],
@@ -3523,6 +3527,7 @@ class OrderMenuRestaurantController extends Controller
             }
 
             $order->update([
+                'regulation_status' => \App\Enums\MenuOrderStatus::TRANSFERRED->value,
                 'type_clients_for_payment' => $validated['type_clients_for_payment'],
                 'others_informations' => $validated['others_informations'],
                 'consumption_type' => $validated['consumption_type'],
@@ -6754,18 +6759,18 @@ class OrderMenuRestaurantController extends Controller
                         ]);
                 }
 
-                $virtualComplements = ComplementVirtualTemp::where([
-                    'order_menu_restaurant_uuid' => $order->uuid,
-                    'menu_uuid'                  => $item->menus_restaurant_uuid,
-                    'type'                       => 'initial',
-                    'status'                     => 'pending'
-                ])->where('quantity_used', '>', 0)->lockForUpdate()->get();
+                $virtualComplements = ComplementVirtualTemp::where('order_menu_restaurant_uuid', $order->uuid)
+                    ->where('type', 'initial')
+                    ->where('status', 'pending')
+                    ->where('quantity_used', '>', 0)
+                    ->lockForUpdate()
+                    ->get();
 
                 foreach ($virtualComplements as $vComp) {
+
                     $qtyComp = (float) $vComp->quantity_used;
 
-                    $composition = ComplementComposition::where('commplements_restaurant_uuid', $vComp->complement_uuid)
-                        ->first();
+                    $composition = ComplementComposition::where('commplements_restaurant_uuid', $vComp->complement_uuid)->first();
 
                     $targetWarehouseUuid = $composition ? $composition->warehouse_uuid : $warehouseRestaurant->uuid;
 
@@ -6775,11 +6780,15 @@ class OrderMenuRestaurantController extends Controller
                         ->first();
 
                     if (!$productPointComp) {
-                        throw new \Exception("Stock introuvable pour l'ingrédient du complément {$vComp->product_uuid}");
+                        throw new \Exception(
+                            "Stock introuvable pour l'ingrédient du complément {$vComp->product_uuid}"
+                        );
                     }
 
                     if ($productPointComp->quantity < $qtyComp) {
-                        throw new \Exception("Stock insuffisant pour l'ingrédient du complément {$vComp->product_uuid} dans l'entrepôt assigné");
+                        throw new \Exception(
+                            "Stock insuffisant pour l'ingrédient du complément {$vComp->product_uuid}"
+                        );
                     }
 
                     $productPointComp->update([
@@ -6787,19 +6796,16 @@ class OrderMenuRestaurantController extends Controller
                         'updated_by' => $auth->id
                     ]);
 
-                    $vComp->update([
-                        'status'           => OrderMenuRestaurantItemStatus::DELIVERED->value,
-                        'updated_by'       => $auth->id,
-                        'last_activity_at' => now()
-                    ]);
+                    ComplementVirtualTemp::where('uuid', $vComp->uuid)
+                        ->update([
+                            'status'           => OrderMenuRestaurantItemStatus::DELIVERED->value,
+                            'updated_by'       => $auth->id,
+                            'last_activity_at' => now()
+                        ]);
 
-                    \App\Models\ComplementVirtualTempsBackup::where([
-                        'order_menu_restaurant_uuid' => $order->uuid,
-                        'menu_uuid'                  => $item->menus_restaurant_uuid,
-                        'complement_uuid'            => $vComp->complement_uuid,
-                        'product_uuid'               => $vComp->product_uuid,
-                        'type'                       => 'initial'
-                    ])->forceDelete();
+                    \App\Models\ComplementVirtualTempsBackup::where('order_menu_restaurant_uuid', $order->uuid)
+                        ->whereIn('type', ['initial', 'delivered'])
+                        ->forceDelete();
                 }
 
                 $item->update([
@@ -10536,6 +10542,28 @@ class OrderMenuRestaurantController extends Controller
             'success' => true,
             'message' => 'Arrhes ajoutées avec succès',
             'data' => $order
+        ]);
+    }
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission FreeClientRestaurantController::export_orders
+     * @permission_desc Exporter les commandes au format Excel
+     */
+    public function export_orders(Request $request)
+    {
+        $filter = OrderMenuRestaurantFilterData::fromRequestPassationsFilterData($request);
+
+        $filename = 'LISTE-DES-COMMANDES-' . now()->format('dmY') . '.xlsx';
+        $baseQuery = OrderMenuRestaurant::query();
+        $ordersQuery = filter_orders_menu_restaurants($baseQuery, $filter, false);
+        Excel::store(new OrderMenuRestaurantExport($ordersQuery), $filename, 'orders_menus_restaurants');
+
+        return response()->json([
+            "message"  => "Exportation des données effectuée avec succès",
+            "filename" => $filename,
+            "url"      => Storage::disk('orders_menus_restaurants')->url($filename)
         ]);
     }
 

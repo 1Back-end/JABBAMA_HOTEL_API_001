@@ -259,9 +259,14 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des encaissements',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],
+        'refund_all_deposit_histories' => [
+            'description' => 'Effectuer le remboursement intégral des arrhes des clients',
+            'category' => 'Gestion des encaissements',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
         'view_cashflow_details' => [
             'description' => 'Afficher les détails des flux de caisse (Encaissements et Dépenses)',
-            'category' => 'Gestion de la caisse',
+            'category' => 'Gestion des encaissements',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],
         'save_regulations_for_orders_items_and_drinks' => [

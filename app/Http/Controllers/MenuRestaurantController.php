@@ -620,9 +620,13 @@ class MenuRestaurantController extends Controller
             ], 404);
         }
 
-        $complements = $menu->complements()
-            ->where('is_active', true)
-            ->get();
+        $query = $menu->complements()->where('configurations_complements.is_active', true);
+        if ($request->filled('search')) {
+            $searchTerm = $request->input('search');
+            $query->where('configurations_complements.name', 'LIKE', '%' . $searchTerm . '%');
+        }
+
+        $complements = $query->get();
 
         return response()->json([
             'status' => 'success',
