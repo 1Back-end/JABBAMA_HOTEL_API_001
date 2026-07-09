@@ -80,6 +80,7 @@ class Warehouse extends Model
             'warehouse_uuid',     // clé étrangère vers Warehouse
             'user_id'             // clé étrangère vers User
         )
+            ->whereNull('warehouse_managers.deleted_at')
             ->withPivot(['created_by', 'updated_by'])
             ->withTimestamps()
             ->using(WarehouseManager::class);

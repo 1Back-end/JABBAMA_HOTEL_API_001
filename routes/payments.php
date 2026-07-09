@@ -5,4 +5,4 @@ Route::apiResource('payments_and_regulations', \App\Http\Controllers\PaymentCont
 Route::delete('payments_and_regulations/{uuid}/cancel', [\App\Http\Controllers\PaymentController::class, 'cancel']);
 Route::get('payments_and_regulations/cash_register_sheet', [\App\Http\Controllers\PaymentController::class, 'get_cash_register_sheet']);
 Route::get('payments_and_regulations/{uuid}/show_by_uuid', [\App\Http\Controllers\PaymentController::class, 'show_payments_by_uuid']);
-Route::get('payments_and_regulations/global_cashflow/user/{userId}/today', [\App\Http\Controllers\PaymentController::class, 'show_global_cashflow_by_user_today']);
+Route::get('payments_and_regulations/global_cashflow/today', [\App\Http\Controllers\PaymentController::class, 'show_global_cashflow_today']);

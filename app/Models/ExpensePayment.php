@@ -48,9 +48,7 @@ class ExpensePayment extends Model
 
         return RestaurantExpenseFamily::whereIn('uuid', $uuids)
             ->get()
-            ->sortBy(function ($family) use ($uuids) {
-                return array_search($family->uuid, $uuids);
-            })
+            ->sortBy('level')
             ->values();
     }
 

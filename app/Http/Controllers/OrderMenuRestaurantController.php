@@ -3071,7 +3071,7 @@ class OrderMenuRestaurantController extends Controller
                     default => null,
                 };
 
-                \App\Models\OrderNotification::createOrUpdateNotification(
+                $notificationStandard = \App\Models\OrderNotification::createOrUpdateNotification(
                     $order->uuid,
                     MenuOrderStatus::TRANSFERRED->value,
                     $message,
@@ -3079,14 +3079,22 @@ class OrderMenuRestaurantController extends Controller
                     $target
                 );
 
+                if ($notificationStandard) {
+                    broadcast(new \App\Events\NotificationCreated($notificationStandard))->toOthers();
+                }
+
                 $decisionnel = User::findOrFail(1);
-                NotificationOrderRestaurantForDecisional::createDecisionalOrUpdateNotification(
+                $notificationDecisional = NotificationOrderRestaurantForDecisional::createDecisionalOrUpdateNotification(
                     orderUuid: $order->uuid,
                     status: MenuOrderStatus::TRANSFERRED->value,
                     message: $message,
                     recipientId: $decisionnel->id,
                     updatedBy: $auth->id
                 );
+
+                if ($notificationDecisional) {
+                    broadcast(new \App\Events\NotificationCreated($notificationDecisional))->toOthers();
+                }
             }
 
             $reservationUuid = $request->reservation_uuid;
@@ -9906,13 +9914,17 @@ class OrderMenuRestaurantController extends Controller
             'status' => $status,
             'updated_by' => $auth->id
         ]);
-        \App\Models\OrderNotification::createOrUpdateNotification(
+        $notification = \App\Models\OrderNotification::createOrUpdateNotification(
             $order->uuid,
             $notificationStatus,
             $message,
             $auth->id,
             'bar'
         );
+
+        if ($notification) {
+            broadcast(new \App\Events\NotificationCreated($notification))->toOthers();
+        }
     }
 
 

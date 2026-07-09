@@ -668,108 +668,103 @@ class ProductController extends Controller
                 ? Carbon::parse($request->end_date)->endOfDay()
                 : now()->endOfDay();
 
-            $all_products_points = collect();
+            $warehouse_uuids = $warehouse_uuid === 'all'
+                ? Warehouse::pluck('uuid')->toArray()
+                : Warehouse::where('uuid', $warehouse_uuid)->pluck('uuid')->toArray();
 
-            $warehouses = $warehouse_uuid === 'all'
-                ? Warehouse::all()
-                : Warehouse::where('uuid', $warehouse_uuid)->get();
+            if (empty($warehouse_uuids)) {
+                return response()->json(['status' => 'error', 'message' => 'Entrepôt introuvable'], 404);
+            }
 
-            // 🔹 Fonction pour calculer l'inventaire pour un article dans un entrepôt
-            $calculateInventoryForWarehouse = function($productUuid, Warehouse $warehouse, $end_date) {
-                $isPrimary = $warehouse->is_primary;
+            $warehouses = Warehouse::whereIn('uuid', $warehouse_uuids)->get();
+            $primaryWarehouseUuuids = $warehouses->where('is_primary', true)->pluck('uuid')->toArray();
 
-                // Entrées
-                if ($isPrimary) {
-                    // Principal : approvisionnements externes
-                    $approved = SupplyItem::where('product_uuid', $productUuid)
-                        ->whereHas('supply.purchaseOrder', fn($q) => $q->where('type', 'external'))
-                        ->whereHas('supply', fn($q) => $q->whereIn('status', [SupplyStatus::VALIDATED, SupplyStatus::PARTIALLY_VALIDATED])
-                            ->where('supply_date', '<=', $end_date))
-                        ->sum('quantity_supplied');
-                } else {
-                    $approved = SupplyItem::where('product_uuid', $productUuid)
-                        ->whereHas('supply.purchaseOrder', fn($q) => $q
-                            ->where('type', 'internal')
-                            ->where('warehouse_from', $warehouse->uuid))
-                        ->whereHas('supply', fn($q) => $q
-                            ->whereIn('status', [SupplyStatus::VALIDATED, SupplyStatus::PARTIALLY_VALIDATED])
-                            ->where('supply_date', '<=', $end_date))
-                        ->sum('quantity_supplied');
+            $supplies = SupplyItem::whereHas('supply', function($q) use ($end_date) {
+                $q->whereIn('status', [SupplyStatus::VALIDATED, SupplyStatus::PARTIALLY_VALIDATED])
+                    ->where('supply_date', '<=', $end_date);
+            })
+                ->whereHas('supply.purchaseOrder', function($q) use ($warehouse_uuids) {
+                    $q->where(function($query) use ($warehouse_uuids) {
+                        $query->where('type', 'external');
+                    })->orWhere(function($query) use ($warehouse_uuids) {
+                        $query->where('type', 'internal')->whereIn('warehouse_from', $warehouse_uuids);
+                    });
+                })
+                ->select('product_uuid', DB::raw('SUM(quantity_supplied) as total'))
+                ->groupBy('product_uuid')
+                ->pluck('total', 'product_uuid');
+
+            // Ajustements Globaux par Action
+            $adjustments = StockAdjustmentItem::whereHas('adjustment', function($q) use ($warehouse_uuids, $end_date) {
+                $q->whereIn('warehouse_uuid', $warehouse_uuids)
+                    ->where('status', StocksAdjustmentStatus::VALIDATED->value)
+                    ->where('created_at', '<=', $end_date);
+            })
+                ->select('product_uuid', 'adjustments.action', DB::raw('SUM(quantity) as total'))
+                ->join('stock_adjustments as adjustments', 'stock_adjustments_items.stock_adjustment_uuid', '=', 'adjustments.uuid')
+                ->groupBy('product_uuid', 'adjustments.action')
+                ->get()
+                ->groupBy('product_uuid');
+
+            $deductions = StockDeductionItem::whereHas('stockDeduction', function($q) use ($warehouse_uuids, $end_date) {
+                $q->whereIn('warehouse_uuid', $warehouse_uuids)
+                    ->where('status', StocksDeductionsStatus::VALIDATED->value)
+                    ->where('created_at', '<=', $end_date);
+            })
+                ->select('product_uuid', DB::raw('SUM(quantity) as total'))
+                ->groupBy('product_uuid')
+                ->pluck('total', 'product_uuid');
+
+            $sales = VirtualOrderMenuRestaurant::whereIn('warehouse_uuid', $warehouse_uuids)
+                ->where('status', MenuOrderStatus::DELIVERED->value)
+                ->where('created_at', '<=', $end_date)
+                ->select('product_uuid', DB::raw('SUM(quantity_delivered) as total'))
+                ->groupBy('product_uuid')
+                ->pluck('total', 'product_uuid');
+
+            $internalSuppliesFromPrimary = 0;
+            if (!empty($primaryWarehouseUuuids)) {
+                $internalSuppliesFromPrimary = SupplyItem::whereHas('supply', function($q) use ($end_date) {
+                    $q->whereIn('status', [SupplyStatus::VALIDATED, SupplyStatus::PARTIALLY_VALIDATED])
+                        ->where('supply_date', '<=', $end_date);
+                })
+                    ->whereHas('supply.purchaseOrder', function($q) {
+                        $q->where('type', 'internal');
+                    })
+                    ->select('product_uuid', DB::raw('SUM(quantity_supplied) as total'))
+                    ->groupBy('product_uuid')
+                    ->pluck('total', 'product_uuid');
+            }
+
+            $all_products = Product::with(['unitMeasure', 'category'])->get();
+
+            $all_products_points = $all_products->map(function($product) use ($supplies, $adjustments, $deductions, $sales, $internalSuppliesFromPrimary, $primaryWarehouseUuuids) {
+                $uuid = $product->uuid;
+
+                $prodApproved = $supplies->get($uuid, 0);
+                $prodDeducted = $deductions->get($uuid, 0);
+                $prodSales    = $sales->get($uuid, 0);
+
+                $prodAdjusts  = $adjustments->get($uuid, collect());
+                $prodAdjPlus  = $prodAdjusts->where('action', StockAdjustmentAction::AJUSTEMENT_PLUS->value)->sum('total');
+                $prodAdjMinus = $prodAdjusts->where('action', StockAdjustmentAction::AJUSTEMENT_MOINS->value)->sum('total');
+                $prodAvaries  = $prodAdjusts->where('action', StockAdjustmentAction::AVARIE->value)->sum('total');
+
+                if (!empty($primaryWarehouseUuuids) && isset($internalSuppliesFromPrimary)) {
+                    $prodAdjMinus += $internalSuppliesFromPrimary->get($uuid, 0);
                 }
 
-                // Ajustements + (augmentation)
-                $adjustPlus = StockAdjustmentItem::where('product_uuid', $productUuid)
-                    ->whereHas('adjustment', fn($q) => $q->where('warehouse_uuid', $warehouse->uuid)
-                        ->where('status', StocksAdjustmentStatus::VALIDATED->value)
-                        ->where('action', StockAdjustmentAction::AJUSTEMENT_PLUS->value)
-                        ->where('created_at', '<=', $end_date))
-                    ->sum('quantity');
-
-                // Sorties : approvisionnements internes pour principal + ajustements -/avaries/deductions
-                $adjustMinus = StockAdjustmentItem::where('product_uuid', $productUuid)
-                    ->whereHas('adjustment', fn($q) => $q->where('warehouse_uuid', $warehouse->uuid)
-                        ->where('status', StocksAdjustmentStatus::VALIDATED->value)
-                        ->where('action', StockAdjustmentAction::AJUSTEMENT_MOINS->value)
-                        ->where('created_at', '<=', $end_date))
-                    ->sum('quantity');
-
-                $avaries = StockAdjustmentItem::where('product_uuid', $productUuid)
-                    ->whereHas('adjustment', fn($q) => $q->where('warehouse_uuid', $warehouse->uuid)
-                        ->where('status', StocksAdjustmentStatus::VALIDATED->value)
-                        ->where('action', StockAdjustmentAction::AVARIE->value)
-                        ->where('created_at', '<=', $end_date))
-                    ->sum('quantity');
-
-                $deducted = StockDeductionItem::where('product_uuid', $productUuid)
-                    ->whereHas('stockDeduction', fn($q) => $q->where('warehouse_uuid', $warehouse->uuid)
-                        ->where('status', StocksDeductionsStatus::VALIDATED->value)
-                        ->where('created_at', '<=', $end_date))
-                    ->sum('quantity');
-
-                $orders_restaurants = VirtualOrderMenuRestaurant::where('product_uuid', $productUuid)
-                    ->where('status', MenuOrderStatus::DELIVERED->value)
-                    ->where('warehouse_uuid', $warehouse->uuid)
-                    ->where('created_at', '<=', $end_date)
-                    ->sum('quantity_delivered');
-
-
-                if ($isPrimary) {
-                    $internalSupplies = SupplyItem::where('product_uuid', $productUuid)
-                        ->whereHas('supply.purchaseOrder', fn($q) => $q->where('type', 'internal'))
-                        ->whereHas('supply', fn($q) => $q->whereIn('status', [SupplyStatus::VALIDATED, SupplyStatus::PARTIALLY_VALIDATED])
-                            ->where('supply_date', '<=', $end_date))
-                        ->sum('quantity_supplied');
-
-                    $adjustMinus += $internalSupplies;
-                }
-
-                return max(0, $approved + $adjustPlus - $adjustMinus - $avaries - $deducted - $orders_restaurants);
-            };
-
-            // 🔹 Récupérer tous les produits (ProductPoint)
-            $all_product_uuids = ProductPoint::select('produit_uuid')->distinct()->pluck('produit_uuid');
-
-            $all_products_points = $all_product_uuids->map(function($productUuid) use ($warehouses, $calculateInventoryForWarehouse, $end_date) {
-                $quantity = 0;
-
-                foreach($warehouses as $warehouse) {
-                    $quantity += $calculateInventoryForWarehouse($productUuid, $warehouse, $end_date);
-                }
-
-                $product = Product::with(['unitMeasure', 'category'])->find($productUuid);
+                $finalQuantity = $prodApproved + $prodAdjPlus - $prodAdjMinus - $prodAvaries - $prodDeducted - $prodSales;
 
                 return (object)[
-                    'produit_uuid' => $productUuid,
-                    'product' => $product,
-                    'quantity' => $quantity,
+                    'produit_uuid' => $uuid,
+                    'product'      => $product,
+                    'quantity'     => max(0, $finalQuantity),
                 ];
-            });
+            })->filter(function($p) {
+                return $p->product !== null;
+            })->values();
 
-            /*
-            |--------------------------------------------------------------------------
-            | ✅ GÉNÉRATION DU PDF
-            |--------------------------------------------------------------------------
-            */
             $fileName = $warehouse_uuid === 'all'
                 ? 'INVENTAIRE-GLOBAL-' . now()->format('YmdHis') . '.pdf'
                 : 'INVENTAIRE-ENTREPOT-' . strtoupper($warehouses->first()->name) . '-' . now()->format('YmdHis') . '.pdf';
@@ -810,8 +805,9 @@ class ProductController extends Controller
         } catch (\Throwable $e) {
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Erreur lors de la génération du PDF',
+                'message' => 'Erreur lors de la génération de l\'inventaire',
                 'details' => $e->getMessage(),
+                'line'    => $e->getLine()
             ], 500);
         }
     }
