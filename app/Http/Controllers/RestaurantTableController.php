@@ -285,45 +285,24 @@ class RestaurantTableController extends Controller
     public function index(Request $request)
     {
         $auth = auth()->user();
-        $roleIds = $auth->roles->pluck('id');
         $perPage = $request->input('limit', 5);
         $page = $request->input('page', 1);
 
         $query = RestaurantTable::with([
             'creator',
             'updater',
-        ]);
+        ])->when($request->has('is_available'), function ($query) use ($request) {
+            $query->where('is_available', filter_var($request->input('is_available'), FILTER_VALIDATE_BOOLEAN));
+        });
 
-        if ($request->has('is_active')) {
-            $isActive = $request->input('is_active') === 'true' ? true : false;
-            $query->where('is_active', $isActive);
-        }
+        $query->when($request->input('search'), function ($query) use ($request) {
+            $search = $request->input('search');
 
-        if ($request->filled('start_date') && $request->filled('end_date')) {
-            $start = \Illuminate\Support\Carbon::parse($request->start_date)->startOfDay();
-            $end = Carbon::parse($request->end_date)->endOfDay();
-
-            $query->whereBetween('created_at', [$start, $end]);
-        }
-
-        if (!$auth->hasRole('SUPER_ADMIN') && !$auth->can('view_all_restaurants_tables')) {
-            $query->where(function ($q) use ($auth, $roleIds) {
-                if ($auth->can('view_role_related_data')) {
-                    $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
-                }
-            });
-        }
-
-        if ($search = trim($request->input('search'))) {
             $query->where(function ($q) use ($search) {
-                $q->where('uuid', 'like', "%{$search}%")
-                    ->orWhere('table_number', 'like', "%{$search}%")
-                    ->orWhere('code', 'like', "%{$search}%")
-                    ->orWhere('capacity', 'like', "%{$search}%");
+                $q->where('table_number', 'like', "%$search%");
             });
-        }
+        });
 
-        // 🔹 Pagination
         $data = $query->latest()->paginate($perPage, ['*'], 'page', $page);
         return response()->json([
             'data'         => $data->items(),

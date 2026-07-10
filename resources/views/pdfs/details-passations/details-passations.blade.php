@@ -110,7 +110,7 @@
 
 
 <p class="fst-italic text-end">
-    Date d'impression : {{ now()->format('d/m/Y H:i') }}
+    Date d'impression : {{ Carbon\Carbon::parse($passations->created_at)->format('d/m/Y H:i') }}
 </p>
 
 <div class="d-flex justify-content-center mt-2">

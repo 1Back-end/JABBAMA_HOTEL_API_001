@@ -8,6 +8,7 @@ use App\Http\Controllers\NatureEntrepotController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth:sanctum'])->group(function () {
+
     Route::middleware(['user.change_password', 'check.permission','response.time'])->group(function () {
         require __DIR__ . '/authorization.php';
         require __DIR__ . '/admin.php';

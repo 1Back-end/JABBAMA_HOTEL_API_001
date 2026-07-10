@@ -82,6 +82,7 @@ class NotificationController extends Controller
     }
 
 
+
     public function decisionalIndex()
     {
         if (session_id()) {

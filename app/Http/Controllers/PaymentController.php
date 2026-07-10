@@ -670,45 +670,164 @@ class PaymentController extends Controller
         ], 200);
     }
 
-
-    public function show_global_cashflow_by_user_today(string $userId)
+    private function buildExpenseTree($items)
     {
-        $today = Carbon::today()->toDateString();
+        $tree = [];
 
-        $expenses = ExpensePayment::with([
-            'creator:id,nom_utilisateur', 'updater:id,nom_utilisateur',
-            'expenseType:uuid,name', 'family:uuid,name', 'method:uuid,name',
+        foreach ($items as $item) {
+
+            $current = &$tree;
+
+            // Trier la hiérarchie par niveau
+            $hierarchy = $item->hierarchy_families
+                ->sortBy('level')
+                ->values();
+
+            /**
+             * Construire :
+             * DEPENSES RESTO
+             *    └── CHARGES VARIABLE RESTO
+             */
+            foreach ($hierarchy as $family) {
+
+                $uuid = $family->uuid;
+
+                if (!isset($current[$uuid])) {
+
+                    $current[$uuid] = [
+                        'uuid'     => $uuid,
+                        'name'     => $family->name,
+                        'amount'   => 0,
+                        'children' => [],
+                        'items'    => [],
+                    ];
+                }
+
+                $current[$uuid]['amount'] += (float) $item->amount;
+
+                $current = &$current[$uuid]['children'];
+            }
+
+            /**
+             * Ajouter la famille finale
+             * FACT VARIABLE RESTO
+             */
+            if ($item->family) {
+
+                $family = $item->family;
+
+                if (!isset($current[$family->uuid])) {
+
+                    $current[$family->uuid] = [
+                        'uuid'     => $family->uuid,
+                        'name'     => $family->name,
+                        'amount'   => 0,
+                        'children' => [],
+                        'items'    => [],
+                    ];
+                }
+
+                $current[$family->uuid]['amount'] += (float) $item->amount;
+
+                $current[$family->uuid]['items'][] = [
+                    'uuid'   => $item->uuid,
+                    'name'   => $item->name,
+                    'amount' => (float) $item->amount,
+                    'method' => $item->method,
+                ];
+            }
+
+            unset($current);
+        }
+
+        return $this->normalizeTree($tree);
+    }
+
+    private function normalizeTree(array $tree): array
+    {
+        return collect($tree)
+            ->map(function ($node) {
+
+                $node['children'] = $this->normalizeTree($node['children']);
+
+                return $node;
+
+            })
+            ->values()
+            ->toArray();
+    }
+
+
+    public function show_global_cashflow_today(Request $request)
+    {
+        $date = $request->filled('date')
+            ? Carbon::parse($request->date)->toDateString()
+            : Carbon::today()->toDateString();
+
+        $filterType = $request->cash_register_filter_type;
+
+        $expensesQuery = ExpensePayment::with([
+            'creator:id,nom_utilisateur',
+            'updater:id,nom_utilisateur',
+            'expenseType:uuid,name',
+            'family:uuid,name',
+            'method:uuid,name',
         ])
-            ->where('created_by', $userId)
             ->where('status', 'paid')
-            ->whereDate('paid_at', $today)
-            ->orderByDesc('paid_at')
-            ->whereNull('deleted_at')
+            ->whereDate('paid_at', $date)
+            ->whereNull('deleted_at');
+
+        if ($filterType === 'expense_type' && $request->filled('restaurant_expense_type_uuid')) {
+            $expensesQuery->where('restaurant_expense_type_uuid', $request->restaurant_expense_type_uuid);
+        }
+
+        if ($filterType === 'payment_method' && $request->filled('regulation_method_uuid')) {
+            $expensesQuery->where('regulation_method_uuid', $request->regulation_method_uuid);
+        }
+
+        if ($filterType === 'cashier_agent' && $request->filled('created_by')) {
+            $expensesQuery->where('created_by', $request->created_by);
+        }
+
+        $expenses = $expensesQuery->orderByDesc('paid_at')
             ->get()
             ->groupBy('restaurant_expense_type_uuid')
             ->map(function ($items) {
                 return [
                     'expense_type' => $items->first()->expenseType,
-                    'total_amount' => $items->sum('amount'),
-                    'items' => $items->values()
+                    'total_amount' => (float) $items->sum('amount'),
+                    'families'     => $this->buildExpenseTree($items),
                 ];
-            })->values();
+            })
+            ->values();
 
 
-        $receipts = PaymentRegulation::with([
+        $receiptsQuery = PaymentRegulation::with([
             'creator:id,nom_utilisateur',
             'updater:id,nom_utilisateur',
             'cashReceiptType:uuid,name',
             'cashReceiptFamily:uuid,name',
             'method:uuid,name',
             'payment.order.items.menu:uuid,name',
-            'payment.order.drinks.drinkConfig.product:uuid,name',
+            'payment.order.drinks.drinkConfig.product',
         ])
-            ->where('created_by', $userId)
             ->where('type', 'encaissement')
-            ->whereDate('created_at', $today)
-            ->whereNull('deleted_at')
-            ->orderByDesc('created_at')
+            ->whereDate('created_at', $date)
+            ->whereNull('deleted_at');
+
+        if ($filterType === 'payment_type' && $request->filled('cash_receipt_type_uuid')) {
+            $receiptsQuery->where('cash_receipt_type_uuid', $request->cash_receipt_type_uuid);
+        }
+
+        if ($filterType === 'payment_method' && $request->filled('regulation_method_uuid')) {
+            $receiptsQuery->where('regulation_method_uuid', $request->regulation_method_uuid);
+        }
+
+        if ($filterType === 'cashier_agent' && $request->filled('created_by')) {
+            $receiptsQuery->where('created_by', $request->created_by);
+        }
+
+        $receipts = $receiptsQuery->orderByDesc('created_at')
             ->get()
             ->groupBy('cash_receipt_type_uuid')
             ->map(function ($items) {
@@ -717,6 +836,24 @@ class PaymentController extends Controller
                     'total_amount' => $items->sum('amount'),
                     'items'        => $items->map(function ($regulation) {
                         $order = $regulation->payment?->order;
+                        $orderCode = $order?->code;
+
+                        $injectOrderCode = function($collection) use ($orderCode) {
+                            if (!$collection) return [];
+                            return $collection->map(function ($item) use ($orderCode) {
+                                $item->order_code = $orderCode;
+                                return $item;
+                            })->values();
+                        };
+
+                        if ($regulation->cashReceiptType?->name === 'ENCAISSEMENT RESTO/BAR') {
+                            $plats = $order?->items;
+                            $boissons = $order?->drinks;
+                        } else {
+                            $familyUpper = strtoupper($regulation->cashReceiptFamily?->name ?? '');
+                            $plats = str_contains($familyUpper, 'RESTO') ? $order?->items : null;
+                            $boissons = str_contains($familyUpper, 'BAR') ? $order?->drinks : null;
+                        }
 
                         return [
                             'uuid'                        => $regulation->uuid,
@@ -726,19 +863,12 @@ class PaymentController extends Controller
                             'method'                      => $regulation->method,
                             'cash_receipt_family'         => $regulation->cashReceiptFamily,
                             'creator'                     => $regulation->creator,
-
-                            'order_code'                  => $order?->code,
+                            'order_code'                  => $orderCode,
                             'order_total_price'           => $order?->total_order,
-
-                            'order_details' => $regulation->cashReceiptType?->name === 'ENCAISSEMENT RESTO/BAR'
-                                ? [
-                                    'plats'    => $order?->items->values() ?? [],
-                                    'boissons' => $order?->drinks->values() ?? []
-                                ]
-                                : [
-                                    'plats'    => str_contains(strtoupper($regulation->cashReceiptFamily?->name ?? ''), 'RESTO') ? ($order?->items->values() ?? []) : [],
-                                    'boissons' => str_contains(strtoupper($regulation->cashReceiptFamily?->name ?? ''), 'BAR') ? ($order?->drinks->values() ?? []) : []
-                                ]
+                            'order_details' => [
+                                'plats'    => $injectOrderCode($plats),
+                                'boissons' => $injectOrderCode($boissons)
+                            ]
                         ];
                     })->values()
                 ];
@@ -746,8 +876,9 @@ class PaymentController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Flux de caisse du jour récupéré avec succès',
+            'message' => 'Flux de caisse récupéré avec succès',
             'data'    => [
+                'date'     => $date,
                 'expenses' => $expenses,
                 'receipts' => $receipts
             ]

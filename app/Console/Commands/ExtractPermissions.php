@@ -59,11 +59,7 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des menus du restaurant',
             'modules' => ['Gestion du restaurant','Autres Modules'],
         ],
-        'view_all_restaurants_tables' => [
-            'description' => 'Accéder à toutes les tables du restaurant, indépendamment de son rôle.',
-            'category' => 'Gestion des tables du restaurant',
-            'modules' => ['Gestion du restaurant','Autres Modules'],
-        ],
+
         'view_all_category_menus' => [
             'description' => 'Accéder à toutes les catégories de menus du restaurant, indépendamment de son rôle.',
             'category' => 'Gestion des catégories de menus',

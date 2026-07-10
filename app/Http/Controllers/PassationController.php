@@ -43,11 +43,11 @@ class PassationController extends Controller
             'agentFrom',
             'agentTo',
             'warehouse',
-            'creator',
-            'updater',
-            'validator',
-            'rejector',
-            'cancellor',
+            'creator:id,nom_utilisateur',
+            'updater:id,nom_utilisateur',
+            'validator:id,nom_utilisateur',
+            'rejector:id,nom_utilisateur',
+            'cancellor:id,nom_utilisateur',
             'managers'
         ]);
 
@@ -60,30 +60,32 @@ class PassationController extends Controller
         if ($request->filled('warehouse_uuid')) {
             $query->where('warehouse_uuid', $request->warehouse_uuid);
         }
+
         if ($request->filled('start_date') && $request->filled('end_date')) {
             $start_date = \Illuminate\Support\Carbon::parse($request->input('start_date'))->startOfDay();
-            $end_date = Carbon::parse($request->input('end_date'))->endOfDay();
+            $end_date = \Illuminate\Support\Carbon::parse($request->input('end_date'))->endOfDay();
 
             $query->whereBetween('created_at', [$start_date, $end_date]);
         } else {
-            $query->whereDate('created_at', Carbon::today());
+            $start_date = \Illuminate\Support\Carbon::yesterday()->startOfDay();
+            $end_date = \Illuminate\Support\Carbon::today()->endOfDay();
+
+            $query->whereBetween('created_at', [$start_date, $end_date]);
         }
 
         if (!$auth->hasRole('SUPER_ADMIN') && !$auth->can('view_all_passations')) {
+            $query->whereHas('warehouse.managers', function($qw) use ($auth) {
+                $qw->where('warehouse_managers.user_id', $auth->id)
+                    ->whereNull('warehouse_managers.deleted_at');
+            });
 
             $query->where(function($q) use ($auth, $roleIds) {
-
-                // 🔹 Utilisateurs avec view_role_related_data : voient toutes les passations des utilisateurs du même rôle
                 if ($auth->can('view_role_related_data')) {
                     $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
+                } else {
+                    $q->where('created_by', $auth->id)
+                        ->orWhereHas('managers', fn($qm) => $qm->where('manager_id', $auth->id));
                 }
-
-                // 🔹 Utilisateurs sans cette permission : seulement leurs propres passations ou celles dont ils sont managers
-                if (!$auth->can('view_role_related_data')) {
-                    $q->orWhere('created_by', $auth->id)
-                        ->orWhereHas('managers', fn($q2) => $q2->where('manager_id', $auth->id));
-                }
-
             });
         }
 
@@ -93,7 +95,6 @@ class PassationController extends Controller
                     ->orWhere('status', 'like', "%{$search}%")
                     ->orWhere('reference', 'like', "%{$search}%")
 
-                    // 🔹 Entrepôts
                     ->orWhereHas('agentFrom', function ($qw) use ($search) {
                         $qw->where('login', 'like', "%{$search}%")
                             ->orWhere('email', 'like', "%{$search}%")
@@ -109,13 +110,11 @@ class PassationController extends Controller
                             ->orWhere('id', 'like', "%{$search}%");
                     })
 
-                    // 🔹 Créateur
                     ->orWhereHas('creator', function ($qc) use ($search) {
                         $qc->where('nom_utilisateur', 'like', "%{$search}%")
                             ->orWhere('email', 'like', "%{$search}%");
                     })
 
-                    // 🔹 Produits
                     ->orWhereHas('items.product', function ($qp) use ($search) {
                         $qp->where('name', 'like', "%{$search}%")
                             ->orWhere('code', 'like', "%{$search}%")
@@ -125,7 +124,6 @@ class PassationController extends Controller
             });
         }
 
-        // 🔹 Pagination
         $data = $query->latest()->paginate($perPage, ['*'], 'page', $page);
 
         return response()->json([
@@ -134,7 +132,6 @@ class PassationController extends Controller
             'last_page'    => $data->lastPage(),
             'total'        => $data->total(),
         ]);
-
     }
 
 
