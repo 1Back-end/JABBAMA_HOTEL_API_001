@@ -6,6 +6,7 @@ use App\Models\ExpensePayment;
 use App\Models\PaymentRegulation;
 use App\Models\RestaurantExpenseDetail;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -101,13 +102,16 @@ class RestaurantExpenseController extends Controller
             'name'                           => 'required|string|max:255',
             'amount'                         => 'required|numeric|min:0',
             'description'                    => 'nullable|string|max:1000',
+            'date'                           => 'nullable|date',
         ]);
+        $createdAt = $request->filled('date')
+            ? Carbon::parse($request->date)->setTimeFrom(Carbon::now())
+            : Carbon::now();
 
         DB::beginTransaction();
 
         try {
 
-            // 1. CREATE EXPENSE
             $expense = ExpensePayment::create([
                 'restaurant_expense_type_uuid'   => $request->restaurant_expense_type_uuid,
                 'restaurant_expense_family_uuid' => $request->restaurant_expense_family_uuid,
@@ -116,9 +120,12 @@ class RestaurantExpenseController extends Controller
                 'amount'                         => $request->amount,
                 'name'                           => $request->name,
                 'description'                    => $request->description,
-                'paid_at'                        => now(),
+                'paid_at'                        => $createdAt,
                 'created_by'                     => $auth->id,
-                'status'                         => 'paid'
+                'status'                         => 'paid',
+                'created_at'                     => $createdAt,
+                'updated_at'                     => $createdAt,
+
             ]);
 
             // 2. CREATE REGULATION (PROPRE)
@@ -133,6 +140,8 @@ class RestaurantExpenseController extends Controller
                 'type'                         => 'expense',
                 'created_by'                   => $auth->id,
                 'updated_by'                   => $auth->id,
+                'created_at'                   => $createdAt,
+                'updated_at'                   => $createdAt,
             ]);
 
             DB::commit();
@@ -177,14 +186,18 @@ class RestaurantExpenseController extends Controller
         $request->validate([
             'restaurant_expense_type_uuid'   => 'required|uuid',
             'restaurant_expense_family_uuid' => 'nullable|uuid',
-            'family_hierarchy_uuids'         => 'nullable|array', // 💡 Ajout de la validation du tableau
+            'family_hierarchy_uuids'         => 'nullable|array',
             'family_hierarchy_uuids.*'       => 'uuid',
             'payment_method_uuid'            => 'required|uuid',
             'name'                           => 'required|string|max:255',
             'amount'                         => 'required|numeric|min:0',
             'description'                    => 'nullable|string|max:1000',
             'status'                         => 'nullable|string|max:50',
+            'date'                           => 'nullable|date',
         ]);
+        $createdAt = $request->filled('date')
+            ? Carbon::parse($request->date)->setTimeFrom(Carbon::now())
+            : Carbon::now();
 
         $expense = ExpensePayment::where('uuid', $uuid)->first();
 
@@ -209,6 +222,9 @@ class RestaurantExpenseController extends Controller
                 'description'                    => $request->description,
                 'status'                         => $request->status ?? $expense->status,
                 'updated_by'                     => $auth->id,
+                'paid_at'                        => $createdAt,
+                'created_at'                   => $createdAt,
+                'updated_at'                   => $createdAt,
             ]);
 
             // 2. FIND OR CREATE REGULATION
@@ -224,8 +240,11 @@ class RestaurantExpenseController extends Controller
                     'regulation_method_uuid'       => $request->payment_method_uuid,
                     'amount'                       => $request->amount,
                     'type'                         => 'expense',
+                    'paid_at'                        => $createdAt,
                     'created_by'                   => $auth->id,
                     'updated_by'                   => $auth->id,
+                    'created_at'                   => $createdAt,
+                    'updated_at'                   => $createdAt,
                 ]);
             } else {
                 $regulation->update([
@@ -234,6 +253,9 @@ class RestaurantExpenseController extends Controller
                     'amount'                       => $request->amount,
                     'type'                         => 'expense',
                     'updated_by'                   => $auth->id,
+                    'created_at'                   => $createdAt,
+                    'paid_at'                        => $createdAt,
+                    'updated_at'                   => $createdAt,
                 ]);
             }
 

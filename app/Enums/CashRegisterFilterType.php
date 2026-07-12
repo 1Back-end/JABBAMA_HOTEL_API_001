@@ -14,7 +14,7 @@ enum CashRegisterFilterType: string
     {
         return match ($this) {
             self::PAYMENT_METHOD => 'Mode de règlement',
-            self::CASHIER_AGENT  => 'Agent ayant encaissé',
+            self::CASHIER_AGENT  => 'Par agent',
             self::PAYMENT_TYPE   => 'Type d’encaissement',
             self::EXPENSE_TYPE   => 'Type de dépenses',
         };

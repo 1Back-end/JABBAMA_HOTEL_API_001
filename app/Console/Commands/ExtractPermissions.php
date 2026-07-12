@@ -235,6 +235,16 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des encaissements',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],
+        'view_extended_cash_register_date' => [
+            'description' => 'Afficher les données de la fiche de caisse sur deux jours (hier et aujourd\'hui)',
+            'category' => 'Gestion des encaissements',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'change_expense_payment_date' => [
+            'description' => 'Changer la date pour effectuer des dépenses antérieures',
+            'category' => 'Gestion des dépenses',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
         'view_kitchen_and_bar_orders' => [
             'description' => 'Afficher les commandes contenant des menus et/ou des boissons (cuisine + bar)',
             'category' => 'Gestion des commandes du restaurant',

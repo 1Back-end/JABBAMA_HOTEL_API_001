@@ -31,7 +31,9 @@ class PaymentRegulation extends Model
         'updated_by',
         'type',
         'source_type',
-        'source_uuid'
+        'source_uuid',
+        'created_at',
+        'updated_at',
     ];
 
     protected static function boot()
@@ -78,6 +80,15 @@ class PaymentRegulation extends Model
         return $this->belongsTo(
             CashReceiptType::class,
             'cash_receipt_type_uuid',
+            'uuid'
+        );
+    }
+
+    public function expenseType()
+    {
+        return $this->belongsTo(
+            RestaurantExpenseType::class,
+            'restaurant_expense_type_uuid',
             'uuid'
         );
     }

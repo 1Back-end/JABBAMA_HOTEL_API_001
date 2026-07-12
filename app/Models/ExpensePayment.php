@@ -28,7 +28,9 @@ class ExpensePayment extends Model
         'created_by',
         'updated_by',
         'status',
-        'hierarchy_uuids'
+        'hierarchy_uuids',
+        'created_at',
+        'updated_at',
     ];
 
     protected $casts = [
