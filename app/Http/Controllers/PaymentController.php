@@ -96,11 +96,16 @@ class PaymentController extends Controller
         $request->validate([
             'order_menu_restaurant_uuid' => 'required|uuid',
             'total_amount' => 'required|numeric|min:0',
+            'date' => 'nullable|date',
             'regulations' => 'required|array|min:1',
             'regulations.*.method_uuid' => 'required|uuid',
             'regulations.*.amount' => 'required|numeric|min:0.01',
             'regulations.*.lines' => 'nullable|array',
         ]);
+
+        $createdAt = $request->filled('date')
+            ? Carbon::parse($request->date)->setTimeFrom(Carbon::now())
+            : Carbon::now();
 
         DB::beginTransaction();
 
@@ -120,6 +125,7 @@ class PaymentController extends Controller
                     'remaining_amount' => (float) $order->total_order,
                     'status' => PaymentStatus::UNPAID->value,
                     'created_by' => auth()->id(),
+                    'created_at' => $createdAt,
                 ]
             );
 
@@ -256,6 +262,8 @@ class PaymentController extends Controller
                     'detail' => $regulation['detail'] ?? null,
                     'created_by' => auth()->id(),
                     'updated_by' => auth()->id(),
+                    'created_at' => $createdAt,
+                    'updated_at' => $createdAt,
                 ]);
 
 
@@ -277,6 +285,8 @@ class PaymentController extends Controller
                             'detail' => $regulation['detail'] ?? null,
                             'created_by' => auth()->id(),
                             'updated_by' => auth()->id(),
+                            'created_at' => $createdAt,
+                            'updated_at' => $createdAt,
                         ]);
                     }
                 }
@@ -559,9 +569,24 @@ class PaymentController extends Controller
         $perPage = (int) $request->input('limit', 25);
         $page = (int) $request->input('page', 1);
 
-        $date = $request->filled('date')
-            ? Carbon::parse($request->date)->toDateString()
-            : Carbon::today()->toDateString();
+        $user = auth()->user();
+
+        $isPeriod = false;
+        $startDate = null;
+        $endDate = null;
+        $singleDate = null;
+
+        if ($request->filled('date')) {
+            $singleDate = Carbon::parse($request->date)->toDateString();
+        } else {
+            if ($user && $user->can('view_extended_cash_register_date')) {
+                $startDate = Carbon::yesterday()->toDateString();
+                $endDate = Carbon::today()->toDateString();
+                $isPeriod = true;
+            } else {
+                $singleDate = Carbon::today()->toDateString();
+            }
+        }
 
         $relations = ['creator:id,nom_utilisateur'];
 
@@ -581,7 +606,15 @@ class PaymentController extends Controller
         ];
 
         $query = PaymentRegulation::query();
-        $totalsQuery = PaymentRegulation::whereDate('created_at', $date);
+        $totalsQuery = PaymentRegulation::query();
+
+        if ($isPeriod) {
+            $query->whereBetween(DB::raw('DATE(created_at)'), [$startDate, $endDate]);
+            $totalsQuery->whereBetween(DB::raw('DATE(created_at)'), [$startDate, $endDate]);
+        } else {
+            $query->whereDate('created_at', $singleDate);
+            $totalsQuery->whereDate('created_at', $singleDate);
+        }
 
         if ($request->cash_register_filter_type === CashRegisterFilterType::PAYMENT_TYPE->value && $request->filled('cash_receipt_type_uuid')) {
             $query->where('cash_receipt_type_uuid', $request->cash_receipt_type_uuid);
@@ -617,7 +650,6 @@ class PaymentController extends Controller
 
         $data = $query->select($selectColumns)
             ->with($relations)
-            ->whereDate('created_at', $date)
             ->groupBy($groupByColumns)
             ->orderByDesc(DB::raw('DATE(created_at)'))
             ->paginate($perPage, ['*'], 'page', $page);
@@ -760,9 +792,7 @@ class PaymentController extends Controller
 
     public function show_global_cashflow_today(Request $request)
     {
-        $date = $request->filled('date')
-            ? Carbon::parse($request->date)->toDateString()
-            : Carbon::today()->toDateString();
+        $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : null;
 
         $filterType = $request->cash_register_filter_type;
 
@@ -782,7 +812,9 @@ class PaymentController extends Controller
         }
 
         if ($filterType === 'payment_method' && $request->filled('regulation_method_uuid')) {
-            $expensesQuery->where('regulation_method_uuid', $request->regulation_method_uuid);
+            $expensesQuery->whereHas('method', function ($query) use ($request) {
+                $query->where('uuid', $request->regulation_method_uuid);
+            });
         }
 
         if ($filterType === 'cashier_agent' && $request->filled('created_by')) {
@@ -802,6 +834,7 @@ class PaymentController extends Controller
             ->values();
 
 
+        // ─── REQUÊTE DES ENCAISSEMENTS (RECEIPTS) ───
         $receiptsQuery = PaymentRegulation::with([
             'creator:id,nom_utilisateur',
             'updater:id,nom_utilisateur',
@@ -819,8 +852,14 @@ class PaymentController extends Controller
             $receiptsQuery->where('cash_receipt_type_uuid', $request->cash_receipt_type_uuid);
         }
 
+        if ($filterType === 'expense_type' && $request->filled('restaurant_expense_type_uuid')) {
+            $expensesQuery->where('restaurant_expense_type_uuid', $request->restaurant_expense_type_uuid);
+        }
+
         if ($filterType === 'payment_method' && $request->filled('regulation_method_uuid')) {
-            $receiptsQuery->where('regulation_method_uuid', $request->regulation_method_uuid);
+            $receiptsQuery->whereHas('method', function ($query) use ($request) {
+                $query->where('uuid', $request->regulation_method_uuid);
+            });
         }
 
         if ($filterType === 'cashier_agent' && $request->filled('created_by')) {
