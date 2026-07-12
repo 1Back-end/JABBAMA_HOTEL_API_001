@@ -8,15 +8,12 @@ enum CashRegisterFilterType: string
     case CASHIER_AGENT = 'cashier_agent';
     case PAYMENT_TYPE = 'payment_type';
 
-    case EXPENSE_TYPE = 'expense_type';
-
     public function label(): string
     {
         return match ($this) {
             self::PAYMENT_METHOD => 'Mode de règlement',
             self::CASHIER_AGENT  => 'Par agent',
-            self::PAYMENT_TYPE   => 'Type d’encaissement',
-            self::EXPENSE_TYPE   => 'Type de dépenses',
+            self::PAYMENT_TYPE   => 'Encaissement/Décaissement',
         };
     }
 
