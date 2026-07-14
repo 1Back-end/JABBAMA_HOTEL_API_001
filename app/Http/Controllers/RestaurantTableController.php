@@ -285,7 +285,7 @@ class RestaurantTableController extends Controller
     public function index(Request $request)
     {
         $auth = auth()->user();
-        $perPage = $request->input('limit', 5);
+        $perPage = $request->input('limit', 25);
         $page = $request->input('page', 1);
 
         $query = RestaurantTable::with([
@@ -302,8 +302,9 @@ class RestaurantTableController extends Controller
                 $q->where('table_number', 'like', "%$search%");
             });
         });
+        $query->orderByRaw('CAST(table_number AS UNSIGNED) ASC');
 
-        $data = $query->latest()->paginate($perPage, ['*'], 'page', $page);
+        $data = $query->paginate($perPage, ['*'], 'page', $page);
         return response()->json([
             'data'         => $data->items(),
             'current_page' => $data->currentPage(),

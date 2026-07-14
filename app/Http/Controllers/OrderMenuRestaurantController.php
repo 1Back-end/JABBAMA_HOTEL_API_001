@@ -10495,6 +10495,74 @@ class OrderMenuRestaurantController extends Controller
         ]);
     }
 
+    public function get_recouvrements_facture_for_clients(Request $request){
+        $auth = auth()->user();
+
+        $perPage = (int) $request->input('limit', 25);
+        $page = (int) $request->input('page', 1);
+
+        $query = OrderMenuRestaurant::with([
+            'restaurantTable:uuid,code,table_number',
+            'creator:id,nom_utilisateur,email',
+            'updater:id,nom_utilisateur,email',
+            'validator:id,nom_utilisateur,email',
+            'cancelor:id,nom_utilisateur,email',
+            'partners_restaurant:uuid,code,full_name,amount_allocated,amount_allocated_total',
+            'restaurant_room:uuid,code,rooms_number',
+            'menu_restaurant:uuid,name,code,type_complement_boisson',
+            'items.menu',
+            'drinks.drinkConfig.product',
+            'free_client_for_restaurant:uuid,code,full_name,cni_number_file,amount_allocated,amount_allocated_total',
+            'payment.regulations.method'
+        ])
+            ->whereIn('regulation_status', [
+                PaymentOrderMenusStatus::PARTIALLY_PAID->value,
+                PaymentOrderMenusStatus::PAID->value,
+                PaymentOrderMenusStatus::NOT_PAID->value,
+                PaymentOrderMenusStatus::FACTURATE->value,
+            ]);
+
+        if ($request->filled('date')) {
+            $query->whereDate('created_at', $request->date);
+        } else {
+            $query->whereDate('created_at', '<', Carbon::today());
+        }
+
+        if ($request->filled('free_client_for_restaurant_uuid')) {
+            $query->where('free_client_for_restaurant_uuid', $request->free_client_for_restaurant_uuid);
+        }
+
+        if ($request->filled('partners_restaurant_uuid')) {
+            $query->where('partners_restaurant_uuid', $request->partners_restaurant_uuid);
+        }
+
+        if ($request->filled('invoice_code')) {
+            $query->where('code', $request->invoice_code);
+        }
+
+        if ($request->filled('debtor')) {
+            $debtor = trim($request->debtor);
+            $query->where('full_name', 'LIKE', "%{$debtor}%");
+        }
+
+        $query->leftJoin('free_client_for_restaurants', 'order_menu_restaurants.free_client_for_restaurant_uuid', '=', 'free_client_for_restaurants.uuid')
+            ->leftJoin('partners_restaurants', 'order_menu_restaurants.partners_restaurant_uuid', '=', 'partners_restaurants.uuid')
+            ->select('order_menu_restaurants.*')
+            ->orderByRaw("COALESCE(free_client_for_restaurants.full_name, partners_restaurants.full_name, order_menu_restaurants.full_name) ASC");
+
+        $data = $query->latest('created_at')->paginate($perPage, ['*'], 'page', $page);
+
+        return response()->json([
+            'success'      => true,
+            'data'         => $data->items(),
+            'current_page' => $data->currentPage(),
+            'last_page'    => $data->lastPage(),
+            'per_page'     => $data->perPage(),
+            'total'        => $data->total(),
+        ]);
+
+    }
+
 
 
     /**

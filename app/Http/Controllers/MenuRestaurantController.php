@@ -418,7 +418,7 @@ class MenuRestaurantController extends Controller
         $auth = auth()->user();
         $roleIds = $auth->roles->pluck('id');
         $perPage = $request->input('limit', 25);
-        $page = $request->input('page', 1);
+        $page = (int) $request->input('page', 1);
 
         $query = MenuRestaurant::with([
             'creator',
@@ -447,32 +447,30 @@ class MenuRestaurantController extends Controller
         }
 
         $query->orderByRaw("
-            CASE
+        CASE
+            -- 1. Menus AVEC complément (et qui ne sont pas des boissons ou compléments bruts)
+            WHEN is_generated_from_complement = 0
+                 AND is_drinks = 0
+                 AND have_complements = 1 THEN 1
 
-                -- 1. Menus confectionnés COMPLETS (non générés)
-                WHEN is_confectioned = 1
-                     AND have_complements = 1
-                     AND have_drinks = 1
-                     AND is_generated_from_complement = 0 THEN 1
+            -- 2. Menus SANS complément
+            WHEN is_generated_from_complement = 0
+                 AND is_drinks = 0
+                 AND have_complements = 0 THEN 2
 
-                -- 2. Menus confectionnés simples (non générés)
-                WHEN is_confectioned = 1
-                     AND have_complements = 0
-                     AND have_drinks = 0
-                     AND is_generated_from_complement = 0 THEN 2
+            -- 3. Les compléments seuls
+            WHEN is_generated_from_complement = 1
+                 AND is_menu = 1 THEN 3
 
-                -- 3. Compléments générés
-                WHEN is_generated_from_complement = 1
-                     AND is_menu = 1 THEN 3
+            -- 4. Les boissons
+            WHEN is_drinks = 1
+                 OR (is_generated_from_complement = 1 AND is_drinks = 1) THEN 4
 
-                -- 4. Boissons générées
-                WHEN is_generated_from_complement = 1
-                     AND is_drinks = 1 THEN 4
+            ELSE 5
+        END ASC
+    ");
 
-                -- fallback
-                ELSE 5
-            END
-        ");
+        $query->orderBy('name', 'ASC');
 
         $data = $query->paginate($perPage, ['*'], 'page', $page);
 

@@ -569,24 +569,9 @@ class PaymentController extends Controller
         $perPage = (int) $request->input('limit', 25);
         $page = (int) $request->input('page', 1);
 
-        $user = auth()->user();
-
-        $isPeriod = false;
-        $startDate = null;
-        $endDate = null;
-        $singleDate = null;
-
-        if ($request->filled('date')) {
-            $singleDate = Carbon::parse($request->date)->toDateString();
-        } else {
-            if ($user && $user->can('view_extended_cash_register_date')) {
-                $startDate = Carbon::yesterday()->toDateString();
-                $endDate = Carbon::today()->toDateString();
-                $isPeriod = true;
-            } else {
-                $singleDate = Carbon::today()->toDateString();
-            }
-        }
+        $date = $request->filled('date')
+            ? Carbon::parse($request->date)->toDateString()
+            : Carbon::today()->toDateString();
 
         $relations = ['creator:id,nom_utilisateur'];
 
@@ -594,67 +579,77 @@ class PaymentController extends Controller
             DB::raw('MIN(uuid) as uuid'),
             DB::raw('DATE(created_at) as date'),
             DB::raw('MIN(created_at) as created_at'),
-            'created_by',
-            'type',
-            DB::raw('SUM(amount) as total_amount'),
         ];
 
         $groupByColumns = [
             DB::raw('DATE(created_at)'),
-            'created_by',
-            'type'
         ];
 
         $query = PaymentRegulation::query();
-        $totalsQuery = PaymentRegulation::query();
+        $totalsQuery = PaymentRegulation::whereDate('created_at', $date);
 
-        if ($isPeriod) {
-            $query->whereBetween(DB::raw('DATE(created_at)'), [$startDate, $endDate]);
-            $totalsQuery->whereBetween(DB::raw('DATE(created_at)'), [$startDate, $endDate]);
-        } else {
-            $query->whereDate('created_at', $singleDate);
-            $totalsQuery->whereDate('created_at', $singleDate);
-        }
-
-        if ($request->cash_register_filter_type === CashRegisterFilterType::PAYMENT_TYPE->value && $request->filled('cash_receipt_type_uuid')) {
-            $query->where('cash_receipt_type_uuid', $request->cash_receipt_type_uuid);
-            $totalsQuery->where('cash_receipt_type_uuid', $request->cash_receipt_type_uuid);
-
-            $selectColumns[] = 'cash_receipt_type_uuid';
-            $groupByColumns[] = 'cash_receipt_type_uuid';
-            $relations[] = 'cashReceiptType:uuid,name';
-        }
-
-        if ($request->cash_register_filter_type === CashRegisterFilterType::PAYMENT_METHOD->value && $request->filled('regulation_method_uuid')) {
-            $query->where('regulation_method_uuid', $request->regulation_method_uuid);
-            $totalsQuery->where('regulation_method_uuid', $request->regulation_method_uuid);
-
+        if ($request->cash_register_filter_type === CashRegisterFilterType::PAYMENT_METHOD->value) {
+            // Mode de règlement : Fusionné
             $selectColumns[] = 'regulation_method_uuid';
+            $selectColumns[] = DB::raw("SUM(CASE WHEN type = 'encaissement' THEN amount ELSE 0 END) as total_encaissements");
+            $selectColumns[] = DB::raw("SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) as total_depenses");
+            $selectColumns[] = DB::raw("SUM(CASE WHEN type = 'encaissement' THEN amount ELSE -amount END) as total_amount");
+
             $groupByColumns[] = 'regulation_method_uuid';
             $relations[] = 'method:uuid,name';
-        }
 
-        if ($request->cash_register_filter_type === CashRegisterFilterType::EXPENSE_TYPE->value && $request->filled('restaurant_expense_type_uuid')) {
-            $query->where('restaurant_expense_type_uuid', $request->restaurant_expense_type_uuid);
-            $totalsQuery->where('restaurant_expense_type_uuid', $request->restaurant_expense_type_uuid);
+            if ($request->filled('regulation_method_uuid')) {
+                $query->where('regulation_method_uuid', $request->regulation_method_uuid);
+                $totalsQuery->where('regulation_method_uuid', $request->regulation_method_uuid);
+            }
 
+        } elseif ($request->cash_register_filter_type === CashRegisterFilterType::PAYMENT_TYPE->value) {
+            $selectColumns[] = 'cash_receipt_type_uuid';
             $selectColumns[] = 'restaurant_expense_type_uuid';
-            $groupByColumns[] = 'restaurant_expense_type_uuid';
-            $relations[] = 'expenseType:uuid,name';
-        }
+            $selectColumns[] = DB::raw("SUM(CASE WHEN type = 'encaissement' THEN amount ELSE 0 END) as total_encaissements");
+            $selectColumns[] = DB::raw("SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) as total_depenses");
+            $selectColumns[] = DB::raw("SUM(CASE WHEN type = 'encaissement' THEN amount ELSE -amount END) as total_amount");
 
-        if ($request->cash_register_filter_type === CashRegisterFilterType::CASHIER_AGENT->value && $request->filled('created_by')) {
-            $query->where('payment_regulations.created_by', $request->created_by);
-            $totalsQuery->where('payment_regulations.created_by', $request->created_by);
+            $groupByColumns[] = 'cash_receipt_type_uuid';
+            $groupByColumns[] = 'restaurant_expense_type_uuid';
+            $relations[] = 'cashReceiptType:uuid,name';
+            $relations[] = 'expenseType:uuid,name';
+
+            if ($request->filled('cash_receipt_type_uuid')) {
+                $query->where('cash_receipt_type_uuid', $request->cash_receipt_type_uuid);
+                $totalsQuery->where('cash_receipt_type_uuid', $request->cash_receipt_type_uuid);
+            }
+
+            if ($request->filled('restaurant_expense_type_uuid')) {
+                $query->where('restaurant_expense_type_uuid', $request->restaurant_expense_type_uuid);
+                $totalsQuery->where('restaurant_expense_type_uuid', $request->restaurant_expense_type_uuid);
+            }
+
+        } else {
+            $selectColumns[] = 'created_by';
+            $selectColumns[] = 'type';
+            $selectColumns[] = DB::raw('SUM(amount) as total_amount');
+
+            $groupByColumns[] = 'created_by';
+            $groupByColumns[] = 'type';
+
+            if ($request->cash_register_filter_type === CashRegisterFilterType::CASHIER_AGENT->value && $request->filled('created_by')) {
+                $query->where('created_by', $request->created_by);
+                $totalsQuery->where('created_by', $request->created_by);
+            }
         }
 
         $data = $query->select($selectColumns)
             ->with($relations)
+            ->whereDate('created_at', $date)
+            ->whereNull('deleted_at')
             ->groupBy($groupByColumns)
             ->orderByDesc(DB::raw('DATE(created_at)'))
             ->paginate($perPage, ['*'], 'page', $page);
 
+        // 4. Calcul des totaux de synthèse pour la carte globale
         $totals = $totalsQuery->select('type', DB::raw('SUM(amount) as total'))
+            ->whereNull('deleted_at')
             ->groupBy('type')
             ->get()
             ->keyBy('type');
@@ -807,7 +802,10 @@ class PaymentController extends Controller
             ->whereDate('paid_at', $date)
             ->whereNull('deleted_at');
 
-        if ($filterType === 'expense_type' && $request->filled('restaurant_expense_type_uuid')) {
+        if (
+            ($filterType === 'expense_type' || $filterType === 'payment_type') &&
+            $request->filled('restaurant_expense_type_uuid')
+        ) {
             $expensesQuery->where('restaurant_expense_type_uuid', $request->restaurant_expense_type_uuid);
         }
 
@@ -834,7 +832,6 @@ class PaymentController extends Controller
             ->values();
 
 
-        // ─── REQUÊTE DES ENCAISSEMENTS (RECEIPTS) ───
         $receiptsQuery = PaymentRegulation::with([
             'creator:id,nom_utilisateur',
             'updater:id,nom_utilisateur',
