@@ -240,6 +240,11 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des encaissements',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],
+        'view_extended_cash_register_date_recovery' => [
+            'description' => 'Afficher l\'interface de recouvrements des factures',
+            'category' => 'Gestion des encaissements',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
         'change_expense_payment_date' => [
             'description' => 'Changer la date pour effectuer des dépenses antérieures',
             'category' => 'Gestion des dépenses',

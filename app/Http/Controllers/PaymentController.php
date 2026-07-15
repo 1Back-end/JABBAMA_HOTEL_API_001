@@ -566,10 +566,10 @@ class PaymentController extends Controller
 
     public function get_cash_register_sheet(Request $request)
     {
-        $perPage = (int) $request->input('limit', 25);
-        $page = (int) $request->input('page', 1);
+        $perPage = (int)$request->input('limit', 25);
+        $page = (int)$request->input('page', 1);
 
-        $date = $request->filled('date')
+        $date =$request->filled('date')
             ? Carbon::parse($request->date)->toDateString()
             : Carbon::today()->toDateString();
 
@@ -586,56 +586,51 @@ class PaymentController extends Controller
         ];
 
         $query = PaymentRegulation::query();
-        $totalsQuery = PaymentRegulation::whereDate('created_at', $date);
+        $totalsQuery = PaymentRegulation::whereDate('created_at',$date);
 
         if ($request->cash_register_filter_type === CashRegisterFilterType::PAYMENT_METHOD->value) {
             // Mode de règlement : Fusionné
-            $selectColumns[] = 'regulation_method_uuid';
-            $selectColumns[] = DB::raw("SUM(CASE WHEN type = 'encaissement' THEN amount ELSE 0 END) as total_encaissements");
+            $selectColumns[] = 'regulation_method_uuid';$selectColumns[] = DB::raw("SUM(CASE WHEN type = 'encaissement' THEN amount ELSE 0 END) as total_encaissements");
             $selectColumns[] = DB::raw("SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) as total_depenses");
             $selectColumns[] = DB::raw("SUM(CASE WHEN type = 'encaissement' THEN amount ELSE -amount END) as total_amount");
 
-            $groupByColumns[] = 'regulation_method_uuid';
-            $relations[] = 'method:uuid,name';
+            $groupByColumns[] = 'regulation_method_uuid';$relations[] = 'method:uuid,name';
 
             if ($request->filled('regulation_method_uuid')) {
-                $query->where('regulation_method_uuid', $request->regulation_method_uuid);
-                $totalsQuery->where('regulation_method_uuid', $request->regulation_method_uuid);
+                $query->where('regulation_method_uuid',$request->regulation_method_uuid);
+                $totalsQuery->where('regulation_method_uuid',$request->regulation_method_uuid);
             }
 
         } elseif ($request->cash_register_filter_type === CashRegisterFilterType::PAYMENT_TYPE->value) {
+
             $selectColumns[] = 'cash_receipt_type_uuid';
-            $selectColumns[] = 'restaurant_expense_type_uuid';
-            $selectColumns[] = DB::raw("SUM(CASE WHEN type = 'encaissement' THEN amount ELSE 0 END) as total_encaissements");
+            $selectColumns[] = 'restaurant_expense_type_uuid';$selectColumns[] = DB::raw("SUM(CASE WHEN type = 'encaissement' THEN amount ELSE 0 END) as total_encaissements");
             $selectColumns[] = DB::raw("SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) as total_depenses");
             $selectColumns[] = DB::raw("SUM(CASE WHEN type = 'encaissement' THEN amount ELSE -amount END) as total_amount");
 
-            $groupByColumns[] = 'cash_receipt_type_uuid';
-            $groupByColumns[] = 'restaurant_expense_type_uuid';
-            $relations[] = 'cashReceiptType:uuid,name';
-            $relations[] = 'expenseType:uuid,name';
+            $groupByColumns[] = 'cash_receipt_type_uuid';$groupByColumns[] = 'restaurant_expense_type_uuid';
+            $relations[] = 'cashReceiptType:uuid,name';$relations[] = 'expenseType:uuid,name';
 
             if ($request->filled('cash_receipt_type_uuid')) {
-                $query->where('cash_receipt_type_uuid', $request->cash_receipt_type_uuid);
-                $totalsQuery->where('cash_receipt_type_uuid', $request->cash_receipt_type_uuid);
+                $query->where('cash_receipt_type_uuid',$request->cash_receipt_type_uuid);
+                $totalsQuery->where('cash_receipt_type_uuid',$request->cash_receipt_type_uuid);
             }
 
             if ($request->filled('restaurant_expense_type_uuid')) {
-                $query->where('restaurant_expense_type_uuid', $request->restaurant_expense_type_uuid);
-                $totalsQuery->where('restaurant_expense_type_uuid', $request->restaurant_expense_type_uuid);
+                $query->where('restaurant_expense_type_uuid',$request->restaurant_expense_type_uuid);
+                $totalsQuery->where('restaurant_expense_type_uuid',$request->restaurant_expense_type_uuid);
             }
 
         } else {
-            $selectColumns[] = 'created_by';
-            $selectColumns[] = 'type';
-            $selectColumns[] = DB::raw('SUM(amount) as total_amount');
+            $selectColumns[] = 'created_by';$selectColumns[] = DB::raw("SUM(CASE WHEN type = 'encaissement' THEN amount ELSE 0 END) as total_encaissements");
+            $selectColumns[] = DB::raw("SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) as total_depenses");
+            $selectColumns[] = DB::raw("SUM(CASE WHEN type = 'encaissement' THEN amount ELSE -amount END) as total_amount");
 
             $groupByColumns[] = 'created_by';
-            $groupByColumns[] = 'type';
 
-            if ($request->cash_register_filter_type === CashRegisterFilterType::CASHIER_AGENT->value && $request->filled('created_by')) {
-                $query->where('created_by', $request->created_by);
-                $totalsQuery->where('created_by', $request->created_by);
+            if ($request->cash_register_filter_type === CashRegisterFilterType::CASHIER_AGENT->value &&$request->filled('created_by')) {
+                $query->where('created_by',$request->created_by);
+                $totalsQuery->where('created_by',$request->created_by);
             }
         }
 
@@ -645,10 +640,10 @@ class PaymentController extends Controller
             ->whereNull('deleted_at')
             ->groupBy($groupByColumns)
             ->orderByDesc(DB::raw('DATE(created_at)'))
-            ->paginate($perPage, ['*'], 'page', $page);
+            ->paginate($perPage, ['*'], 'page',$page);
 
-        // 4. Calcul des totaux de synthèse pour la carte globale
-        $totals = $totalsQuery->select('type', DB::raw('SUM(amount) as total'))
+
+        $totals =$totalsQuery->select('type', DB::raw('SUM(amount) as total'))
             ->whereNull('deleted_at')
             ->groupBy('type')
             ->get()
@@ -656,7 +651,7 @@ class PaymentController extends Controller
 
         $totalEncaissements = (float) ($totals->get('encaissement')?->total ?? 0);
         $totalDepenses      = (float) ($totals->get('expense')?->total ?? 0);
-        $soldeNet           = $totalEncaissements - $totalDepenses;
+        $soldeNet           = $totalEncaissements -$totalDepenses;
 
         return response()->json([
             'success'             => true,

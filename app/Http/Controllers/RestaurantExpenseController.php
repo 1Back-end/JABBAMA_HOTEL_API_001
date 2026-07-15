@@ -36,6 +36,12 @@ class RestaurantExpenseController extends Controller
             'method'
         ]);
 
+        if ($request->filled('date')) {
+            $query->whereDate('created_at', $request->date);
+        } else {
+            $query->whereDate('created_at', today());
+        }
+
         if ($search = trim($request->input('search'))) {
             $query->where(function ($q) use ($search) {
                 $q->where('uuid', 'like', "%{$search}%")
@@ -104,6 +110,7 @@ class RestaurantExpenseController extends Controller
             'description'                    => 'nullable|string|max:1000',
             'date'                           => 'nullable|date',
         ]);
+
         $createdAt = $request->filled('date')
             ? Carbon::parse($request->date)->setTimeFrom(Carbon::now())
             : Carbon::now();
@@ -111,8 +118,8 @@ class RestaurantExpenseController extends Controller
         DB::beginTransaction();
 
         try {
-
-            $expense = ExpensePayment::create([
+            // 1. Instanciation de la Dépense
+            $expense = new ExpensePayment([
                 'restaurant_expense_type_uuid'   => $request->restaurant_expense_type_uuid,
                 'restaurant_expense_family_uuid' => $request->restaurant_expense_family_uuid,
                 'regulation_method_uuid'         => $request->payment_method_uuid,
@@ -123,26 +130,29 @@ class RestaurantExpenseController extends Controller
                 'paid_at'                        => $createdAt,
                 'created_by'                     => $auth->id,
                 'status'                         => 'paid',
-                'created_at'                     => $createdAt,
-                'updated_at'                     => $createdAt,
-
             ]);
 
-            // 2. CREATE REGULATION (PROPRE)
-            $regulation = PaymentRegulation::create([
-                'source_uuid' => $expense->uuid,
-                'source_type' => 'expense',
+            $expense->timestamps = false;
+            $expense->created_at = $createdAt;
+            $expense->updated_at = $createdAt;
+            $expense->save();
 
+
+            $regulation = new PaymentRegulation([
+                'source_uuid'                  => $expense->uuid,
+                'source_type'                  => 'expense',
                 'restaurant_expense_type_uuid' => $request->restaurant_expense_type_uuid,
                 'regulation_method_uuid'       => $request->payment_method_uuid,
                 'amount'                       => $request->amount,
-
                 'type'                         => 'expense',
                 'created_by'                   => $auth->id,
                 'updated_by'                   => $auth->id,
-                'created_at'                   => $createdAt,
-                'updated_at'                   => $createdAt,
             ]);
+
+            $regulation->timestamps = false;
+            $regulation->created_at = $createdAt;
+            $regulation->updated_at = $createdAt;
+            $regulation->save();
 
             DB::commit();
 
@@ -156,7 +166,6 @@ class RestaurantExpenseController extends Controller
             ], 201);
 
         } catch (\Throwable $e) {
-
             DB::rollBack();
 
             Log::error("Erreur lors de l'enregistrement de la dépense : " . $e->getMessage(), [
@@ -195,6 +204,7 @@ class RestaurantExpenseController extends Controller
             'status'                         => 'nullable|string|max:50',
             'date'                           => 'nullable|date',
         ]);
+
         $createdAt = $request->filled('date')
             ? Carbon::parse($request->date)->setTimeFrom(Carbon::now())
             : Carbon::now();
@@ -212,7 +222,7 @@ class RestaurantExpenseController extends Controller
 
         try {
 
-            $expense->update([
+            $expense->fill([
                 'restaurant_expense_type_uuid'   => $request->restaurant_expense_type_uuid,
                 'restaurant_expense_family_uuid' => $request->restaurant_expense_family_uuid,
                 'hierarchy_uuids'                => $request->family_hierarchy_uuids ?? [],
@@ -223,41 +233,46 @@ class RestaurantExpenseController extends Controller
                 'status'                         => $request->status ?? $expense->status,
                 'updated_by'                     => $auth->id,
                 'paid_at'                        => $createdAt,
-                'created_at'                   => $createdAt,
-                'updated_at'                   => $createdAt,
             ]);
 
-            // 2. FIND OR CREATE REGULATION
+            $expense->timestamps = false;
+            $expense->updated_at = $createdAt;
+            $expense->save();
+
+
             $regulation = PaymentRegulation::where('source_uuid', $expense->uuid)
                 ->where('source_type', 'expense')
                 ->first();
 
             if (!$regulation) {
-                $regulation = PaymentRegulation::create([
+
+                $regulation = new PaymentRegulation([
                     'source_uuid'                  => $expense->uuid,
                     'source_type'                  => 'expense',
                     'restaurant_expense_type_uuid' => $request->restaurant_expense_type_uuid,
                     'regulation_method_uuid'       => $request->payment_method_uuid,
                     'amount'                       => $request->amount,
                     'type'                         => 'expense',
-                    'paid_at'                        => $createdAt,
+                    'paid_at'                      => $createdAt,
                     'created_by'                   => $auth->id,
                     'updated_by'                   => $auth->id,
-                    'created_at'                   => $createdAt,
-                    'updated_at'                   => $createdAt,
                 ]);
             } else {
-                $regulation->update([
+                
+                $regulation->fill([
                     'restaurant_expense_type_uuid' => $request->restaurant_expense_type_uuid,
                     'regulation_method_uuid'       => $request->payment_method_uuid,
                     'amount'                       => $request->amount,
                     'type'                         => 'expense',
                     'updated_by'                   => $auth->id,
-                    'created_at'                   => $createdAt,
-                    'paid_at'                        => $createdAt,
-                    'updated_at'                   => $createdAt,
+                    'paid_at'                      => $createdAt,
                 ]);
             }
+
+            $regulation->timestamps = false;
+            $regulation->created_at = $createdAt;
+            $regulation->updated_at = $createdAt;
+            $regulation->save();
 
             DB::commit();
 

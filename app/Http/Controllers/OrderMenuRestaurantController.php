@@ -2647,7 +2647,7 @@ class OrderMenuRestaurantController extends Controller
                 'others_informations' => ['nullable', 'string'],
                 'type_clients_for_payment' => ['required', 'string', new Enum(TypeClientsForPaiment::class)],
                 'restaurant_table_uuid' => ['nullable','uuid','required_if:type_clients_for_payment,' . ConsumptionType::DINE_IN->value, 'exists:restaurant_tables,uuid'],
-                'order_menu_restaurant_date' => ['required', 'date_format:Y-m-d H:i:s'],
+                'order_menu_restaurant_date' => ['nullable', 'date'],
                 'consumption_type' => ['required', 'string', new Enum(ConsumptionType::class)],
                 'partners_restaurant_uuid' => ['nullable', 'uuid', 'required_if:type_clients_for_payment,' . TypeClientsForPaiment::PARTNER->value, 'exists:restaurant_partners,uuid'],
                 'free_client_for_restaurant_uuid' => ['nullable', 'uuid', 'required_if:type_clients_for_payment,' . TypeClientsForPaiment::FREE->value, 'exists:free_clients_restaurants,uuid'],
@@ -2793,6 +2793,8 @@ class OrderMenuRestaurantController extends Controller
                 Log::info('FINAL VALUE ASSIGNED', ['uuid' => $salesCategoryUuid]);
             }
 
+
+            $orderDate = $validated['order_menu_restaurant_date'] ?? now();
             $order = OrderMenuRestaurant::create([
                 'status' => \App\Enums\MenuOrderStatus::TRANSFERRED->value,
                 'regulation_status' => \App\Enums\MenuOrderStatus::TRANSFERRED->value,
@@ -2804,7 +2806,7 @@ class OrderMenuRestaurantController extends Controller
                 'partners_restaurant_uuid' => $validated['partners_restaurant_uuid'] ?? null,
                 'restaurant_room_uuid' => $validated['restaurant_room_uuid'] ?? null,
                 'free_client_for_restaurant_uuid' => $validated['free_client_for_restaurant_uuid'] ?? null,
-                'order_menu_restaurant_date' => $validated['order_menu_restaurant_date'],
+                'order_menu_restaurant_date' => $orderDate,
                 'remise' => $validated['remise'] ?? 0,
                 'full_name' => $validated['full_name'] ?? null,
                 'full_name_for_client_free' => $validated['full_name_for_client_free'] ?? null,
@@ -2814,6 +2816,10 @@ class OrderMenuRestaurantController extends Controller
                 'sales_category_uuid' => $salesCategoryUuid,
                 'sales_category_type' => $validated['sales_category_type'],
             ]);
+            $order->timestamps = false;
+            $order->created_at = $orderDate;
+            $order->updated_at = $orderDate;
+            $order->save();
 
 
             if (!empty($validated['menus']) && is_array($validated['menus'])) {
@@ -3445,7 +3451,7 @@ class OrderMenuRestaurantController extends Controller
                 'type_clients_for_payment' => ['required', 'string', new Enum(TypeClientsForPaiment::class)],
                 'others_informations' => ['nullable', 'string'],
                 'restaurant_table_uuid' => ['nullable','uuid','required_if:type_clients_for_payment,' . ConsumptionType::DINE_IN->value, 'exists:restaurant_tables,uuid'],
-                'order_menu_restaurant_date' => ['required', 'date_format:Y-m-d H:i:s'],
+                'order_menu_restaurant_date' => ['required', 'date'],
                 'consumption_type' => ['required', 'string', new Enum(ConsumptionType::class)],
                 'partners_restaurant_uuid' => ['nullable', 'uuid', 'required_if:type_clients_for_payment,' . TypeClientsForPaiment::PARTNER->value, 'exists:restaurant_partners,uuid'],
                 'free_client_for_restaurant_uuid' => ['nullable', 'uuid', 'required_if:type_clients_for_payment,' . TypeClientsForPaiment::FREE->value, 'exists:free_clients_restaurants,uuid'],
@@ -3534,6 +3540,7 @@ class OrderMenuRestaurantController extends Controller
                 Log::info('FINAL VALUE ASSIGNED', ['uuid' => $salesCategoryUuid]);
             }
 
+            $orderDate = $validated['order_menu_restaurant_date'] ?? now();
             $order->update([
                 'regulation_status' => \App\Enums\MenuOrderStatus::TRANSFERRED->value,
                 'type_clients_for_payment' => $validated['type_clients_for_payment'],
@@ -3543,7 +3550,7 @@ class OrderMenuRestaurantController extends Controller
                 'partners_restaurant_uuid' => $validated['partners_restaurant_uuid'] ?? null,
                 'restaurant_room_uuid' => $validated['restaurant_room_uuid'] ?? null,
                 'free_client_for_restaurant_uuid' => $validated['free_client_for_restaurant_uuid'] ?? null,
-                'order_menu_restaurant_date' => $validated['order_menu_restaurant_date'],
+                'order_menu_restaurant_date' => $orderDate,
                 'remise' => $validated['remise'] ?? 0,
                 'full_name' => $validated['full_name'] ?? null,
                 'full_name_for_client_free' => $validated['full_name_for_client_free'] ?? null,
@@ -3551,6 +3558,9 @@ class OrderMenuRestaurantController extends Controller
                 'sales_category_uuid' => $salesCategoryUuid,
                 'sales_category_type' => $validated['sales_category_type'],
             ]);
+            $order->timestamps = false;
+            $order->updated_at = $orderDate;
+            $order->save();
 
 
             $warehouses = Warehouse::where(function ($query) {
@@ -5947,16 +5957,10 @@ class OrderMenuRestaurantController extends Controller
             $query->where('status', $request->status);
         }
 
-        if ($request->filled('start_date') && $request->filled('end_date')) {
-            $start_date = Carbon::parse($request->start_date)->startOfDay();
-            $end_date = Carbon::parse($request->end_date)->endOfDay();
-
-            $query->whereBetween('created_at', [$start_date, $end_date]);
-            $dateFilterApplied = true;
-        }
-
-        if (!$dateFilterApplied) {
-            $query->whereDate('created_at', Carbon::today());
+        if ($request->filled('date')) {
+            $query->whereDate('created_at', $request->date);
+        } else {
+            $query->whereDate('created_at', today());
         }
 
         if (
@@ -8124,18 +8128,10 @@ class OrderMenuRestaurantController extends Controller
         $auth = auth()->user();
 
         $request->validate([
-            'password' => 'required|string',
             'items' => 'required|array',
             'items.*.item_uuid' => 'required|uuid|exists:orders_menu_restaurant_items,uuid',
             'items.*.quantity_to_deliver' => 'required|integer|min:1',
         ]);
-
-        if (!Hash::check($request->password, $auth->password)) {
-            return response()->json([
-                'status'  => 'error',
-                'message' => 'Mot de passe incorrect.'
-            ], 422);
-        }
 
         DB::beginTransaction();
         try {
@@ -8222,18 +8218,10 @@ class OrderMenuRestaurantController extends Controller
         $auth = auth()->user();
 
         $request->validate([
-            'password' => 'required|string',
             'items' => 'required|array|min:1',
             'items.*.item_uuid' => 'required|uuid|exists:order_restaurannts_drinks,uuid',
             'items.*.quantity_to_deliver' => 'required|integer|min:1',
         ]);
-
-        if (!Hash::check($request->password, $auth->password)) {
-            return response()->json([
-                'status'  => 'error',
-                'message' => 'Mot de passe incorrect.'
-            ], 422);
-        }
 
         DB::beginTransaction();
 
@@ -10517,16 +10505,11 @@ class OrderMenuRestaurantController extends Controller
         ])
             ->whereIn('regulation_status', [
                 PaymentOrderMenusStatus::PARTIALLY_PAID->value,
-                PaymentOrderMenusStatus::PAID->value,
                 PaymentOrderMenusStatus::NOT_PAID->value,
                 PaymentOrderMenusStatus::FACTURATE->value,
             ]);
 
-        if ($request->filled('date')) {
-            $query->whereDate('created_at', $request->date);
-        } else {
-            $query->whereDate('created_at', '<', Carbon::today());
-        }
+        $query->whereDate('created_at', '<', today());
 
         if ($request->filled('free_client_for_restaurant_uuid')) {
             $query->where('free_client_for_restaurant_uuid', $request->free_client_for_restaurant_uuid);
@@ -10544,11 +10527,6 @@ class OrderMenuRestaurantController extends Controller
             $debtor = trim($request->debtor);
             $query->where('full_name', 'LIKE', "%{$debtor}%");
         }
-
-        $query->leftJoin('free_client_for_restaurants', 'order_menu_restaurants.free_client_for_restaurant_uuid', '=', 'free_client_for_restaurants.uuid')
-            ->leftJoin('partners_restaurants', 'order_menu_restaurants.partners_restaurant_uuid', '=', 'partners_restaurants.uuid')
-            ->select('order_menu_restaurants.*')
-            ->orderByRaw("COALESCE(free_client_for_restaurants.full_name, partners_restaurants.full_name, order_menu_restaurants.full_name) ASC");
 
         $data = $query->latest('created_at')->paginate($perPage, ['*'], 'page', $page);
 

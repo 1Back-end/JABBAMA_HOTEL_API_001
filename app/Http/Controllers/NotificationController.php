@@ -74,10 +74,11 @@ class NotificationController extends Controller
             }
 
         });
+        $notifications = $query->latest()->limit(50)->get();
 
         return response()->json([
             'status' => 'success',
-            'data' => $query->latest()->get()
+            'data' => $notifications
         ]);
     }
 
