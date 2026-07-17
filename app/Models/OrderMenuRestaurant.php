@@ -72,7 +72,9 @@ class OrderMenuRestaurant extends Model
         'sales_category_type',
         'sales_category_uuid',
         'others_informations',
-        'regulation_status'
+        'regulation_status',
+        'created_at',
+        'updated_at',
     ];
 
     /**
