@@ -258,7 +258,7 @@ class RestaurantExpenseController extends Controller
                     'updated_by'                   => $auth->id,
                 ]);
             } else {
-                
+
                 $regulation->fill([
                     'restaurant_expense_type_uuid' => $request->restaurant_expense_type_uuid,
                     'regulation_method_uuid'       => $request->payment_method_uuid,
@@ -307,7 +307,7 @@ class RestaurantExpenseController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantExpenseController::cancel
-     * @permission_desc Annuler une dépense
+     * @permission_desc Annuler le libéllé d'une dépense
      */
     public function cancel(Request $request, $uuid)
     {
@@ -344,13 +344,11 @@ class RestaurantExpenseController extends Controller
 
         try {
 
-            // 1. CANCEL EXPENSE
             $payment->update([
                 'status' => 'cancelled',
                 'updated_by' => $auth->id,
             ]);
 
-            // 2. DELETE OR SOFT REMOVE REGULATION
             PaymentRegulation::where('source_uuid', $payment->uuid)
                 ->where('source_type', 'expense')
                 ->delete();
@@ -371,6 +369,146 @@ class RestaurantExpenseController extends Controller
                 'success' => false,
                 'message' => "Une erreur est survenue.",
                 'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Display a listing of the resource.
+     * @permission RestaurantExpenseController::cancelGroup
+     * @permission_desc Annuler la catégorie d'une dépense
+     */
+    public function cancelGroup(Request $request)
+    {
+        $auth = auth()->user();
+
+        $request->validate([
+            'password'        => 'required|string',
+            'expense_type_id' => 'required|string',
+        ]);
+
+        if (!Hash::check($request->password, $auth->password)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Mot de passe incorrect.'
+            ], 422);
+        }
+
+        $date = $request->input('date', Carbon::today()->toDateString());
+
+        $payments = ExpensePayment::where('status', '!=', 'cancelled')
+            ->whereDate('created_at', $date)
+            ->where('restaurant_expense_type_uuid', $request->expense_type_id)
+            ->get();
+
+        if ($payments->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Aucune dépense active trouvée pour ce groupe.'
+            ], 422);
+        }
+
+        DB::beginTransaction();
+
+        try {
+            $paymentUuids = $payments->pluck('uuid')->toArray();
+
+            ExpensePayment::whereIn('uuid', $paymentUuids)->update([
+                'status'     => 'cancelled',
+                'updated_by' => $auth->id,
+            ]);
+
+            PaymentRegulation::whereIn('source_uuid', $paymentUuids)
+                ->where('source_type', 'expense')
+                ->delete();
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Toutes les dépenses du groupe ont été annulées avec succès.',
+                'count'   => count($paymentUuids)
+            ]);
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => "Une erreur est survenue lors de l'annulation du groupe.",
+                'error'   => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Display a listing of the resource.
+     * @permission RestaurantExpenseController::cancelFamily
+     * @permission_desc Annuler la sous-catégorie d'une dépense
+     */
+    public function cancelFamily(Request $request)
+    {
+        $auth = auth()->user();
+
+        $request->validate([
+            'password'  => 'required|string',
+            'family_id' => 'required|string',
+        ]);
+
+        if (!Hash::check($request->password, $auth->password)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Mot de passe incorrect.'
+            ], 422);
+        }
+
+        $date = $request->input('date', Carbon::today()->toDateString());
+        $familyUuid = $request->family_id;
+
+        $payments = ExpensePayment::where('status', '!=', 'cancelled')
+            ->whereDate('created_at', $date)
+            ->where(function ($q) use ($familyUuid) {
+                $q->where('restaurant_expense_family_uuid', $familyUuid)
+                    ->orWhereJsonContains('hierarchy_uuids', $familyUuid);
+            })
+            ->get();
+
+        if ($payments->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Aucune dépense active trouvée pour cette famille.'
+            ], 422);
+        }
+
+        DB::beginTransaction();
+
+        try {
+            $paymentUuids = $payments->pluck('uuid')->toArray();
+
+            ExpensePayment::whereIn('uuid', $paymentUuids)->update([
+                'status'     => 'cancelled',
+                'updated_by' => $auth->id,
+            ]);
+
+            PaymentRegulation::whereIn('source_uuid', $paymentUuids)
+                ->where('source_type', 'expense')
+                ->delete();
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Toutes les dépenses de la catégorie ont été annulées avec succès.',
+                'count'   => count($paymentUuids)
+            ]);
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => "Une erreur est survenue lors de l'annulation de la catégorie.",
+                'error'   => $e->getMessage()
             ], 500);
         }
     }

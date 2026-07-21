@@ -2794,7 +2794,13 @@ class OrderMenuRestaurantController extends Controller
             }
 
 
-            $orderDate = $validated['order_menu_restaurant_date'] ?? now();
+            $inputDate = $validated['order_menu_restaurant_date'] ?? null;
+
+            if ($inputDate) {
+                $orderDate = Carbon::parse($inputDate)->setTimeFrom(now());
+            } else {
+                $orderDate = now();
+            }
             $order = OrderMenuRestaurant::create([
                 'status' => \App\Enums\MenuOrderStatus::TRANSFERRED->value,
                 'regulation_status' => \App\Enums\MenuOrderStatus::TRANSFERRED->value,
@@ -5929,6 +5935,14 @@ class OrderMenuRestaurantController extends Controller
             $query->where('order_menu_restaurant_date', $request->order_menu_restaurant_date);
             $dateFilterApplied = true;
         }
+        if ($request->filled('date')) {
+            $query->whereDate('created_at', $request->date);
+            $dateFilterApplied = true;
+        }
+
+        if (!$dateFilterApplied) {
+            $query->whereDate('created_at', today());
+        }
         if ($request->filled('restaurant_table_uuid')) {
             $query->where('restaurant_table_uuid', $request->restaurant_table_uuid);
         }
@@ -5957,11 +5971,6 @@ class OrderMenuRestaurantController extends Controller
             $query->where('status', $request->status);
         }
 
-        if ($request->filled('date')) {
-            $query->whereDate('created_at', $request->date);
-        } else {
-            $query->whereDate('created_at', today());
-        }
 
         if (
             !$auth->hasRole('SUPER_ADMIN') &&
@@ -10488,6 +10497,7 @@ class OrderMenuRestaurantController extends Controller
 
         $perPage = (int) $request->input('limit', 25);
         $page = (int) $request->input('page', 1);
+        $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : null;
 
         $query = OrderMenuRestaurant::with([
             'restaurantTable:uuid,code,table_number',
@@ -10509,7 +10519,16 @@ class OrderMenuRestaurantController extends Controller
                 PaymentOrderMenusStatus::FACTURATE->value,
             ]);
 
-        $query->whereDate('created_at', '<', today());
+        if ($request->filled('date')) {
+            $selectedDate = Carbon::parse($request->date)->toDateString();
+            if ($selectedDate >= today()->toDateString()) {
+                $query->whereDate('created_at', '<', today());
+            } else {
+                $query->whereDate('created_at', $selectedDate);
+            }
+        } else {
+            $query->whereDate('created_at', '<', today());
+        }
 
         if ($request->filled('free_client_for_restaurant_uuid')) {
             $query->where('free_client_for_restaurant_uuid', $request->free_client_for_restaurant_uuid);
@@ -10528,7 +10547,16 @@ class OrderMenuRestaurantController extends Controller
             $query->where('full_name', 'LIKE', "%{$debtor}%");
         }
 
-        $data = $query->latest('created_at')->paginate($perPage, ['*'], 'page', $page);
+        $data = $query
+            ->orderByRaw('
+        CASE
+            WHEN partners_restaurant_uuid IS NOT NULL THEN 1
+            WHEN free_client_for_restaurant_uuid IS NOT NULL THEN 2
+            ELSE 3
+        END ASC,
+        created_at ASC
+    ')
+            ->paginate($perPage, ['*'], 'page', $page);
 
         return response()->json([
             'success'      => true,

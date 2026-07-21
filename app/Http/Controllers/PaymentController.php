@@ -835,6 +835,12 @@ class PaymentController extends Controller
             'method:uuid,name',
             'payment.order.items.menu:uuid,name',
             'payment.order.drinks.drinkConfig.product',
+            'paymentLines.payable' => function ($morphTo) {
+                $morphTo->morphWith([
+                    \App\Models\OrderMenuRestaurantItem::class => ['menu:uuid,name'],
+                    \App\Models\OrderRestaurantDrink::class => ['drinkConfig.product:uuid,name']
+                ]);
+            }
         ])
             ->where('type', 'encaissement')
             ->whereDate('created_at', $date)
@@ -849,9 +855,7 @@ class PaymentController extends Controller
         }
 
         if ($filterType === 'payment_method' && $request->filled('regulation_method_uuid')) {
-            $receiptsQuery->whereHas('method', function ($query) use ($request) {
-                $query->where('uuid', $request->regulation_method_uuid);
-            });
+            $receiptsQuery->where('regulation_method_uuid', $request->regulation_method_uuid);
         }
 
         if ($filterType === 'cashier_agent' && $request->filled('created_by')) {
@@ -864,7 +868,7 @@ class PaymentController extends Controller
             ->map(function ($items) {
                 return [
                     'receipt_type' => $items->first()->cashReceiptType,
-                    'total_amount' => $items->sum('amount'),
+                    'total_amount' => (float) $items->sum('amount'),
                     'items'        => $items->map(function ($regulation) {
                         $order = $regulation->payment?->order;
                         $orderCode = $order?->code;
@@ -877,25 +881,32 @@ class PaymentController extends Controller
                             })->values();
                         };
 
-                        if ($regulation->cashReceiptType?->name === 'ENCAISSEMENT RESTO/BAR') {
-                            $plats = $order?->items;
-                            $boissons = $order?->drinks;
-                        } else {
-                            $familyUpper = strtoupper($regulation->cashReceiptFamily?->name ?? '');
-                            $plats = str_contains($familyUpper, 'RESTO') ? $order?->items : null;
-                            $boissons = str_contains($familyUpper, 'BAR') ? $order?->drinks : null;
-                        }
+                        $lines = $regulation->paymentLines ?? collect();
+
+                        $plats = $lines->filter(function ($line) {
+                            return $line->payable_type === 'App\Models\OrderMenuRestaurantItem'
+                                || str_contains($line->payable_type, 'Item');
+                        })->map(function ($line) {
+                            return $line->payable;
+                        })->filter();
+
+                        $boissons = $lines->filter(function ($line) {
+                            return $line->payable_type === 'App\Models\OrderRestaurantDrink'
+                                || str_contains($line->payable_type, 'Drink');
+                        })->map(function ($line) {
+                            return $line->payable;
+                        })->filter();
 
                         return [
                             'uuid'                        => $regulation->uuid,
-                            'amount'                      => $regulation->amount,
+                            'amount'                      => (float) $regulation->amount,
                             'type'                        => $regulation->type,
                             'created_at'                  => $regulation->created_at,
                             'method'                      => $regulation->method,
                             'cash_receipt_family'         => $regulation->cashReceiptFamily,
                             'creator'                     => $regulation->creator,
                             'order_code'                  => $orderCode,
-                            'order_total_price'           => $order?->total_order,
+                            'order_total_price'           => $order ? (float) $order->total_order : 0,
                             'order_details' => [
                                 'plats'    => $injectOrderCode($plats),
                                 'boissons' => $injectOrderCode($boissons)
@@ -914,6 +925,483 @@ class PaymentController extends Controller
                 'receipts' => $receipts
             ]
         ], 200);
+    }
+
+
+
+
+
+
+    public function store_recouvrements(Request $request)
+    {
+        $auth = auth()->user();
+
+        $request->validate([
+            'order_menu_restaurant_uuid' => 'required|uuid',
+            'total_amount' => 'required|numeric|min:0',
+            'regulations' => 'required|array|min:1',
+            'regulations.*.method_uuid' => 'required|uuid',
+            'regulations.*.amount' => 'required|numeric|min:0.01',
+            'regulations.*.lines' => 'nullable|array',
+        ]);
+
+        $createdAt = $request->filled('date')
+            ? Carbon::parse($request->date)->setTimeFrom(Carbon::now())
+            : Carbon::now();
+
+        DB::beginTransaction();
+
+        try {
+
+            $order = OrderMenuRestaurant::with([
+                'items.paymentLines',
+                'drinks.paymentLines',
+                'free_client_for_restaurant',
+                'partners_restaurant'
+            ])->where('uuid', $request->order_menu_restaurant_uuid)->firstOrFail();
+
+            $payment = Payment::firstOrCreate(
+                ['order_menu_restaurant_uuid' => $order->uuid],
+                [
+                    'paid_amount' => 0,
+                    'remaining_amount' => (float) $order->total_order,
+                    'status' => PaymentStatus::UNPAID->value,
+                    'created_by' => auth()->id(),
+                    'created_at' => now(),
+                ]
+            );
+
+            $payment->total_amount = (float) $order->total_order;
+            $payment->save();
+
+            $alreadyPaid = PaymentRegulation::where('payment_uuid', $payment->uuid)->whereNull('deleted_at')->sum('amount');
+
+            $totalNewPaid = 0;
+            $errors = [];
+
+            $client = $order->free_client_for_restaurant
+                ?? $order->partners_restaurant;
+
+            $isClientAdvance = false;
+            if ($client && isset($client->amount_allocated)) {
+                $availableAdvance = (float) $client->amount_allocated;
+                $isClientAdvance = true;
+            } else {
+                $availableAdvance = (float) ($order->amount_allocated ?? 0);
+            }
+
+            if ($availableAdvance <= 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Montant des arrhes insuffisant. Veuillez recharger le solde.",
+                ], 422);
+            }
+
+
+            foreach ($request->regulations as $index => $regulation) {
+
+                $method = RegulationMethod::where('uuid', $regulation['method_uuid'])->first();
+
+                if (!$method) {
+                    $errors["regulations.$index.method_uuid"][] = "Méthode de règlement invalide";
+                    continue;
+                }
+
+                if ($method->comment_required && empty($regulation['reference'])) {
+                    $errors["regulations.$index.reference"][] = "La référence est obligatoire";
+                }
+
+                if ($method->phone_method && empty($regulation['phone_number'])) {
+                    $errors["regulations.$index.phone_number"][] = "Le numéro est obligatoire";
+                }
+
+                if ($method->comment_required && empty($regulation['detail'])) {
+                    $errors["regulations.$index.detail"][] = "Le commentaire est obligatoire";
+                }
+
+                if (!isset($regulation['amount']) || !is_numeric($regulation['amount']) || $regulation['amount'] <= 0) {
+                    $errors["regulations.$index.amount"][] = "Montant invalide";
+                }
+
+                $totalNewPaid += (float) $regulation['amount'];
+            }
+
+            if (!empty($errors)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Erreurs de validation',
+                    'errors' => $errors
+                ], 422);
+            }
+
+            if ($totalNewPaid > $availableAdvance) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Montant des arrhes insuffisant. Disponible: {$availableAdvance}, demandé: {$totalNewPaid}. Veuillez recharger le solde.",
+                ], 422);
+            }
+
+            $remainingToPay = max(0, (float) $payment->total_amount - $alreadyPaid);
+
+            \Log::info('PAYMENT DEBUG', [
+                'payment_total_amount' => $payment->total_amount,
+                'already_paid' => $alreadyPaid,
+                'remaining' => $remainingToPay,
+                'request_total_amount' => $request->total_amount,
+            ]);
+
+            if ($totalNewPaid > ($remainingToPay + 0.01)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Montant supérieur au reste à payer ({$remainingToPay})",
+                ], 422);
+            }
+
+
+            foreach ($request->regulations as $regulation) {
+
+                $method = RegulationMethod::where('uuid', $regulation['method_uuid'])->first();
+                $cashReceiptType = CashReceiptType::where('is_linked_to_turnover', true)
+                    ->first();
+
+                $hasItems = false;
+                $hasDrinks = false;
+
+                if (!empty($regulation['lines'])) {
+                    foreach ($regulation['lines'] as $line) {
+                        if ($line['type'] === 'item') {
+                            $hasItems = true;
+                        }
+
+                        if ($line['type'] === 'drink') {
+                            $hasDrinks = true;
+                        }
+                    }
+                }
+
+                if ($hasItems && $hasDrinks) {
+                    $indexationName = 'Consommation Bar / Restaurant';
+                } elseif ($hasItems) {
+                    $indexationName = 'Consommation Restaurant';
+                } elseif ($hasDrinks) {
+                    $indexationName = 'Consommation Bar';
+                } else {
+                    $indexationName = null;
+                }
+
+                $cashReceiptFamily = $indexationName
+                    ? CashReceiptFamily::where('indexation', $indexationName)->first()
+                    : null;
+
+                $regulationModel  = PaymentRegulation::create([
+                    'payment_uuid' => $payment->uuid,
+                    'regulation_method_uuid' => $method->uuid,
+                    'cash_receipt_families_uuid'  => $cashReceiptFamily?->uuid,
+                    'cash_receipt_type_uuid' => $cashReceiptType?->uuid,
+                    'amount' => (float) $regulation['amount'],
+                    'phone_number' => $regulation['phone_number'] ?? null,
+                    'reference' => $regulation['reference'] ?? null,
+                    'detail' => $regulation['detail'] ?? null,
+                    'created_by' => auth()->id(),
+                    'updated_by' => auth()->id(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+
+                if (!empty($regulation['lines'])) {
+                    foreach ($regulation['lines'] as $line) {
+                        $payableModel = $line['type'] === 'item'
+                            ? get_class($order->items()->getModel())
+                            : get_class($order->drinks()->getModel());
+
+                        PaymentLine::create([
+                            'payment_uuid' => $payment->uuid,
+                            'payment_regulation_uuid' => $regulationModel->uuid,
+                            'payable_type' => $payableModel,
+                            'payable_uuid' => $line['uuid'],
+                            'amount' => $line['amount'],
+                            'regulation_method_uuid' => $method->uuid,
+                            'phone_number' => $regulation['phone_number'] ?? null,
+                            'reference' => $regulation['reference'] ?? null,
+                            'detail' => $regulation['detail'] ?? null,
+                            'created_by' => auth()->id(),
+                            'updated_by' => auth()->id(),
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+                    }
+                }
+            }
+
+
+            $totalPaid = $alreadyPaid + $totalNewPaid;
+
+            $payment->paid_amount = $totalPaid;
+            $payment->remaining_amount = max(0, $payment->total_amount - $totalPaid);
+
+            if ($totalPaid <= 0) {
+                $payment->status = PaymentStatus::UNPAID->value;
+            } elseif ($totalPaid < $payment->total_amount) {
+                $payment->status = PaymentStatus::PARTIALLY_PAID->value;
+            } else {
+                $payment->status = PaymentStatus::PAID->value;
+            }
+
+            $payment->save();
+
+            $order->updated_by = auth()->id();
+            $order->save();
+
+
+            $usedAdvance = min($availableAdvance, $totalNewPaid);
+
+            if ($usedAdvance > 0) {
+                if ($client) {
+                    $client->decrement('amount_allocated', $usedAdvance);
+                } else {
+                    $order->decrement('amount_allocated', $usedAdvance);
+                }
+            }
+
+            $order->refresh();
+
+            $this->refreshLinesPaymentStatus($order);
+
+            $order->refresh();
+
+            $this->refreshPaymentStatus($order);
+
+            $order->update([
+                'updated_by' => $auth->id,
+            ]);
+
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Paiement enregistré avec succès',
+                'data' => $payment->load('order')
+            ]);
+
+        } catch (\Exception $e) {
+
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+
+    public function cancel_recouvrements(Request $request, $uuid)
+    {
+        $auth = auth()->user();
+
+        $request->validate([
+            'type' => 'required|in:item,drink,order,regulation',
+            'password' => 'required|string'
+        ]);
+
+        if (!Hash::check($request->password, $auth->password)) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Mot de passe incorrect.'
+            ], 422);
+        }
+
+        DB::beginTransaction();
+
+        try {
+
+            $payment = Payment::with(['order'])->where('uuid', $uuid)->firstOrFail();
+            $order = $payment->order;
+
+            $totalAmountToRefund = 0;
+
+            if ($request->type === 'item') {
+                $lines = PaymentLine::where('payable_uuid', $request->target_uuid)
+                    ->where('payable_type', OrderMenuRestaurantItem::class)
+                    ->where('payment_uuid', $payment->uuid)
+                    ->get();
+
+                if ($lines->isEmpty()) {
+                    throw new \Exception("Aucun règlement trouvé pour cet item");
+                }
+
+                $refund = $lines->sum('amount');
+
+                foreach ($lines as $line) {
+                    $regulation = PaymentRegulation::where('uuid', $line->payment_regulation_uuid)
+                        ->first();
+
+                    if ($regulation) {
+                        $regulation->amount = max(0, (float)$regulation->amount - (float)$line->amount);
+                        if (round($regulation->amount, 2) <= 0) {
+                            $regulation->delete();
+                        } else {
+                            $regulation->save();
+                            $regulation->updated_by = auth()->id();
+                        }
+                    }
+                    $line->delete();
+                }
+
+                $payment->paid_amount = max(0, $payment->paid_amount - $refund);
+
+                OrderMenuRestaurantItem::where('uuid', $request->target_uuid)
+                    ->update([
+                        'regulation_status' => PaymentOrderItemStatus::NOT_PAID->value
+                    ]);
+
+                $totalAmountToRefund += $refund;
+            }
+
+
+            if ($request->type === 'drink') {
+                $lines = PaymentLine::where('payable_uuid', $request->target_uuid)
+                    ->where('payable_type', OrderRestaurantDrink::class)
+                    ->where('payment_uuid', $payment->uuid)
+                    ->get();
+
+                if ($lines->isEmpty()) {
+                    throw new \Exception("Aucun règlement trouvé pour ce drink");
+                }
+
+                $refund = $lines->sum('amount');
+
+                foreach ($lines as $line) {
+                    $regulation = PaymentRegulation::where('uuid', $line->payment_regulation_uuid)
+                        ->first();
+
+                    if ($regulation) {
+                        $regulation->amount = max(0, (float)$regulation->amount - (float)$line->amount);
+                        if (round($regulation->amount, 2) <= 0) {
+                            $regulation->delete();
+                        } else {
+                            $regulation->save();
+                            $regulation->updated_by = auth()->id();
+                        }
+                    }
+                    $line->delete();
+                }
+
+                $payment->paid_amount = max(0, $payment->paid_amount - $refund);
+
+                OrderRestaurantDrink::where('uuid', $request->target_uuid)
+                    ->update([
+                        'regulation_status' => PaymentOrderItemStatus::NOT_PAID->value
+                    ]);
+
+                $totalAmountToRefund += $refund;
+            }
+
+
+            if ($request->type === 'order') {
+                $totalAmountToRefund = $payment->paid_amount;
+
+                $paidItems = $order->items()
+                    ->where('total_price', '>', 0)
+                    ->whereIn('regulation_status', [
+                        PaymentOrderItemStatus::PAID->value,
+                        PaymentOrderItemStatus::PARTIALLY_PAID->value
+                    ])
+                    ->pluck('uuid');
+
+                $paidDrinks = $order->drinks()
+                    ->where('total_price', '>', 0)
+                    ->whereIn('regulation_status', [
+                        PaymentOrderItemStatus::PAID->value,
+                        PaymentOrderItemStatus::PARTIALLY_PAID->value
+                    ])
+                    ->pluck('uuid');
+
+                PaymentLine::where('payment_uuid', $payment->uuid)->delete();
+                PaymentRegulation::where('payment_uuid', $payment->uuid)->delete();
+
+                $order->items()->whereIn('uuid', $paidItems)->update([
+                    'regulation_status' => PaymentOrderItemStatus::NOT_PAID->value
+                ]);
+                $order->drinks()->whereIn('uuid', $paidDrinks)->update([
+                    'regulation_status' => PaymentOrderItemStatus::NOT_PAID->value
+                ]);
+                $hasOtherPaidItems = $order->items()
+                    ->whereIn('regulation_status', [PaymentOrderItemStatus::PAID->value, PaymentOrderItemStatus::PARTIALLY_PAID->value])
+                    ->exists();
+
+                $hasOtherPaidDrinks = $order->drinks()
+                    ->whereIn('regulation_status', [PaymentOrderItemStatus::PAID->value, PaymentOrderItemStatus::PARTIALLY_PAID->value])
+                    ->exists();
+
+                $order->regulation_status = ($hasOtherPaidItems || $hasOtherPaidDrinks)
+                    ? PaymentOrderMenusStatus::PARTIALLY_PAID->value
+                    : PaymentOrderMenusStatus::NOT_PAID->value;
+                $order->updated_by = auth()->id();
+                $order->save();
+
+                $client = $order->free_client_for_restaurant ?? $order->partners_restaurant;
+                if ($client && $totalAmountToRefund > 0) {
+                    $client->increment('amount_allocated', $totalAmountToRefund);
+                } else {
+                    $order->increment('amount_allocated', $totalAmountToRefund);
+                }
+
+                $payment->delete();
+                DB::commit();
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Annulation complète effectuée'
+                ]);
+            }
+
+
+            $payment->paid_amount = max(0, $payment->paid_amount);
+            $payment->remaining_amount = max(0, $payment->total_amount - $payment->paid_amount);
+
+            if ($payment->paid_amount <= 0) {
+                $payment->status = PaymentStatus::UNPAID->value;
+            } elseif ($payment->paid_amount < $payment->total_amount) {
+                $payment->status = PaymentStatus::PARTIALLY_PAID->value;
+            } else {
+                $payment->status = PaymentStatus::PAID->value;
+            }
+            $payment->save();
+
+
+            $order->refresh();
+            $this->refreshLinesPaymentStatus($order);
+            $order->refresh();
+            $this->refreshPaymentStatus($order);
+
+            if ($totalAmountToRefund > 0) {
+                $client = $order->free_client_for_restaurant ?? $order->partners_restaurant;
+                if ($client) {
+                    $client->increment('amount_allocated', $totalAmountToRefund);
+                } else {
+                    $order->increment('amount_allocated', $totalAmountToRefund);
+                }
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Annulation effectuée avec succès'
+            ]);
+
+        } catch (\Exception $e) {
+
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
     }
 
 
