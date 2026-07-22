@@ -417,7 +417,7 @@ class MenuRestaurantController extends Controller
     {
         $auth = auth()->user();
         $roleIds = $auth->roles->pluck('id');
-        $perPage = $request->input('limit', 25);
+        $perPage = $request->input('limit', 30);
         $page = (int) $request->input('page', 1);
 
         $query = MenuRestaurant::with([

@@ -123,4 +123,7 @@ class PaymentRegulation extends Model
             'uuid'
         );
     }
+    public function paymentLines() {
+        return $this->hasMany(PaymentLine::class, 'payment_regulation_uuid', 'uuid');
+    }
 }
