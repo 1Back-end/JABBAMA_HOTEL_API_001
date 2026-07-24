@@ -27,7 +27,8 @@ class CashReceiptType extends Model
         'status',
         'created_by',
         'updated_by',
-        'is_active'
+        'is_active',
+        'slug'
     ];
 
     protected $casts = [

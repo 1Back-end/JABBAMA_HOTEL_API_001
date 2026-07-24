@@ -5,27 +5,28 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Str;
 
-class RestaurantExpenseType extends Model
+class Recouvrement extends Model
 {
     use HasFactory, SoftDeletes;
 
-    protected $table = 'restaurant_expense_types';
-
     protected $primaryKey = 'uuid';
     public $incrementing = false;
+
     protected $keyType = 'string';
 
     protected $fillable = [
         'uuid',
-        'code',
         'name',
-        'is_active',
+        'is_used_for_restaurant',
         'created_by',
         'updated_by',
-        'is_linked_to_activity',
-        'slug'
+    ];
+
+    protected $casts = [
+        'is_used_for_restaurant' => 'boolean',
     ];
 
     protected static function boot()
@@ -39,18 +40,18 @@ class RestaurantExpenseType extends Model
         });
     }
 
-    public function creator()
+    public function setNameAttribute($value)
+    {
+        $this->attributes['name'] = mb_strtoupper($value, 'UTF-8');
+    }
+
+    public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    public function updater()
+    public function updater(): BelongsTo
     {
         return $this->belongsTo(User::class, 'updated_by');
-    }
-
-    public function scopeActive($query)
-    {
-        return $query->where('is_active', true);
     }
 }
