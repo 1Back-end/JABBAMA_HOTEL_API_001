@@ -117,14 +117,12 @@
                 $count = count($categories);
 
                 if ($count >= 4) {
-                    // Affiche les 3 premières + ... + dernière
                     $displayCategories = array_merge(
                         array_slice($categories, 0, 3),
                         ['...'],
                         [end($categories)]
                     );
                 } else {
-                    // Affiche toutes les catégories
                     $displayCategories = $categories;
                 }
             @endphp

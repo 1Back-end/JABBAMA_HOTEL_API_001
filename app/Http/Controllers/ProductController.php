@@ -677,35 +677,30 @@ class ProductController extends Controller
             }
 
             $warehouses = Warehouse::whereIn('uuid', $warehouse_uuids)->get();
-            $primaryWarehouseUuuids = $warehouses->where('is_primary', true)->pluck('uuid')->toArray();
 
-            $supplies = SupplyItem::whereHas('supply', function($q) use ($end_date) {
+            // 1. APPROVISIONNEMENTS (Entrées en stock) filtrés PAR ENTREPÔT
+            $supplies = SupplyItem::whereHas('supply', function($q) use ($end_date, $warehouse_uuids) {
                 $q->whereIn('status', [SupplyStatus::VALIDATED, SupplyStatus::PARTIALLY_VALIDATED])
-                    ->where('supply_date', '<=', $end_date);
+                    ->where('supply_date', '<=', $end_date)
+                    ->whereIn('warehouse_uuid', $warehouse_uuids); // Condition essentielle !
             })
-                ->whereHas('supply.purchaseOrder', function($q) use ($warehouse_uuids) {
-                    $q->where(function($query) use ($warehouse_uuids) {
-                        $query->where('type', 'external');
-                    })->orWhere(function($query) use ($warehouse_uuids) {
-                        $query->where('type', 'internal')->whereIn('warehouse_from', $warehouse_uuids);
-                    });
-                })
                 ->select('product_uuid', DB::raw('SUM(quantity_supplied) as total'))
                 ->groupBy('product_uuid')
                 ->pluck('total', 'product_uuid');
 
-            // Ajustements Globaux par Action
+            // 2. AJUSTEMENTS (Plus, Moins, Avaries)
             $adjustments = StockAdjustmentItem::whereHas('adjustment', function($q) use ($warehouse_uuids, $end_date) {
                 $q->whereIn('warehouse_uuid', $warehouse_uuids)
                     ->where('status', StocksAdjustmentStatus::VALIDATED->value)
                     ->where('created_at', '<=', $end_date);
             })
-                ->select('product_uuid', 'adjustments.action', DB::raw('SUM(quantity) as total'))
                 ->join('stock_adjustments as adjustments', 'stock_adjustments_items.stock_adjustment_uuid', '=', 'adjustments.uuid')
-                ->groupBy('product_uuid', 'adjustments.action')
+                ->select('stock_adjustments_items.product_uuid', 'adjustments.action', DB::raw('SUM(stock_adjustments_items.quantity) as total'))
+                ->groupBy('stock_adjustments_items.product_uuid', 'adjustments.action')
                 ->get()
                 ->groupBy('product_uuid');
 
+            // 3. DÉDUCTIONS DE STOCK
             $deductions = StockDeductionItem::whereHas('stockDeduction', function($q) use ($warehouse_uuids, $end_date) {
                 $q->whereIn('warehouse_uuid', $warehouse_uuids)
                     ->where('status', StocksDeductionsStatus::VALIDATED->value)
@@ -715,6 +710,7 @@ class ProductController extends Controller
                 ->groupBy('product_uuid')
                 ->pluck('total', 'product_uuid');
 
+            // 4. VENTES / SORTIES D'ENTREPÔT
             $sales = VirtualOrderMenuRestaurant::whereIn('warehouse_uuid', $warehouse_uuids)
                 ->where('status', MenuOrderStatus::DELIVERED->value)
                 ->where('created_at', '<=', $end_date)
@@ -722,39 +718,41 @@ class ProductController extends Controller
                 ->groupBy('product_uuid')
                 ->pluck('total', 'product_uuid');
 
-            $internalSuppliesFromPrimary = 0;
-            if (!empty($primaryWarehouseUuuids)) {
-                $internalSuppliesFromPrimary = SupplyItem::whereHas('supply', function($q) use ($end_date) {
-                    $q->whereIn('status', [SupplyStatus::VALIDATED, SupplyStatus::PARTIALLY_VALIDATED])
-                        ->where('supply_date', '<=', $end_date);
+            // 5. SORTIES PAR TRANSFERTS INTERNES (Achats/Transferts émis depuis cet entrepôt vers d'autres)
+            $internalTransfersOut = SupplyItem::whereHas('supply', function($q) use ($end_date) {
+                $q->whereIn('status', [SupplyStatus::VALIDATED, SupplyStatus::PARTIALLY_VALIDATED])
+                    ->where('supply_date', '<=', $end_date);
+            })
+                ->whereHas('supply.purchaseOrder', function($q) use ($warehouse_uuids) {
+                    $q->where('type', 'internal')
+                        ->whereIn('warehouse_from', $warehouse_uuids);
                 })
-                    ->whereHas('supply.purchaseOrder', function($q) {
-                        $q->where('type', 'internal');
-                    })
-                    ->select('product_uuid', DB::raw('SUM(quantity_supplied) as total'))
-                    ->groupBy('product_uuid')
-                    ->pluck('total', 'product_uuid');
-            }
+                ->select('product_uuid', DB::raw('SUM(quantity_supplied) as total'))
+                ->groupBy('product_uuid')
+                ->pluck('total', 'product_uuid');
 
             $all_products = Product::with(['unitMeasure', 'category'])->get();
 
-            $all_products_points = $all_products->map(function($product) use ($supplies, $adjustments, $deductions, $sales, $internalSuppliesFromPrimary, $primaryWarehouseUuuids) {
+            // CALCUL DE LA QUANTITÉ FINALE PERTINENTE
+            $all_products_points = $all_products->map(function($product) use ($supplies, $adjustments, $deductions, $sales, $internalTransfersOut) {
                 $uuid = $product->uuid;
 
-                $prodApproved = $supplies->get($uuid, 0);
-                $prodDeducted = $deductions->get($uuid, 0);
-                $prodSales    = $sales->get($uuid, 0);
+                $prodApproved = $supplies->get($uuid, 0);            // Entrées (+)
+                $prodDeducted = $deductions->get($uuid, 0);          // Déductions (-)
+                $prodSales    = $sales->get($uuid, 0);               // Ventes (-)
+                $prodTransOut = $internalTransfersOut->get($uuid, 0); // Transferts sortants (-)
 
                 $prodAdjusts  = $adjustments->get($uuid, collect());
-                $prodAdjPlus  = $prodAdjusts->where('action', StockAdjustmentAction::AJUSTEMENT_PLUS->value)->sum('total');
-                $prodAdjMinus = $prodAdjusts->where('action', StockAdjustmentAction::AJUSTEMENT_MOINS->value)->sum('total');
-                $prodAvaries  = $prodAdjusts->where('action', StockAdjustmentAction::AVARIE->value)->sum('total');
+                $prodAdjPlus  = $prodAdjusts->where('action', StockAdjustmentAction::AJUSTEMENT_PLUS->value)->sum('total');  // (+)
+                $prodAdjMinus = $prodAdjusts->where('action', StockAdjustmentAction::AJUSTEMENT_MOINS->value)->sum('total'); // (-)
+                $prodAvaries  = $prodAdjusts->where('action', StockAdjustmentAction::AVARIE->value)->sum('total');           // (-)
 
-                if (!empty($primaryWarehouseUuuids) && isset($internalSuppliesFromPrimary)) {
-                    $prodAdjMinus += $internalSuppliesFromPrimary->get($uuid, 0);
-                }
+                // Formule théorique de stock :
+                // (Entrées + Ajustements Plus) - (Ajustements Moins + Avaries + Déductions + Ventes + Transferts Sortants)
+                $totalIn  = $prodApproved + $prodAdjPlus;
+                $totalOut = $prodAdjMinus + $prodAvaries + $prodDeducted + $prodSales + $prodTransOut;
 
-                $finalQuantity = $prodApproved + $prodAdjPlus - $prodAdjMinus - $prodAvaries - $prodDeducted - $prodSales;
+                $finalQuantity = $totalIn - $totalOut;
 
                 return (object)[
                     'produit_uuid' => $uuid,
@@ -767,10 +765,10 @@ class ProductController extends Controller
 
             $fileName = $warehouse_uuid === 'all'
                 ? 'INVENTAIRE-GLOBAL-' . now()->format('YmdHis') . '.pdf'
-                : 'INVENTAIRE-ENTREPOT-' . strtoupper($warehouses->first()->name) . '-' . now()->format('YmdHis') . '.pdf';
+                : 'INVENTAIRE-ENTREPOT-' . strtoupper($warehouses->first()->name ?? 'ENTREPOT') . '-' . now()->format('YmdHis') . '.pdf';
 
             $folderPath = $warehouse_uuid === 'all'
-                ? 'storage/inventory_warehouses_day/'
+                ? 'storage/inventory_warehouses_day'
                 : 'storage/inventory_warehouse_day/' . $warehouses->first()->uuid;
 
             if (!is_dir($folderPath)) {

@@ -22,6 +22,7 @@ class PaymentRegulation extends Model
         'cash_receipt_type_uuid',
         'restaurant_expense_type_uuid',
         'cash_receipt_families_uuid',
+        'recouvrement_uuid',
         'amount',
         'phone_number',
         'reference',
@@ -125,5 +126,9 @@ class PaymentRegulation extends Model
     }
     public function paymentLines() {
         return $this->hasMany(PaymentLine::class, 'payment_regulation_uuid', 'uuid');
+    }
+    public function recouvrement()
+    {
+        return $this->belongsTo(Recouvrement::class, 'recouvrement_uuid', 'uuid');
     }
 }

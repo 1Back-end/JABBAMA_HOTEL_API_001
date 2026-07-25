@@ -20,6 +20,7 @@ class DatabaseSeeder extends Seeder
             ProductSeeder::class,
             CountriesTableSeeder::class,
             AddDefaultParametersSeeder::class,
+            RecouvrementSeeder::class,
 
         ]);
     }
