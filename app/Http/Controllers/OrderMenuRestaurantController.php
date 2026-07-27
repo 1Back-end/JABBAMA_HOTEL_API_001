@@ -4457,6 +4457,14 @@ class OrderMenuRestaurantController extends Controller
         $newTotalQty = (int) $data['quantity'];
         $oldTotalQty = (int) $drink->quantity_exactly;
 
+        if ($newQty === $oldQty && ((float)$drink->unit_price !== (float)$unitPrice)) {
+            $drink->update([
+                'unit_price'  => $unitPrice,
+                'total_price' => $unitPrice * $newQty,
+                'updated_by'  => $auth->id,
+            ]);
+        }
+
 
         if ($newTotalQty === $oldTotalQty) {
             return null;
@@ -4560,6 +4568,14 @@ class OrderMenuRestaurantController extends Controller
         $newQty = (int) $data['quantity'];
         $oldQty = (int) $drink->quantity_exactly;
 
+        if ($newQty === $oldQty && ((float)$drink->unit_price !== (float)$unitPrice)) {
+            $drink->update([
+                'unit_price'  => $unitPrice,
+                'total_price' => $unitPrice * $newQty,
+                'updated_by'  => $auth->id,
+            ]);
+        }
+
         if ($newQty === $oldQty) {
             return null;
         }
@@ -4661,6 +4677,14 @@ class OrderMenuRestaurantController extends Controller
     private function handleTransferredDrink(OrderRestaurantDrink $drink, array $data, float $unitPrice, $auth, OrderMenuRestaurant $order) {
         $newQty = (int) $data['quantity'];
         $oldQty = (int) $drink->quantity_exactly;
+
+        if ($newQty === $oldQty && ((float)$drink->unit_price !== (float)$unitPrice)) {
+            $drink->update([
+                'unit_price'  => $unitPrice,
+                'total_price' => $unitPrice * $newQty,
+                'updated_by'  => $auth->id,
+            ]);
+        }
 
         if ($newQty === $oldQty) {
             return null;
@@ -4778,9 +4802,6 @@ class OrderMenuRestaurantController extends Controller
 
         return null;
     }
-
-
-
 
 
 
@@ -5133,6 +5154,15 @@ class OrderMenuRestaurantController extends Controller
         $newQty = (int) $data['quantity'];
         $oldQty = (int) $item->quantity_exactly;
 
+
+        if ($newQty === $oldQty && ((float)$item->unit_price !== (float)$unitPrice)) {
+            $item->update([
+                'unit_price'  => $unitPrice,
+                'total_price' => $unitPrice * $newQty,
+                'updated_by'  => $auth->id,
+            ]);
+        }
+
         if ($newQty === $oldQty) {
             return;
         }
@@ -5256,6 +5286,14 @@ class OrderMenuRestaurantController extends Controller
         $newQty = (int) $data['quantity'];
         $oldQty = (int) $item->quantity_exactly;
 
+        if ($newQty === $oldQty && ((float)$item->unit_price !== (float)$unitPrice)) {
+            $item->update([
+                'unit_price'  => $unitPrice,
+                'total_price' => $unitPrice * $newQty,
+                'updated_by'  => $auth->id,
+            ]);
+        }
+
         if ($newQty === $oldQty) {
             return null;
         }
@@ -5354,6 +5392,14 @@ class OrderMenuRestaurantController extends Controller
     private function handleInPreparation(OrderMenuRestaurantItem $item, array $data, MenuRestaurant $menu, OrderMenuRestaurant $order, float $unitPrice, $auth) {
         $newQty = (int) $data['quantity'];
         $oldQty = (int) $item->quantity_exactly;
+
+        if ($newQty === $oldQty && ((float)$item->unit_price !== (float)$unitPrice)) {
+            $item->update([
+                'unit_price'  => $unitPrice,
+                'total_price' => $unitPrice * $newQty,
+                'updated_by'  => $auth->id,
+            ]);
+        }
 
         if ($newQty === $oldQty) {
             return null;
@@ -5591,6 +5637,15 @@ class OrderMenuRestaurantController extends Controller
     private function handleQuantityUpdate(OrderMenuRestaurantItem $item, array $data, MenuRestaurant $menu, OrderMenuRestaurant $order, float $unitPrice, $auth) {
         $newTotalQty = (int) $data['quantity'];
         $oldTotalQty = (int) $item->quantity_exactly;
+
+
+        if ($newTotalQty === $oldTotalQty && ((float)$item->unit_price !== (float)$unitPrice)) {
+            $item->update([
+                'unit_price'  => $unitPrice,
+                'total_price' => $unitPrice * $newTotalQty,
+                'updated_by'  => $auth->id,
+            ]);
+        }
 
         if ($newTotalQty === $oldTotalQty) {
             return;
@@ -5930,25 +5985,17 @@ class OrderMenuRestaurantController extends Controller
             'payment.regulations.method'
         ]);
 
-        $dateFilterApplied = false;
-        if ($request->filled('order_menu_restaurant_date')) {
-            $query->where('order_menu_restaurant_date', $request->order_menu_restaurant_date);
-            $dateFilterApplied = true;
-        }
         if ($request->filled('date')) {
             $query->whereDate('created_at', $request->date);
-            $dateFilterApplied = true;
-        }
-
-        if (!$dateFilterApplied) {
-            $query->whereDate('created_at', today());
+        } elseif ($request->filled('order_menu_restaurant_date')) {
+            $query->whereDate('order_menu_restaurant_date', $request->order_menu_restaurant_date);
+        } else {
+            $query->whereDate('created_at', Carbon::today());
         }
         if ($request->filled('restaurant_table_uuid')) {
             $query->where('restaurant_table_uuid', $request->restaurant_table_uuid);
         }
-        if ($request->filled('order_menu_restaurant_date')) {
-            $query->where('order_menu_restaurant_date', $request->order_menu_restaurant_date);
-        }
+
         if ($request->filled('menu_restaurant_uuid')) {
             $query->where('menu_restaurant_uuid', $request->menu_restaurant_uuid);
         }

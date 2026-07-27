@@ -36,7 +36,8 @@ class ComplementVirtualTemp extends Model
         'cart_line_uuid',
         'is_new',
         'menu_quantity',
-        'quantity_in_defective'
+        'quantity_in_defective',
+        'warehouse_uuid'
     ];
 
     protected static function boot()
@@ -75,6 +76,10 @@ class ComplementVirtualTemp extends Model
     public function menu()
     {
         return $this->belongsTo(MenuRestaurant::class, 'menu_uuid', 'uuid');
+    }
+    public function warehouse()
+    {
+        return $this->belongsTo(Warehouse::class, 'warehouse_uuid', 'uuid');
     }
 
 }

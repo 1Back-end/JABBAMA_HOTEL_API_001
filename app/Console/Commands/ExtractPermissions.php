@@ -236,7 +236,7 @@ class ExtractPermissions extends Command
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],
         'view_extended_cash_register_date' => [
-            'description' => 'Afficher les données de la fiche de caisse sur deux jours (hier et aujourd\'hui)',
+            'description' => 'Changer la date pour afficher les données antérieures de la fiche de caisse',
             'category' => 'Gestion des encaissements',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],

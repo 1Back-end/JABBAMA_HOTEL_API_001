@@ -8,6 +8,7 @@ use App\Enums\StockAdjustmentAction;
 use App\Enums\StocksAdjustmentStatus;
 use App\Enums\StocksDeductionsStatus;
 use App\Enums\SupplyStatus;
+use App\Models\ComplementVirtualTemp;
 use App\Models\Product;
 use App\Models\ProductPoint;
 use App\Models\StockAdjustment;
@@ -540,9 +541,6 @@ class ProductController extends Controller
     {
         try {
 
-            // ==========================
-            // ✅ CAS 1 : UN ENTREPÔT
-            // ==========================
             if ($warehouse_uuid && $warehouse_uuid !== 'all') {
 
                 $warehouse = Warehouse::where('uuid', $warehouse_uuid)->first();
@@ -664,6 +662,7 @@ class ProductController extends Controller
         try {
             $warehouse_uuid = $warehouse_uuid ?? $request->query('warehouse_uuid');
 
+            // S'arrête à la fin de la journée (23:59:59)
             $end_date = $request->filled('end_date')
                 ? Carbon::parse($request->end_date)->endOfDay()
                 : now()->endOfDay();
@@ -678,17 +677,15 @@ class ProductController extends Controller
 
             $warehouses = Warehouse::whereIn('uuid', $warehouse_uuids)->get();
 
-            // 1. APPROVISIONNEMENTS (Entrées en stock) filtrés PAR ENTREPÔT
             $supplies = SupplyItem::whereHas('supply', function($q) use ($end_date, $warehouse_uuids) {
                 $q->whereIn('status', [SupplyStatus::VALIDATED, SupplyStatus::PARTIALLY_VALIDATED])
                     ->where('supply_date', '<=', $end_date)
-                    ->whereIn('warehouse_uuid', $warehouse_uuids); // Condition essentielle !
+                    ->whereIn('warehouse_uuid', $warehouse_uuids);
             })
                 ->select('product_uuid', DB::raw('SUM(quantity_supplied) as total'))
                 ->groupBy('product_uuid')
                 ->pluck('total', 'product_uuid');
 
-            // 2. AJUSTEMENTS (Plus, Moins, Avaries)
             $adjustments = StockAdjustmentItem::whereHas('adjustment', function($q) use ($warehouse_uuids, $end_date) {
                 $q->whereIn('warehouse_uuid', $warehouse_uuids)
                     ->where('status', StocksAdjustmentStatus::VALIDATED->value)
@@ -700,7 +697,6 @@ class ProductController extends Controller
                 ->get()
                 ->groupBy('product_uuid');
 
-            // 3. DÉDUCTIONS DE STOCK
             $deductions = StockDeductionItem::whereHas('stockDeduction', function($q) use ($warehouse_uuids, $end_date) {
                 $q->whereIn('warehouse_uuid', $warehouse_uuids)
                     ->where('status', StocksDeductionsStatus::VALIDATED->value)
@@ -710,7 +706,6 @@ class ProductController extends Controller
                 ->groupBy('product_uuid')
                 ->pluck('total', 'product_uuid');
 
-            // 4. VENTES / SORTIES D'ENTREPÔT
             $sales = VirtualOrderMenuRestaurant::whereIn('warehouse_uuid', $warehouse_uuids)
                 ->where('status', MenuOrderStatus::DELIVERED->value)
                 ->where('created_at', '<=', $end_date)
@@ -718,7 +713,14 @@ class ProductController extends Controller
                 ->groupBy('product_uuid')
                 ->pluck('total', 'product_uuid');
 
-            // 5. SORTIES PAR TRANSFERTS INTERNES (Achats/Transferts émis depuis cet entrepôt vers d'autres)
+            $complements = ComplementVirtualTemp::join('virtual_orders_menu_restaurants as sales_table', 'complement_virtual_temps.order_menu_restaurant_uuid', '=', 'sales_table.orders_menu_restaurant_uuid')
+                ->whereIn('sales_table.warehouse_uuid', $warehouse_uuids)
+                ->where('complement_virtual_temps.status', 'delivered')
+                ->where('complement_virtual_temps.created_at', '<=', $end_date)
+                ->select('complement_virtual_temps.product_uuid', DB::raw('SUM(complement_virtual_temps.quantity) as total'))
+                ->groupBy('complement_virtual_temps.product_uuid')
+                ->pluck('total', 'product_uuid');
+
             $internalTransfersOut = SupplyItem::whereHas('supply', function($q) use ($end_date) {
                 $q->whereIn('status', [SupplyStatus::VALIDATED, SupplyStatus::PARTIALLY_VALIDATED])
                     ->where('supply_date', '<=', $end_date);
@@ -731,26 +733,27 @@ class ProductController extends Controller
                 ->groupBy('product_uuid')
                 ->pluck('total', 'product_uuid');
 
+
+
+
             $all_products = Product::with(['unitMeasure', 'category'])->get();
 
-            // CALCUL DE LA QUANTITÉ FINALE PERTINENTE
-            $all_products_points = $all_products->map(function($product) use ($supplies, $adjustments, $deductions, $sales, $internalTransfersOut) {
+            $all_products_points = $all_products->map(function($product) use ($supplies, $adjustments, $deductions, $sales, $internalTransfersOut,$complements) {
                 $uuid = $product->uuid;
 
-                $prodApproved = $supplies->get($uuid, 0);            // Entrées (+)
-                $prodDeducted = $deductions->get($uuid, 0);          // Déductions (-)
-                $prodSales    = $sales->get($uuid, 0);               // Ventes (-)
-                $prodTransOut = $internalTransfersOut->get($uuid, 0); // Transferts sortants (-)
+                $prodApproved = $supplies->get($uuid, 0);
+                $prodDeducted = $deductions->get($uuid, 0);
+                $prodSales    = $sales->get($uuid, 0);
+                $prodTransOut = $internalTransfersOut->get($uuid, 0);
+                $prodComplements = $complements->get($uuid, 0);
 
                 $prodAdjusts  = $adjustments->get($uuid, collect());
-                $prodAdjPlus  = $prodAdjusts->where('action', StockAdjustmentAction::AJUSTEMENT_PLUS->value)->sum('total');  // (+)
-                $prodAdjMinus = $prodAdjusts->where('action', StockAdjustmentAction::AJUSTEMENT_MOINS->value)->sum('total'); // (-)
-                $prodAvaries  = $prodAdjusts->where('action', StockAdjustmentAction::AVARIE->value)->sum('total');           // (-)
+                $prodAdjPlus  = $prodAdjusts->where('action', StockAdjustmentAction::AJUSTEMENT_PLUS->value)->sum('total');
+                $prodAdjMinus = $prodAdjusts->where('action', StockAdjustmentAction::AJUSTEMENT_MOINS->value)->sum('total');
+                $prodAvaries  = $prodAdjusts->where('action', StockAdjustmentAction::AVARIE->value)->sum('total');
 
-                // Formule théorique de stock :
-                // (Entrées + Ajustements Plus) - (Ajustements Moins + Avaries + Déductions + Ventes + Transferts Sortants)
                 $totalIn  = $prodApproved + $prodAdjPlus;
-                $totalOut = $prodAdjMinus + $prodAvaries + $prodDeducted + $prodSales + $prodTransOut;
+                $totalOut = $prodAdjMinus + $prodAvaries + $prodDeducted + $prodSales + $prodTransOut + $prodComplements;
 
                 $finalQuantity = $totalIn - $totalOut;
 

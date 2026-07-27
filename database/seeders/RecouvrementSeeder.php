@@ -17,7 +17,7 @@ class RecouvrementSeeder extends Seeder
             [
                 'code' => 'REC_RESTO_BAR',
                 'name' => 'RECOUVREMENT RESTO/BAR',
-                'slug' => 'RECOUVREMENT',
+                'slug' => 'RESTO_BAR',
                 'is_used_for_restaurant' => true,
             ],
             [
@@ -29,10 +29,12 @@ class RecouvrementSeeder extends Seeder
         ];
 
         foreach ($recouvrements as $data) {
+            $existing = Recouvrement::where('code', $data['code'])->first();
+
             Recouvrement::updateOrCreate(
                 ['code' => $data['code']],
                 [
-                    'uuid' => (string) Str::uuid(),
+                    'uuid' => $existing ? $existing->uuid : (string) Str::uuid(),
                     'name' => $data['name'],
                     'slug' => $data['slug'],
                     'is_used_for_restaurant' => $data['is_used_for_restaurant'],

@@ -1,1 +1,2 @@
 php artisan db:seed --class=RecouvrementSeeder
+php artisan db:seed --class=RecouvrementSeeder

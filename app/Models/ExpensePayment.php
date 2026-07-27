@@ -3,7 +3,9 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class ExpensePayment extends Model
@@ -31,6 +33,8 @@ class ExpensePayment extends Model
         'hierarchy_uuids',
         'created_at',
         'updated_at',
+        'category_document',
+        'type_document'
     ];
 
     protected $casts = [
@@ -38,7 +42,11 @@ class ExpensePayment extends Model
         'amount'   => 'decimal:2',
         'hierarchy_uuids' => 'array',
     ];
-    protected $appends = ['hierarchy_families'];
+    protected $appends = [
+        'hierarchy_families',
+        'category_document_url',
+        'type_document_url',
+    ];
 
     public function getHierarchyFamiliesAttribute()
     {
@@ -102,5 +110,30 @@ class ExpensePayment extends Model
     public function updater()
     {
         return $this->belongsTo(User::class, 'updated_by');
+    }
+
+    public function medias(): MorphMany
+    {
+        return $this->morphMany(Medias::class, 'mediable');
+    }
+
+    public function getCategoryDocumentUrlAttribute(): ?string
+    {
+        $media = $this->medias()->where('filename', 'LIKE', '%_cat_%')->latest()->first();
+        if ($media) {
+            return Storage::disk($media->disk)->url($media->path);
+        }
+
+        return null;
+    }
+
+    public function getTypeDocumentUrlAttribute(): ?string
+    {
+        $media = $this->medias()->where('filename', 'LIKE', '%_type_%')->latest()->first();
+        if ($media) {
+            return Storage::disk($media->disk)->url($media->path);
+        }
+
+        return null;
     }
 }

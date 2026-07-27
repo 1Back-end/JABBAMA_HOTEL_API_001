@@ -109,6 +109,8 @@ class RestaurantExpenseController extends Controller
             'amount'                         => 'required|numeric|min:0',
             'description'                    => 'nullable|string|max:1000',
             'date'                           => 'nullable|date',
+            'category_document'              => 'nullable|file|mimes:pdf,jpeg,png,jpg|max:5000',
+            'type_document'                  => 'nullable|file|mimes:pdf,jpeg,png,jpg|max:5000',
         ]);
 
         $createdAt = $request->filled('date')
@@ -118,7 +120,7 @@ class RestaurantExpenseController extends Controller
         DB::beginTransaction();
 
         try {
-            // 1. Instanciation de la Dépense
+
             $expense = new ExpensePayment([
                 'restaurant_expense_type_uuid'   => $request->restaurant_expense_type_uuid,
                 'restaurant_expense_family_uuid' => $request->restaurant_expense_family_uuid,
@@ -137,6 +139,39 @@ class RestaurantExpenseController extends Controller
             $expense->updated_at = $createdAt;
             $expense->save();
 
+            // 1. Enregistrement de la Catégorie avec le préfixe _cat_
+            if ($request->hasFile('category_document')) {
+                $file = $request->file('category_document');
+                $originalName = $file->getClientOriginalName();
+                $filename = time() . '_cat_' . $originalName;
+                $path = $file->storeAs('expenses', $filename, 'public');
+
+                $expense->medias()->create([
+                    'name'      => $originalName,
+                    'disk'      => 'public',
+                    'path'      => $path,
+                    'filename'  => $filename,
+                    'mimetype'  => $file->getClientMimeType(),
+                    'extension' => $file->getClientOriginalExtension(),
+                ]);
+            }
+
+            // 2. Enregistrement du Type avec le préfixe _type_
+            if ($request->hasFile('type_document')) {
+                $file = $request->file('type_document');
+                $originalName = $file->getClientOriginalName();
+                $filename = time() . '_type_' . $originalName;
+                $path = $file->storeAs('expenses', $filename, 'public');
+
+                $expense->medias()->create([
+                    'name'      => $originalName,
+                    'disk'      => 'public',
+                    'path'      => $path,
+                    'filename'  => $filename,
+                    'mimetype'  => $file->getClientMimeType(),
+                    'extension' => $file->getClientOriginalExtension(),
+                ]);
+            }
 
             $regulation = new PaymentRegulation([
                 'source_uuid'                  => $expense->uuid,
@@ -160,7 +195,7 @@ class RestaurantExpenseController extends Controller
                 'success' => true,
                 'message' => 'Dépense enregistrée avec succès.',
                 'data'    => [
-                    'expense' => $expense,
+                    'expense'    => $expense->load('medias'),
                     'regulation' => $regulation
                 ]
             ], 201);
@@ -188,99 +223,126 @@ class RestaurantExpenseController extends Controller
      * @permission RestaurantExpenseController::update
      * @permission_desc Modifier une dépense
      */
-    public function update(Request $request, $uuid)
+    public function update_restaurant_expense_details(Request $request, $uuid)
     {
         $auth = auth()->user();
+
+        // 1. Recherche de la dépense
+        $expense = ExpensePayment::where('uuid', $uuid)->firstOrFail();
 
         $request->validate([
             'restaurant_expense_type_uuid'   => 'required|uuid',
             'restaurant_expense_family_uuid' => 'nullable|uuid',
+            'payment_method_uuid'            => 'required|uuid',
             'family_hierarchy_uuids'         => 'nullable|array',
             'family_hierarchy_uuids.*'       => 'uuid',
-            'payment_method_uuid'            => 'required|uuid',
             'name'                           => 'required|string|max:255',
             'amount'                         => 'required|numeric|min:0',
             'description'                    => 'nullable|string|max:1000',
-            'status'                         => 'nullable|string|max:50',
             'date'                           => 'nullable|date',
+            'category_document'              => 'nullable|file|mimes:pdf,jpeg,png,jpg|max:5000',
+            'type_document'                  => 'nullable|file|mimes:pdf,jpeg,png,jpg|max:5000',
         ]);
 
-        $createdAt = $request->filled('date')
+        $updatedDate = $request->filled('date')
             ? Carbon::parse($request->date)->setTimeFrom(Carbon::now())
-            : Carbon::now();
-
-        $expense = ExpensePayment::where('uuid', $uuid)->first();
-
-        if (!$expense) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Dépense introuvable.'
-            ], 404);
-        }
+            : $expense->created_at;
 
         DB::beginTransaction();
 
         try {
 
-            $expense->fill([
+            $expense->update([
                 'restaurant_expense_type_uuid'   => $request->restaurant_expense_type_uuid,
                 'restaurant_expense_family_uuid' => $request->restaurant_expense_family_uuid,
-                'hierarchy_uuids'                => $request->family_hierarchy_uuids ?? [],
                 'regulation_method_uuid'         => $request->payment_method_uuid,
+                'hierarchy_uuids'                => $request->family_hierarchy_uuids ?? [],
                 'amount'                         => $request->amount,
                 'name'                           => $request->name,
                 'description'                    => $request->description,
-                'status'                         => $request->status ?? $expense->status,
+                'paid_at'                        => $updatedDate,
                 'updated_by'                     => $auth->id,
-                'paid_at'                        => $createdAt,
             ]);
 
             $expense->timestamps = false;
-            $expense->updated_at = $createdAt;
+            $expense->created_at = $updatedDate;
+            $expense->updated_at = Carbon::now();
             $expense->save();
 
+            if ($request->hasFile('category_document')) {
+                $oldCategoryMedia = $expense->medias()->where('filename', 'LIKE', '%_cat_%')->first();
+                if ($oldCategoryMedia) {
+                    if (\Storage::disk($oldCategoryMedia->disk)->exists($oldCategoryMedia->path)) {
+                        \Storage::disk($oldCategoryMedia->disk)->delete($oldCategoryMedia->path);
+                    }
+                    $oldCategoryMedia->delete();
+                }
+
+                $file = $request->file('category_document');
+                $originalName = $file->getClientOriginalName();
+                $filename = time() . '_cat_' . $originalName;
+                $path = $file->storeAs('expenses', $filename, 'public');
+
+                $expense->medias()->create([
+                    'name'      => $originalName,
+                    'disk'      => 'public',
+                    'path'      => $path,
+                    'filename'  => $filename,
+                    'mimetype'  => $file->getClientMimeType(),
+                    'extension' => $file->getClientOriginalExtension(),
+                ]);
+            }
+
+            if ($request->hasFile('type_document')) {
+                $oldTypeMedia = $expense->medias()->where('filename', 'LIKE', '%_type_%')->first();
+                if ($oldTypeMedia) {
+                    if (\Storage::disk($oldTypeMedia->disk)->exists($oldTypeMedia->path)) {
+                        \Storage::disk($oldTypeMedia->disk)->delete($oldTypeMedia->path);
+                    }
+                    $oldTypeMedia->delete();
+                }
+
+                $file = $request->file('type_document');
+                $originalName = $file->getClientOriginalName();
+                $filename = time() . '_type_' . $originalName;
+                $path = $file->storeAs('expenses', $filename, 'public');
+
+                $expense->medias()->create([
+                    'name'      => $originalName,
+                    'disk'      => 'public',
+                    'path'      => $path,
+                    'filename'  => $filename,
+                    'mimetype'  => $file->getClientMimeType(),
+                    'extension' => $file->getClientOriginalExtension(),
+                ]);
+            }
+            // Note : Si $request->hasFile('type_document') est faux, l'ancien fichier en base n'est PAS touché !
 
             $regulation = PaymentRegulation::where('source_uuid', $expense->uuid)
                 ->where('source_type', 'expense')
                 ->first();
 
-            if (!$regulation) {
-
-                $regulation = new PaymentRegulation([
-                    'source_uuid'                  => $expense->uuid,
-                    'source_type'                  => 'expense',
+            if ($regulation) {
+                $regulation->update([
                     'restaurant_expense_type_uuid' => $request->restaurant_expense_type_uuid,
                     'regulation_method_uuid'       => $request->payment_method_uuid,
                     'amount'                       => $request->amount,
-                    'type'                         => 'expense',
-                    'paid_at'                      => $createdAt,
-                    'created_by'                   => $auth->id,
                     'updated_by'                   => $auth->id,
                 ]);
-            } else {
 
-                $regulation->fill([
-                    'restaurant_expense_type_uuid' => $request->restaurant_expense_type_uuid,
-                    'regulation_method_uuid'       => $request->payment_method_uuid,
-                    'amount'                       => $request->amount,
-                    'type'                         => 'expense',
-                    'updated_by'                   => $auth->id,
-                    'paid_at'                      => $createdAt,
-                ]);
+                $regulation->timestamps = false;
+                $regulation->created_at = $updatedDate;
+                $regulation->updated_at = Carbon::now();
+                $regulation->save();
             }
-
-            $regulation->timestamps = false;
-            $regulation->created_at = $createdAt;
-            $regulation->updated_at = $createdAt;
-            $regulation->save();
 
             DB::commit();
 
             return response()->json([
                 'success' => true,
                 'message' => 'Dépense mise à jour avec succès.',
-                'data' => [
-                    'expense' => $expense,
+                'data'    => [
+                    'expense'    => $expense->load('medias'),
                     'regulation' => $regulation
                 ]
             ], 200);
@@ -288,7 +350,7 @@ class RestaurantExpenseController extends Controller
         } catch (\Throwable $e) {
             DB::rollBack();
 
-            Log::error("Erreur update dépense : " . $e->getMessage(), [
+            Log::error("Erreur lors de la mise à jour de la dépense : " . $e->getMessage(), [
                 'exception' => $e,
                 'uuid'      => $uuid,
                 'payload'   => $request->all(),

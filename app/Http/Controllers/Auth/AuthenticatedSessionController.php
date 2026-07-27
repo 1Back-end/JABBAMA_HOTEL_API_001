@@ -11,6 +11,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class AuthenticatedSessionController extends Controller
 {
@@ -112,5 +113,7 @@ class AuthenticatedSessionController extends Controller
             'permissions' => load_permissions($user),
         ]);
     }
+
+
 
 }
