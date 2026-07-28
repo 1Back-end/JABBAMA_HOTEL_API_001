@@ -82,8 +82,6 @@ class NotificationController extends Controller
         ]);
     }
 
-
-
     public function decisionalIndex()
     {
         if (session_id()) {
@@ -132,6 +130,114 @@ class NotificationController extends Controller
         ]);
     }
 
+
+    public function stream(Request $request)
+    {
+        $user = auth()->user();
+
+        if (!$user) {
+            return response()->json(['message' => 'Unauthenticated'], 401);
+        }
+
+        // 1. Notifications standards
+        $notificationsQuery = \App\Models\OrderNotification::with(['creator', 'updater', 'order']);
+
+        $statuses = [];
+        if ($user->can('view_all_notification_in_preparation')) $statuses[] = 'in_preparation';
+        if ($user->can('view_all_notification_transferred')) $statuses[] = 'transferred';
+        if ($user->can('view_all_notification_rejected')) $statuses[] = 'rejected';
+        if ($user->can('view_all_notification_in_defective')) $statuses[] = 'defective';
+        if ($user->can('view_all_notification_in_ready')) $statuses[] = 'ready';
+        if ($user->can('view_all_notification_in_delivered')) $statuses[] = 'delivered';
+        if ($user->can('view_all_notification_in_rejected_after_validation')) $statuses[] = 'rejected_after_validation';
+        if ($user->can('view_all_notification_in_cancel_for_new_update')) $statuses[] = 'cancel_for_new_update';
+        if ($user->can('view_all_notification_in_partial_completed')) $statuses[] = 'partial_completed';
+        if ($user->can('view_all_notification_in_partial_delivered')) $statuses[] = 'partial_delivered';
+
+        $notifications = [];
+        if (!empty($statuses)) {
+            $notificationsQuery->whereIn('status', $statuses);
+
+            $notificationsQuery->where(function ($q) use ($user) {
+                if ($user->can('view_kitchen_notifications')) {
+                    $q->orWhere(function ($sub) {
+                        $sub->whereIn('target', ['all', 'kitchen'])
+                            ->orWhere(function ($q2) {
+                                $q2->where('target', 'kitchen')
+                                    ->whereHas('order', function ($order) {
+                                        $order->whereHas('items');
+                                    });
+                            });
+                    });
+                }
+
+                if ($user->can('view_bar_notifications')) {
+                    $q->orWhere(function ($sub) {
+                        $sub->whereIn('target', ['all', 'bar'])
+                            ->orWhere(function ($q2) {
+                                $q2->where('target', 'bar')
+                                    ->whereHas('order', function ($order) {
+                                        $order->whereHas('drinks');
+                                    });
+                            });
+                    });
+                }
+            });
+
+            $notifications = $notificationsQuery->latest()->limit(50)->get();
+        }
+
+        // 2. Notifications décisionnelles
+        $decisionalQuery = \App\Models\NotificationOrderRestaurantForDecisional::with([
+            'user:id,nom_utilisateur',
+            'updatedBy:id,nom_utilisateur',
+            'orderMenuRestaurant:uuid,code'
+        ]);
+
+        $decisionalPermissions = [
+            'in_preparation' => ['view_all_notification_in_preparation_by_admin'],
+            'transferred' => ['view_all_notification_transferred_by_admin'],
+            'rejected' => ['view_all_notification_rejected_by_admin'],
+            'defective' => ['view_all_notification_in_defective_by_admin'],
+            'ready' => ['view_all_notification_in_ready_by_admin'],
+            'delivered' => ['view_all_notification_in_delivered_by_admin'],
+            'cancel_for_new_update' => ['view_all_notification_in_cancel_for_new_update_by_admin'],
+            'rejected_after_validation' => ['view_all_notification_in_rejected_after_validation_by_admin'],
+            'partial_delivered' => ['view_all_notification_in_partial_delivered_by_admin'],
+            'partial_completed' => ['view_all_notification_in_partial_completed_by_admin'],
+        ];
+
+        $decisionalStatuses = collect($decisionalPermissions)
+            ->filter(fn ($perms) => collect($perms)->contains(fn ($p) => $user->can($p)))
+            ->keys()
+            ->toArray();
+
+        $decisionalData = [
+            'data' => [],
+            'total' => 0,
+            'unread' => 0
+        ];
+
+        if (!empty($decisionalStatuses)) {
+            $decisionalQuery->whereIn('status', $decisionalStatuses);
+
+            $total = (clone $decisionalQuery)->count();
+            $unread = (clone $decisionalQuery)->whereNull('read_at')->count();
+            $data = $decisionalQuery->latest()->limit(50)->get();
+
+            $decisionalData = [
+                'data' => $data,
+                'total' => $total,
+                'unread' => $unread
+            ];
+        }
+
+        // 3. Retour JSON simple
+        return response()->json([
+            'notifications' => $notifications,
+            'decisional' => $decisionalData
+        ]);
+    }
 
     public function markAllAsReadNotificationDecisional()
     {

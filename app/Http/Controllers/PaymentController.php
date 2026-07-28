@@ -607,20 +607,16 @@ class PaymentController extends Controller
 
         } elseif ($request->cash_register_filter_type === CashRegisterFilterType::PAYMENT_TYPE->value) {
 
-            // --- 2. FILTRE PAR TYPE / CATÉGORIE (AVEC RECOUVREMENTS) ---
             $query->leftJoin('cash_receipt_types', 'payment_regulations.cash_receipt_type_uuid', '=', 'cash_receipt_types.uuid')
                 ->leftJoin('restaurant_expense_types', 'payment_regulations.restaurant_expense_type_uuid', '=', 'restaurant_expense_types.uuid')
                 ->leftJoin('recouvrements', 'payment_regulations.recouvrement_uuid', '=', 'recouvrements.uuid');
 
-            // Slug fusionné
             $selectColumns[] = DB::raw("COALESCE(cash_receipt_types.slug, restaurant_expense_types.slug, recouvrements.slug) as category_slug");
 
-            // Libellés distincts
             $selectColumns[] = DB::raw("MAX(cash_receipt_types.name) as receipt_type_name");
             $selectColumns[] = DB::raw("MAX(restaurant_expense_types.name) as expense_type_name");
             $selectColumns[] = DB::raw("MAX(recouvrements.name) as recouvrement_name");
 
-            // Libellé nettoyé unifié
             $selectColumns[] = DB::raw("
             MAX(
                 TRIM(
