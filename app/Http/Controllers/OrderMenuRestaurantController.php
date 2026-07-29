@@ -259,12 +259,14 @@ class OrderMenuRestaurantController extends Controller
 
                     foreach ($compositions[$complementUuid] as $composition) {
                         foreach ($composition->items as $item) {
+                            $warehouseUuid = $composition->warehouse_uuid;
 
                             $totalUsed = $menuQty * $complementQty * $item->quantity_used;
 
                             $data = [
                                 'cart_line_uuid' => $input['cart_line_uuid'],
                                 'reservation_uuid' => $reservationUuid,
+                                'warehouse_uuid' => $warehouseUuid,
                                 'menu_uuid' => $menuUuid,
                                 'complement_uuid' => $complementUuid,
                                 'product_uuid' => $item->product_uuid,
@@ -495,6 +497,7 @@ class OrderMenuRestaurantController extends Controller
 
                 if (isset($compositions[$complementUuid])) {
                     foreach ($compositions[$complementUuid] as $composition) {
+                        $warehouseUuid = $composition->warehouse_uuid;
                         foreach ($composition->items as $item) {
                             $totalUsed = $menuQty * $quantity * $item->quantity_used;
 
@@ -513,6 +516,7 @@ class OrderMenuRestaurantController extends Controller
                                 'updated_by'                 => $auth->id,
                                 'created_by'                 => $auth->id,
                                 'last_activity_at'           => now(),
+                                'warehouse_uuid'              => $warehouseUuid,
                             ]);
                         }
                     }
@@ -644,6 +648,7 @@ class OrderMenuRestaurantController extends Controller
 
                 if (isset($compositions[$complementUuid])) {
                     foreach ($compositions[$complementUuid] as $composition) {
+                        $warehouseUuid = $composition->warehouse_uuid;
                         foreach ($composition->items as $item) {
                             $totalUsed = $menuQty * $quantity * $item->quantity_used;
 
@@ -662,6 +667,7 @@ class OrderMenuRestaurantController extends Controller
                                 'updated_by'       => $auth->id,
                                 'created_by'       => $auth->id,
                                 'last_activity_at' => now(),
+                                'warehouse_uuid'   => $warehouseUuid,
                             ]);
                         }
                     }
@@ -3422,6 +3428,7 @@ class OrderMenuRestaurantController extends Controller
                     'cart_line_uuid'             => $item->cart_line_uuid,
                     'complement_uuid'            => $item->complement_uuid,
                     'product_uuid'               => $item->product_uuid,
+                    'warehouse_uuid'             => $item->warehouse_uuid,
                     'type'                       => $item->type,
                 ],
                 [

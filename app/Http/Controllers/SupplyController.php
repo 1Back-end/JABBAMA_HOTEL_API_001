@@ -14,6 +14,7 @@ use App\Models\Product;
 use App\Models\ProductPoint;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
+use App\Models\PurchaseOrderNotification;
 use App\Models\Supply;
 use App\Models\SupplyInvoice;
 use App\Models\SupplyItem;
@@ -75,6 +76,10 @@ class SupplyController extends Controller
         }
         if ($request->filled('purchase_order_uuid')) {
             $query->where('purchase_order_uuid', $request->purchase_order_uuid);
+        }
+
+        if ($request->filled('warehouse_uuid')) {
+            $query->where('warehouse_uuid', $request->warehouse_uuid);
         }
 
         if ($request->filled('status')) {
@@ -178,6 +183,30 @@ class SupplyController extends Controller
         //
     }
 
+    private function sendNotification(
+        PurchaseOrder $order,
+        string $status,
+        string $message,
+        ?int $userId = null,
+        ?string $target = null
+    ): void {
+        $auth = auth()->user();
+
+        PurchaseOrderNotification::create([
+            'purchase_order_uuid' => $order->uuid,
+            'status' => $status,
+            'message' => $message,
+            'target' => $target,
+            'user_id' => $userId,
+            'is_read' => false,
+            'created_by' => $auth ? $auth->id : null,
+            'updated_by' => $auth ? $auth->id : null,
+        ]);
+
+        // TODO (Optionnel) : Si vous utilisez Laravel Reverb / Pusher pour le temps réel,
+        // vous pouvez déclencher un BroadcastEvent ici pour faire sonner le front.
+    }
+
     /**
      * Display a listing of the resource.
      * @permission SupplyController::store
@@ -189,7 +218,13 @@ class SupplyController extends Controller
 
         $purchaseOrder = PurchaseOrder::where('uuid', $request->purchase_order_uuid)->firstOrFail();
         $supplyType = $purchaseOrder->type === 'internal' ? 'internal' : 'external';
-        $warehouseUuid = $purchaseOrder->warehouse_uuid;
+
+        if ($supplyType === 'internal') {
+            $warehouseUuidSave = $purchaseOrder->warehouse_from;
+        } else {
+            $warehousePrimary = Warehouse::where('is_primary', true)->firstOrFail();
+            $warehouseUuidSave = $warehousePrimary->uuid;
+        }
 
         $validated = $request->validate([
             'purchase_order_uuid' => 'required|exists:purchase_orders,uuid',
@@ -249,9 +284,6 @@ class SupplyController extends Controller
             DB::beginTransaction();
             $partialItems = [];
 
-            // ================================
-            //   Vérification quantités
-            // ================================
             foreach ($validated['items'] as $index => $item) {
                 $poItem = PurchaseOrderItem::where('purchase_order_uuid', $validated['purchase_order_uuid'])
                     ->where('product_uuid', $item['product_uuid'])
@@ -308,12 +340,9 @@ class SupplyController extends Controller
             $supplierForItem = $item['supplier_uuid'] ?? null;
             $unitPrice = $item['quantity_supplied'] > 0 ? $totalPrice / $item['quantity_supplied'] : 0;
 
-            // ================================
-            //       Création Supply
-            // ================================
             $supply = Supply::create([
                 'purchase_order_uuid' => $validated['purchase_order_uuid'],
-                'warehouse_uuid' => $warehouseUuid,
+                'warehouse_uuid' => $warehouseUuidSave,
                 'supply_date' => now(),
                 'notes' => $validated['notes'] ?? null,
                 'status' => $isFullySupplied ? 'draft' : 'draft',
@@ -339,7 +368,7 @@ class SupplyController extends Controller
                     'product_uuid' => $item['product_uuid'],
                     'quantity_supplied' => $item['quantity_supplied'],
                     'purchase_price' => $item['purchase_price'],
-                    'supplier_uuid'    => $item['supplier_uuid'] ?? null, // 🔹 Fournisseur spécifique à l'item
+                    'supplier_uuid'    => $item['supplier_uuid'] ?? null,
                     'notes' => $item['notes'] ?? null,
                     'created_by' => $auth->id,
                     'unit_price' => $item['unit_price'],
@@ -347,9 +376,6 @@ class SupplyController extends Controller
                 ]);
             }
 
-            // ================================
-            //   Upload documents
-            // ================================
             if ($request->hasFile('scanned_documents')) {
                 foreach ($request->file('scanned_documents') as $file) {
                     $filename = time() . '_' . $file->getClientOriginalName();
@@ -365,6 +391,22 @@ class SupplyController extends Controller
                     ]);
                 }
             }
+
+            \App\Models\PurchaseOrderNotification::where('purchase_order_uuid', $purchaseOrder->uuid)
+                ->where('status', PurchaseOrdersStatus::IN_DISCUSS->value)
+                ->delete();
+
+            $notifMessage = $isFullySupplied
+                ? "Un approvisionnement a été créé pour la commande (Référence : {$purchaseOrder->reference})."
+                : "Un approvisionnement partiel a été créé pour la commande (Référence : {$purchaseOrder->reference}).";
+
+            $this->sendNotification(
+                order: $purchaseOrder,
+                status: PurchaseOrdersStatus::IN_DISCUSS->value,
+                message: $notifMessage,
+                userId: $auth->id,
+                target: 'purchases_orders',
+            );
 
             DB::commit();
 
@@ -439,11 +481,16 @@ class SupplyController extends Controller
     public function update_supplies(Request $request, string $uuid)
     {
         $auth = auth()->user();
-
         $supply = Supply::with('items')->where('uuid', $uuid)->firstOrFail();
         $purchaseOrder = $supply->purchaseOrder;
         $supplyType = $purchaseOrder->type === 'internal' ? 'internal' : 'external';
-        $warehouseUuid = $purchaseOrder->warehouse_uuid;
+
+        if ($supplyType === 'internal') {
+            $warehouseUuidSave = $purchaseOrder->warehouse_from;
+        } else {
+            $warehousePrimary = Warehouse::where('is_primary', true)->firstOrFail();
+            $warehouseUuidSave = $warehousePrimary->uuid;
+        }
 
         $validated = $request->validate([
             'notes' => 'nullable|string',
@@ -464,14 +511,12 @@ class SupplyController extends Controller
             DB::beginTransaction();
             $partialItems = [];
 
-            // Vérification quantités
             foreach ($validated['items'] as $index => $item) {
-                // Récupérer l'item de la commande
                 $poItem = PurchaseOrderItem::where('purchase_order_uuid', $purchaseOrder->uuid)
                     ->where('product_uuid', $item['product_uuid'])
                     ->firstOrFail();
 
-                // Vérifier que la quantité approvisionnée ne dépasse pas la quantité commandée
+
                 if ($item['quantity_supplied'] > $poItem->quantity) {
                     $qtyOrdered = rtrim(rtrim($poItem->quantity, '0'), '.');
                     return response()->json([
@@ -510,7 +555,6 @@ class SupplyController extends Controller
                     }
                 }
 
-                // Vérifier approvisionnement partiel
                 if ($item['quantity_supplied'] < $poItem->quantity) {
                     $partialItems[] = $poItem->product->name ?? 'Produit inconnu';
                 }
@@ -518,12 +562,13 @@ class SupplyController extends Controller
 
             $isFullySupplied = empty($partialItems);
 
-            // Mettre à jour l'approvisionnement
+
             $totalPrice = $validated['items'][0]['purchase_price'] ?? 0;
             $unitPrice = $validated['items'][0]['quantity_supplied'] > 0 ? $totalPrice / $validated['items'][0]['quantity_supplied'] : 0;
 
             $supply->update([
                 'notes' => $validated['notes'] ?? $supply->notes,
+                'warehouse_uuid' => $warehouseUuidSave,
                 'status' => $isFullySupplied ? 'draft' : 'draft',
                 'partially_validated_by' => $isFullySupplied ? null : $auth->id,
                 'partial_validation_reason' => $isFullySupplied ? null :
@@ -533,7 +578,6 @@ class SupplyController extends Controller
                 'updated_by' => $auth->id,
             ]);
 
-            // Supprimer les anciens items et recréer les nouveaux
             $supply->items()->delete();
             foreach ($validated['items'] as $item) {
                 SupplyItem::create([
@@ -565,6 +609,22 @@ class SupplyController extends Controller
                     ]);
                 }
             }
+
+            \App\Models\PurchaseOrderNotification::where('purchase_order_uuid', $purchaseOrder->uuid)
+                ->where('status', PurchaseOrdersStatus::IN_DISCUSS->value)
+                ->delete();
+
+            $notifMessage = $isFullySupplied
+                ? "Un approvisionnement a été créé pour la commande (Référence : {$purchaseOrder->reference})."
+                : "Un approvisionnement partiel a été créé pour la commande (Référence : {$purchaseOrder->reference}).";
+
+            $this->sendNotification(
+                order: $purchaseOrder,
+                status: PurchaseOrdersStatus::IN_DISCUSS->value,
+                message: $notifMessage,
+                userId: $auth->id,
+                target: 'purchases_orders',
+            );
 
             DB::commit();
 
@@ -666,24 +726,37 @@ class SupplyController extends Controller
      */
     public function rejected_supplies(Request $request, string $uuid)
     {
-        $supply = Supply::findOrFail($uuid);
+        $auth = auth()->user();
 
-        // Validation
         $validated = $request->validate([
-            'rejection_reason' => 'required|string', // la raison du rejet
+            'rejection_reason' => 'required|string',
         ], [
             'rejection_reason.required' => "La raison du rejet est obligatoire.",
-            'rejection_reason.string' => "La raison doit être une chaîne de caractères.",
+            'rejection_reason.string'   => "La raison doit être une chaîne de caractères.",
         ]);
 
+
+        $supply = Supply::with('purchaseOrder')->where('uuid', $uuid)->firstOrFail();
+        $purchaseOrder = $supply->purchaseOrder;
+
         $supply->update([
-            'status'        => 'rejected',
+            'status'        => SupplyStatus::REJECTED->value,
             'rejection_reason' => $validated['rejection_reason'],
             'rejected_by'  => auth()->id(),
         ]);
 
+        $notifMessage = "L'approvisionnement de la commande (Référence : {$purchaseOrder->reference}) a été rejeté.";
+
+        $this->sendNotification(
+            order: $purchaseOrder,
+            status: PurchaseOrdersStatus::REJECTED->value,
+            message: $notifMessage,
+            userId: auth()->id(),
+            target: 'purchases_orders',
+        );
+
         return response()->json([
-            'message' => 'Approvisionnement annulé avec succès.',
+            'message' => 'Approvisionnement rejeté avec succès.',
             'data' => $supply
         ]);
     }
@@ -697,7 +770,6 @@ class SupplyController extends Controller
     {
         $auth = auth()->user();
 
-        // Vérifier mot de passe
         $request->validate(['password' => 'required|string']);
         if (!Hash::check($request->password, $auth->password)) {
             return response()->json([
@@ -709,7 +781,7 @@ class SupplyController extends Controller
         try {
             DB::beginTransaction();
 
-            // Charger approvisionnement + items + commande d'achat
+
             $supply = Supply::with('items.product', 'purchaseOrder.items')->findOrFail($uuid);
             $purchaseOrder = $supply->purchaseOrder;
 
@@ -721,7 +793,7 @@ class SupplyController extends Controller
             }
 
             $totalAdded = 0;
-            $partial = false; // 🔥 drapeau pour vérifier si approvisionnement partiel
+            $partial = false;
 
             foreach ($supply->items as $item) {
 
@@ -735,14 +807,11 @@ class SupplyController extends Controller
                     ], 422);
                 }
 
-                // Vérifier si quantité approvisionnée < quantité commandée
                 if ($item->quantity_supplied < $poItem->quantity) {
                     $partial = true;
                 }
 
-                // --- TYPE EXTERNE ---
                 if ($supply->type === 'external') {
-                    // Récupérer l'entrepôt principal
                     $warehousePrimary = Warehouse::where('is_primary', true)->firstOrFail();
 
                     $productPoint = ProductPoint::where('produit_uuid', $item->product_uuid)
@@ -757,7 +826,6 @@ class SupplyController extends Controller
 
                     $remaining = max($poItem->quantity - $item->quantity_supplied, 0);
 
-                    // 🔥 Mise à jour uniquement sur cet élément de commande
                     $poItem->update([
                         'quantity_remaining' => $remaining,
                         'updated_by' => $auth->id
@@ -767,11 +835,10 @@ class SupplyController extends Controller
 
                 if ($supply->type === 'internal') {
 
-                    // Entrepôt source de la commande
+                    //
                     $warehouseFrom = Warehouse::findOrFail($purchaseOrder->warehouse_from);
                     $warehouseTo = Warehouse::where('is_primary', true)->firstOrFail();
 
-                    // Vérifier stock dans l'entrepôt source
                     $productPointFrom = ProductPoint::where('produit_uuid', $item->product_uuid)
                         ->where('point_uuid', $warehouseTo->uuid)
                         ->first();
@@ -783,11 +850,8 @@ class SupplyController extends Controller
                             'message' => "Stock insuffisant dans l'entrepôt source pour {$item->product->name}."
                         ], 422);
                     }
-
-                    // Déduire du stock de l'entrepôt source
                     $productPointFrom->decrement('quantity', $item->quantity_supplied);
 
-                    // Ajouter dans l'entrepôt principal
                     $productPointTo = ProductPoint::where('produit_uuid', $item->product_uuid)
                         ->where('point_uuid', $warehouseFrom->uuid)
                         ->first();
@@ -808,7 +872,6 @@ class SupplyController extends Controller
             $supplyStatus = $partial ? 'partially_validated' : 'validated';
             $orderStatus  = $partial ? 'partially_closed' : 'closed';
 
-            // 🔹 Mise à jour du supply
             $supply->update([
                 'status' => $supplyStatus,
                 'validated_by' => $auth->id,
@@ -816,7 +879,6 @@ class SupplyController extends Controller
                 'validated_at' => now()
             ]);
 
-            // 🔹 Vérification si la commande peut être fermée
             $canClose = $purchaseOrder->items()->sum('quantity_remaining') === 0;
             $orderStatus = $canClose ? 'closed' : ($partial ? 'partially_closed' : $purchaseOrder->status);
 
@@ -826,12 +888,10 @@ class SupplyController extends Controller
                 'updated_by' => $auth->id,
             ]);
 
-            // 🔹 Vérifier parent si existe
             if ($purchaseOrder->parent_uuid) {
                 $parent = PurchaseOrder::find($purchaseOrder->parent_uuid);
 
                 if ($parent) {
-                    // Tous les enfants fermés et toutes les quantités utilisées ?
                     $allChildrenClosed = $parent->children()
                             ->whereNotIn('status', ['closed', 'partially_closed'])
                             ->count() === 0;
@@ -847,6 +907,18 @@ class SupplyController extends Controller
                     ]);
                 }
             }
+
+            $notifMessage = $partial
+                ? "L'approvisionnement de la commande (Référence : {$purchaseOrder->reference}) a été partiellement validé."
+                : "L'approvisionnement de la commande (Référence : {$purchaseOrder->reference}) a été entièrement validé.";
+
+            $this->sendNotification(
+                order: $purchaseOrder,
+                status: $orderStatus,
+                message: $notifMessage,
+                userId: $auth->id,
+                target: 'purchases_orders',
+            );
 
             DB::commit();
 
@@ -871,26 +943,6 @@ class SupplyController extends Controller
         }
     }
 
-    /**
-     * Display a listing of the resource.
-     * @permission SupplyController::open_supply
-     * @permission_desc Ouvrir les approvisionnements
-     */
-    public function open_supply(Request $request, string $uuid)
-    {
-        $supply = Supply::findOrFail($uuid);
-
-        // 🔄 Mise à jour du statut
-        $supply->update([
-            'status' => 'open',
-            'updated_by' => auth()->id(),
-        ]);
-
-        return response()->json([
-            'message' => "L'approvisionnement est maintenant ouvert.",
-            'supply' => $supply,
-        ]);
-    }
 
     /**
      * Display a listing of the resource.
@@ -899,31 +951,60 @@ class SupplyController extends Controller
      */
     public function cancel_supply(Request $request, string $uuid)
     {
-        $supply = Supply::findOrFail($uuid);
-        $purchaseOrder = $supply->purchaseOrder;
+        $auth = auth()->user();
 
-        // Validation
         $validated = $request->validate([
             'reason_cancel' => 'required|string|max:255',
         ], [
             'reason_cancel.required' => 'Le motif d\'annulation est obligatoire.',
         ]);
 
-        $supply->update([
-            'status'        => 'cancelled',
-            'reason_cancel' => $validated['reason_cancel'],
-            'cancelled_by'  => auth()->id(),
-        ]);
+        $supply = Supply::with('purchaseOrder')->where('uuid', $uuid)->firstOrFail();
+        $purchaseOrder = $supply->purchaseOrder;
 
-        $purchaseOrder->update([
-            'status' => 'rejected',
-            'updated_by' => auth()->id(),
-        ]);
+        try {
+            DB::beginTransaction();
 
-        return response()->json([
-            'message' => 'Approvisionnement annulé avec succès.',
-            'data' => $supply
-        ]);
+            $supply->update([
+                'status'        => SupplyStatus::CANCELLED->value,
+                'reason_cancel' => $validated['reason_cancel'],
+                'cancelled_by'  => $auth->id,
+                'updated_by'    => $auth->id,
+            ]);
+
+            if ($purchaseOrder) {
+                $purchaseOrder->update([
+                    'status'     => PurchaseOrdersStatus::CANCEL->value,
+                    'updated_by' => $auth->id,
+                ]);
+
+                $notifMessage = "L'approvisionnement de la commande (Référence : {$purchaseOrder->reference}) a été annulé.";
+
+                $this->sendNotification(
+                    order: $purchaseOrder,
+                    status: PurchaseOrdersStatus::CANCEL->value,
+                    message: $notifMessage,
+                    userId: $auth->id,
+                    target: 'purchases_orders',
+                );
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Approvisionnement annulé avec succès.',
+                'data'    => $supply
+            ], 200);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Erreur annulation approvisionnement : ' . $e->getMessage());
+
+            return response()->json([
+                'error'   => 'Erreur lors de l’annulation de l’approvisionnement.',
+                'details' => $e->getMessage()
+            ], 500);
+        }
     }
 
 
@@ -1043,118 +1124,37 @@ class SupplyController extends Controller
     {
         $auth = auth()->user();
 
-        // Vérifier le mot de passe
         $validated = $request->validate([
-            'rejection_reason' => 'required|string', // la raison du rejet
+            'rejection_reason' => 'required|string',
         ], [
             'rejection_reason.required' => "La raison du rejet est obligatoire.",
-            'rejection_reason.string' => "La raison doit être une chaîne de caractères.",
+            'rejection_reason.string'   => "La raison doit être une chaîne de caractères.",
         ]);
 
-        try {
-            DB::beginTransaction();
 
-            $supply = Supply::with('items.product', 'purchaseOrder')->findOrFail($uuid);
-            $purchaseOrder = $supply->purchaseOrder;
+        $supply = Supply::with('purchaseOrder')->where('uuid', $uuid)->firstOrFail();
+        $purchaseOrder = $supply->purchaseOrder;
 
-            if (!$purchaseOrder) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Commande introuvable.'
-                ], 404);
-            }
+        $supply->update([
+            'status'        => SupplyStatus::REJECTED->value,
+            'rejection_reason' => $validated['rejection_reason'],
+            'rejected_by'  => auth()->id(),
+        ]);
 
+        $notifMessage = "L'approvisionnement de la commande (Référence : {$purchaseOrder->reference}) a été rejeté.";
 
-            $totalRemoved = 0; // total des quantités à retirer
+        $this->sendNotification(
+            order: $purchaseOrder,
+            status: PurchaseOrdersStatus::REJECTED->value,
+            message: $notifMessage,
+            userId: auth()->id(),
+            target: 'purchases_orders',
+        );
 
-            // 🔹 EXTERNE => décrémenter partout
-            if ($supply->type === 'external') {
-
-                $warehouse = Warehouse::where('is_primary', true)->firstOrFail();
-
-                foreach ($supply->items as $item) {
-                    $product = $item->product;
-
-                    // Décrémenter produits
-                    if ($product->stock_quantity < $item->quantity_supplied) {
-                        DB::rollBack();
-                        return response()->json([
-                            'status' => 'error',
-                            'message' => "Quantité insuffisante pour {$product->name} pour annuler."
-                        ], 422);
-                    }
-
-                    $product->decrement('stock_quantity', $item->quantity_supplied);
-                    $totalRemoved += $item->quantity_supplied;
-                }
-
-                // Décrémenter le stock total de l'entrepôt principal
-                $warehouse->decrement('total_stock', $totalRemoved);
-            }
-
-            // 🔹 INTERNE => décrémenter partout
-            if ($supply->type === 'internal') {
-
-                $warehouseFrom = Warehouse::findOrFail($purchaseOrder->warehouse_from);
-                $warehouseTo   = Warehouse::where('is_primary', true)->firstOrFail();
-
-                foreach ($supply->items as $item) {
-                    $product = $item->product;
-
-                    if ($product->stock_quantity < $item->quantity_supplied) {
-                        DB::rollBack();
-                        return response()->json([
-                            'status' => 'error',
-                            'message' => "Quantité insuffisante pour {$product->name} pour annuler."
-                        ], 422);
-                    }
-
-                    // Décrémenter produits
-                    $product->decrement('stock_quantity', $item->quantity_supplied);
-
-                    $totalRemoved += $item->quantity_supplied;
-                }
-
-                // Décrémenter l'entrepôt destination
-                $warehouseTo->decrement('total_stock', $totalRemoved);
-
-                // Décrémenter aussi l'entrepôt source
-                $warehouseFrom->decrement('total_stock', $totalRemoved);
-            }
-
-            // Mettre statut à rejeté
-            $supply->update([
-                'status' => 'rejected',
-                'validated_by' => $auth->id,
-                'updated_by' => $auth->id,
-                'rejection_reason' => $validated['rejection_reason'],
-                'rejected_by' => $auth->id,
-            ]);
-
-            $purchaseOrder->update([
-                'status' => 'in_discuss',
-                'closed_at' => now(),
-                'updated_by' => $auth->id,
-            ]);
-
-            DB::commit();
-
-            return response()->json([
-                'status' => 'success',
-                'message' => "Approvisionnement rejeté et quantités décrémentées partout.",
-                'total_removed' => $totalRemoved,
-                'supply' => $supply->load('items.product')
-            ]);
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            \Log::error("Erreur rejet approvisionnement : " . $e->getMessage());
-
-            return response()->json([
-                'error' => 'Erreur lors du rejet.',
-                'details' => $e->getMessage()
-            ], 500);
-        }
+        return response()->json([
+            'message' => 'Approvisionnement rejeté avec succès.',
+            'data' => $supply
+        ]);
     }
 
     /**
@@ -1217,8 +1217,18 @@ class SupplyController extends Controller
             'transferred_at' => now(),
             'transferred_by' => $auth->id,
             'receiver_by' => $purchaseOrder->created_by,
-            'status' => 'in_progress',
+            'status' => SupplyStatus::IN_PROGRESS->value,
         ]);
+
+        $notifMessage = "L'approvisionnement de la commande (Référence : {$purchaseOrder->reference}) a été transféré.";
+
+        $this->sendNotification(
+            order: $purchaseOrder,
+            status: PurchaseOrdersStatus::IN_DISCUSS->value,
+            message: $notifMessage,
+            userId: $auth->id,
+            target: 'purchases_orders',
+        );
 
         return response()->json([
             'message' => 'Approvisionnement transféré avec succès.',
