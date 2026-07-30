@@ -399,6 +399,70 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des notifications du restaurant',
         ],
 
+        'view_stock_notification_draft' => [
+            'description' => 'Afficher les notifications des commandes à l\'état Brouillon',
+            'category' => 'Gestion des notifications de stocks',
+            'modules' => ['Gestion des stocks', 'Autres Modules'],
+        ],
+
+        'view_stock_notification_open' => [
+            'description' => 'Afficher les notifications des commandes Transférées',
+            'category' => 'Gestion des notifications de stocks',
+            'modules' => ['Gestion des stocks', 'Autres Modules'],
+        ],
+
+        'view_stock_notification_validated' => [
+            'description' => 'Afficher les notifications des commandes En cours de livraison',
+            'category' => 'Gestion des notifications de stocks',
+            'modules' => ['Gestion des stocks', 'Autres Modules'],
+        ],
+
+        'view_stock_notification_in_discuss' => [
+            'description' => 'Afficher les notifications des commandes En discussion',
+            'category' => 'Gestion des notifications de stocks',
+            'modules' => ['Gestion des stocks', 'Autres Modules'],
+        ],
+
+        'view_stock_notification_rejected' => [
+            'description' => 'Afficher les notifications des commandes Rejetées',
+            'category' => 'Gestion des notifications de stocks',
+            'modules' => ['Gestion des stocks', 'Autres Modules'],
+        ],
+
+        'view_stock_notification_cancel' => [
+            'description' => 'Afficher les notifications des commandes Annulées',
+            'category' => 'Gestion des notifications de stocks',
+            'modules' => ['Gestion des stocks', 'Autres Modules'],
+        ],
+
+        'view_stock_notification_partially_closed' => [
+            'description' => 'Afficher les notifications des commandes Clôturées partiellement',
+            'category' => 'Gestion des notifications de stocks',
+            'modules' => ['Gestion des stocks', 'Autres Modules'],
+        ],
+
+        'view_stock_notification_closed' => [
+            'description' => 'Afficher les notifications des commandes Clôturées totalement',
+            'category' => 'Gestion des notifications de stocks',
+            'modules' => ['Gestion des stocks', 'Autres Modules'],
+        ],
+        'view_icons_notifications_for_stock' => [
+            'description' => 'Afficher l\'icône des notifications de la gestion des stocks',
+            'category' => 'Gestion des notifications de stocks',
+            'modules' => ['Gestion des stocks', 'Autres Modules'],
+        ],
+        'mark_stock_notification_as_read' => [
+            'description' => 'Marquer une notification de stock comme lue',
+            'category' => 'Gestion des notifications de stocks',
+            'modules' => ['Gestion des stocks', 'Autres Modules'],
+        ],
+
+        'mark_all_stock_notifications_as_read' => [
+            'description' => 'Marquer toutes les notifications de stock comme lues',
+            'category' => 'Gestion des notifications de stocks',
+            'modules' => ['Gestion des stocks', 'Autres Modules'],
+        ],
+
     ];
 
     public function handle(): void

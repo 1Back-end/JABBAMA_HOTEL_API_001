@@ -31,17 +31,17 @@ class SupplierController extends Controller
      */
     public function index(Request $request)
     {
-        // Pagination
+
         $perPage = $request->input('limit', 25);
         $page = $request->input('page', 1);
 
-        // Query de base avec relations
+
         $query = Supplier::with(['creator', 'updater'])
             ->when($request->has('is_active'), function ($query) use ($request) {
                 $query->where('is_active', filter_var($request->input('is_active'), FILTER_VALIDATE_BOOLEAN));
             });
 
-        // Recherche
+
         if ($search = trim($request->input('search'))) {
             $query->where(function ($q) use ($search) {
                 $q->where('ref', 'like', "%{$search}%")
@@ -58,7 +58,7 @@ class SupplierController extends Controller
             });
         }
 
-        // Pagination et tri par date de création
+
         $suppliers = $query->latest()->paginate($perPage, ['*'], 'page', $page);
 
         // Réponse JSON
@@ -81,7 +81,6 @@ class SupplierController extends Controller
         $auth = auth()->user();
 
         try {
-            // ✅ Validation des données
             $validated = $request->validate([
                 'first_name'     => 'required|string|max:255',
                 'last_name'      => 'nullable|string|max:255',

@@ -139,8 +139,7 @@ class NotificationController extends Controller
             return response()->json(['message' => 'Unauthenticated'], 401);
         }
 
-        // 1. Notifications standards
-        $notificationsQuery = \App\Models\OrderNotification::with(['creator', 'updater', 'order']);
+        $notificationsQuery = \App\Models\OrderNotification::with(['creator:id,nom_utilisateur', 'updater', 'order:uuid,code']);
 
         $statuses = [];
         if ($user->can('view_all_notification_in_preparation')) $statuses[] = 'in_preparation';
@@ -187,7 +186,6 @@ class NotificationController extends Controller
             $notifications = $notificationsQuery->latest()->limit(50)->get();
         }
 
-        // 2. Notifications décisionnelles
         $decisionalQuery = \App\Models\NotificationOrderRestaurantForDecisional::with([
             'user:id,nom_utilisateur',
             'updatedBy:id,nom_utilisateur',
@@ -232,10 +230,27 @@ class NotificationController extends Controller
             ];
         }
 
-        // 3. Retour JSON simple
+        $stockNotificationsQuery = \App\Models\PurchaseOrderNotification::with(['creator:id,nom_utilisateur', 'updater:id,nom_utilisateur', 'purchaseOrder:uuid,reference']);
+
+        $stockStatuses = [];
+        if ($user->can('view_stock_notification_draft')) $stockStatuses[] = 'draft';
+        if ($user->can('view_stock_notification_open')) $stockStatuses[] = 'open';
+        if ($user->can('view_stock_notification_validated')) $stockStatuses[] = 'validated';
+        if ($user->can('view_stock_notification_in_discuss')) $stockStatuses[] = 'in_discuss';
+        if ($user->can('view_stock_notification_rejected')) $stockStatuses[] = 'rejected';
+        if ($user->can('view_stock_notification_cancel')) $stockStatuses[] = 'cancel';
+        if ($user->can('view_stock_notification_partially_closed')) $stockStatuses[] = 'partially_closed';
+        if ($user->can('view_stock_notification_closed')) $stockStatuses[] = 'closed';
+
+        $stocks = [];
+        if (!empty($stockStatuses)) {
+            $stockNotificationsQuery->whereIn('status', $stockStatuses);
+            $stocks = $stockNotificationsQuery->latest()->limit(50)->get();
+        }
         return response()->json([
             'notifications' => $notifications,
-            'decisional' => $decisionalData
+            'decisional' => $decisionalData,
+            'stocks' => $stocks
         ]);
     }
 
@@ -384,6 +399,108 @@ class NotificationController extends Controller
             'updated_by' => $user->id,
         ]);
 
+    }
+
+
+    public function markAsReadNotificationForPurchaseOrers(string $uuid)
+    {
+        $user = auth()->user();
+
+        // 🔹 Vérifier si l'utilisateur a la permission globale de marquer comme lu
+        if (!$user->can('mark_stock_notification_as_read')) {
+            return response()->json([
+                'message' => "Vous n'avez pas la permission de marquer cette notification comme lue."
+            ], 403);
+        }
+
+        $stockPermissions = [
+            'draft' => 'view_stock_notification_draft',
+            'open' => 'view_stock_notification_open',
+            'validated' => 'view_stock_notification_validated',
+            'in_discuss' => 'view_stock_notification_in_discuss',
+            'rejected' => 'view_stock_notification_rejected',
+            'cancel' => 'view_stock_notification_cancel',
+            'partially_closed' => 'view_stock_notification_partially_closed',
+            'closed' => 'view_stock_notification_closed',
+        ];
+
+        // 🔹 Récupération des statuts autorisés pour l'utilisateur
+        $statuses = collect($stockPermissions)
+            ->filter(fn ($permission) => $user->can($permission))
+            ->keys()
+            ->toArray();
+
+        $notification = \App\Models\PurchaseOrderNotification::query()
+            ->where('uuid', $uuid)
+            ->whereIn('status', $statuses)
+            ->first();
+
+        if (!$notification) {
+            return response()->json([
+                'message' => 'Notification introuvable ou accès non autorisé.'
+            ], 404);
+        }
+
+        $notification->update([
+            'is_read'    => true,
+            'read_at'    => now(),
+            'updated_by' => $user->id,
+        ]);
+
+        return response()->json([
+            'message' => 'Notification de stock marquée comme lue avec succès.',
+            'notification' => $notification
+        ]);
+    }
+
+
+    public function markAllAsReadNotificationForPurchaseOrders()
+    {
+        $user = auth()->user();
+
+        if (!$user->can('mark_all_stock_notifications_as_read')) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Permission refusée'
+            ], 403);
+        }
+
+        $stockPermissions = [
+            'draft' => 'view_stock_notification_draft',
+            'open' => 'view_stock_notification_open',
+            'validated' => 'view_stock_notification_validated',
+            'in_discuss' => 'view_stock_notification_in_discuss',
+            'rejected' => 'view_stock_notification_rejected',
+            'cancel' => 'view_stock_notification_cancel',
+            'partially_closed' => 'view_stock_notification_partially_closed',
+            'closed' => 'view_stock_notification_closed',
+        ];
+
+        $statuses = collect($stockPermissions)
+            ->filter(fn ($permission) => $user->can($permission))
+            ->keys()
+            ->values()
+            ->toArray();
+
+        if (empty($statuses)) {
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Aucune notification de stock à marquer'
+            ]);
+        }
+
+        \App\Models\PurchaseOrderNotification::whereIn('status', $statuses)
+            ->where('is_read', false)
+            ->update([
+                'is_read'    => true,
+                'read_at'    => now(),
+                'updated_by' => $user->id
+            ]);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Toutes les notifications de stock ont été marquées comme lues'
+        ]);
     }
 
 

@@ -677,6 +677,7 @@ class ProductController extends Controller
 
             $warehouses = Warehouse::whereIn('uuid', $warehouse_uuids)->get();
 
+            // 1. Approvisionnements (Entrées)
             $supplies = SupplyItem::whereHas('supply', function($q) use ($end_date, $warehouse_uuids) {
                 $q->whereIn('status', [SupplyStatus::VALIDATED, SupplyStatus::PARTIALLY_VALIDATED])
                     ->where('supply_date', '<=', $end_date)
@@ -686,6 +687,7 @@ class ProductController extends Controller
                 ->groupBy('product_uuid')
                 ->pluck('total', 'product_uuid');
 
+            // 2. Ajustements de stock (Entrées/Sorties/Avaries)
             $adjustments = StockAdjustmentItem::whereHas('adjustment', function($q) use ($warehouse_uuids, $end_date) {
                 $q->whereIn('warehouse_uuid', $warehouse_uuids)
                     ->where('status', StocksAdjustmentStatus::VALIDATED->value)
@@ -697,6 +699,7 @@ class ProductController extends Controller
                 ->get()
                 ->groupBy('product_uuid');
 
+            // 3. Déductions de stock (Sorties)
             $deductions = StockDeductionItem::whereHas('stockDeduction', function($q) use ($warehouse_uuids, $end_date) {
                 $q->whereIn('warehouse_uuid', $warehouse_uuids)
                     ->where('status', StocksDeductionsStatus::VALIDATED->value)
@@ -706,6 +709,7 @@ class ProductController extends Controller
                 ->groupBy('product_uuid')
                 ->pluck('total', 'product_uuid');
 
+            // 4. Ventes (Sorties)
             $sales = VirtualOrderMenuRestaurant::whereIn('warehouse_uuid', $warehouse_uuids)
                 ->where('status', MenuOrderStatus::DELIVERED->value)
                 ->where('created_at', '<=', $end_date)
@@ -713,17 +717,23 @@ class ProductController extends Controller
                 ->groupBy('product_uuid')
                 ->pluck('total', 'product_uuid');
 
-            $complements = ComplementVirtualTemp::join('virtual_orders_menu_restaurants as sales_table', 'complement_virtual_temps.order_menu_restaurant_uuid', '=', 'sales_table.orders_menu_restaurant_uuid')
-                ->whereIn('sales_table.warehouse_uuid', $warehouse_uuids)
-                ->where('complement_virtual_temps.status', 'delivered')
-                ->where('complement_virtual_temps.created_at', '<=', $end_date)
-                ->select('complement_virtual_temps.product_uuid', DB::raw('SUM(complement_virtual_temps.quantity) as total'))
-                ->groupBy('complement_virtual_temps.product_uuid')
+            // 5. Compléments (Sorties)
+            $complements = ComplementVirtualTemp::whereIn('warehouse_uuid', $warehouse_uuids)
+                ->where('status', 'delivered')
+                ->where('created_at', '<=', $end_date)
+                ->select('product_uuid', DB::raw('SUM(quantity_used) as total'))
+                ->groupBy('product_uuid')
                 ->pluck('total', 'product_uuid');
+
+            $salesAndComplements = collect($sales->keys())->merge($complements->keys())->unique()->mapWithKeys(function ($uuid) use ($sales, $complements) {
+                $totalSales = (float) $sales->get($uuid, 0);
+                $totalComps = (float) $complements->get($uuid, 0);
+                return [$uuid => $totalSales + $totalComps];
+            });
 
             $internalTransfersOut = SupplyItem::whereHas('supply', function($q) use ($end_date) {
                 $q->whereIn('status', [SupplyStatus::VALIDATED, SupplyStatus::PARTIALLY_VALIDATED])
-                    ->where('supply_date', '<=', $end_date);
+                    ->where('created_at', '<=', $end_date);
             })
                 ->whereHas('supply.purchaseOrder', function($q) use ($warehouse_uuids) {
                     $q->where('type', 'internal')
@@ -733,29 +743,90 @@ class ProductController extends Controller
                 ->groupBy('product_uuid')
                 ->pluck('total', 'product_uuid');
 
-
-
-
             $all_products = Product::with(['unitMeasure', 'category'])->get();
 
-            $all_products_points = $all_products->map(function($product) use ($supplies, $adjustments, $deductions, $sales, $internalTransfersOut,$complements) {
+            $all_products_points = $all_products->map(function($product) use ($supplies, $adjustments, $deductions, $salesAndComplements, $internalTransfersOut, $warehouse_uuids, $end_date) {
                 $uuid = $product->uuid;
 
-                $prodApproved = $supplies->get($uuid, 0);
-                $prodDeducted = $deductions->get($uuid, 0);
-                $prodSales    = $sales->get($uuid, 0);
-                $prodTransOut = $internalTransfersOut->get($uuid, 0);
-                $prodComplements = $complements->get($uuid, 0);
+                $prodApproved        = (float) $supplies->get($uuid, 0);
+                $prodDeducted        = (float) $deductions->get($uuid, 0);
+                $prodSalesAndComps   = (float) $salesAndComplements->get($uuid, 0);
+                $prodTransOut        = (float) $internalTransfersOut->get($uuid, 0);
 
                 $prodAdjusts  = $adjustments->get($uuid, collect());
-                $prodAdjPlus  = $prodAdjusts->where('action', StockAdjustmentAction::AJUSTEMENT_PLUS->value)->sum('total');
-                $prodAdjMinus = $prodAdjusts->where('action', StockAdjustmentAction::AJUSTEMENT_MOINS->value)->sum('total');
-                $prodAvaries  = $prodAdjusts->where('action', StockAdjustmentAction::AVARIE->value)->sum('total');
+                $prodAdjPlus  = (float) $prodAdjusts->where('action', StockAdjustmentAction::AJUSTEMENT_PLUS->value)->sum('total');
+                $prodAdjMinus = (float) $prodAdjusts->where('action', StockAdjustmentAction::AJUSTEMENT_MOINS->value)->sum('total');
+                $prodAvaries  = (float) $prodAdjusts->where('action', StockAdjustmentAction::AVARIE->value)->sum('total');
 
                 $totalIn  = $prodApproved + $prodAdjPlus;
-                $totalOut = $prodAdjMinus + $prodAvaries + $prodDeducted + $prodSales + $prodTransOut + $prodComplements;
+                $totalOut = $prodAdjMinus + $prodAvaries + $prodDeducted + $prodSalesAndComps + $prodTransOut;
 
                 $finalQuantity = $totalIn - $totalOut;
+
+                if ($uuid === '097e016d-5817-4c0e-b763-b535deb7da73') {
+                    \Log::info("==================================================");
+                    \Log::info("🎯 RAPPORT DÉTAILLÉ DU PRODUIT : {$product->name} ({$uuid})");
+                    \Log::info("--------------------------------------------------");
+                    \Log::info("📥 ENTRÉES TOTALES : {$totalIn}");
+                    \Log::info("   - Approvisionnements validés : {$prodApproved}");
+                    \Log::info("   - Ajustements Plus (+): {$prodAdjPlus}");
+                    \Log::info("--------------------------------------------------");
+                    \Log::info("📤 SORTIES TOTALES : {$totalOut}");
+                    \Log::info("   - Ventes & Compléments (Facturation Groupée) : {$prodSalesAndComps}");
+                    \Log::info("   - Avaries : {$prodAvaries}");
+                    \Log::info("   - Ajustements Moins (-): {$prodAdjMinus}");
+                    \Log::info("   - Déductions de stock : {$prodDeducted}");
+                    \Log::info("   - Transferts internes sortants : {$prodTransOut}");
+                    \Log::info("--------------------------------------------------");
+                    \Log::info("📦 STOCK FINAL CALCULÉ : {$finalQuantity}");
+                    \Log::info("==================================================");
+
+                    // 🧾 Récupération directe des compléments pour le log détaillé
+                    $complementsBruts = DB::select("
+                    SELECT
+                        c.menu_uuid,
+                        m.code AS menu_code,
+                        m.name AS menu_name,
+                        c.product_uuid,
+                        p.code AS product_code,
+                        p.name AS product_name,
+                        SUM(c.quantity_used) AS total_quantity_used,
+                        c.warehouse_uuid,
+                        o.code AS order_code,
+                        o.created_at AS order_created_at,
+                        MAX(c.created_at) AS max_created_at
+                    FROM complement_virtual_temps c
+                    LEFT JOIN produits p
+                        ON c.product_uuid = p.uuid
+                    LEFT JOIN menus_restaurants m
+                        ON c.menu_uuid = m.uuid
+                    LEFT JOIN orders_menu_restaurants o
+                        ON c.order_menu_restaurant_uuid = o.uuid
+                    WHERE c.status = 'delivered'
+                      AND c.warehouse_uuid = ?
+                      AND c.product_uuid = ?
+                      AND c.created_at <= ?
+                    GROUP BY
+                        c.menu_uuid,
+                        m.code,
+                        m.name,
+                        c.product_uuid,
+                        p.code,
+                        p.name,
+                        c.warehouse_uuid,
+                        o.code,
+                        o.created_at
+                    ORDER BY max_created_at DESC
+                ", [
+                        $warehouse_uuids[0] ?? null,
+                        $uuid,
+                        $end_date
+                    ]);
+
+                    foreach($complementsBruts as $comp) {
+                        \Log::info("   🍽️ [COMPLÉMENT] Commande Code: {$comp->order_code} | Menu: {$comp->menu_name} ({$comp->menu_code}) | Qté Utilisée: {$comp->total_quantity_used} | Date: {$comp->order_created_at}");
+                    }
+                }
 
                 return (object)[
                     'produit_uuid' => $uuid,
