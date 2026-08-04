@@ -10,11 +10,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
-class PurchaseOrderNotification extends Model
+class DecisionalNotification extends Model
 {
     use HasFactory, SoftDeletes;
 
-    protected $table = 'purchase_orders_notifications';
+    protected $table = 'purchase_orders_decisional_notifications';
     protected $primaryKey = 'uuid';
     public $incrementing = false;
     protected $keyType = 'string';
@@ -31,17 +31,17 @@ class PurchaseOrderNotification extends Model
         'updated_by',
     ];
 
+    protected $casts = [
+        'is_read' => 'boolean',
+        'read_at' => 'datetime',
+    ];
+
     protected $appends = ['status_label'];
 
     public function getStatusLabelAttribute(): string
     {
         return PurchaseOrdersStatus::safeLabel($this->status);
     }
-
-    protected $casts = [
-        'is_read' => 'boolean',
-        'read_at' => 'datetime',
-    ];
 
     protected static function boot()
     {

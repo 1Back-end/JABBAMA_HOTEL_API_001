@@ -37,30 +37,16 @@ class WarehouseController extends Controller
     public function index(Request $request)
     {
         $auth = auth()->user();
-        $perPage = $request->input('limit', 25);
-        $page = $request->input('page', 1);
+        $perPage = (int) $request->input('limit', 25);
+        $page = (int) $request->input('page', 1);
+
         $roleIds = $auth->roles->pluck('id');
-
-
         $query = Warehouse::with(['creator', 'updater', 'natures', 'managers']);
 
-        // 🔥 Filtrer selon le rôle
-        if (!$auth->hasRole('SUPER_ADMIN') && !$auth->can('view_all_warehouses')) {
-
-            $query->where(function ($q) use ($auth, $roleIds) {
-
-                if ($auth->can('view_role_related_data')) {
-                    $q->whereHas('managers.roles', function ($qr) use ($roleIds) {
-                        $qr->whereIn('roles.id', $roleIds);
-                    });
-                }
-
-                else {
-                    $q->whereHas('managers', function ($qr) use ($auth) {
-                        $qr->where('user_id', $auth->id);
-                    });
-                }
-
+        if (!$auth->hasRole('SUPER_ADMIN')) {
+            $query->whereHas('managers', function($qw) use ($auth) {
+                $qw->where('warehouse_managers.user_id', $auth->id)
+                    ->whereNull('warehouse_managers.deleted_at');
             });
         }
 
@@ -69,22 +55,27 @@ class WarehouseController extends Controller
         }
 
         if ($search = trim($request->input('search'))) {
-            $query->where(function ($q) use ($search) {
-                $q->where('ref', 'like', "%{$search}%")
-                    ->orWhere('name', 'like', "%{$search}%")
-                    ->orWhere('stock_type', 'like', "%{$search}%")
-                    ->orWhere('address', 'like', "%{$search}%")
-                    ->orWhere('total_stock', 'like', "%{$search}%"); // ✅ corrigé
-            })
-                ->orWhereHas('natures', function ($qw) use ($search) {
-                    $qw->where('code', 'like', "%{$search}%")
+            $query->where(function ($mainQuery) use ($search) {
+                $mainQuery->where(function ($q) use ($search) {
+                    $q->where('ref', 'like', "%{$search}%")
                         ->orWhere('name', 'like', "%{$search}%")
-                        ->orWhere('abbreviation', 'like', "%{$search}%");
+                        ->orWhere('stock_type', 'like', "%{$search}%")
+                        ->orWhere('address', 'like', "%{$search}%");
+
+                    if (is_numeric($search)) {
+                        $q->orWhere('total_stock', '=', $search);
+                    }
                 })
-                ->orWhereHas('managers', function ($ma) use ($search) {
-                    $ma->where('nom_utilisateur', 'like', "%{$search}%")
-                        ->orWhere('email', 'like', "%{$search}%");
-                });
+                    ->orWhereHas('natures', function ($qw) use ($search) {
+                        $qw->where('code', 'like', "%{$search}%")
+                            ->orWhere('name', 'like', "%{$search}%")
+                            ->orWhere('abbreviation', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('managers', function ($ma) use ($search) {
+                        $ma->where('nom_utilisateur', 'like', "%{$search}%")
+                            ->orWhere('email', 'like', "%{$search}%");
+                    });
+            });
         }
 
         $warehouses = $query->latest()->paginate($perPage, ['*'], 'page', $page);
@@ -724,49 +715,6 @@ class WarehouseController extends Controller
         ]);
     }
 
-    public function get_all_warehouses_by_users(Request $request)
-    {
-        $auth = auth()->user();
-        $roleIds = $auth->roles->pluck('id');
-
-        $query = Warehouse::with([
-            'natures',
-            'managers',
-            'products' => function ($query) {
-                $query->wherePivot('is_active', true); // uniquement produits actifs
-            }
-        ]);
-
-        // 🔹 Filtrer selon rôle et permissions
-        if (!$auth->hasRole('SUPER_ADMIN') && !$auth->can('view_all_warehouses')) {
-
-            $query->where(function ($q) use ($auth, $roleIds) {
-
-                // 👉 Utilisateurs avec view_role_related_data : voir entrepôts gérés par les utilisateurs du même rôle
-                if ($auth->can('view_role_related_data')) {
-                    $q->whereHas('managers.roles', function ($qr) use ($roleIds) {
-                        $qr->whereIn('roles.id', $roleIds);
-                    });
-                }
-
-                // 👉 Autres utilisateurs : voir uniquement les entrepôts dont ils sont managers
-                else {
-                    $q->whereHas('managers', function ($qr) use ($auth) {
-                        $qr->where('user_id', $auth->id);
-                    });
-                }
-
-            });
-        }
-
-        $warehouses = $query->orderBy('created_at', 'desc')->get();
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Liste des entrepôts et leurs produits pour l’utilisateur connecté.',
-            'data'    => $warehouses,
-        ]);
-    }
 
 
     /**

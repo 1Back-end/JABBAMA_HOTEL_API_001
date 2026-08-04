@@ -72,18 +72,19 @@ class Warehouse extends Model
     }
 
     // Managers associés (plusieurs managers possible)
+    // Managers associés (plusieurs managers possible)
     public function managers()
     {
         return $this->belongsToMany(
             User::class,
-            'warehouse_managers', // table pivot séparée pour managers
-            'warehouse_uuid',     // clé étrangère vers Warehouse
-            'user_id'             // clé étrangère vers User
+            'warehouse_managers',
+            'warehouse_uuid',
+            'user_id'
         )
-            ->whereNull('warehouse_managers.deleted_at')
-            ->withPivot(['created_by', 'updated_by'])
+            ->using(WarehouseManager::class)
+            ->withPivot(['uuid', 'created_by', 'updated_by', 'deleted_at'])
             ->withTimestamps()
-            ->using(WarehouseManager::class);
+            ->whereNull('warehouse_managers.deleted_at');
     }
 
     // Natures associées (plusieurs natures possible)

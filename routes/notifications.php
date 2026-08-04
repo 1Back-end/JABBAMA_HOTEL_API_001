@@ -10,3 +10,5 @@ Route::post('/notifications/read_all', [\App\Http\Controllers\NotificationContro
 Route::get('/notifications/stream', [\App\Http\Controllers\NotificationController::class, 'stream']);
 Route::post('/purchase_orders/notifications/{uuid}/read', [\App\Http\Controllers\NotificationController::class, 'markAsReadNotificationForPurchaseOrers']);
 Route::post('/purchase_orders/notifications/read_all', [\App\Http\Controllers\NotificationController::class, 'markAllAsReadNotificationForPurchaseOrders']);
+Route::patch('/notifications/decisional_stock/{uuid}/read', [\App\Http\Controllers\NotificationController::class, 'markAsReadDecisionalStockNotification']);
+Route::post('/notifications/decisional_stock/mark_all_read', [\App\Http\Controllers\NotificationController::class, 'markAllAsReadDecisionalStockNotification']);

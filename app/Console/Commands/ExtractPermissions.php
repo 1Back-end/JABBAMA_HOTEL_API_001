@@ -24,11 +24,6 @@ class ExtractPermissions extends Command
             'category' => 'Permissions supplémentaires',
             'modules' => ['Gestion des stocks', 'Gestion du restaurant','Autres Modules'],
         ],
-        'view_all_warehouses' => [
-            'description' => 'Accéder à tous les entrepôts, indépendamment de son rôle.',
-            'category' => 'Permissions supplémentaires',
-            'modules' => ['Gestion des stocks', 'Gestion du restaurant','Autres Modules'],
-        ],
         'view_all_passations' => [
             'description' => "Accéder à toutes les passations de stocks, indépendamment de son rôle.",
             'category' => 'Permissions supplémentaires',
@@ -460,6 +455,72 @@ class ExtractPermissions extends Command
         'mark_all_stock_notifications_as_read' => [
             'description' => 'Marquer toutes les notifications de stock comme lues',
             'category' => 'Gestion des notifications de stocks',
+            'modules' => ['Gestion des stocks', 'Autres Modules'],
+        ],
+
+        'view_icons_notifications_decisional_stock' => [
+            'description' => 'Afficher l\'icône des notifications de stocks décisionnelles',
+            'category' => 'Gestion des notifications de stocks décisionnelles',
+            'modules' => ['Gestion des stocks', 'Autres Modules'],
+        ],
+
+        'view_decisional_stock_notification_draft' => [
+            'description' => 'Afficher les notifications de stocks décisionnelles (Brouillon)',
+            'category' => 'Gestion des notifications de stocks décisionnelles',
+            'modules' => ['Gestion des stocks', 'Autres Modules'],
+        ],
+
+        'view_decisional_stock_notification_open' => [
+            'description' => 'Afficher les notifications de stocks décisionnelles (Transférées)',
+            'category' => 'Gestion des notifications de stocks décisionnelles',
+            'modules' => ['Gestion des stocks', 'Autres Modules'],
+        ],
+
+        'view_decisional_stock_notification_validated' => [
+            'description' => 'Afficher les notifications de stocks décisionnelles (En cours de livraison)',
+            'category' => 'Gestion des notifications de stocks décisionnelles',
+            'modules' => ['Gestion des stocks', 'Autres Modules'],
+        ],
+
+        'view_decisional_stock_notification_in_discuss' => [
+            'description' => 'Afficher les notifications de stocks décisionnelles (En discussion)',
+            'category' => 'Gestion des notifications de stocks décisionnelles',
+            'modules' => ['Gestion des stocks', 'Autres Modules'],
+        ],
+
+        'view_decisional_stock_notification_rejected' => [
+            'description' => 'Afficher les notifications de stocks décisionnelles (Rejetées)',
+            'category' => 'Gestion des notifications de stocks décisionnelles',
+            'modules' => ['Gestion des stocks', 'Autres Modules'],
+        ],
+
+        'view_decisional_stock_notification_cancel' => [
+            'description' => 'Afficher les notifications de stocks décisionnelles (Annulées)',
+            'category' => 'Gestion des notifications de stocks décisionnelles',
+            'modules' => ['Gestion des stocks', 'Autres Modules'],
+        ],
+
+        'view_decisional_stock_notification_partially_closed' => [
+            'description' => 'Afficher les notifications de stocks décisionnelles (Clôturées partiellement)',
+            'category' => 'Gestion des notifications de stocks décisionnelles',
+            'modules' => ['Gestion des stocks', 'Autres Modules'],
+        ],
+
+        'view_decisional_stock_notification_closed' => [
+            'description' => 'Afficher les notifications de stocks décisionnelles (Clôturées totalement)',
+            'category' => 'Gestion des notifications de stocks décisionnelles',
+            'modules' => ['Gestion des stocks', 'Autres Modules'],
+        ],
+
+        'mark_decisional_stock_notification_as_read' => [
+            'description' => 'Marquer une notification comme lue',
+            'category' => 'Gestion des notifications de stocks décisionnelles',
+            'modules' => ['Gestion des stocks', 'Autres Modules'],
+        ],
+
+        'mark_all_decisional_stock_notifications_as_read' => [
+            'description' => 'Marquer toutes les notifications comme lues',
+            'category' => 'Gestion des notifications de stocks décisionnelles',
             'modules' => ['Gestion des stocks', 'Autres Modules'],
         ],
 
