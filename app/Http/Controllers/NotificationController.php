@@ -247,10 +247,45 @@ class NotificationController extends Controller
             $stockNotificationsQuery->whereIn('status', $stockStatuses);
             $stocks = $stockNotificationsQuery->latest()->limit(50)->get();
         }
+
+        $decisionalStockQuery = \App\Models\DecisionalNotification::with(['creator:id,nom_utilisateur', 'updater:id,nom_utilisateur', 'purchaseOrder:uuid,reference']);
+
+        $decisionalStockStatuses = [];
+        if ($user->can('view_decisional_stock_notification_draft')) $decisionalStockStatuses[] = 'draft';
+        if ($user->can('view_decisional_stock_notification_open')) $decisionalStockStatuses[] = 'open';
+        if ($user->can('view_decisional_stock_notification_validated')) $decisionalStockStatuses[] = 'validated';
+        if ($user->can('view_decisional_stock_notification_in_discuss')) $decisionalStockStatuses[] = 'in_discuss';
+        if ($user->can('view_decisional_stock_notification_rejected')) $decisionalStockStatuses[] = 'rejected';
+        if ($user->can('view_decisional_stock_notification_cancel')) $decisionalStockStatuses[] = 'cancel';
+        if ($user->can('view_decisional_stock_notification_partially_closed')) $decisionalStockStatuses[] = 'partially_closed';
+        if ($user->can('view_decisional_stock_notification_closed')) $decisionalStockStatuses[] = 'closed';
+
+        $decisionalStocks = [
+            'data' => [],
+            'total' => 0,
+            'unread' => 0
+        ];
+
+        if (!empty($decisionalStockStatuses)) {
+            $decisionalStockQuery->whereIn('status', $decisionalStockStatuses);
+
+            $totalDecisionalStock = (clone $decisionalStockQuery)->count();
+            $unreadDecisionalStock = (clone $decisionalStockQuery)->where('is_read', false)->count();
+            $dataDecisionalStock = $decisionalStockQuery->latest()->limit(50)->get();
+
+            $decisionalStocks = [
+                'data' => $dataDecisionalStock,
+                'total' => $totalDecisionalStock,
+                'unread' => $unreadDecisionalStock
+            ];
+        }
+
+
         return response()->json([
             'notifications' => $notifications,
             'decisional' => $decisionalData,
-            'stocks' => $stocks
+            'stocks' => $stocks,
+            'decisional_stocks' => $decisionalStocks
         ]);
     }
 
@@ -546,6 +581,90 @@ class NotificationController extends Controller
         return response()->json([
             'status' => 'success',
             'message' => 'Toutes les notifications ont été marquées comme lues'
+        ]);
+    }
+
+
+    public function markAllAsReadDecisionalStockNotification()
+    {
+        $user = auth()->user();
+
+        $stockStatuses = [];
+        if ($user->can('view_decisional_stock_notification_draft')) $stockStatuses[] = 'draft';
+        if ($user->can('view_decisional_stock_notification_open')) $stockStatuses[] = 'open';
+        if ($user->can('view_decisional_stock_notification_validated')) $stockStatuses[] = 'validated';
+        if ($user->can('view_decisional_stock_notification_in_discuss')) $stockStatuses[] = 'in_discuss';
+        if ($user->can('view_decisional_stock_notification_rejected')) $stockStatuses[] = 'rejected';
+        if ($user->can('view_decisional_stock_notification_cancel')) $stockStatuses[] = 'cancel';
+        if ($user->can('view_decisional_stock_notification_partially_closed')) $stockStatuses[] = 'partially_closed';
+        if ($user->can('view_decisional_stock_notification_closed')) $stockStatuses[] = 'closed';
+
+        if (empty($stockStatuses)) {
+            return response()->json([
+                'message' => 'Aucune notification de stock décisionnelle à marquer comme lue.',
+                'updated_count' => 0
+            ]);
+        }
+
+        $query = \App\Models\DecisionalNotification::query()
+            ->where('is_read', false)
+            ->whereIn('status', $stockStatuses);
+
+        if (!$user->can('mark_all_decisional_stock_notifications_as_read')) {
+            $query->where('user_id', $user->id);
+        }
+
+        $updatedCount = $query->update([
+            'is_read' => true,
+            'updated_by' => $user->id,
+            'read_at' => now()
+        ]);
+
+        return response()->json([
+            'message' => 'Notifications de stocks décisionnelles marquées comme lues avec succès.',
+            'updated_count' => $updatedCount
+        ]);
+    }
+
+    public function markAsReadDecisionalStockNotification(string $uuid)
+    {
+        $user = auth()->user();
+
+        $stockStatuses = [];
+        if ($user->can('view_decisional_stock_notification_draft')) $stockStatuses[] = 'draft';
+        if ($user->can('view_decisional_stock_notification_open')) $stockStatuses[] = 'open';
+        if ($user->can('view_decisional_stock_notification_validated')) $stockStatuses[] = 'validated';
+        if ($user->can('view_decisional_stock_notification_in_discuss')) $stockStatuses[] = 'in_discuss';
+        if ($user->can('view_decisional_stock_notification_rejected')) $stockStatuses[] = 'rejected';
+        if ($user->can('view_decisional_stock_notification_cancel')) $stockStatuses[] = 'cancel';
+        if ($user->can('view_decisional_stock_notification_partially_closed')) $stockStatuses[] = 'partially_closed';
+        if ($user->can('view_decisional_stock_notification_closed')) $stockStatuses[] = 'closed';
+
+        $query = \App\Models\DecisionalNotification::query()
+            ->where('uuid', $uuid)
+            ->whereIn('status', $stockStatuses);
+
+        if (!$user->can('mark_all_decisional_stock_notifications_as_read')) {
+            $query->where('user_id', $user->id);
+        }
+
+        $notification = $query->first();
+
+        if (!$notification) {
+            return response()->json([
+                'message' => 'Notification de stock décisionnelle introuvable.'
+            ], 404);
+        }
+
+        $notification->update([
+            'is_read' => true,
+            'updated_by' => $user->id,
+            'read_at' => now()
+        ]);
+
+        return response()->json([
+            'message' => 'Notification de stock décisionnelle marquée comme lue.',
+            'data' => $notification
         ]);
     }
 

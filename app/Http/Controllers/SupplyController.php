@@ -9,6 +9,7 @@ use App\Enums\SupplyStatus;
 use App\Exports\PurchaseOrdersExport;
 use App\Exports\SuppliersExport;
 use App\Exports\SuppliesExport;
+use App\Models\DecisionalNotification;
 use App\Models\PdfDocument;
 use App\Models\Product;
 use App\Models\ProductPoint;
@@ -193,6 +194,17 @@ class SupplyController extends Controller
         $auth = auth()->user();
 
         PurchaseOrderNotification::create([
+            'purchase_order_uuid' => $order->uuid,
+            'status' => $status,
+            'message' => $message,
+            'target' => $target,
+            'user_id' => $userId,
+            'is_read' => false,
+            'created_by' => $auth ? $auth->id : null,
+            'updated_by' => $auth ? $auth->id : null,
+        ]);
+
+        DecisionalNotification::create([
             'purchase_order_uuid' => $order->uuid,
             'status' => $status,
             'message' => $message,

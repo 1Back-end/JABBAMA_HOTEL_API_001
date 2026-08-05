@@ -7,6 +7,7 @@ use App\DTO\PurchaseOrderFilterData;
 use App\Enums\PurchaseOrdersStatus;
 use App\Enums\StockAdjustmentAction;
 use App\Exports\PurchaseOrdersExport;
+use App\Models\DecisionalNotification;
 use App\Models\PdfDocument;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
@@ -301,6 +302,17 @@ class PurchaseOrderController extends Controller
             'updated_by' => $auth ? $auth->id : null,
         ]);
 
+        DecisionalNotification::create([
+            'purchase_order_uuid' => $order->uuid,
+            'status' => $status,
+            'message' => $message,
+            'target' => $target,
+            'user_id' => $userId,
+            'is_read' => false,
+            'created_by' => $auth ? $auth->id : null,
+            'updated_by' => $auth ? $auth->id : null,
+        ]);
+
         // TODO (Optionnel) : Si vous utilisez Laravel Reverb / Pusher pour le temps réel,
         // vous pouvez déclencher un BroadcastEvent ici pour faire sonner le front.
     }
@@ -416,6 +428,7 @@ class PurchaseOrderController extends Controller
                     order: $order,
                     status: PurchaseOrdersStatus::DRAFT->value,
                     message: $notifMessage,
+                    userId:  $auth->id,
                     target: 'purchases_orders',
                 );
 
@@ -671,6 +684,7 @@ class PurchaseOrderController extends Controller
 
             $order->items()->delete();
             \App\Models\PurchaseOrderNotification::where('purchase_order_uuid', $order->uuid)->delete();
+            \App\Models\DecisionalNotification::where('purchase_order_uuid', $order->uuid)->delete();
 
 
             $order->delete();

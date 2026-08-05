@@ -14,7 +14,6 @@ return new class extends Migration
         Schema::table('complement_virtual_temps_backup', function (Blueprint $table) {
             $table->uuid('warehouse_uuid')->nullable();
 
-            // Clé étrangère vers la table des entrepôts
             $table->foreign('warehouse_uuid')
                 ->references('uuid')
                 ->on('warehouses')

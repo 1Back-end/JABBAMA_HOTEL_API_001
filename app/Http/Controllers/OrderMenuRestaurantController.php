@@ -5986,6 +5986,7 @@ class OrderMenuRestaurantController extends Controller
             'restaurant_room:uuid,code,rooms_number',
             'menu_restaurant:uuid,name,code,type_complement_boisson',
             'items.menu',
+            'items.complements.complement',
             'drinks.drinkConfig.product',
             'free_client_for_restaurant:uuid,code,full_name,cni_number_file',
             'notifications',
@@ -10551,7 +10552,6 @@ class OrderMenuRestaurantController extends Controller
 
         $perPage = (int) $request->input('limit', 25);
         $page = (int) $request->input('page', 1);
-        $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : null;
 
         $query = OrderMenuRestaurant::with([
             'restaurantTable:uuid,code,table_number',
@@ -10573,17 +10573,7 @@ class OrderMenuRestaurantController extends Controller
                 PaymentOrderMenusStatus::FACTURATE->value,
             ]);
 
-        if ($request->filled('date')) {
-            $selectedDate = Carbon::parse($request->date)->toDateString();
-            if ($selectedDate >= today()->toDateString()) {
-                $query->whereDate('created_at', '<', today());
-            } else {
-                $query->whereDate('created_at', $selectedDate);
-            }
-        } else {
-            $query->whereDate('created_at', '<', today());
-        }
-
+        // Filtres optionnels
         if ($request->filled('free_client_for_restaurant_uuid')) {
             $query->where('free_client_for_restaurant_uuid', $request->free_client_for_restaurant_uuid);
         }
@@ -10601,26 +10591,40 @@ class OrderMenuRestaurantController extends Controller
             $query->where('full_name', 'LIKE', "%{$debtor}%");
         }
 
+
         $data = $query
             ->orderByRaw('
-        CASE
-            WHEN partners_restaurant_uuid IS NOT NULL THEN 1
-            WHEN free_client_for_restaurant_uuid IS NOT NULL THEN 2
-            ELSE 3
-        END ASC,
-        created_at ASC
-    ')
+            CASE
+                WHEN partners_restaurant_uuid IS NOT NULL THEN 1
+                WHEN free_client_for_restaurant_uuid IS NOT NULL THEN 2
+                ELSE 3
+            END ASC,
+            created_at DESC
+        ')
             ->paginate($perPage, ['*'], 'page', $page);
 
-        return response()->json([
-            'success'      => true,
-            'data'         => $data->items(),
-            'current_page' => $data->currentPage(),
-            'last_page'    => $data->lastPage(),
-            'per_page'     => $data->perPage(),
-            'total'        => $data->total(),
+        $globalDebtQuery = OrderMenuRestaurant::whereIn('regulation_status', [
+            PaymentOrderMenusStatus::PARTIALLY_PAID->value,
+            PaymentOrderMenusStatus::NOT_PAID->value,
+            PaymentOrderMenusStatus::FACTURATE->value,
         ]);
 
+        $allInvoicesForGlobalDebt = $globalDebtQuery->with('payment')->get();
+        $totalSystemDebt = $allInvoicesForGlobalDebt->sum(function($item) {
+            $totalOrder = $item->total_order || 0;
+            $paidAmount = $item->payment?->paid_amount || 0;
+            return max(0, $totalOrder - $paidAmount);
+        });
+
+        return response()->json([
+            'success'           => true,
+            'data'              => $data->items(),
+            'total_system_debt' => $totalSystemDebt,
+            'current_page'      => $data->currentPage(),
+            'last_page'         => $data->lastPage(),
+            'per_page'          => $data->perPage(),
+            'total'             => $data->total(),
+        ]);
     }
 
 
