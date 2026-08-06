@@ -35,6 +35,7 @@ class PaymentRegulation extends Model
         'source_uuid',
         'created_at',
         'updated_at',
+        'slug'
     ];
 
     protected static function boot()

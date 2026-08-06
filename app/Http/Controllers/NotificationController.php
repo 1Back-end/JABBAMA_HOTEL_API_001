@@ -280,6 +280,7 @@ class NotificationController extends Controller
             ];
         }
 
+        session()->save();
 
         return response()->json([
             'notifications' => $notifications,

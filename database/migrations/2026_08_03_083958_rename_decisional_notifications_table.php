@@ -8,11 +8,16 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::rename('decisional_notifications', 'purchase_orders_decisional_notifications');
+        // 💡 On renomme seulement si la table source existe et que la cible n'existe pas encore
+        if (Schema::hasTable('decisional_notifications') && !Schema::hasTable('purchase_orders_decisional_notifications')) {
+            Schema::rename('decisional_notifications', 'purchase_orders_decisional_notifications');
+        }
     }
 
     public function down(): void
     {
-        Schema::rename('purchase_orders_decisional_notifications', 'decisional_notifications');
+        if (Schema::hasTable('purchase_orders_decisional_notifications') && !Schema::hasTable('decisional_notifications')) {
+            Schema::rename('purchase_orders_decisional_notifications', 'decisional_notifications');
+        }
     }
 };

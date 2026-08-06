@@ -6099,6 +6099,8 @@ class OrderMenuRestaurantController extends Controller
         }
         $data = $query->latest()->paginate($perPage, ['*'], 'page', $page);
 
+        session()->save();
+
         return response()->json([
             'data'         => $data->items(),
             'current_page' => $data->currentPage(),
@@ -6152,6 +6154,8 @@ class OrderMenuRestaurantController extends Controller
             ])
                 ->where('uuid', $uuid)
                 ->firstOrFail();
+
+            session()->save();
 
             return response()->json([
                 'success' => true,
@@ -10537,6 +10541,8 @@ class OrderMenuRestaurantController extends Controller
 
         $data = $query->latest('created_at')->paginate($perPage, ['*'], 'page', $page);
 
+        session()->save();
+
         return response()->json([
             'success'      => true,
             'data'         => $data->items(),
@@ -10573,7 +10579,6 @@ class OrderMenuRestaurantController extends Controller
                 PaymentOrderMenusStatus::FACTURATE->value,
             ]);
 
-        // Filtres optionnels
         if ($request->filled('free_client_for_restaurant_uuid')) {
             $query->where('free_client_for_restaurant_uuid', $request->free_client_for_restaurant_uuid);
         }
@@ -10615,6 +10620,8 @@ class OrderMenuRestaurantController extends Controller
             $paidAmount = $item->payment?->paid_amount || 0;
             return max(0, $totalOrder - $paidAmount);
         });
+
+        session()->save();
 
         return response()->json([
             'success'           => true,

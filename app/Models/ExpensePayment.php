@@ -34,7 +34,8 @@ class ExpensePayment extends Model
         'created_at',
         'updated_at',
         'category_document',
-        'type_document'
+        'type_document',
+        'slug'
     ];
 
     protected $casts = [

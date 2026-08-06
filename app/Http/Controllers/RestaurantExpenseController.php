@@ -120,6 +120,35 @@ class RestaurantExpenseController extends Controller
         DB::beginTransaction();
 
         try {
+            // --- RECHERCHE RÉCURSIVE DE L'INDEXATION POUR LES SLUGS ---
+            $expenseSlug = 'AUTRES';
+            $paymentSlug = 'DEPENSES AUTRES';
+
+            if ($request->filled('restaurant_expense_family_uuid')) {
+                $currentFamilyUuid = $request->restaurant_expense_family_uuid;
+                while ($currentFamilyUuid) {
+                    $family = DB::table('restaurant_expense_types_families')
+                        ->where('uuid', $currentFamilyUuid)
+                        ->first();
+
+                    if (!$family) {
+                        break;
+                    }
+                    if (!empty($family->indexation)) {
+                        if ($family->indexation === 'Consommation Bar') {
+                            $expenseSlug = 'BAR';
+                            $paymentSlug = 'DEPENSES BAR';
+                        } elseif ($family->indexation === 'Consommation Restaurant') {
+                            $expenseSlug = 'RESTO';
+                            $paymentSlug = 'DEPENSES RESTO';
+                        }
+                        break;
+                    }
+
+                    $currentFamilyUuid = $family->parent_uuid;
+                }
+            }
+            // ---------------------------------------------------------
 
             $expense = new ExpensePayment([
                 'restaurant_expense_type_uuid'   => $request->restaurant_expense_type_uuid,
@@ -129,6 +158,7 @@ class RestaurantExpenseController extends Controller
                 'amount'                         => $request->amount,
                 'name'                           => $request->name,
                 'description'                    => $request->description,
+                'slug'                           => $expenseSlug, // 'RESTO' ou 'BAR' ou 'AUTRES'
                 'paid_at'                        => $createdAt,
                 'created_by'                     => $auth->id,
                 'status'                         => 'paid',
@@ -139,7 +169,6 @@ class RestaurantExpenseController extends Controller
             $expense->updated_at = $createdAt;
             $expense->save();
 
-            // 1. Enregistrement de la Catégorie avec le préfixe _cat_
             if ($request->hasFile('category_document')) {
                 $file = $request->file('category_document');
                 $originalName = $file->getClientOriginalName();
@@ -180,6 +209,7 @@ class RestaurantExpenseController extends Controller
                 'regulation_method_uuid'       => $request->payment_method_uuid,
                 'amount'                       => $request->amount,
                 'type'                         => 'expense',
+                'slug'                         => $paymentSlug, // 'DEPENSES RESTO' ou 'DEPENSES BAR' ou 'DEPENSES AUTRES'
                 'created_by'                   => $auth->id,
                 'updated_by'                   => $auth->id,
             ]);
@@ -251,6 +281,35 @@ class RestaurantExpenseController extends Controller
         DB::beginTransaction();
 
         try {
+            $expenseSlug = 'AUTRES';
+
+            if ($request->filled('restaurant_expense_family_uuid')) {
+                $currentFamilyUuid = $request->restaurant_expense_family_uuid;
+
+                while ($currentFamilyUuid) {
+                    $family = DB::table('restaurant_expense_types_families')
+                        ->where('uuid', $currentFamilyUuid)
+                        ->first();
+
+                    if (!$family) {
+                        break;
+                    }
+
+                    if (!empty($family->indexation)) {
+                        if ($family->indexation === 'Consommation Bar') {
+                            $expenseSlug = 'BAR';
+                            $paymentSlug = 'DEPENSES BAR';
+                        } elseif ($family->indexation === 'Consommation Restaurant') {
+                            $expenseSlug = 'RESTO';
+                            $paymentSlug = 'DEPENSES RESTO';
+                        }
+                        break;
+                    }
+
+                    $currentFamilyUuid = $family->parent_uuid;
+                }
+            }
+            // -------------------------------------------------------------------
 
             $expense->update([
                 'restaurant_expense_type_uuid'   => $request->restaurant_expense_type_uuid,
@@ -260,6 +319,7 @@ class RestaurantExpenseController extends Controller
                 'amount'                         => $request->amount,
                 'name'                           => $request->name,
                 'description'                    => $request->description,
+                'slug'                           => $expenseSlug,
                 'paid_at'                        => $updatedDate,
                 'updated_by'                     => $auth->id,
             ]);
@@ -316,7 +376,6 @@ class RestaurantExpenseController extends Controller
                     'extension' => $file->getClientOriginalExtension(),
                 ]);
             }
-            // Note : Si $request->hasFile('type_document') est faux, l'ancien fichier en base n'est PAS touché !
 
             $regulation = PaymentRegulation::where('source_uuid', $expense->uuid)
                 ->where('source_type', 'expense')
@@ -327,6 +386,7 @@ class RestaurantExpenseController extends Controller
                     'restaurant_expense_type_uuid' => $request->restaurant_expense_type_uuid,
                     'regulation_method_uuid'       => $request->payment_method_uuid,
                     'amount'                       => $request->amount,
+                    'slug'                         => $paymentSlug,
                     'updated_by'                   => $auth->id,
                 ]);
 
