@@ -523,6 +523,36 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des notifications de stocks décisionnelles',
             'modules' => ['Gestion des stocks', 'Autres Modules'],
         ],
+        'save_recoveries_for_orders_items_and_drinks' => [
+            'description' => 'Effectuer le recouvrement global d\'une facture',
+            'category' => 'Gestion des encaissements',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'save_recoveries_for_orders_drinks' => [
+            'description' => 'Effectuer les recouvrements des boissons d\'une commande',
+            'category' => 'Gestion des encaissements',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'cancel_recoveries_for_orders_drinks' => [
+            'description' => 'Annuler les recouvrements des boissons d\'une commande',
+            'category' => 'Gestion des encaissements',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'save_recoveries_for_orders_items' => [
+            'description' => 'Effectuer les recouvrements des menus d\'une commande',
+            'category' => 'Gestion des encaissements',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'cancel_recoveries_for_orders_items' => [
+            'description' => 'Annuler les recouvrements des menus d\'une commande',
+            'category' => 'Gestion des encaissements',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'cancel_recoveries_for_orders_items_and_drinks' => [
+            'description' => 'Annuler le recouvrement global d\'une facture',
+            'category' => 'Gestion des encaissements',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
 
     ];
 

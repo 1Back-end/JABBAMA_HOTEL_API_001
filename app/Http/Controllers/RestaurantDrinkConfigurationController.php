@@ -104,7 +104,7 @@ class RestaurantDrinkConfigurationController extends Controller
             'product'
         ])
 
-            // 🔹 filtre actif
+
             ->when($request->has('is_active'), function ($query) use ($request) {
                 $query->where(
                     'is_active',
@@ -112,18 +112,16 @@ class RestaurantDrinkConfigurationController extends Controller
                 );
             })
 
-            // 🔍 SEARCH GLOBAL
+
             ->when($search = trim($request->input('search')), function ($query) use ($search) {
 
                 $query->where(function ($q) use ($search) {
 
-                    // 🔹 champs table principale
                     $q->where('code', 'like', "%{$search}%")
                         ->orWhere('uuid', 'like', "%{$search}%")
                         ->orWhere('description', 'like', "%{$search}%")
                         ->orWhere('drink_name', 'like', "%{$search}%");
 
-                    // 🔥 recherche sur produit lié
                     $q->orWhereHas('product', function ($pq) use ($search) {
                         $pq->where('uuid', 'like', "%{$search}%")
                             ->orWhere('name', 'like', "%{$search}%")

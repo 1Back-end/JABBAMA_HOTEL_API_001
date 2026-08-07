@@ -220,66 +220,99 @@ class PaymentController extends Controller
             foreach ($request->regulations as $regulation) {
 
                 $method = RegulationMethod::where('uuid', $regulation['method_uuid'])->first();
-                $cashReceiptType = CashReceiptType::where('is_linked_to_turnover', true)
-                    ->first();
+                $cashReceiptType = CashReceiptType::where('is_linked_to_turnover', true)->first();
 
-                $hasItems = false;
-                $hasDrinks = false;
+                // 1. Regrouper et sommer les montants par type (item = resto, drink = bar)
+                $itemsAmount = 0;
+                $drinksAmount = 0;
+                $itemLines = [];
+                $drinkLines = [];
 
                 if (!empty($regulation['lines'])) {
                     foreach ($regulation['lines'] as $line) {
                         if ($line['type'] === 'item') {
-                            $hasItems = true;
+                            $itemsAmount += (float) $line['amount'];
+                            $itemLines[] = $line;
+                        } elseif ($line['type'] === 'drink') {
+                            $drinksAmount += (float) $line['amount'];
+                            $drinkLines[] = $line;
                         }
+                    }
+                } else {
+                    // S'il n'y a pas de lignes détaillées, on attribue tout au montant global (par défaut Resto ou autre selon votre logique)
+                    $itemsAmount = (float) $regulation['amount'];
+                }
 
-                        if ($line['type'] === 'drink') {
-                            $hasDrinks = true;
-                        }
+                // 2. Traitement de la partie RESTO (si présente)
+                if ($itemsAmount > 0) {
+                    $restoFamily = CashReceiptFamily::where('indexation', 'Consommation Restaurant')->first();
+
+                    $regulationModelResto = PaymentRegulation::create([
+                        'payment_uuid' => $payment->uuid,
+                        'regulation_method_uuid' => $method->uuid,
+                        'cash_receipt_families_uuid' => $restoFamily?->uuid,
+                        'cash_receipt_type_uuid' => $cashReceiptType?->uuid,
+                        'slug' => 'ENCAISSEMENT RESTO',
+                        'amount' => $itemsAmount,
+                        'phone_number' => $regulation['phone_number'] ?? null,
+                        'reference' => $regulation['reference'] ?? null,
+                        'detail' => $regulation['detail'] ?? null,
+                        'created_by' => auth()->id(),
+                        'updated_by' => auth()->id(),
+                        'created_at' => $createdAt,
+                        'updated_at' => $createdAt,
+                    ]);
+
+                    // Enregistrer les payment_lines liées au resto
+                    foreach ($itemLines as $line) {
+                        PaymentLine::create([
+                            'payment_uuid' => $payment->uuid,
+                            'payment_regulation_uuid' => $regulationModelResto->uuid,
+                            'payable_type' => get_class($order->items()->getModel()),
+                            'payable_uuid' => $line['uuid'],
+                            'amount' => $line['amount'],
+                            'slug' => 'RESTO',
+                            'regulation_method_uuid' => $method->uuid,
+                            'phone_number' => $regulation['phone_number'] ?? null,
+                            'reference' => $regulation['reference'] ?? null,
+                            'detail' => $regulation['detail'] ?? null,
+                            'created_by' => auth()->id(),
+                            'updated_by' => auth()->id(),
+                            'created_at' => $createdAt,
+                            'updated_at' => $createdAt,
+                        ]);
                     }
                 }
 
-                if ($hasItems && $hasDrinks) {
-                    $indexationName = 'Consommation Bar / Restaurant';
-                } elseif ($hasItems) {
-                    $indexationName = 'Consommation Restaurant';
-                } elseif ($hasDrinks) {
-                    $indexationName = 'Consommation Bar';
-                } else {
-                    $indexationName = null;
-                }
+                // 3. Traitement de la partie BAR (si présente)
+                if ($drinksAmount > 0) {
+                    $barFamily = CashReceiptFamily::where('indexation', 'Consommation Bar')->first();
 
-                $cashReceiptFamily = $indexationName
-                    ? CashReceiptFamily::where('indexation', $indexationName)->first()
-                    : null;
+                    $regulationModelBar = PaymentRegulation::create([
+                        'payment_uuid' => $payment->uuid,
+                        'regulation_method_uuid' => $method->uuid,
+                        'cash_receipt_families_uuid' => $barFamily?->uuid,
+                        'cash_receipt_type_uuid' => $cashReceiptType?->uuid,
+                        'slug' => 'ENCAISSEMENT BAR',
+                        'amount' => $drinksAmount,
+                        'phone_number' => $regulation['phone_number'] ?? null,
+                        'reference' => $regulation['reference'] ?? null,
+                        'detail' => $regulation['detail'] ?? null,
+                        'created_by' => auth()->id(),
+                        'updated_by' => auth()->id(),
+                        'created_at' => $createdAt,
+                        'updated_at' => $createdAt,
+                    ]);
 
-                $regulationModel  = PaymentRegulation::create([
-                    'payment_uuid' => $payment->uuid,
-                    'regulation_method_uuid' => $method->uuid,
-                    'cash_receipt_families_uuid'  => $cashReceiptFamily?->uuid,
-                    'cash_receipt_type_uuid' => $cashReceiptType?->uuid,
-                    'amount' => (float) $regulation['amount'],
-                    'phone_number' => $regulation['phone_number'] ?? null,
-                    'reference' => $regulation['reference'] ?? null,
-                    'detail' => $regulation['detail'] ?? null,
-                    'created_by' => auth()->id(),
-                    'updated_by' => auth()->id(),
-                    'created_at' => $createdAt,
-                    'updated_at' => $createdAt,
-                ]);
-
-
-                if (!empty($regulation['lines'])) {
-                    foreach ($regulation['lines'] as $line) {
-                        $payableModel = $line['type'] === 'item'
-                            ? get_class($order->items()->getModel())
-                            : get_class($order->drinks()->getModel());
-
+                    // Enregistrer les payment_lines liées au bar
+                    foreach ($drinkLines as $line) {
                         PaymentLine::create([
                             'payment_uuid' => $payment->uuid,
-                            'payment_regulation_uuid' => $regulationModel->uuid,
-                            'payable_type' => $payableModel,
+                            'payment_regulation_uuid' => $regulationModelBar->uuid,
+                            'payable_type' => get_class($order->drinks()->getModel()),
                             'payable_uuid' => $line['uuid'],
                             'amount' => $line['amount'],
+                            'slug' => 'BAR',
                             'regulation_method_uuid' => $method->uuid,
                             'phone_number' => $regulation['phone_number'] ?? null,
                             'reference' => $regulation['reference'] ?? null,
@@ -593,9 +626,9 @@ class PaymentController extends Controller
 
             // --- 1. FILTRE PAR MODE DE RÈGLEMENT ---
             $selectColumns[] = 'payment_regulations.regulation_method_uuid';
-            $selectColumns[] = DB::raw("SUM(CASE WHEN payment_regulations.type = 'encaissement' THEN payment_regulations.amount ELSE 0 END) as total_encaissements");
+            $selectColumns[] = DB::raw("SUM(CASE WHEN payment_regulations.type IN ('encaissement', 'recouvrement') THEN payment_regulations.amount ELSE 0 END) as total_encaissements");
             $selectColumns[] = DB::raw("SUM(CASE WHEN payment_regulations.type = 'expense' THEN payment_regulations.amount ELSE 0 END) as total_depenses");
-            $selectColumns[] = DB::raw("SUM(CASE WHEN payment_regulations.type = 'encaissement' THEN payment_regulations.amount ELSE -payment_regulations.amount END) as total_amount");
+            $selectColumns[] = DB::raw("SUM(CASE WHEN payment_regulations.type IN ('encaissement', 'recouvrement') THEN payment_regulations.amount ELSE -payment_regulations.amount END) as total_amount");
 
             $groupByColumns[] = 'payment_regulations.regulation_method_uuid';
             $relations[] = 'method:uuid,name';
@@ -607,63 +640,62 @@ class PaymentController extends Controller
 
         } elseif ($request->cash_register_filter_type === CashRegisterFilterType::PAYMENT_TYPE->value) {
 
-            $query->leftJoin('cash_receipt_types', 'payment_regulations.cash_receipt_type_uuid', '=', 'cash_receipt_types.uuid')
-                ->leftJoin('restaurant_expense_types', 'payment_regulations.restaurant_expense_type_uuid', '=', 'restaurant_expense_types.uuid')
-                ->leftJoin('recouvrements', 'payment_regulations.recouvrement_uuid', '=', 'recouvrements.uuid');
-
-            $selectColumns[] = DB::raw("COALESCE(cash_receipt_types.slug, restaurant_expense_types.slug, recouvrements.slug) as category_slug");
-
-            $selectColumns[] = DB::raw("MAX(cash_receipt_types.name) as receipt_type_name");
-            $selectColumns[] = DB::raw("MAX(restaurant_expense_types.name) as expense_type_name");
-            $selectColumns[] = DB::raw("MAX(recouvrements.name) as recouvrement_name");
+            $selectColumns[] = DB::raw("
+        CASE
+            WHEN payment_regulations.slug LIKE '%BAR%' THEN 'BAR'
+            WHEN payment_regulations.slug LIKE '%RESTO%' THEN 'RESTO'
+            ELSE COALESCE(payment_regulations.slug, 'AUTRES')
+        END as category_slug
+    ");
 
             $selectColumns[] = DB::raw("
-            MAX(
-                TRIM(
-                    REPLACE(
-                        REPLACE(
-                            COALESCE(cash_receipt_types.name, restaurant_expense_types.name, recouvrements.name, 'FLUX GLOBAL'),
-                            'ENCAISSEMENT ', ''
-                        ),
-                        'DEPENSES ', ''
-                    )
-                )
-            ) as category_type_name
-        ");
+        CASE
+            WHEN payment_regulations.slug LIKE '%BAR%' THEN 'BAR'
+            WHEN payment_regulations.slug LIKE '%RESTO%' THEN 'RESTO'
+            ELSE COALESCE(payment_regulations.slug, 'AUTRES')
+        END as category_type_name
+    ");
 
-            $selectColumns[] = DB::raw("MAX(payment_regulations.cash_receipt_type_uuid) as cash_receipt_type_uuid");
-            $selectColumns[] = DB::raw("MAX(payment_regulations.restaurant_expense_type_uuid) as restaurant_expense_type_uuid");
-            $selectColumns[] = DB::raw("MAX(payment_regulations.recouvrement_uuid) as recouvrement_uuid");
-
-            $selectColumns[] = DB::raw("SUM(CASE WHEN payment_regulations.type = 'encaissement' THEN payment_regulations.amount ELSE 0 END) as total_encaissements");
+            $selectColumns[] = DB::raw("SUM(CASE WHEN payment_regulations.type IN ('encaissement', 'recouvrement') THEN payment_regulations.amount ELSE 0 END) as total_encaissements");
             $selectColumns[] = DB::raw("SUM(CASE WHEN payment_regulations.type = 'expense' THEN payment_regulations.amount ELSE 0 END) as total_depenses");
-            $selectColumns[] = DB::raw("SUM(CASE WHEN payment_regulations.type = 'encaissement' THEN payment_regulations.amount ELSE -payment_regulations.amount END) as total_amount");
+            $selectColumns[] = DB::raw("SUM(CASE WHEN payment_regulations.type IN ('encaissement', 'recouvrement') THEN payment_regulations.amount ELSE -payment_regulations.amount END) as total_amount");
 
-            $groupByColumns[] = DB::raw("COALESCE(cash_receipt_types.slug, restaurant_expense_types.slug, recouvrements.slug)");
+            $groupByColumns[] = DB::raw("
+        CASE
+            WHEN payment_regulations.slug LIKE '%BAR%' THEN 'BAR'
+            WHEN payment_regulations.slug LIKE '%RESTO%' THEN 'RESTO'
+            ELSE COALESCE(payment_regulations.slug, 'AUTRES')
+        END
+    ");
 
-            $relations[] = 'recouvrement:uuid,name,code,slug';
+            if ($request->filled('slug')) {
+                $slugFilter = $request->slug;
 
-            if ($request->filled('cash_receipt_type_uuid')) {
-                $query->where('payment_regulations.cash_receipt_type_uuid', $request->cash_receipt_type_uuid);
-                $totalsQuery->where('cash_receipt_type_uuid', $request->cash_receipt_type_uuid);
-            }
+                $query->where(function($q) use ($slugFilter) {
+                    $q->where(DB::raw("
+                CASE
+                    WHEN payment_regulations.slug LIKE '%BAR%' THEN 'BAR'
+                    WHEN payment_regulations.slug LIKE '%RESTO%' THEN 'RESTO'
+                    ELSE COALESCE(payment_regulations.slug, 'AUTRES')
+                END
+            "), 'LIKE', '%' . $slugFilter . '%');
+                });
 
-            if ($request->filled('restaurant_expense_type_uuid')) {
-                $query->where('payment_regulations.restaurant_expense_type_uuid', $request->restaurant_expense_type_uuid);
-                $totalsQuery->where('restaurant_expense_type_uuid', $request->restaurant_expense_type_uuid);
-            }
-
-            if ($request->filled('recouvrement_uuid')) {
-                $query->where('payment_regulations.recouvrement_uuid', $request->recouvrement_uuid);
-                $totalsQuery->where('recouvrement_uuid', $request->recouvrement_uuid);
+                $totalsQuery->where(DB::raw("
+            CASE
+                WHEN payment_regulations.slug LIKE '%BAR%' THEN 'BAR'
+                WHEN payment_regulations.slug LIKE '%RESTO%' THEN 'RESTO'
+                ELSE COALESCE(payment_regulations.slug, 'AUTRES')
+            END
+        "), 'LIKE', '%' . $slugFilter . '%');
             }
 
         } else {
 
             $selectColumns[] = 'payment_regulations.created_by';
-            $selectColumns[] = DB::raw("SUM(CASE WHEN payment_regulations.type = 'encaissement' THEN payment_regulations.amount ELSE 0 END) as total_encaissements");
+            $selectColumns[] = DB::raw("SUM(CASE WHEN payment_regulations.type IN ('encaissement', 'recouvrement') THEN payment_regulations.amount ELSE 0 END) as total_encaissements");
             $selectColumns[] = DB::raw("SUM(CASE WHEN payment_regulations.type = 'expense' THEN payment_regulations.amount ELSE 0 END) as total_depenses");
-            $selectColumns[] = DB::raw("SUM(CASE WHEN payment_regulations.type = 'encaissement' THEN payment_regulations.amount ELSE -payment_regulations.amount END) as total_amount");
+            $selectColumns[] = DB::raw("SUM(CASE WHEN payment_regulations.type IN ('encaissement', 'recouvrement') THEN payment_regulations.amount ELSE -payment_regulations.amount END) as total_amount");
 
             $groupByColumns[] = 'payment_regulations.created_by';
 
@@ -673,14 +705,19 @@ class PaymentController extends Controller
             }
         }
 
-        $data = $query->select($selectColumns)
+        $queryBuilder = $query->select($selectColumns)
             ->with($relations)
             ->whereDate('payment_regulations.created_at', $date)
             ->whereNull('payment_regulations.deleted_at')
-            ->groupBy($groupByColumns)
-            ->orderByDesc(DB::raw('DATE(payment_regulations.created_at)'))
-            ->paginate($perPage, ['*'], 'page', $page);
+            ->groupBy($groupByColumns);
 
+        if ($request->cash_register_filter_type === CashRegisterFilterType::PAYMENT_TYPE->value) {
+            $queryBuilder->havingRaw("SUM(CASE WHEN payment_regulations.type IN ('encaissement', 'recouvrement') THEN payment_regulations.amount ELSE 0 END) > 0
+                          OR SUM(CASE WHEN payment_regulations.type = 'expense' THEN payment_regulations.amount ELSE 0 END) > 0");
+        }
+
+        $data = $queryBuilder->orderByDesc(DB::raw('DATE(payment_regulations.created_at)'))
+            ->paginate($perPage, ['*'], 'page', $page);
 
         $totals = $totalsQuery->select('type', DB::raw('SUM(amount) as total'))
             ->whereNull('deleted_at')
@@ -689,8 +726,11 @@ class PaymentController extends Controller
             ->keyBy('type');
 
         $totalEncaissements = (float) ($totals->get('encaissement')?->total ?? 0);
+        $totalRecouvrements = (float) ($totals->get('recouvrement')?->total ?? 0);
         $totalDepenses      = (float) ($totals->get('expense')?->total ?? 0);
-        $soldeNet           = $totalEncaissements - $totalDepenses;
+
+        $totalEntreesGlobal = $totalEncaissements + $totalRecouvrements;
+        $soldeNet           = $totalEntreesGlobal - $totalDepenses;
 
         return response()->json([
             'success'             => true,
@@ -699,7 +739,7 @@ class PaymentController extends Controller
             'last_page'           => $data->lastPage(),
             'per_page'            => $data->perPage(),
             'total'               => $data->total(),
-            'total_encaissements' => $totalEncaissements,
+            'total_encaissements' => $totalEntreesGlobal,
             'total_depenses'      => $totalDepenses,
             'solde_net'           => $soldeNet,
         ]);
@@ -824,19 +864,25 @@ class PaymentController extends Controller
         $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : null;
         $filterType = $request->cash_register_filter_type;
 
+        $slug = $request->filled('slug') ? strtoupper(trim($request->slug)) : null;
+
+        $slugLabel = $slug ?? 'GLOBAL';
+        $receiptTitle = 'ENCAISSEMENT ' . $slugLabel;
+        $recouvrementTitle = 'RECOUVREMENTS ' . $slugLabel;
+        $expenseTitle = 'DEPENSES ' . $slugLabel;
+
         $expenses = collect();
         $receipts = collect();
         $recouvrements = collect();
 
-        // Conditions de récupération selon les filtres
-        $shouldFetchExpenses = $filterType !== 'payment_type' || $request->filled('restaurant_expense_type_uuid');
+        $shouldFetchExpenses = $filterType !== 'payment_type' || $request->filled('restaurant_expense_type_uuid') || $slug;
 
         $shouldFetchReceipts = $filterType !== 'expense_type' && (
-                $filterType !== 'payment_type' || $request->filled('cash_receipt_type_uuid')
+                $filterType !== 'payment_type' || $request->filled('cash_receipt_type_uuid') || $slug
             );
 
         $shouldFetchRecouvrements = $filterType !== 'expense_type' && (
-                $filterType !== 'payment_type' || $request->filled('recouvrement_uuid')
+                $filterType !== 'payment_type' || $request->filled('recouvrement_uuid') || $slug
             );
 
         // -------------------------------------------------------------
@@ -846,13 +892,17 @@ class PaymentController extends Controller
             $expensesQuery = ExpensePayment::with([
                 'creator:id,nom_utilisateur',
                 'updater:id,nom_utilisateur',
-                'expenseType:uuid,name',
+                'expenseType:uuid,name,slug',
                 'family:uuid,name',
                 'method:uuid,name',
             ])
                 ->where('status', 'paid')
                 ->whereDate('paid_at', $date)
                 ->whereNull('deleted_at');
+
+            if ($slug) {
+                $expensesQuery->where('slug', $slug);
+            }
 
             if ($request->filled('restaurant_expense_type_uuid')) {
                 $expensesQuery->where('restaurant_expense_type_uuid', $request->restaurant_expense_type_uuid);
@@ -871,9 +921,10 @@ class PaymentController extends Controller
             $expenses = $expensesQuery->orderByDesc('paid_at')
                 ->get()
                 ->groupBy('restaurant_expense_type_uuid')
-                ->map(function ($items) {
+                ->map(function ($items) use ($expenseTitle) {
                     return [
                         'expense_type' => $items->first()->expenseType,
+                        'title'        => $expenseTitle,
                         'total_amount' => (float) $items->sum('amount'),
                         'families'     => $this->buildExpenseTree($items),
                     ];
@@ -888,11 +939,17 @@ class PaymentController extends Controller
             $receiptsQuery = PaymentRegulation::with([
                 'creator:id,nom_utilisateur',
                 'updater:id,nom_utilisateur',
-                'cashReceiptType:uuid,name',
+                'cashReceiptType:uuid,name,slug',
                 'cashReceiptFamily:uuid,name',
                 'method:uuid,name',
+                'payment.order',
                 'payment.order.items.menu:uuid,name',
                 'payment.order.drinks.drinkConfig.product',
+                'paymentLines' => function ($lineQuery) use ($slug) {
+                    if ($slug) {
+                        $lineQuery->where('slug', $slug);
+                    }
+                },
                 'paymentLines.payable' => function ($morphTo) {
                     $morphTo->morphWith([
                         \App\Models\OrderMenuRestaurantItem::class => ['menu:uuid,name'],
@@ -904,6 +961,15 @@ class PaymentController extends Controller
                 ->whereNotNull('cash_receipt_type_uuid')
                 ->whereDate('created_at', $date)
                 ->whereNull('deleted_at');
+
+            if ($slug) {
+                $receiptsQuery->where(function ($q) use ($slug) {
+                    $q->where('slug', 'like', '% ' . $slug)
+                        ->orWhereHas('paymentLines', function ($lineQ) use ($slug) {
+                            $lineQ->where('slug', $slug);
+                        });
+                });
+            }
 
             if ($request->filled('cash_receipt_type_uuid')) {
                 $receiptsQuery->where('cash_receipt_type_uuid', $request->cash_receipt_type_uuid);
@@ -919,18 +985,31 @@ class PaymentController extends Controller
 
             $receipts = $receiptsQuery->orderByDesc('created_at')
                 ->get()
+                ->map(function ($regulation) use ($slug) {
+                    if ($slug) {
+                        $filteredLines = $regulation->paymentLines->where('slug', $slug);
+                        if ($filteredLines->isEmpty()) {
+                            return null;
+                        }
+                        $regulation->setRelation('paymentLines', $filteredLines);
+                        $regulation->amount = (float) $filteredLines->sum('amount');
+                    }
+                    return $regulation;
+                })
+                ->filter()
                 ->groupBy('cash_receipt_type_uuid')
-                ->map(function ($items) {
+                ->map(function ($items) use ($receiptTitle, $slug) {
                     return [
                         'receipt_type' => $items->first()->cashReceiptType,
+                        'title'        => $receiptTitle,
                         'total_amount' => (float) $items->sum('amount'),
-                        'items'        => $this->formatRegulationItems($items),
+                        'items'        => $this->formatRegulationItems($items, $slug),
                     ];
                 })->values();
         }
 
         // -------------------------------------------------------------
-        // 3. RECOUVREMENTS
+        // 3. RECOUVREMENTS (Structurés par client avec items et prix commande)
         // -------------------------------------------------------------
         if ($shouldFetchRecouvrements) {
             $recouvrementsQuery = PaymentRegulation::with([
@@ -939,8 +1018,17 @@ class PaymentController extends Controller
                 'recouvrement:uuid,name,code,slug',
                 'cashReceiptFamily:uuid,name',
                 'method:uuid,name',
+
                 'payment.order.items.menu:uuid,name',
                 'payment.order.drinks.drinkConfig.product',
+                'payment.order.partners_restaurant:uuid,full_name',
+                'payment.order.free_client_for_restaurant:uuid,full_name',
+
+                'paymentLines' => function ($lineQuery) use ($slug) {
+                    if ($slug) {
+                        $lineQuery->where('slug', $slug);
+                    }
+                },
                 'paymentLines.payable' => function ($morphTo) {
                     $morphTo->morphWith([
                         \App\Models\OrderMenuRestaurantItem::class => ['menu:uuid,name'],
@@ -948,9 +1036,19 @@ class PaymentController extends Controller
                     ]);
                 }
             ])
+                ->where('type', 'recouvrement')
                 ->whereNotNull('recouvrement_uuid')
                 ->whereDate('created_at', $date)
                 ->whereNull('deleted_at');
+
+            if ($slug) {
+                $recouvrementsQuery->where(function ($q) use ($slug) {
+                    $q->where('slug', 'like', '% ' . $slug)
+                        ->orWhereHas('paymentLines', function ($lineQ) use ($slug) {
+                            $lineQ->where('slug', $slug);
+                        });
+                });
+            }
 
             if ($request->filled('recouvrement_uuid')) {
                 $recouvrementsQuery->where('recouvrement_uuid', $request->recouvrement_uuid);
@@ -966,12 +1064,56 @@ class PaymentController extends Controller
 
             $recouvrements = $recouvrementsQuery->orderByDesc('created_at')
                 ->get()
+                ->map(function ($regulation) use ($slug) {
+                    if ($slug) {
+                        $filteredLines = $regulation->paymentLines->where('slug', $slug);
+                        if ($filteredLines->isEmpty()) {
+                            return null;
+                        }
+                        $regulation->setRelation('paymentLines', $filteredLines);
+                        $regulation->amount = (float) $filteredLines->sum('amount');
+                    }
+
+                    $order = optional($regulation->payment)->order;
+                    $clientName = 'Client de passage';
+
+                    if ($order) {
+                        if ($order->partners_restaurant) {
+                            $clientName = $order->partners_restaurant->full_name;
+                            $clientType = 'Client partenaire';
+                        } elseif ($order->free_client_for_restaurant) {
+                            $clientName = $order->free_client_for_restaurant->full_name;
+                            $clientType = 'Client gratuit';
+                        } elseif (!empty($order->full_name)) {
+                            $clientName = $order->full_name;
+                            $clientType = 'Client débiteurs';
+                        }
+                    }
+
+                    $regulation->resolved_client_name = $clientName;
+                    $regulation->resolved_client_type = $clientType;
+
+                    $regulation->order_total_amount = $slug
+                        ? (float) $regulation->paymentLines->sum('amount')
+                        : ($order ? (float) $order->total_order : 0);
+
+                    return $regulation;
+                })
+                ->filter()
                 ->groupBy('recouvrement_uuid')
-                ->map(function ($items) {
+                ->map(function ($items) use ($recouvrementTitle, $slug) {
                     return [
                         'recouvrement' => $items->first()->recouvrement,
+                        'title'        => $recouvrementTitle,
                         'total_amount' => (float) $items->sum('amount'),
-                        'items'        => $this->formatRegulationItems($items),
+                        'clients'      => $items->groupBy('resolved_client_name')->map(function ($clientRegulations) use ($slug) {
+                            $firstReg = $clientRegulations->first();
+                            return [
+                                'client_name' => $clientRegulations->first()->resolved_client_name,
+                                'client_type' => $firstReg->resolved_client_type,
+                                'items'       => $this->formatRecouvrementClientItems($clientRegulations, $slug),
+                            ];
+                        })->values(),
                     ];
                 })->values();
         }
@@ -981,6 +1123,7 @@ class PaymentController extends Controller
             'message' => 'Flux de caisse récupéré avec succès',
             'data'    => [
                 'date'          => $date,
+                'slug'          => $slug,
                 'expenses'      => $expenses,
                 'receipts'      => $receipts,
                 'recouvrements' => $recouvrements
@@ -989,20 +1132,77 @@ class PaymentController extends Controller
     }
 
     /**
-     * Helper privé pour formater les éléments de règlement (encaissements / recouvrements)
+     * Helper spécifique pour structurer les items d'un recouvrement par client
+     */
+    private function formatRecouvrementClientItems($items, $slug = null)
+    {
+        return $items->map(function ($regulation) use ($slug) {
+            $order = $regulation->payment?->order;
+            $orderCode = $order?->code;
+            $method = $regulation->method;
+
+            $injectOrderCode = function($collection) use ($orderCode, $method) {
+                if (!$collection) return [];
+                return $collection->map(function ($item) use ($orderCode, $method) {
+                    $item->order_code = $orderCode;
+                    $item->payment_method = $method;
+                    return $item;
+                })->values();
+            };
+
+            $lines = $regulation->paymentLines ?? collect();
+
+            $plats = $lines->filter(function ($line) {
+                return $line->payable_type === 'App\Models\OrderMenuRestaurantItem'
+                    || str_contains($line->payable_type, 'Item');
+            })->map(function ($line) {
+                return $line->payable;
+            })->filter();
+
+            $boissons = $lines->filter(function ($line) {
+                return $line->payable_type === 'App\Models\OrderRestaurantDrink'
+                    || str_contains($line->payable_type, 'Drink');
+            })->map(function ($line) {
+                return $line->payable;
+            })->filter();
+
+            // Calcule le total spécifiquement basé sur les lignes filtrées (ou sur paymentLines)
+            $filteredTotal = $slug ? (float) $lines->sum('amount') : ($order ? (float) $order->total_order : 0);
+
+            return [
+                'uuid'                => $regulation->uuid,
+                'amount'              => (float) $regulation->amount,
+                'type'                => $regulation->type,
+                'created_at'          => $regulation->created_at,
+                'method'              => $regulation->method,
+                'cash_receipt_family' => $regulation->cashReceiptFamily,
+                'recouvrement'        => $regulation->recouvrement,
+                'creator'             => $regulation->creator,
+                'order_code'          => $orderCode,
+                'order_total_price'   => $filteredTotal,
+                'order_details'       => [
+                    'plats'    => $injectOrderCode($plats),
+                    'boissons' => $injectOrderCode($boissons)
+                ]
+            ];
+        })->values();
+    }
+
+    /**
+     * Helper privé pour formater les éléments de règlement (encaissements)
      */
     private function formatRegulationItems($items)
     {
         return $items->map(function ($regulation) {
             $order = $regulation->payment?->order;
             $orderCode = $order?->code;
-            $method = $regulation->method; // Récupération du mode de règlement
+            $method = $regulation->method;
 
             $injectOrderCode = function($collection) use ($orderCode, $method) {
                 if (!$collection) return [];
                 return $collection->map(function ($item) use ($orderCode, $method) {
                     $item->order_code = $orderCode;
-                    $item->payment_method = $method; // Ajout du mode de règlement à l'item
+                    $item->payment_method = $method;
                     return $item;
                 })->values();
             };
@@ -1054,6 +1254,7 @@ class PaymentController extends Controller
         $request->validate([
             'order_menu_restaurant_uuid' => 'required|uuid',
             'total_amount' => 'required|numeric|min:0',
+            'date' => 'nullable|date',
             'regulations' => 'required|array|min:1',
             'regulations.*.method_uuid' => 'required|uuid',
             'regulations.*.amount' => 'required|numeric|min:0.01',
@@ -1075,6 +1276,16 @@ class PaymentController extends Controller
                 'partners_restaurant'
             ])->where('uuid', $request->order_menu_restaurant_uuid)->firstOrFail();
 
+
+            $recouvrementRestoBar = Recouvrement::where('is_used_for_restaurant', true)->first();
+
+            if (!$recouvrementRestoBar) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Aucun type de recouvrement restaurant configuré (is_used_for_restaurant).",
+                ], 422);
+            }
+
             $payment = Payment::firstOrCreate(
                 ['order_menu_restaurant_uuid' => $order->uuid],
                 [
@@ -1082,7 +1293,7 @@ class PaymentController extends Controller
                     'remaining_amount' => (float) $order->total_order,
                     'status' => PaymentStatus::UNPAID->value,
                     'created_by' => auth()->id(),
-                    'created_at' => now(),
+                    'created_at' => $createdAt,
                 ]
             );
 
@@ -1176,44 +1387,110 @@ class PaymentController extends Controller
             foreach ($request->regulations as $regulation) {
 
                 $method = RegulationMethod::where('uuid', $regulation['method_uuid'])->first();
+                $cashReceiptType = CashReceiptType::where('is_linked_to_turnover', true)->first();
                 $recouvrementRestoBar = Recouvrement::where('is_used_for_restaurant', true)
                     ->first();
 
-                $regulationModel  = PaymentRegulation::create([
-                    'payment_uuid' => $payment->uuid,
-                    'regulation_method_uuid' => $method->uuid,
-                    'recouvrement_uuid'          => $recouvrementRestoBar?->uuid,
-                    'amount' => (float) $regulation['amount'],
-                    'phone_number' => $regulation['phone_number'] ?? null,
-                    'reference' => $regulation['reference'] ?? null,
-                    'detail' => $regulation['detail'] ?? null,
-                    'created_by' => auth()->id(),
-                    'updated_by' => auth()->id(),
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-
+                $itemsAmount = 0;
+                $drinksAmount = 0;
+                $itemLines = [];
+                $drinkLines = [];
 
                 if (!empty($regulation['lines'])) {
                     foreach ($regulation['lines'] as $line) {
-                        $payableModel = $line['type'] === 'item'
-                            ? get_class($order->items()->getModel())
-                            : get_class($order->drinks()->getModel());
+                        if ($line['type'] === 'item') {
+                            $itemsAmount += (float) $line['amount'];
+                            $itemLines[] = $line;
+                        } elseif ($line['type'] === 'drink') {
+                            $drinksAmount += (float) $line['amount'];
+                            $drinkLines[] = $line;
+                        }
+                    }
+                } else {
+                    $itemsAmount = (float) $regulation['amount'];
+                }
 
+                if ($itemsAmount > 0) {
+                    $restoFamily = CashReceiptFamily::where('indexation', 'Consommation Restaurant')->first();
+
+                    $regulationModelResto = PaymentRegulation::create([
+                        'payment_uuid' => $payment->uuid,
+                        'regulation_method_uuid' => $method->uuid,
+                        'cash_receipt_families_uuid' => $restoFamily?->uuid,
+                        'cash_receipt_type_uuid' => $cashReceiptType?->uuid,
+                        'recouvrement_uuid' => $recouvrementRestoBar->uuid,
+                        'slug' => 'ENCAISSEMENT RESTO',
+                        'amount' => $itemsAmount,
+                        'type' => 'recouvrement',
+                        'phone_number' => $regulation['phone_number'] ?? null,
+                        'reference' => $regulation['reference'] ?? null,
+                        'detail' => $regulation['detail'] ?? null,
+                        'created_by' => auth()->id(),
+                        'updated_by' => auth()->id(),
+                        'created_at' => $createdAt,
+                        'updated_at' => $createdAt,
+                    ]);
+
+                    // Enregistrer les payment_lines liées au resto
+                    foreach ($itemLines as $line) {
                         PaymentLine::create([
                             'payment_uuid' => $payment->uuid,
-                            'payment_regulation_uuid' => $regulationModel->uuid,
-                            'payable_type' => $payableModel,
+                            'payment_regulation_uuid' => $regulationModelResto->uuid,
+                            'payable_type' => get_class($order->items()->getModel()),
                             'payable_uuid' => $line['uuid'],
                             'amount' => $line['amount'],
+                            'slug' => 'RESTO',
                             'regulation_method_uuid' => $method->uuid,
                             'phone_number' => $regulation['phone_number'] ?? null,
                             'reference' => $regulation['reference'] ?? null,
                             'detail' => $regulation['detail'] ?? null,
                             'created_by' => auth()->id(),
                             'updated_by' => auth()->id(),
-                            'created_at' => now(),
-                            'updated_at' => now(),
+                            'created_at' => $createdAt,
+                            'updated_at' => $createdAt,
+                        ]);
+                    }
+                }
+
+                // 3. Traitement de la partie BAR (si présente)
+                if ($drinksAmount > 0) {
+                    $barFamily = CashReceiptFamily::where('indexation', 'Consommation Bar')->first();
+
+                    $regulationModelBar = PaymentRegulation::create([
+                        'payment_uuid' => $payment->uuid,
+                        'regulation_method_uuid' => $method->uuid,
+                        'cash_receipt_families_uuid' => $barFamily?->uuid,
+                        'cash_receipt_type_uuid' => $cashReceiptType?->uuid,
+                        'recouvrement_uuid' => $recouvrementRestoBar->uuid,
+                        'slug' => 'ENCAISSEMENT BAR',
+                        'amount' => $drinksAmount,
+                        'type' => 'recouvrement',
+                        'phone_number' => $regulation['phone_number'] ?? null,
+                        'reference' => $regulation['reference'] ?? null,
+                        'detail' => $regulation['detail'] ?? null,
+                        'created_by' => auth()->id(),
+                        'updated_by' => auth()->id(),
+                        'created_at' => $createdAt,
+                        'updated_at' => $createdAt,
+                    ]);
+
+                    // Enregistrer les payment_lines liées au bar
+                    foreach ($drinkLines as $line) {
+                        PaymentLine::create([
+                            'payment_uuid' => $payment->uuid,
+                            'payment_regulation_uuid' => $regulationModelBar->uuid,
+                            'payable_type' => get_class($order->drinks()->getModel()),
+                            'payable_uuid' => $line['uuid'],
+                            'amount' => $line['amount'],
+                            'slug' => 'BAR',
+                            'regulation_method_uuid' => $method->uuid,
+                            'phone_number' => $regulation['phone_number'] ?? null,
+                            'reference' => $regulation['reference'] ?? null,
+                            'detail' => $regulation['detail'] ?? null,
+                            'created_by' => auth()->id(),
+                            'updated_by' => auth()->id(),
+                            'created_at' => $createdAt,
+                            'updated_at' => $createdAt,
                         ]);
                     }
                 }
@@ -1266,7 +1543,7 @@ class PaymentController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Paiement enregistré avec succès',
+                'message' => 'Recouvrement éffectué avec succès',
                 'data' => $payment->load('order')
             ]);
 
