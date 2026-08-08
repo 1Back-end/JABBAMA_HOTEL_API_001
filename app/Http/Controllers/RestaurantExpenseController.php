@@ -121,8 +121,8 @@ class RestaurantExpenseController extends Controller
 
         try {
             // --- RECHERCHE RÉCURSIVE DE L'INDEXATION POUR LES SLUGS ---
-            $expenseSlug = 'AUTRES';
-            $paymentSlug = 'DEPENSES AUTRES';
+            $expenseSlug = 'AUTRES DEPENSES';
+            $paymentSlug = 'AUTRES DEPENSES';
 
             if ($request->filled('restaurant_expense_family_uuid')) {
                 $currentFamilyUuid = $request->restaurant_expense_family_uuid;
@@ -158,7 +158,7 @@ class RestaurantExpenseController extends Controller
                 'amount'                         => $request->amount,
                 'name'                           => $request->name,
                 'description'                    => $request->description,
-                'slug'                           => $expenseSlug, // 'RESTO' ou 'BAR' ou 'AUTRES'
+                'slug'                           => $expenseSlug,
                 'paid_at'                        => $createdAt,
                 'created_by'                     => $auth->id,
                 'status'                         => 'paid',
@@ -209,7 +209,7 @@ class RestaurantExpenseController extends Controller
                 'regulation_method_uuid'       => $request->payment_method_uuid,
                 'amount'                       => $request->amount,
                 'type'                         => 'expense',
-                'slug'                         => $paymentSlug, // 'DEPENSES RESTO' ou 'DEPENSES BAR' ou 'DEPENSES AUTRES'
+                'slug'                         => $paymentSlug,
                 'created_by'                   => $auth->id,
                 'updated_by'                   => $auth->id,
             ]);
@@ -281,7 +281,8 @@ class RestaurantExpenseController extends Controller
         DB::beginTransaction();
 
         try {
-            $expenseSlug = 'AUTRES';
+            $expenseSlug = 'AUTRES DEPENSES';
+            $paymentSlug = 'AUTRES DEPENSES';
 
             if ($request->filled('restaurant_expense_family_uuid')) {
                 $currentFamilyUuid = $request->restaurant_expense_family_uuid;

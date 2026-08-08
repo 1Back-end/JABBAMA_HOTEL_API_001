@@ -6,6 +6,7 @@ use App\Enums\CashRegisterFilterType;
 use App\Enums\ChooseRubriquesSall;
 use App\Enums\ConsumptionType;
 use App\Enums\MenuOrderStatus;
+use App\Enums\PaymentOrderMenusStatus;
 use App\Enums\PurchaseOrdersStatus;
 use App\Enums\RoomType;
 use App\Enums\TypeClientsForPaiment;
@@ -59,6 +60,14 @@ class EnumController extends Controller
         return response()->json([
             'status' => 'success',
             'data'   => CashRegisterFilterType::toArray(),
+        ]);
+    }
+
+    public function PaymentOrderMenusStatus()
+    {
+        return response()->json([
+            'status' => 'success',
+            'data'   => PaymentOrderMenusStatus::toArray(),
         ]);
     }
 

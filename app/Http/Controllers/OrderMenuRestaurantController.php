@@ -10500,36 +10500,55 @@ class OrderMenuRestaurantController extends Controller
             'drinks.drinkConfig.product',
             'free_client_for_restaurant:uuid,code,full_name,cni_number_file,amount_allocated,amount_allocated_total',
             'payment.regulations.method'
-        ])
-            ->whereIn('regulation_status', [
-                PaymentOrderMenusStatus::PARTIALLY_PAID->value,
-                PaymentOrderMenusStatus::PAID->value,
-                PaymentOrderMenusStatus::NOT_PAID->value,
-                PaymentOrderMenusStatus::FACTURATE->value,
-            ]);
+        ]);
+           if ($request->filled('regulation_status')) {
+               $statuses = is_array($request->regulation_status)
+                   ? $request->regulation_status
+                   : [$request->regulation_status];
 
-        if ($request->filled('free_client_for_restaurant_uuid')) {
-            $query->where('free_client_for_restaurant_uuid', $request->free_client_for_restaurant_uuid);
+               $query->whereIn('regulation_status', $statuses);
+           } else {
+               $query->whereIn('regulation_status', [
+                   PaymentOrderMenusStatus::PARTIALLY_PAID->value,
+                   PaymentOrderMenusStatus::PAID->value,
+                   PaymentOrderMenusStatus::NOT_PAID->value,
+                   PaymentOrderMenusStatus::FACTURATE->value,
+               ]);
+           }
+
+        if ($request->filled('client_type')) {
+            $clientType = $request->client_type;
+
+            if ($clientType === TypeClientsForPaiment::FREE->value) {
+                $query->whereNotNull('free_client_for_restaurant_uuid');
+
+                if ($request->filled('free_client_for_restaurant_uuid')) {
+                    $query->where('free_client_for_restaurant_uuid', $request->free_client_for_restaurant_uuid);
+                }
+            }
+            elseif ($clientType === TypeClientsForPaiment::PARTNER->value) {
+                $query->whereNotNull('partners_restaurant_uuid');
+
+                if ($request->filled('partners_restaurant_uuid')) {
+                    $query->where('partners_restaurant_uuid', $request->partners_restaurant_uuid);
+                }
+            }
+            elseif ($clientType === TypeClientsForPaiment::DEBTOR->value) {
+                $query->whereNull('partners_restaurant_uuid')
+                    ->whereNull('free_client_for_restaurant_uuid');
+            }
+        } else {
+            if ($request->filled('free_client_for_restaurant_uuid')) {
+                $query->where('free_client_for_restaurant_uuid', $request->free_client_for_restaurant_uuid);
+            }
+
+            if ($request->filled('partners_restaurant_uuid')) {
+                $query->where('partners_restaurant_uuid', $request->partners_restaurant_uuid);
+            }
         }
-
-        if ($request->filled('partners_restaurant_uuid')) {
-            $query->where('partners_restaurant_uuid', $request->partners_restaurant_uuid);
-        }
-
-        if ($request->filled('invoice_code')) {
-            $query->where('code', $request->invoice_code);
-        }
-
-        Log::info('Filtres reçus', $request->all());
 
         if ($request->filled('debtor')) {
-
             $debtor = trim($request->debtor);
-
-            Log::info('Débiteur recherché', [
-                'debtor' => $debtor
-            ]);
-
             $query->where('full_name', 'LIKE', "%{$debtor}%");
         }
 
@@ -10555,6 +10574,7 @@ class OrderMenuRestaurantController extends Controller
 
     public function get_recouvrements_facture_for_clients(Request $request){
         $auth = auth()->user();
+        $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : now()->toDateString();
 
         $perPage = (int) $request->input('limit', 25);
         $page = (int) $request->input('page', 1);
@@ -10572,19 +10592,73 @@ class OrderMenuRestaurantController extends Controller
             'drinks.drinkConfig.product',
             'free_client_for_restaurant:uuid,code,full_name,cni_number_file,amount_allocated,amount_allocated_total',
             'payment.regulations.method'
-        ])
-            ->whereIn('regulation_status', [
-                PaymentOrderMenusStatus::PARTIALLY_PAID->value,
-                PaymentOrderMenusStatus::NOT_PAID->value,
-                PaymentOrderMenusStatus::FACTURATE->value,
-            ]);
+        ]);
 
-        if ($request->filled('free_client_for_restaurant_uuid')) {
-            $query->where('free_client_for_restaurant_uuid', $request->free_client_for_restaurant_uuid);
+        if ($request->filled('regulation_status')) {
+            $statuses = is_array($request->regulation_status)
+                ? $request->regulation_status
+                : [$request->regulation_status];
+
+            $query->where(function($q) use ($statuses) {
+                $otherStatuses = array_diff($statuses, [PaymentOrderMenusStatus::PAID->value]);
+
+                if (!empty($otherStatuses)) {
+                    $q->whereIn('regulation_status', $otherStatuses);
+                }
+
+                if (in_array(PaymentOrderMenusStatus::PAID->value, $statuses)) {
+                    $method = empty($otherStatuses) ? 'where' : 'orWhere';
+                    $q->{$method}(function($subQ) {
+                        $subQ->where('regulation_status', PaymentOrderMenusStatus::PAID->value)
+                            ->where('is_recouvrement', true);
+                    });
+                }
+            });
+        } else {
+            $query->where(function($q) {
+                $q->whereIn('regulation_status', [
+                    PaymentOrderMenusStatus::PARTIALLY_PAID->value,
+                    PaymentOrderMenusStatus::NOT_PAID->value,
+                    PaymentOrderMenusStatus::FACTURATE->value,
+                ])
+                    ->orWhere(function($subQ) {
+                        $subQ->where('regulation_status', PaymentOrderMenusStatus::PAID->value)
+                            ->where('is_recouvrement', true);
+                    });
+            });
         }
 
-        if ($request->filled('partners_restaurant_uuid')) {
-            $query->where('partners_restaurant_uuid', $request->partners_restaurant_uuid);
+        $query->whereDate('created_at', '<', Carbon::today());
+
+        if ($request->filled('client_type')) {
+            $clientType = $request->client_type;
+
+            if ($clientType === TypeClientsForPaiment::FREE->value) {
+                $query->whereNotNull('free_client_for_restaurant_uuid');
+
+                if ($request->filled('free_client_for_restaurant_uuid')) {
+                    $query->where('free_client_for_restaurant_uuid', $request->free_client_for_restaurant_uuid);
+                }
+            }
+            elseif ($clientType === TypeClientsForPaiment::PARTNER->value) {
+                $query->whereNotNull('partners_restaurant_uuid');
+
+                if ($request->filled('partners_restaurant_uuid')) {
+                    $query->where('partners_restaurant_uuid', $request->partners_restaurant_uuid);
+                }
+            }
+            elseif ($clientType === TypeClientsForPaiment::DEBTOR->value) {
+                $query->whereNull('partners_restaurant_uuid')
+                    ->whereNull('free_client_for_restaurant_uuid');
+            }
+        } else {
+            if ($request->filled('free_client_for_restaurant_uuid')) {
+                $query->where('free_client_for_restaurant_uuid', $request->free_client_for_restaurant_uuid);
+            }
+
+            if ($request->filled('partners_restaurant_uuid')) {
+                $query->where('partners_restaurant_uuid', $request->partners_restaurant_uuid);
+            }
         }
 
         if ($request->filled('invoice_code')) {
@@ -10596,23 +10670,23 @@ class OrderMenuRestaurantController extends Controller
             $query->where('full_name', 'LIKE', "%{$debtor}%");
         }
 
-
         $data = $query
             ->orderByRaw('
-            CASE
-                WHEN partners_restaurant_uuid IS NOT NULL THEN 1
-                WHEN free_client_for_restaurant_uuid IS NOT NULL THEN 2
-                ELSE 3
-            END ASC,
-            created_at DESC
-        ')
+        CASE
+            WHEN partners_restaurant_uuid IS NOT NULL THEN 1
+            WHEN free_client_for_restaurant_uuid IS NOT NULL THEN 2
+            ELSE 3
+        END ASC,
+        created_at DESC
+    ')
             ->paginate($perPage, ['*'], 'page', $page);
 
         $globalDebtQuery = OrderMenuRestaurant::whereIn('regulation_status', [
             PaymentOrderMenusStatus::PARTIALLY_PAID->value,
             PaymentOrderMenusStatus::NOT_PAID->value,
             PaymentOrderMenusStatus::FACTURATE->value,
-        ]);
+        ])
+            ->whereDate('created_at', '<', $date);
 
         $allInvoicesForGlobalDebt = $globalDebtQuery->with('payment')->get();
         $totalSystemDebt = $allInvoicesForGlobalDebt->sum(function($item) {

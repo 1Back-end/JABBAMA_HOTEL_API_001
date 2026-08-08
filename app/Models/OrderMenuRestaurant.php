@@ -74,6 +74,7 @@ class OrderMenuRestaurant extends Model
         'regulation_status',
         'created_at',
         'updated_at',
+        'is_recouvrement'
     ];
 
     /**

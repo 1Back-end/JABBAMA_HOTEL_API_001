@@ -16,7 +16,6 @@ enum PaymentOrderMenusStatus: string
             self::PAID           => 'Réglée',
             self::NOT_PAID       => 'Non réglée',
             self::FACTURATE => 'Facturée',
-
         };
     }
 
