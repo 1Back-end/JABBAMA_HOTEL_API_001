@@ -779,6 +779,33 @@ class PaymentController extends Controller
 
             $current = &$tree;
 
+            // Si la dépense n'a ni hiérarchie ni famille directe, on récupère le vrai nom de la catégorie parente/type
+            if ($item->hierarchy_families->isEmpty() && !$item->family) {
+                $typeName = optional($item->expenseType)->name ?? 'Dépenses directes';
+                $typeUuid = optional($item->expenseType)->uuid ?? null;
+                $defaultKey = 'direct_type_' . ($typeUuid ?? 'general');
+
+                if (!isset($current[$defaultKey])) {
+                    $current[$defaultKey] = [
+                        'uuid'     => $typeUuid,
+                        'name'     => $typeName, // 🔹 Utilise le nom exact ici
+                        'amount'   => 0,
+                        'children' => [],
+                        'items'    => [],
+                    ];
+                }
+
+                $current[$defaultKey]['amount'] += (float) $item->amount;
+                $current[$defaultKey]['items'][] = [
+                    'uuid'   => $item->uuid,
+                    'name'   => $item->name,
+                    'amount' => (float) $item->amount,
+                    'method' => $item->method,
+                ];
+
+                continue;
+            }
+
             // Trier la hiérarchie par niveau
             $hierarchy = $item->hierarchy_families
                 ->sortBy('level')
@@ -836,6 +863,23 @@ class PaymentController extends Controller
                     'amount' => (float) $item->amount,
                     'method' => $item->method,
                 ];
+            } else {
+                // Cas où il y a une hiérarchie mais pas de famille finale
+                $current_key = 'direct_' . $item->uuid;
+                $current[$current_key] = [
+                    'uuid'   => $item->uuid,
+                    'name'   => $item->name,
+                    'amount' => (float) $item->amount,
+                    'children' => [],
+                    'items'  => [
+                        [
+                            'uuid'   => $item->uuid,
+                            'name'   => $item->name,
+                            'amount' => (float) $item->amount,
+                            'method' => $item->method,
+                        ]
+                    ],
+                ];
             }
 
             unset($current);
@@ -867,9 +911,16 @@ class PaymentController extends Controller
         $slug = $request->filled('slug') ? strtoupper(trim($request->slug)) : null;
 
         $slugLabel = $slug ?? 'GLOBAL';
+        if (!$slug) {
+            $expenseTitle = 'DEPENSES GLOBAL';
+        } elseif (in_array($slug, ['BAR', 'RESTO'])) {
+            $expenseTitle = 'DEPENSES ' . $slug;
+        } else {
+            $expenseTitle = 'AUTRES DEPENSES';
+        }
+
         $receiptTitle = 'ENCAISSEMENT ' . $slugLabel;
         $recouvrementTitle = 'RECOUVREMENTS ' . $slugLabel;
-        $expenseTitle = 'DEPENSES ' . $slugLabel;
 
         $expenses = collect();
         $receipts = collect();
@@ -1513,6 +1564,7 @@ class PaymentController extends Controller
             $payment->save();
 
             $order->updated_by = auth()->id();
+            $order->is_recouvrement = true;
             $order->save();
 
 
