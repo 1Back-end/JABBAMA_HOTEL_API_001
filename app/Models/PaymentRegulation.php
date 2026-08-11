@@ -4,7 +4,9 @@ namespace App\Models;
 
 use App\Enums\PaymentStatus;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class PaymentRegulation extends Model
@@ -22,6 +24,7 @@ class PaymentRegulation extends Model
         'cash_receipt_type_uuid',
         'restaurant_expense_type_uuid',
         'cash_receipt_families_uuid',
+        'other_cash_ins_uuid',
         'recouvrement_uuid',
         'amount',
         'phone_number',
@@ -35,8 +38,25 @@ class PaymentRegulation extends Model
         'source_uuid',
         'created_at',
         'updated_at',
-        'slug'
+        'slug',
+        'attachment'
     ];
+
+    protected $appends = ['attachment_image'];
+
+    public function getAttachmentImageAttribute()
+    {
+        $media = $this->medias()->first();
+        if ($media) {
+            return Storage::disk($media->disk)->url($media->path);
+        }
+        return null;
+    }
+
+    public function medias(): MorphMany
+    {
+        return $this->morphMany(Medias::class, 'mediable');
+    }
 
     protected static function boot()
     {
@@ -131,5 +151,9 @@ class PaymentRegulation extends Model
     public function recouvrement()
     {
         return $this->belongsTo(Recouvrement::class, 'recouvrement_uuid', 'uuid');
+    }
+    public function othersInCash()
+    {
+        return $this->belongsTo(OtherCashIn::class, 'other_cash_in_uuid', 'uuid');
     }
 }

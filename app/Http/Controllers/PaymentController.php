@@ -640,54 +640,55 @@ class PaymentController extends Controller
 
         } elseif ($request->cash_register_filter_type === CashRegisterFilterType::PAYMENT_TYPE->value) {
 
+            // --- 2. FILTRE PAR TYPE DE PAIEMENT (BAR / RESTO / AUTRES regroupés) ---
             $selectColumns[] = DB::raw("
-        CASE
-            WHEN payment_regulations.slug LIKE '%BAR%' THEN 'BAR'
-            WHEN payment_regulations.slug LIKE '%RESTO%' THEN 'RESTO'
-            ELSE COALESCE(payment_regulations.slug, 'AUTRES')
-        END as category_slug
-    ");
+            CASE
+                WHEN payment_regulations.slug LIKE '%BAR%' THEN 'BAR'
+                WHEN payment_regulations.slug LIKE '%RESTO%' THEN 'RESTO'
+                ELSE 'AUTRES'
+            END as category_slug
+        ");
 
             $selectColumns[] = DB::raw("
-        CASE
-            WHEN payment_regulations.slug LIKE '%BAR%' THEN 'BAR'
-            WHEN payment_regulations.slug LIKE '%RESTO%' THEN 'RESTO'
-            ELSE COALESCE(payment_regulations.slug, 'AUTRES')
-        END as category_type_name
-    ");
+            CASE
+                WHEN payment_regulations.slug LIKE '%BAR%' THEN 'BAR'
+                WHEN payment_regulations.slug LIKE '%RESTO%' THEN 'RESTO'
+                ELSE 'AUTRES'
+            END as category_type_name
+        ");
 
             $selectColumns[] = DB::raw("SUM(CASE WHEN payment_regulations.type IN ('encaissement', 'recouvrement') THEN payment_regulations.amount ELSE 0 END) as total_encaissements");
             $selectColumns[] = DB::raw("SUM(CASE WHEN payment_regulations.type = 'expense' THEN payment_regulations.amount ELSE 0 END) as total_depenses");
             $selectColumns[] = DB::raw("SUM(CASE WHEN payment_regulations.type IN ('encaissement', 'recouvrement') THEN payment_regulations.amount ELSE -payment_regulations.amount END) as total_amount");
 
             $groupByColumns[] = DB::raw("
-        CASE
-            WHEN payment_regulations.slug LIKE '%BAR%' THEN 'BAR'
-            WHEN payment_regulations.slug LIKE '%RESTO%' THEN 'RESTO'
-            ELSE COALESCE(payment_regulations.slug, 'AUTRES')
-        END
-    ");
+            CASE
+                WHEN payment_regulations.slug LIKE '%BAR%' THEN 'BAR'
+                WHEN payment_regulations.slug LIKE '%RESTO%' THEN 'RESTO'
+                ELSE 'AUTRES'
+            END
+        ");
 
             if ($request->filled('slug')) {
                 $slugFilter = $request->slug;
 
                 $query->where(function($q) use ($slugFilter) {
                     $q->where(DB::raw("
-                CASE
-                    WHEN payment_regulations.slug LIKE '%BAR%' THEN 'BAR'
-                    WHEN payment_regulations.slug LIKE '%RESTO%' THEN 'RESTO'
-                    ELSE COALESCE(payment_regulations.slug, 'AUTRES')
-                END
-            "), 'LIKE', '%' . $slugFilter . '%');
+                    CASE
+                        WHEN payment_regulations.slug LIKE '%BAR%' THEN 'BAR'
+                        WHEN payment_regulations.slug LIKE '%RESTO%' THEN 'RESTO'
+                        ELSE 'AUTRES'
+                    END
+                "), 'LIKE', '%' . $slugFilter . '%');
                 });
 
                 $totalsQuery->where(DB::raw("
-            CASE
-                WHEN payment_regulations.slug LIKE '%BAR%' THEN 'BAR'
-                WHEN payment_regulations.slug LIKE '%RESTO%' THEN 'RESTO'
-                ELSE COALESCE(payment_regulations.slug, 'AUTRES')
-            END
-        "), 'LIKE', '%' . $slugFilter . '%');
+                CASE
+                    WHEN payment_regulations.slug LIKE '%BAR%' THEN 'BAR'
+                    WHEN payment_regulations.slug LIKE '%RESTO%' THEN 'RESTO'
+                    ELSE 'AUTRES'
+                END
+            "), 'LIKE', '%' . $slugFilter . '%');
             }
 
         } else {
@@ -713,7 +714,7 @@ class PaymentController extends Controller
 
         if ($request->cash_register_filter_type === CashRegisterFilterType::PAYMENT_TYPE->value) {
             $queryBuilder->havingRaw("SUM(CASE WHEN payment_regulations.type IN ('encaissement', 'recouvrement') THEN payment_regulations.amount ELSE 0 END) > 0
-                          OR SUM(CASE WHEN payment_regulations.type = 'expense' THEN payment_regulations.amount ELSE 0 END) > 0");
+                      OR SUM(CASE WHEN payment_regulations.type = 'expense' THEN payment_regulations.amount ELSE 0 END) > 0");
         }
 
         $data = $queryBuilder->orderByDesc(DB::raw('DATE(payment_regulations.created_at)'))
@@ -907,16 +908,37 @@ class PaymentController extends Controller
     {
         $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : null;
         $filterType = $request->cash_register_filter_type;
+        $createdBy = $request->filled('created_by') ? $request->created_by : null;
 
         $slug = $request->filled('slug') ? strtoupper(trim($request->slug)) : null;
 
-        $slugLabel = $slug ?? 'GLOBAL';
+        $creator = null;
+        if ($createdBy) {
+            $creator = \App\Models\User::select('id', 'nom_utilisateur')->find($createdBy);
+        }
+
+        $slug = $request->filled('slug') ? strtoupper(trim($request->slug)) : null;
+
+        $creator = null;
+        if ($createdBy) {
+            $creator = \App\Models\User::select('id', 'nom_utilisateur')->find($createdBy);
+        }
+
+        $slugLabel = $slug ? strtoupper($slug) : 'GLOBAL';
+
+        // --- CORRECTION DES TITRES SELON LE SLUG ---
         if (!$slug) {
             $expenseTitle = 'DEPENSES GLOBAL';
+            $otherCashInTitle = 'AUTRES ENCAISSEMENTS';
         } elseif (in_array($slug, ['BAR', 'RESTO'])) {
-            $expenseTitle = 'DEPENSES ' . $slug;
+            $expenseTitle = 'DEPENSES ' . $slugLabel;
+            $otherCashInTitle = 'AUTRES ENCAISSEMENTS ' . $slugLabel;
+        } elseif ($slug === 'AUTRES') {
+            $expenseTitle = 'AUTRES DEPENSES';
+            $otherCashInTitle = 'AUTRES ENCAISSEMENTS';
         } else {
             $expenseTitle = 'AUTRES DEPENSES';
+            $otherCashInTitle = 'AUTRES ENCAISSEMENTS ' . $slugLabel;
         }
 
         $receiptTitle = 'ENCAISSEMENT ' . $slugLabel;
@@ -925,6 +947,7 @@ class PaymentController extends Controller
         $expenses = collect();
         $receipts = collect();
         $recouvrements = collect();
+        $otherCashIns = collect();
 
         $shouldFetchExpenses = $filterType !== 'payment_type' || $request->filled('restaurant_expense_type_uuid') || $slug;
 
@@ -936,9 +959,8 @@ class PaymentController extends Controller
                 $filterType !== 'payment_type' || $request->filled('recouvrement_uuid') || $slug
             );
 
-        // -------------------------------------------------------------
-        // 1. DÉPENSES
-        // -------------------------------------------------------------
+        $shouldFetchOtherCashIns = $filterType !== 'expense_type';
+
         if ($shouldFetchExpenses) {
             $expensesQuery = ExpensePayment::with([
                 'creator:id,nom_utilisateur',
@@ -952,7 +974,15 @@ class PaymentController extends Controller
                 ->whereNull('deleted_at');
 
             if ($slug) {
-                $expensesQuery->where('slug', $slug);
+                if ($slug === 'AUTRES') {
+                    $expensesQuery->where(function ($q) {
+                        $q->whereNull('slug')
+                            ->orWhere('slug', '')
+                            ->orWhere('slug', 'AUTRES DEPENSES');
+                    });
+                } else {
+                    $expensesQuery->where('slug', $slug);
+                }
             }
 
             if ($request->filled('restaurant_expense_type_uuid')) {
@@ -965,8 +995,8 @@ class PaymentController extends Controller
                 });
             }
 
-            if ($filterType === 'cashier_agent' && $request->filled('created_by')) {
-                $expensesQuery->where('created_by', $request->created_by);
+            if ($filterType === 'cashier_agent' && $createdBy) {
+                $expensesQuery->where('created_by', $createdBy);
             }
 
             $expenses = $expensesQuery->orderByDesc('paid_at')
@@ -983,9 +1013,6 @@ class PaymentController extends Controller
                 ->values();
         }
 
-        // -------------------------------------------------------------
-        // 2. ENCAISSEMENTS
-        // -------------------------------------------------------------
         if ($shouldFetchReceipts) {
             $receiptsQuery = PaymentRegulation::with([
                 'creator:id,nom_utilisateur',
@@ -1030,8 +1057,8 @@ class PaymentController extends Controller
                 $receiptsQuery->where('regulation_method_uuid', $request->regulation_method_uuid);
             }
 
-            if ($filterType === 'cashier_agent' && $request->filled('created_by')) {
-                $receiptsQuery->where('created_by', $request->created_by);
+            if ($filterType === 'cashier_agent' && $createdBy) {
+                $receiptsQuery->where('created_by', $createdBy);
             }
 
             $receipts = $receiptsQuery->orderByDesc('created_at')
@@ -1059,9 +1086,6 @@ class PaymentController extends Controller
                 })->values();
         }
 
-        // -------------------------------------------------------------
-        // 3. RECOUVREMENTS (Structurés par client avec items et prix commande)
-        // -------------------------------------------------------------
         if ($shouldFetchRecouvrements) {
             $recouvrementsQuery = PaymentRegulation::with([
                 'creator:id,nom_utilisateur',
@@ -1109,8 +1133,8 @@ class PaymentController extends Controller
                 $recouvrementsQuery->where('regulation_method_uuid', $request->regulation_method_uuid);
             }
 
-            if ($filterType === 'cashier_agent' && $request->filled('created_by')) {
-                $recouvrementsQuery->where('created_by', $request->created_by);
+            if ($filterType === 'cashier_agent' && $createdBy) {
+                $recouvrementsQuery->where('created_by', $createdBy);
             }
 
             $recouvrements = $recouvrementsQuery->orderByDesc('created_at')
@@ -1169,15 +1193,59 @@ class PaymentController extends Controller
                 })->values();
         }
 
+        if ($shouldFetchOtherCashIns) {
+            $otherCashInsQuery = \App\Models\OtherCashIn::with([
+                'creator:id,nom_utilisateur',
+                'updater:id,nom_utilisateur',
+                'regulationMethod:uuid,name',
+                'medias',
+            ])
+                ->where('status', 'validated')
+                ->whereDate('created_at', $date)
+                ->whereNull('deleted_at');
+
+            if ($slug) {
+                if ($slug === 'AUTRES') {
+                    $otherCashInsQuery->where(function ($q) {
+                        $q->whereNull('slug')
+                            ->orWhere('slug', '')
+                            ->orWhere('slug', 'AUTRES ENCAISSEMENTS');
+                    });
+                } else {
+                    $otherCashInsQuery->where('slug', $slug);
+                }
+            }
+
+            if ($filterType === 'payment_method' && $request->filled('regulation_method_uuid')) {
+                $otherCashInsQuery->where('regulation_method_uuid', $request->regulation_method_uuid);
+            }
+
+            if ($filterType === 'cashier_agent' && $createdBy) {
+                $otherCashInsQuery->where('created_by', $createdBy);
+            }
+
+            $otherCashInsCollection = $otherCashInsQuery->orderByDesc('created_at')->get();
+
+            if ($otherCashInsCollection->isNotEmpty()) {
+                $otherCashIns = [
+                    'title'        => $otherCashInTitle,
+                    'total_amount' => (float) $otherCashInsCollection->sum('amount'),
+                    'items'        => $otherCashInsCollection
+                ];
+            }
+        }
+
         return response()->json([
             'success' => true,
             'message' => 'Flux de caisse récupéré avec succès',
             'data'    => [
-                'date'          => $date,
-                'slug'          => $slug,
-                'expenses'      => $expenses,
-                'receipts'      => $receipts,
-                'recouvrements' => $recouvrements
+                'date'           => $date,
+                'slug'           => $slug,
+                'creator'        => $creator,
+                'expenses'       => $expenses,
+                'receipts'       => $receipts,
+                'recouvrements'  => $recouvrements,
+                'other_cash_ins' => $otherCashIns
             ]
         ], 200);
     }
@@ -1310,11 +1378,18 @@ class PaymentController extends Controller
             'regulations.*.method_uuid' => 'required|uuid',
             'regulations.*.amount' => 'required|numeric|min:0.01',
             'regulations.*.lines' => 'nullable|array',
+            'attachment' => 'nullable|file|max:2048|mimes:jpg,jpeg,png,svg,pdf'
         ]);
 
         $createdAt = $request->filled('date')
             ? Carbon::parse($request->date)->setTimeFrom(Carbon::now())
             : Carbon::now();
+
+        $attachmentPath = null;
+        if ($request->hasFile('attachment')) {
+            $file = $request->file('attachment');
+            $attachmentPath = $file->store('attachments/recouvrements', 'public');
+        }
 
         DB::beginTransaction();
 
@@ -1472,6 +1547,7 @@ class PaymentController extends Controller
                         'recouvrement_uuid' => $recouvrementRestoBar->uuid,
                         'slug' => 'ENCAISSEMENT RESTO',
                         'amount' => $itemsAmount,
+                        'attachment' => $attachmentPath,
                         'type' => 'recouvrement',
                         'phone_number' => $regulation['phone_number'] ?? null,
                         'reference' => $regulation['reference'] ?? null,
@@ -1515,6 +1591,7 @@ class PaymentController extends Controller
                         'recouvrement_uuid' => $recouvrementRestoBar->uuid,
                         'slug' => 'ENCAISSEMENT BAR',
                         'amount' => $drinksAmount,
+                        'attachment' => $attachmentPath,
                         'type' => 'recouvrement',
                         'phone_number' => $regulation['phone_number'] ?? null,
                         'reference' => $regulation['reference'] ?? null,
@@ -1545,6 +1622,21 @@ class PaymentController extends Controller
                         ]);
                     }
                 }
+            }
+
+            if ($request->hasFile('image_file')) {
+                $file = $request->file('image_file');
+                $filename = time() . '_' . $file->getClientOriginalName();
+                $path = $file->store('products', 'public');
+
+                $product->medias()->create([
+                    'name' => $filename,
+                    'disk' => 'public',
+                    'path' => $path,
+                    'filename' => $filename,
+                    'mimetype' => $file->getClientMimeType(),
+                    'extension' => $file->getClientOriginalExtension(),
+                ]);
             }
 
 

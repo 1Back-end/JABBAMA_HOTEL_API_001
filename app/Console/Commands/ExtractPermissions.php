@@ -245,6 +245,11 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des dépenses',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],
+        'change_other_cash_in_date' => [
+            'description' => 'Changer la date pour effectuer des encaissements antérieurs',
+            'category' => 'Gestion des autres encaissements',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
         'view_kitchen_and_bar_orders' => [
             'description' => 'Afficher les commandes contenant des menus et/ou des boissons (cuisine + bar)',
             'category' => 'Gestion des commandes du restaurant',
