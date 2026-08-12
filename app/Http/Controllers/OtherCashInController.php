@@ -4,8 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Models\OtherCashIn;
 use App\Models\PaymentRegulation;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 /**
@@ -65,10 +67,18 @@ class OtherCashInController extends Controller
      */
     public function store(Request $request)
     {
+        if ($request->has('family_hierarchy_uuids') && is_string($request->family_hierarchy_uuids)) {
+            $request->merge([
+                'family_hierarchy_uuids' => json_decode($request->family_hierarchy_uuids, true)
+            ]);
+        }
+
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'amount' => 'required|numeric|min:0',
             'regulation_method_uuid' => 'required|uuid|exists:regulation_methods,uuid',
+            'cash_receipt_family_uuid' => 'nullable|uuid|exists:cash_receipt_families,uuid',
+            'family_hierarchy_uuids' => 'nullable|array',
             'date' => 'nullable|date',
             'attachment' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:2048',
         ]);
@@ -80,6 +90,8 @@ class OtherCashInController extends Controller
                 'name' => $validated['name'],
                 'amount' => $validated['amount'],
                 'regulation_method_uuid' => $validated['regulation_method_uuid'],
+                'cash_receipt_family_uuid' => $validated['cash_receipt_family_uuid'] ?? null,
+                'family_hierarchy_uuids' => $validated['family_hierarchy_uuids'] ?? null,
                 'status' => 'validated',
                 'slug' => 'AUTRES ENCAISSEMENTS',
                 'created_by' => auth()->id(),
@@ -146,37 +158,38 @@ class OtherCashInController extends Controller
      */
     public function update_other_cash_ins(Request $request, $uuid)
     {
+        $otherCashIn = OtherCashIn::where('uuid', $uuid)->firstOrFail();
+
+        if ($request->has('family_hierarchy_uuids') && is_string($request->family_hierarchy_uuids)) {
+            $request->merge([
+                'family_hierarchy_uuids' => json_decode($request->family_hierarchy_uuids, true)
+            ]);
+        }
+
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'amount' => 'required|numeric|min:0',
             'regulation_method_uuid' => 'required|uuid|exists:regulation_methods,uuid',
+            'cash_receipt_family_uuid' => 'nullable|uuid|exists:cash_receipt_families,uuid',
+            'family_hierarchy_uuids' => 'nullable|array',
             'date' => 'nullable|date',
             'attachment' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:2048',
         ]);
 
-        return DB::transaction(function () use ($request, $validated, $uuid) {
-
-            $otherCashIn = OtherCashIn::findOrFail($uuid);
-            $paymentRegulation = PaymentRegulation::where('other_cash_ins_uuid', $otherCashIn->uuid)->first();
-
+        return DB::transaction(function () use ($request, $validated, $otherCashIn) {
             $recordDate = isset($validated['date']) ? $validated['date'] . ' ' . now()->format('H:i:s') : $otherCashIn->created_at;
 
             $otherCashIn->update([
                 'name' => $validated['name'],
                 'amount' => $validated['amount'],
                 'regulation_method_uuid' => $validated['regulation_method_uuid'],
+                'cash_receipt_family_uuid' => $validated['cash_receipt_family_uuid'] ?? null,
+                'family_hierarchy_uuids' => $validated['family_hierarchy_uuids'] ?? null,
                 'updated_by' => auth()->id(),
-                'validated_by' => auth()->id(),
-                'created_at' => $recordDate,
                 'updated_at' => $recordDate,
             ]);
 
             if ($request->hasFile('attachment')) {
-                foreach ($otherCashIn->medias as $media) {
-                    \Storage::disk($media->disk)->delete($media->path);
-                    $media->delete();
-                }
-
                 $file = $request->file('attachment');
                 $filename = time() . '_' . $file->getClientOriginalName();
                 $path = $file->store('other_cash_ins', 'public');
@@ -192,32 +205,30 @@ class OtherCashInController extends Controller
                 $otherCashIn->update(['attachment' => $path]);
             }
 
+            $paymentRegulation = PaymentRegulation::where('other_cash_ins_uuid', $otherCashIn->uuid)->first();
+
             if ($paymentRegulation) {
                 $paymentRegulation->update([
                     'regulation_method_uuid' => $validated['regulation_method_uuid'],
                     'amount' => $validated['amount'],
                     'updated_by' => auth()->id(),
-                    'created_at' => $recordDate,
                     'updated_at' => $recordDate,
                 ]);
 
                 if ($request->hasFile('attachment')) {
-                    foreach ($paymentRegulation->medias as $media) {
-                        \Storage::disk($media->disk)->delete($media->path);
-                        $media->delete();
-                    }
-
-                    $pathPayment = $file->store('other_cash_ins_payments', 'public');
+                    $file = $request->file('attachment');
+                    $filename = time() . '_' . $file->getClientOriginalName();
+                    $path = $file->store('other_cash_ins_payments', 'public');
 
                     $paymentRegulation->medias()->create([
                         'name' => $filename,
                         'disk' => 'public',
-                        'path' => $pathPayment,
+                        'path' => $path,
                         'filename' => $filename,
                         'mimetype' => $file->getClientMimeType(),
                         'extension' => $file->getClientOriginalExtension(),
                     ]);
-                    $paymentRegulation->update(['attachment' => $pathPayment]);
+                    $paymentRegulation->update(['attachment' => $path]);
                 }
             }
 
@@ -264,6 +275,130 @@ class OtherCashInController extends Controller
                 'data' => $otherCashIn
             ], 200);
         });
+    }
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission OtherCashInController::cancelGroup
+     * @permission_desc Annuler le groupe d'un autre encaissement
+     */
+    public function cancelGroup(Request $request)
+    {
+        $auth = auth()->user();
+
+        $request->validate([
+            'group_id'            => 'nullable|string',
+            'reason_of_cancelled' => 'required|string|max:255',
+        ]);
+
+        $query = OtherCashIn::where('status', '!=', 'cancelled');
+
+        if ($request->filled('group_id')) {
+            $query->where('cash_receipt_family_uuid', $request->group_id);
+        }
+
+        $otherCashIns = $query->get();
+
+        if ($otherCashIns->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Aucun encaissement actif trouvé.'
+            ], 422);
+        }
+
+        DB::beginTransaction();
+
+        try {
+            $cashInUuids = $otherCashIns->pluck('uuid')->toArray();
+
+            OtherCashIn::whereIn('uuid', $cashInUuids)->update([
+                'status'              => 'cancelled',
+                'cancelled_by'        => $auth->id,
+                'reason_of_cancelled' => $request->reason_of_cancelled,
+            ]);
+
+            PaymentRegulation::whereIn('other_cash_ins_uuid', $cashInUuids)->delete();
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Tous les encaissements ciblés ont été annulés avec succès.',
+                'count'   => count($cashInUuids)
+            ]);
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => "Une erreur est survenue lors de l'annulation.",
+                'error'   => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Display a listing of the resource.
+     * @permission OtherCashInController::cancelFamily
+     * @permission_desc Annuler la famille ou sous-famille d'un autre encaissement
+     */
+    public function cancelFamily(Request $request)
+    {
+        $auth = auth()->user();
+
+        $request->validate([
+            'family_id'           => 'required|string',
+            'reason_of_cancelled' => 'required|string|max:255',
+        ]);
+
+        $familyUuid = $request->family_id;
+
+        $otherCashIns = OtherCashIn::where('status', '!=', 'cancelled')
+            ->where(function ($q) use ($familyUuid) {
+                $q->where('cash_receipt_family_uuid', $familyUuid)
+                    ->orWhereJsonContains('family_hierarchy_uuids', $familyUuid);
+            })
+            ->get();
+
+        if ($otherCashIns->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Aucun encaissement actif trouvé pour cette famille.'
+            ], 422);
+        }
+
+        DB::beginTransaction();
+
+        try {
+            $cashInUuids = $otherCashIns->pluck('uuid')->toArray();
+
+            OtherCashIn::whereIn('uuid', $cashInUuids)->update([
+                'status'              => 'cancelled',
+                'cancelled_by'        => $auth->id,
+                'reason_of_cancelled' => $request->reason_of_cancelled,
+            ]);
+
+            PaymentRegulation::whereIn('other_cash_ins_uuid', $cashInUuids)->delete();
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Tous les encaissements de la famille ont été annulés avec succès.',
+                'count'   => count($cashInUuids)
+            ]);
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => "Une erreur est survenue lors de l'annulation de la famille.",
+                'error'   => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**

@@ -11,15 +11,17 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('payment_regulations', function (Blueprint $table) {
-            $table->uuid('other_cash_ins_uuid')->nullable()->after('uuid');
+        if (!Schema::hasColumn('payment_regulations', 'other_cash_ins_uuid')) {
+            Schema::table('payment_regulations', function (Blueprint $table) {
+                $table->uuid('other_cash_ins_uuid')->nullable()->after('uuid');
 
-            $table->foreign('other_cash_ins_uuid')
-                ->references('uuid')
-                ->on('other_cash_ins')
-                ->onDelete('cascade')
-                ->onUpdate('cascade');
-        });
+                $table->foreign('other_cash_ins_uuid')
+                    ->references('uuid')
+                    ->on('other_cash_ins')
+                    ->onDelete('cascade')
+                    ->onUpdate('cascade');
+            });
+        }
     }
 
     /**
@@ -27,9 +29,11 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('payment_regulations', function (Blueprint $table) {
-            $table->dropForeign(['other_cash_ins_uuid']);
-            $table->dropColumn('other_cash_ins_uuid');
-        });
+        if (Schema::hasColumn('payment_regulations', 'other_cash_ins_uuid')) {
+            Schema::table('payment_regulations', function (Blueprint $table) {
+                $table->dropForeign(['other_cash_ins_uuid']);
+                $table->dropColumn('other_cash_ins_uuid');
+            });
+        }
     }
 };

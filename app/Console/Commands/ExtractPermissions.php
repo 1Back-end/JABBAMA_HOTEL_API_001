@@ -240,6 +240,16 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des encaissements',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],
+        'view_extended_cash_main_courante' => [
+            'description' => 'Afficher l\'interface de la main courante',
+            'category' => 'Gestion des encaissements',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'view_main_courante' => [
+            'description' => 'Changer la date pour afficher les données antérieures de la main courante',
+            'category' => 'Gestion des encaissements',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
         'change_expense_payment_date' => [
             'description' => 'Changer la date pour effectuer des dépenses antérieures',
             'category' => 'Gestion des dépenses',
@@ -247,6 +257,11 @@ class ExtractPermissions extends Command
         ],
         'change_other_cash_in_date' => [
             'description' => 'Changer la date pour effectuer des encaissements antérieurs',
+            'category' => 'Gestion des autres encaissements',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'view_other_cash_in_history' => [
+            'description' => "Afficher l'historique des recouvrements des factures",
             'category' => 'Gestion des autres encaissements',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],

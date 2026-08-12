@@ -89,20 +89,43 @@ class OrderMenuRestaurant extends Model
         'order_menu_restaurant_date' => 'datetime',
     ];
 
-    protected $appends = ['items_and_drinks_status','free_client_amount_allocated','total_cumul_arrhes','status_payment_label','partner_amount_allocated','consumption_type_label','clients_for_payment_label','status_label','status_payment_label','total_items','total_drinks','total_order','summary_items','remaining_amount','computed_paid_amount'];
+    protected $appends = ['debtor_amount_allocated','items_and_drinks_status','free_client_amount_allocated','total_cumul_arrhes','status_payment_label','partner_amount_allocated','consumption_type_label','clients_for_payment_label','status_label','status_payment_label','total_items','total_drinks','total_order','summary_items','remaining_amount','computed_paid_amount'];
     public function getTotalCumulArrhesAttribute()
     {
         return $this->free_client_amount_allocated
-            + $this->partner_amount_allocated;
+            + $this->partner_amount_allocated
+            + $this->debtor_amount_allocated;
     }
 
     public function getFreeClientAmountAllocatedAttribute()
     {
-        return $this->free_client_for_restaurant?->amount_allocated ?? 0;
+        $allocated = $this->free_client_for_restaurant?->amount_allocated ?? 0;
+
+        if ($allocated == 0 && in_array($this->regulation_status, [
+                PaymentOrderMenusStatus::PAID->value,
+                PaymentOrderMenusStatus::PARTIALLY_PAID->value,
+            ])) {
+            return $this->payment?->paid_amount ?? 0;
+        }
+        return $allocated;
     }
+
     public function getPartnerAmountAllocatedAttribute()
     {
-        return $this->partners_restaurant?->amount_allocated ?? 0;
+        $allocated = $this->partners_restaurant?->amount_allocated ?? 0;
+
+        if ($allocated == 0 && in_array($this->regulation_status, [
+                PaymentOrderMenusStatus::PAID->value,
+                PaymentOrderMenusStatus::PARTIALLY_PAID->value,
+            ])) {
+            return $this->payment?->paid_amount ?? 0;
+        }
+        return $allocated;
+    }
+
+    public function getDebtorAmountAllocatedAttribute()
+    {
+        return self::sum('amount_allocated') ?? 0;
     }
 
     public function getRemainingAmountAttribute(): int

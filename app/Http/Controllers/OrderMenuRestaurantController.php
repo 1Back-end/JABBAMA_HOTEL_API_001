@@ -5,10 +5,12 @@ namespace App\Http\Controllers;
 use App\DTO\OrderMenuRestaurantFilterData;
 use App\Enums\ChooseRubriquesSall;
 use App\Enums\ConsumptionType;
+use App\Enums\HistoricsEncaissementsOrRecouvrements;
 use App\Enums\MenuOrderStatus;
 use App\Enums\OrderMenuRestaurantItemStatus;
 use App\Enums\PaymentOrderItemStatus;
 use App\Enums\PaymentOrderMenusStatus;
+use App\Enums\StatusRecouvrements;
 use App\Enums\TypeClientsForPaiment;
 use App\Enums\VirtualOrderMenuRestaurantStatus;
 use App\Exports\OrderMenuRestaurantExport;
@@ -10572,6 +10574,122 @@ class OrderMenuRestaurantController extends Controller
         ]);
     }
 
+
+    public function get_types_encaissements_recouvrements(Request $request)
+    {
+        $auth = auth()->user();
+        $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : now()->toDateString();
+
+        $perPage = (int) $request->input('limit', 25);
+        $page = (int) $request->input('page', 1);
+
+        $dateFilter = function ($subQuery) use ($request, $date) {
+            if ($request->filled('date')) {
+                $subQuery->whereDate('created_at', $request->date);
+            } else {
+                $subQuery->whereDate('created_at', $date);
+            }
+        };
+
+        $query = OrderMenuRestaurant::with([
+            'restaurantTable:uuid,code,table_number',
+            'creator:id,nom_utilisateur,email',
+            'updater:id,nom_utilisateur,email',
+            'validator:id,nom_utilisateur,email',
+            'cancelor:id,nom_utilisateur,email',
+            'partners_restaurant:uuid,code,full_name,amount_allocated,amount_allocated_total',
+            'restaurant_room:uuid,code,rooms_number',
+            'menu_restaurant:uuid,name,code,type_complement_boisson',
+            'items.menu',
+            'drinks.drinkConfig.product',
+            'free_client_for_restaurant:uuid,code,full_name,cni_number_file,amount_allocated,amount_allocated_total',
+            'payment.regulations.method'
+        ]);
+
+        $query->whereIn('regulation_status', [
+            PaymentOrderMenusStatus::PAID->value,
+        ])
+            ->where('is_recouvrement', true)
+            ->whereHas('payment.regulations', $dateFilter);
+
+        if ($request->filled('client_type')) {
+            $clientType = $request->client_type;
+
+            if ($clientType === TypeClientsForPaiment::FREE->value) {
+                $query->whereNotNull('free_client_for_restaurant_uuid');
+
+                if ($request->filled('free_client_for_restaurant_uuid')) {
+                    $query->where('free_client_for_restaurant_uuid', $request->free_client_for_restaurant_uuid);
+                }
+            }
+            elseif ($clientType === TypeClientsForPaiment::PARTNER->value) {
+                $query->whereNotNull('partners_restaurant_uuid');
+
+                if ($request->filled('partners_restaurant_uuid')) {
+                    $query->where('partners_restaurant_uuid', $request->partners_restaurant_uuid);
+                }
+            }
+            elseif ($clientType === TypeClientsForPaiment::DEBTOR->value) {
+                $query->whereNull('partners_restaurant_uuid')
+                    ->whereNull('free_client_for_restaurant_uuid');
+            }
+        } else {
+            if ($request->filled('free_client_for_restaurant_uuid')) {
+                $query->where('free_client_for_restaurant_uuid', $request->free_client_for_restaurant_uuid);
+            }
+
+            if ($request->filled('partners_restaurant_uuid')) {
+                $query->where('partners_restaurant_uuid', $request->partners_restaurant_uuid);
+            }
+        }
+
+        if ($request->filled('invoice_code')) {
+            $query->where('code', $request->invoice_code);
+        }
+
+        if ($request->filled('debtor')) {
+            $debtor = trim($request->debtor);
+            $query->where('full_name', 'LIKE', "%{$debtor}%");
+        }
+
+        $data = $query
+            ->orderByRaw('
+            CASE
+                WHEN partners_restaurant_uuid IS NOT NULL THEN 1
+                WHEN free_client_for_restaurant_uuid IS NOT NULL THEN 2
+                ELSE 3
+            END ASC,
+            created_at DESC
+        ')
+            ->paginate($perPage, ['*'], 'page', $page);
+
+        $globalDebtQuery = OrderMenuRestaurant::whereIn('regulation_status', [
+            PaymentOrderMenusStatus::PARTIALLY_PAID->value,
+            PaymentOrderMenusStatus::NOT_PAID->value,
+            PaymentOrderMenusStatus::FACTURATE->value,
+        ])
+            ->whereHas('payment.regulations', $dateFilter);
+
+        $allInvoicesForGlobalDebt = $globalDebtQuery->with('payment')->get();
+        $totalSystemDebt = $allInvoicesForGlobalDebt->sum(function($item) {
+            $totalOrder = $item->total_order || 0;
+            $paidAmount = $item->payment?->paid_amount || 0;
+            return max(0, $totalOrder - $paidAmount);
+        });
+
+        session()->save();
+
+        return response()->json([
+            'success'           => true,
+            'data'              => $data->items(),
+            'total_system_debt' => $totalSystemDebt,
+            'current_page'      => $data->currentPage(),
+            'last_page'         => $data->lastPage(),
+            'per_page'          => $data->perPage(),
+            'total'             => $data->total(),
+        ]);
+    }
+
     public function get_recouvrements_facture_for_clients(Request $request){
         $auth = auth()->user();
         $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : now()->toDateString();
@@ -10594,38 +10712,39 @@ class OrderMenuRestaurantController extends Controller
             'payment.regulations.method'
         ]);
 
-        if ($request->filled('regulation_status')) {
-            $statuses = is_array($request->regulation_status)
-                ? $request->regulation_status
-                : [$request->regulation_status];
+        if ($request->filled('recouvrements_status')) {
+            $recouvrementStatus = $request->recouvrements_status;
 
-            $query->where(function($q) use ($statuses) {
-                $otherStatuses = array_diff($statuses, [PaymentOrderMenusStatus::PAID->value]);
-
-                if (!empty($otherStatuses)) {
-                    $q->whereIn('regulation_status', $otherStatuses);
-                }
-
-                if (in_array(PaymentOrderMenusStatus::PAID->value, $statuses)) {
-                    $method = empty($otherStatuses) ? 'where' : 'orWhere';
-                    $q->{$method}(function($subQ) {
-                        $subQ->where('regulation_status', PaymentOrderMenusStatus::PAID->value)
-                            ->where('is_recouvrement', true);
-                    });
-                }
-            });
-        } else {
-            $query->where(function($q) {
-                $q->whereIn('regulation_status', [
+            if ($recouvrementStatus === StatusRecouvrements::REGLE->value) {
+                $query->where('regulation_status', PaymentOrderMenusStatus::PAID->value)
+                    ->where('is_recouvrement', true);
+            } elseif ($recouvrementStatus === StatusRecouvrements::NON_REGLE->value) {
+                $query->whereIn('regulation_status', [
                     PaymentOrderMenusStatus::PARTIALLY_PAID->value,
                     PaymentOrderMenusStatus::NOT_PAID->value,
                     PaymentOrderMenusStatus::FACTURATE->value,
-                ])
-                    ->orWhere(function($subQ) {
-                        $subQ->where('regulation_status', PaymentOrderMenusStatus::PAID->value)
-                            ->where('is_recouvrement', true);
-                    });
-            });
+                ]);
+            }
+        } else {
+            if ($request->filled('regulation_status')) {
+                $statuses = is_array($request->regulation_status)
+                    ? $request->regulation_status
+                    : [$request->regulation_status];
+
+                $allowedStatuses = array_intersect($statuses, [
+                    PaymentOrderMenusStatus::PARTIALLY_PAID->value,
+                    PaymentOrderMenusStatus::NOT_PAID->value,
+                    PaymentOrderMenusStatus::FACTURATE->value,
+                ]);
+
+                $query->whereIn('regulation_status', empty($allowedStatuses) ? ['__none__'] : $allowedStatuses);
+            } else {
+                $query->whereIn('regulation_status', [
+                    PaymentOrderMenusStatus::PARTIALLY_PAID->value,
+                    PaymentOrderMenusStatus::NOT_PAID->value,
+                    PaymentOrderMenusStatus::FACTURATE->value,
+                ]);
+            }
         }
 
         $query->whereDate('created_at', '<', Carbon::today());
@@ -10672,13 +10791,13 @@ class OrderMenuRestaurantController extends Controller
 
         $data = $query
             ->orderByRaw('
-        CASE
-            WHEN partners_restaurant_uuid IS NOT NULL THEN 1
-            WHEN free_client_for_restaurant_uuid IS NOT NULL THEN 2
-            ELSE 3
-        END ASC,
-        created_at DESC
-    ')
+    CASE
+        WHEN partners_restaurant_uuid IS NOT NULL THEN 1
+        WHEN free_client_for_restaurant_uuid IS NOT NULL THEN 2
+        ELSE 3
+    END ASC,
+    created_at DESC
+')
             ->paginate($perPage, ['*'], 'page', $page);
 
         $globalDebtQuery = OrderMenuRestaurant::whereIn('regulation_status', [
@@ -10686,7 +10805,7 @@ class OrderMenuRestaurantController extends Controller
             PaymentOrderMenusStatus::NOT_PAID->value,
             PaymentOrderMenusStatus::FACTURATE->value,
         ])
-            ->whereDate('created_at', '<', $date);
+            ->whereDate('created_at', '<', Carbon::today());
 
         $allInvoicesForGlobalDebt = $globalDebtQuery->with('payment')->get();
         $totalSystemDebt = $allInvoicesForGlobalDebt->sum(function($item) {

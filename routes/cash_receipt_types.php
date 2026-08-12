@@ -11,3 +11,4 @@ Route::put('update_sub_family', [CashReceiptTypeController::class, 'Update_Sub_F
 Route::patch('/cash_receipt_families/{uuid}/toggle', [CashReceiptTypeController::class, 'toggleStatus']);
 Route::get('families_and_sub_families', [CashReceiptTypeController::class, 'get_all_families_and_sub_families']);
 Route::patch('sub_families/{uuid}/is_active', [CashReceiptTypeController::class, 'updateStatusFamilyAndSubFamily']);
+Route::get('/cash_receipt_families/filtered', [CashReceiptTypeController::class, 'getFamiliesGrouped']);

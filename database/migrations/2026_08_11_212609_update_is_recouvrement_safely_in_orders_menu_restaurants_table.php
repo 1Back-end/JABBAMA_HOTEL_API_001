@@ -6,21 +6,15 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         if (!Schema::hasColumn('orders_menu_restaurants', 'is_recouvrement')) {
             Schema::table('orders_menu_restaurants', function (Blueprint $table) {
-                $table->boolean('is_recouvrement')->default(false)->after('regulation_status');
+                $table->boolean('is_recouvrement')->default(false);
             });
         }
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         if (Schema::hasColumn('orders_menu_restaurants', 'is_recouvrement')) {

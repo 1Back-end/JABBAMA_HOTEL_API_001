@@ -5,10 +5,12 @@ namespace App\Http\Controllers;
 use App\Enums\CashRegisterFilterType;
 use App\Enums\ChooseRubriquesSall;
 use App\Enums\ConsumptionType;
+use App\Enums\HistoricsEncaissementsOrRecouvrements;
 use App\Enums\MenuOrderStatus;
 use App\Enums\PaymentOrderMenusStatus;
 use App\Enums\PurchaseOrdersStatus;
 use App\Enums\RoomType;
+use App\Enums\StatusRecouvrements;
 use App\Enums\TypeClientsForPaiment;
 use App\Enums\TypeClientsForPayment;
 use Illuminate\Http\Request;
@@ -70,5 +72,23 @@ class EnumController extends Controller
             'data'   => PaymentOrderMenusStatus::toArray(),
         ]);
     }
+
+    public function StatusRecouvrements()
+    {
+        return response()->json([
+            'status' => 'success',
+            'data'   => StatusRecouvrements::toArray(),
+        ]);
+    }
+
+    public function HistoricsEncaissementsOrRecouvrements()
+    {
+        return response()->json([
+            'status' => 'success',
+            'data'   => HistoricsEncaissementsOrRecouvrements::toArray(),
+        ]);
+    }
+
+
 
 }
