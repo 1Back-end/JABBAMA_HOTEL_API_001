@@ -243,7 +243,7 @@ class OtherCashInController extends Controller
     /**
      * Store a newly created resource in storage.
      * @permission OtherCashInController::cancel
-     * @permission_desc Annuler un autre encaissement
+     * @permission_desc Annuler le libéllé d'un autre encaissement
      */
     public function cancel(Request $request, $uuid)
     {
@@ -281,7 +281,7 @@ class OtherCashInController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OtherCashInController::cancelGroup
-     * @permission_desc Annuler le groupe d'un autre encaissement
+     * @permission_desc Annuler la catégorie d'un autre encaissement
      */
     public function cancelGroup(Request $request)
     {

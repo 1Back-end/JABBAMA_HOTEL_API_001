@@ -262,7 +262,7 @@ class ExtractPermissions extends Command
         ],
         'view_other_cash_in_history' => [
             'description' => "Afficher l'historique des recouvrements des factures",
-            'category' => 'Gestion des autres encaissements',
+            'category' => 'Gestion des encaissements',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],
         'view_kitchen_and_bar_orders' => [
