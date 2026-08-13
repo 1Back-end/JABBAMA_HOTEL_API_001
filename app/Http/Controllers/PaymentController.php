@@ -780,7 +780,6 @@ class PaymentController extends Controller
 
             $current = &$tree;
 
-            // Si la dépense n'a ni hiérarchie ni famille directe, on récupère le vrai nom de la catégorie parente/type
             if ($item->hierarchy_families->isEmpty() && !$item->family) {
                 $typeName = optional($item->expenseType)->name ?? 'Dépenses directes';
                 $typeUuid = optional($item->expenseType)->uuid ?? null;
@@ -901,6 +900,89 @@ class PaymentController extends Controller
             })
             ->values()
             ->toArray();
+    }
+
+    private function buildOtherCashInTree($items)
+    {
+        $tree = [];
+
+        foreach ($items as $item) {
+            $current = &$tree;
+
+            $familyUuids = $item->family_hierarchy_uuids ?? [];
+
+            if ($item->cash_receipt_family_uuid && !in_array($item->cash_receipt_family_uuid, $familyUuids)) {
+                $familyUuids[] = $item->cash_receipt_family_uuid;
+            }
+
+            if (empty($familyUuids)) {
+                $typeName = optional($item->cashReceiptFamily)->name ?? 'AUTRES ENCAISSEMENTS';
+                $typeUuid = optional($item->cashReceiptFamily)->uuid ?? null;
+                $defaultKey = 'direct_type_' . ($typeUuid ?? 'general');
+
+                if (!isset($current[$defaultKey])) {
+                    $current[$defaultKey] = [
+                        'uuid'     => $typeUuid,
+                        'name'     => $typeName,
+                        'amount'   => 0,
+                        'children' => [],
+                        'items'    => [],
+                    ];
+                }
+
+                $current[$defaultKey]['amount'] += (float) $item->amount;
+                $current[$defaultKey]['items'][] = [
+                    'uuid'   => $item->uuid,
+                    'name'   => $item->name,
+                    'amount' => (float) $item->amount,
+                    'method' => $item->regulationMethod,
+                ];
+                continue;
+            }
+
+            $families = \App\Models\CashReceiptFamily::whereIn('uuid', $familyUuids)
+                ->get()
+                ->sortBy(function ($fam) use ($familyUuids) {
+                    return array_search($fam->uuid, $familyUuids);
+                })
+                ->values();
+
+            foreach ($families as $index => $family) {
+                $uuid = $family->uuid;
+                $isLast = ($index === count($families) - 1);
+
+                if (!isset($current[$uuid])) {
+                    $current[$uuid] = [
+                        'uuid'     => $uuid,
+                        'name'     => $family->name,
+                        'amount'   => 0,
+                        'children' => [],
+                        'items'    => [],
+                    ];
+                }
+
+                $current[$uuid]['amount'] += (float) $item->amount;
+                if ($isLast) {
+                    $itemData = [
+                        'uuid'   => $item->uuid,
+                        'name'   => $item->name,
+                        'amount' => (float) $item->amount,
+                        'method' => $item->regulationMethod,
+                    ];
+
+                    $exists = collect($current[$uuid]['items'])->contains('uuid', $item->uuid);
+                    if (!$exists) {
+                        $current[$uuid]['items'][] = $itemData;
+                    }
+                }
+
+                $current = &$current[$uuid]['children'];
+            }
+
+            unset($current);
+        }
+
+        return $this->normalizeTree($tree);
     }
 
 
@@ -1224,14 +1306,19 @@ class PaymentController extends Controller
                 $otherCashInsQuery->where('created_by', $createdBy);
             }
 
-            $otherCashInsCollection = $otherCashInsQuery->orderByDesc('created_at')->get();
+            $items = $otherCashInsQuery->orderByDesc('created_at')->get();
 
-            if ($otherCashInsCollection->isNotEmpty()) {
-                $otherCashIns = [
-                    'title'        => $otherCashInTitle,
-                    'total_amount' => (float) $otherCashInsCollection->sum('amount'),
-                    'items'        => $otherCashInsCollection
-                ];
+            if ($items->isNotEmpty()) {
+                $otherCashIns = collect([
+                    [
+                        'cash_receipt_family' => null,
+                        'title'               => $otherCashInTitle,
+                        'total_amount'        => (float) $items->sum('amount'),
+                        'families'            => $this->buildOtherCashInTree($items),
+                    ]
+                ]);
+            } else {
+                $otherCashIns = collect([]);
             }
         }
 

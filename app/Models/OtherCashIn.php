@@ -26,6 +26,8 @@ class OtherCashIn extends Model
         'slug',
         'attachment',
         'regulation_method_uuid',
+        'cash_receipt_family_uuid',
+        'family_hierarchy_uuids',
         'created_by',
         'updated_by',
         'cancelled_by',
@@ -35,7 +37,31 @@ class OtherCashIn extends Model
         'updated_at',
     ];
 
-    protected $appends = ['attachment_image'];
+    protected $casts = [
+        'family_hierarchy_uuids' => 'array',
+    ];
+
+    protected $appends = ['attachment_image', 'family_hierarchy_names', 'family_hierarchy_string'];
+
+    public function getFamilyHierarchyNamesAttribute(): array
+    {
+        if (empty($this->family_hierarchy_uuids) || !is_array($this->family_hierarchy_uuids)) {
+            return [];
+        }
+        return CashReceiptFamily::whereIn('uuid', $this->family_hierarchy_uuids)
+            ->get()
+            ->sortBy(function ($family) {
+                return array_search($family->uuid, $this->family_hierarchy_uuids);
+            })
+            ->pluck('name')
+            ->toArray();
+    }
+
+    public function getFamilyHierarchyStringAttribute(): string
+    {
+        $names = $this->family_hierarchy_names;
+        return !empty($names) ? implode(' > ', $names) : '';
+    }
 
     public function getAttachmentImageAttribute()
     {

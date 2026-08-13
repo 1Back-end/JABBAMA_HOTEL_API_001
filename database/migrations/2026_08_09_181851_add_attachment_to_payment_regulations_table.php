@@ -11,9 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('payment_regulations', function (Blueprint $table) {
-            $table->string('attachment')->nullable()->after('type');
-        });
+        if (!Schema::hasColumn('payment_regulations', 'attachment')) {
+            Schema::table('payment_regulations', function (Blueprint $table) {
+                $table->string('attachment')->nullable()->after('type');
+            });
+        }
     }
 
     /**
@@ -21,8 +23,10 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('payment_regulations', function (Blueprint $table) {
-            $table->dropColumn('attachment');
-        });
+        if (Schema::hasColumn('payment_regulations', 'attachment')) {
+            Schema::table('payment_regulations', function (Blueprint $table) {
+                $table->dropColumn('attachment');
+            });
+        }
     }
 };

@@ -715,6 +715,24 @@ class CashReceiptTypeController extends Controller
         ]);
     }
 
+    public function getFamiliesGrouped()
+    {
+        $families = CashReceiptFamily::where('is_used', true)
+            ->whereNull('indexation')
+            ->whereNull('parent_uuid')
+            ->with(['childrenRecursive' => function ($query) {
+                $query->where('is_used', true)
+                    ->whereNull('indexation');
+            }])
+            ->orderBy('level')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'data'    => $families,
+        ]);
+    }
+
 
 
 

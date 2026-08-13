@@ -10,5 +10,6 @@ Route::get('enums/menus_complement_type', [\App\Http\Controllers\MenuOrdersContr
 Route::get('enums/rubriques_salle_types', [\App\Http\Controllers\EnumController::class, 'ChooseRubriquesSall']);
 Route::get('enums/cash_register_filter_type', [\App\Http\Controllers\EnumController::class, 'CashRegisterFilterType']);
 Route::get('enums/payment_orders_menu_status', [\App\Http\Controllers\EnumController::class, 'PaymentOrderMenusStatus']);
-
+Route::get('enums/recouvrements_status', [\App\Http\Controllers\EnumController::class, 'StatusRecouvrements']);
+Route::get('enums/types_encaissements_recouvrements', [\App\Http\Controllers\EnumController::class, 'HistoricsEncaissementsOrRecouvrements']);
 
