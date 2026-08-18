@@ -10,3 +10,4 @@ Route::get('data/restaurant_divers_total', [\App\Http\Controllers\DataController
 Route::get('data/count_restaurant_sales_category_totals', [\App\Http\Controllers\DataController::class, 'get_count_sales_category_totals_for_main_courante']);
 Route::get('data/restaurant_bar_count', [\App\Http\Controllers\DataController::class, 'get_restaurant_bar_count']);
 Route::get('data/restaurant_count_by_client_type', [\App\Http\Controllers\DataController::class, 'get_restaurant_count_by_client_type']);
+Route::get('data/main_courante', [\App\Http\Controllers\DataController::class, 'getMainCouranteData']);

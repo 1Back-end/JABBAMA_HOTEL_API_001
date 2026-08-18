@@ -198,14 +198,22 @@ class DataController extends Controller
 
         try {
             $orders = OrderMenuRestaurant::whereDate('created_at', $date)
-                ->with('salesCategory:uuid,name,code')
+                ->with(['salesCategory:uuid,name,code', 'items'])
                 ->get();
 
-            $categoriesCounts = $orders->groupBy(function ($order) {
-                return $order->salesCategory ? $order->salesCategory->name : 'AUTRES';
-            })->map(function ($group) {
-                return (int) $group->count();
-            });
+            $categoriesCounts = [];
+
+            foreach ($orders as $order) {
+                $categoryName = $order->salesCategory ? $order->salesCategory->name : 'AUTRES';
+
+                $totalQuantityItems = $order->items->sum('quantity_exactly');
+
+                if (!isset($categoriesCounts[$categoryName])) {
+                    $categoriesCounts[$categoryName] = 0;
+                }
+
+                $categoriesCounts[$categoryName] += (int) $totalQuantityItems;
+            }
 
             return response()->json([
                 'success' => true,
@@ -216,7 +224,7 @@ class DataController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => "Erreur lors du comptage par catégorie de vente.",
+                'message' => "Erreur lors du calcul des totaux par catégorie de vente.",
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -228,17 +236,18 @@ class DataController extends Controller
         $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : now()->toDateString();
 
         try {
-            $countBar = (int) OrderMenuRestaurant::whereDate('created_at', $date)
-                ->get()
-                ->filter(function ($order) {
-                    return $order->total_drinks > 0;
-                })
-                ->count();
+            $orders = OrderMenuRestaurant::whereDate('created_at', $date)
+                ->with('drinks')
+                ->get();
+
+            $totalDrinksQuantity = (int) $orders->sum(function ($order) {
+                return $order->drinks->sum('quantity_exactly');
+            });
 
             return response()->json([
                 'success' => true,
                 'date' => $date,
-                'count_bar' => $countBar
+                'count_bar' => $totalDrinksQuantity
             ], 200);
 
         } catch (\Exception $e) {
@@ -271,6 +280,124 @@ class DataController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => "Erreur lors du comptage par type de client.",
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getMainCouranteData(Request $request)
+    {
+        $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : now()->toDateString();
+
+        try {
+            $orders = OrderMenuRestaurant::whereDate('created_at', $date)
+                ->with([
+                    'restaurantTable:uuid,code,table_number',
+                    'restaurant_room:uuid,rooms_number',
+                    'salesCategory:uuid,name,start_time,end_time',
+                    'items.menu:uuid,code,name,have_complements,type_complement_menu,have_complements,have_drinks',
+                    'items.virtuals.product:uuid,name,code',
+                    'items.complements.complement',
+                    'payment.regulations.method',
+                    'drinks.drinkConfig.product',
+                ])
+                ->get();
+
+            $countsByCategory = $orders->groupBy(function ($order) {
+                return $order->salesCategory ? strtoupper($order->salesCategory->name) : 'AUTRES';
+            })->map(function ($group) {
+                return (int) $group->sum(function ($order) {
+                    return $order->items->sum('quantity_exactly');
+                });
+            });
+
+            $totalBar = (int) $orders->sum(function ($order) {
+                return $order->drinks->sum('quantity_exactly');
+            });
+
+            $totalRoomService = (int) $orders->sum('total_order');
+
+            $formattedOrders = [];
+            $debiteursOrders = [];
+
+            foreach ($orders as $order) {
+                $categoryName = $order->salesCategory ? strtoupper($order->salesCategory->name) : 'AUTRES';
+
+                // 1. Mapping des articles de cuisine (Items)
+                $formattedItems = $order->items->map(function ($item) {
+                    return [
+                        'menu' => $item->menu ? $item->menu->name : null,
+                        'quantity' => $item->quantity_exactly,
+                        'unit_price' => $item->unit_price,
+                        'total_price' => $item->total_price,
+                    ];
+                });
+
+                // 2. Mapping distinct des boissons (Bar) pour éviter le mélange
+                $formattedDrinks = $order->drinks->map(function ($drink) {
+                    return [
+                        'menu' => $drink->drinkConfig && $drink->drinkConfig->product ? $drink->drinkConfig->product->name : 'Boisson',
+                        'quantity' => $drink->quantity_exactly,
+                        'unit_price' => $drink->unit_price,
+                        'total_price' => $drink->total_price,
+                    ];
+                });
+
+                $paymentMethods = [];
+                if ($order->payment && $order->payment->regulations) {
+                    $paymentMethods = $order->payment->regulations->map(function ($regulation) {
+                        return [
+                            'amount' => $regulation->amount ?? 0,
+                            'method_name' => $regulation->method->name ?? 'Inconnu',
+                        ];
+                    });
+                }
+                
+                $isDebiteur = in_array($order->regulation_status, [
+                    PaymentOrderMenusStatus::NOT_PAID->value,
+                    PaymentOrderMenusStatus::PARTIALLY_PAID->value,
+                ]);
+
+                $paymentModeLabel = $isDebiteur ? 'Client débiteurs' : 'Règlement';
+
+                $orderData = [
+                    'uuid' => $order->uuid,
+                    'code_facture' => $order->code,
+                    'no_table' => $order->restaurantTable->table_number ?? '',
+                    'chambre' => $order->restaurant_room->rooms_number ?? '',
+                    'payment_mode' => $paymentModeLabel,
+                    'regulation_status' => $order->status_payment_label,
+                    'payment_methods' => $paymentMethods,
+                    'sales_category' => $categoryName,
+                    'items' => $formattedItems,
+                    'drinks' => $formattedDrinks
+                ];
+
+                // Remplissage de la liste générale
+                $formattedOrders[] = $orderData;
+
+                // Remplissage de la liste des débiteurs filtrée par statut
+                if ($isDebiteur) {
+                    $debiteursOrders[] = $orderData;
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'date' => $date,
+                'summary_counts' => [
+                    'total_room_service' => $totalRoomService,
+                    'bar' => $totalBar,
+                    'by_category' => $countsByCategory
+                ],
+                'orders' => $formattedOrders,
+                'debiteurs' => $debiteursOrders
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => "Erreur lors de la récupération des données de la main courante.",
                 'error' => $e->getMessage()
             ], 500);
         }
