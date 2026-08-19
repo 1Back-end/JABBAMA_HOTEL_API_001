@@ -8,6 +8,7 @@ use App\Enums\TypeClientsForPaiment;
 use App\Models\OrderMenuRestaurant;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 
 class DataController extends Controller
 {
@@ -174,31 +175,42 @@ class DataController extends Controller
 
         try {
             $orders = OrderMenuRestaurant::whereDate('created_at', $date)
-                ->with(['items.menu:uuid,is_generated_from_complement'])
+                ->with(['items.menu'])
                 ->get();
 
+            Log::info("--- Début du calcul du total (complement = true) pour la date : {$date} ---");
             $total = 0;
 
             foreach ($orders as $order) {
-                $validItems = $order->items->filter(function ($item) {
-                    return $item->menu && (bool)$item->menu->is_generated_from_complement === false;
-                });
-                
-                $total += $validItems->sum(function ($item) {
-                    return (
-                        ($item->unit_price ?? 0) *
-                        ($item->quantity_exactly ?? 0)
-                    );
-                });
+                $uniqueItems = $order->items->unique('uuid');
+
+                foreach ($uniqueItems as $item) {
+                    $menuName = $item->menu->name ?? $item->menu->title ?? 'Inconnu';
+                    $isComplement = $item->menu ? (bool)$item->menu->is_generated_from_complement : false;
+
+                    Log::info("Item analysé - Menu: {$menuName}, is_generated_from_complement: " . json_encode($isComplement));
+
+                    // Changement ici : on filtre pour garder uniquement true
+                    if ($item->menu && $isComplement === true) {
+                        $itemTotal = (float) ($item->total_price ?? (($item->unit_price ?? 0) * ($item->quantity_exactly ?? 0)));
+
+                        Log::info("-> Item validé et additionné : {$itemTotal}");
+                        $total += $itemTotal;
+                    }
+                }
             }
+
+            Log::info("--- Total final calculé : {$total} ---");
 
             return response()->json([
                 'success' => true,
                 'date' => $date,
-                'total_order' => (float) $total
+                'total_order' => $total
             ], 200);
 
         } catch (\Exception $e) {
+            Log::error("Erreur dans get_restaurant_total_by_client_type : " . $e->getMessage());
+
             return response()->json([
                 'success' => false,
                 'message' => "Erreur lors du calcul du total des commandes.",
