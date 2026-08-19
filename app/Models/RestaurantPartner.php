@@ -57,7 +57,6 @@ class RestaurantPartner extends Model
         });
 
         static::updating(function ($partenaire) {
-            // Met à jour le full_name à chaque modification
             $partenaire->full_name = strtoupper(trim($partenaire->first_name . ' ' . ($partenaire->last_name ?? '')));
         });
     }
