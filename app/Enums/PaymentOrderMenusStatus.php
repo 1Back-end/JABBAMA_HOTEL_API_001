@@ -22,10 +22,10 @@ enum PaymentOrderMenusStatus: string
     public static function safeLabel(?string $value): string
     {
         if ($value === null) {
-            return 'Inconnu';
+            return '';
         }
 
-        return self::tryFrom($value)?->label() ?? 'Inconnu';
+        return self::tryFrom($value)?->label() ?? '';
     }
 
     public static function toArray(): array

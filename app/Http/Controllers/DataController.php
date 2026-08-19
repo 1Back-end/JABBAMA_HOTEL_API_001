@@ -8,6 +8,7 @@ use App\Enums\TypeClientsForPaiment;
 use App\Models\OrderMenuRestaurant;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 
 class DataController extends Controller
 {
@@ -109,14 +110,19 @@ class DataController extends Controller
 
         try {
             $orders = OrderMenuRestaurant::whereDate('created_at', $date)
-                ->with('salesCategory:uuid,name,code')
+                ->with([
+                    'salesCategory:uuid,name,code',
+                    'items.menu:uuid,is_generated_from_complement'
+                ])
                 ->get();
 
             $categoriesTotals = $orders->groupBy(function ($order) {
                 return $order->salesCategory ? $order->salesCategory->name : 'AUTRES';
             })->map(function ($group) {
                 return (float) $group->sum(function ($order) {
-                    return $order->total_order;
+                    return $order->items->filter(function ($item) {
+                        return $item->menu && !$item->menu->is_generated_from_complement;
+                    })->sum('total_price');
                 });
             });
 
@@ -169,12 +175,32 @@ class DataController extends Controller
 
         try {
             $orders = OrderMenuRestaurant::whereDate('created_at', $date)
-                ->where('type_clients_for_payment', TypeClientsForPaiment::DEBTOR->value)
+                ->with(['items.menu'])
                 ->get();
 
-            $total = (float) $orders->sum(function ($order) {
-                return $order->total_order;
-            });
+            Log::info("--- Début du calcul du total (complement = true) pour la date : {$date} ---");
+            $total = 0;
+
+            foreach ($orders as $order) {
+                $uniqueItems = $order->items->unique('uuid');
+
+                foreach ($uniqueItems as $item) {
+                    $menuName = $item->menu->name ?? $item->menu->title ?? 'Inconnu';
+                    $isComplement = $item->menu ? (bool)$item->menu->is_generated_from_complement : false;
+
+                    Log::info("Item analysé - Menu: {$menuName}, is_generated_from_complement: " . json_encode($isComplement));
+
+                    // Changement ici : on filtre pour garder uniquement true
+                    if ($item->menu && $isComplement === true) {
+                        $itemTotal = (float) ($item->total_price ?? (($item->unit_price ?? 0) * ($item->quantity_exactly ?? 0)));
+
+                        Log::info("-> Item validé et additionné : {$itemTotal}");
+                        $total += $itemTotal;
+                    }
+                }
+            }
+
+            Log::info("--- Total final calculé : {$total} ---");
 
             return response()->json([
                 'success' => true,
@@ -183,9 +209,11 @@ class DataController extends Controller
             ], 200);
 
         } catch (\Exception $e) {
+            Log::error("Erreur dans get_restaurant_total_by_client_type : " . $e->getMessage());
+
             return response()->json([
                 'success' => false,
-                'message' => "Erreur lors du calcul du total par type de client.",
+                'message' => "Erreur lors du calcul du total des commandes.",
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -198,7 +226,10 @@ class DataController extends Controller
 
         try {
             $orders = OrderMenuRestaurant::whereDate('created_at', $date)
-                ->with(['salesCategory:uuid,name,code', 'items'])
+                ->with([
+                    'salesCategory:uuid,name,code',
+                    'items.menu:uuid,is_generated_from_complement'
+                ])
                 ->get();
 
             $categoriesCounts = [];
@@ -206,7 +237,11 @@ class DataController extends Controller
             foreach ($orders as $order) {
                 $categoryName = $order->salesCategory ? $order->salesCategory->name : 'AUTRES';
 
-                $totalQuantityItems = $order->items->sum('quantity_exactly');
+                $validItems = $order->items->filter(function ($item) {
+                    return $item->menu && !$item->menu->is_generated_from_complement;
+                });
+
+                $totalQuantityItems = $validItems->sum('quantity_exactly');
 
                 if (!isset($categoriesCounts[$categoryName])) {
                     $categoriesCounts[$categoryName] = 0;
@@ -285,6 +320,7 @@ class DataController extends Controller
         }
     }
 
+
     public function getMainCouranteData(Request $request)
     {
         $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : now()->toDateString();
@@ -295,7 +331,7 @@ class DataController extends Controller
                     'restaurantTable:uuid,code,table_number',
                     'restaurant_room:uuid,rooms_number',
                     'salesCategory:uuid,name,start_time,end_time',
-                    'items.menu:uuid,code,name,have_complements,type_complement_menu,have_complements,have_drinks',
+                    'items.menu:uuid,code,name,have_complements,type_complement_menu,have_complements,have_drinks,is_generated_from_complement',
                     'items.virtuals.product:uuid,name,code',
                     'items.complements.complement',
                     'payment.regulations.method',
@@ -307,7 +343,7 @@ class DataController extends Controller
                 return $order->salesCategory ? strtoupper($order->salesCategory->name) : 'AUTRES';
             })->map(function ($group) {
                 return (int) $group->sum(function ($order) {
-                    return $order->items->sum('quantity_exactly');
+                    return $order->items->where('menu.is_generated_from_complement', false)->sum('quantity_exactly');
                 });
             });
 
@@ -323,17 +359,20 @@ class DataController extends Controller
             foreach ($orders as $order) {
                 $categoryName = $order->salesCategory ? strtoupper($order->salesCategory->name) : 'AUTRES';
 
-                // 1. Mapping des articles de cuisine (Items)
-                $formattedItems = $order->items->map(function ($item) {
-                    return [
-                        'menu' => $item->menu ? $item->menu->name : null,
-                        'quantity' => $item->quantity_exactly,
-                        'unit_price' => $item->unit_price,
-                        'total_price' => $item->total_price,
-                    ];
-                });
+                // 1. Filtrer les items principaux (is_generated_from_complement == false)
+                $formattedItems = $order->items
+                    ->filter(function ($item) {
+                        return $item->menu && !$item->menu->is_generated_from_complement;
+                    })
+                    ->map(function ($item) {
+                        return [
+                            'menu' => $item->menu ? $item->menu->name : null,
+                            'quantity' => $item->quantity_exactly,
+                            'unit_price' => $item->unit_price,
+                            'total_price' => $item->total_price,
+                        ];
+                    });
 
-                // 2. Mapping distinct des boissons (Bar) pour éviter le mélange
                 $formattedDrinks = $order->drinks->map(function ($drink) {
                     return [
                         'menu' => $drink->drinkConfig && $drink->drinkConfig->product ? $drink->drinkConfig->product->name : 'Boisson',
@@ -352,33 +391,49 @@ class DataController extends Controller
                         ];
                     });
                 }
-                
-                $isDebiteur = in_array($order->regulation_status, [
-                    PaymentOrderMenusStatus::NOT_PAID->value,
-                    PaymentOrderMenusStatus::PARTIALLY_PAID->value,
-                ]);
 
-                $paymentModeLabel = $isDebiteur ? 'Client débiteurs' : 'Règlement';
+                // Calcul du montant total de la facture (Items + Drinks ou via total_order)
+                $totalAmount = $order->total_order ?? 0;
 
                 $orderData = [
                     'uuid' => $order->uuid,
                     'code_facture' => $order->code,
                     'no_table' => $order->restaurantTable->table_number ?? '',
                     'chambre' => $order->restaurant_room->rooms_number ?? '',
-                    'payment_mode' => $paymentModeLabel,
+                    'payment_mode' => $order->status_payment_label ?? '',
                     'regulation_status' => $order->status_payment_label,
+                    'payment_status' => $order->regulation_status,
+                    'total_amount' => $totalAmount,
                     'payment_methods' => $paymentMethods,
                     'sales_category' => $categoryName,
-                    'items' => $formattedItems,
+                    'items' => $formattedItems->values()->all(),
                     'drinks' => $formattedDrinks
                 ];
 
-                // Remplissage de la liste générale
                 $formattedOrders[] = $orderData;
 
-                // Remplissage de la liste des débiteurs filtrée par statut
-                if ($isDebiteur) {
-                    $debiteursOrders[] = $orderData;
+                $debiteurItems = $order->items->filter(function ($item) {
+                    return $item->menu && $item->menu->is_generated_from_complement == true;
+                });
+
+                if ($debiteurItems->isNotEmpty()) {
+                    $formattedDebiteurItems = $debiteurItems->map(function ($item) {
+                        return [
+                            'menu' => $item->menu ? $item->menu->name : null,
+                            'quantity' => $item->quantity_exactly,
+                            'unit_price' => $item->unit_price,
+                            'total_price' => $item->total_price,
+                        ];
+                    });
+
+                    $debiteursOrders[] = [
+                        'uuid' => $order->uuid,
+                        'code_facture' => $order->code,
+                        'no_table' => $order->restaurantTable->table_number ?? '',
+                        'chambre' => $order->restaurant_room->rooms_number ?? '',
+                        'sales_category' => $categoryName,
+                        'items' => $formattedDebiteurItems->values()->all(),
+                    ];
                 }
             }
 
