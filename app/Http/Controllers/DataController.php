@@ -174,29 +174,34 @@ class DataController extends Controller
 
         try {
             $orders = OrderMenuRestaurant::whereDate('created_at', $date)
-                ->with(['items.menu'])
+                ->with(['items.menu:uuid,is_generated_from_complement'])
                 ->get();
 
-            $total = (float) $orders->sum(function ($order) {
+            $total = 0;
+
+            foreach ($orders as $order) {
                 $validItems = $order->items->filter(function ($item) {
                     return $item->menu && (bool)$item->menu->is_generated_from_complement === false;
                 });
-
-                return $validItems->sum(function ($item) {
-                    return (float) ($item->total_price ?? ($item->quantity_exactly * $item->unit_price));
+                
+                $total += $validItems->sum(function ($item) {
+                    return (
+                        ($item->unit_price ?? 0) *
+                        ($item->quantity_exactly ?? 0)
+                    );
                 });
-            });
+            }
 
             return response()->json([
                 'success' => true,
                 'date' => $date,
-                'total_order' => $total
+                'total_order' => (float) $total
             ], 200);
 
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => "Erreur lors du calcul du total par type de client.",
+                'message' => "Erreur lors du calcul du total des commandes.",
                 'error' => $e->getMessage()
             ], 500);
         }
