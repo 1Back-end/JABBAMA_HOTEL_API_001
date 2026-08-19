@@ -174,11 +174,17 @@ class DataController extends Controller
 
         try {
             $orders = OrderMenuRestaurant::whereDate('created_at', $date)
-                ->where('type_clients_for_payment', TypeClientsForPaiment::DEBTOR->value)
+                ->with(['items.menu'])
                 ->get();
 
             $total = (float) $orders->sum(function ($order) {
-                return $order->total_order;
+                $validItems = $order->items->filter(function ($item) {
+                    return $item->menu && (bool)$item->menu->is_generated_from_complement === false;
+                });
+
+                return $validItems->sum(function ($item) {
+                    return (float) ($item->total_price ?? ($item->quantity_exactly * $item->unit_price));
+                });
             });
 
             return response()->json([
