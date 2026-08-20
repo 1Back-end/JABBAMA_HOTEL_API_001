@@ -177,31 +177,18 @@ class DataController extends Controller
             $orders = OrderMenuRestaurant::whereDate('created_at', $date)
                 ->with(['items.menu'])
                 ->get();
-
-            Log::info("--- Début du calcul du total (complement = true) pour la date : {$date} ---");
             $total = 0;
 
             foreach ($orders as $order) {
                 $uniqueItems = $order->items->unique('uuid');
-
                 foreach ($uniqueItems as $item) {
-                    $menuName = $item->menu->name ?? $item->menu->title ?? 'Inconnu';
                     $isComplement = $item->menu ? (bool)$item->menu->is_generated_from_complement : false;
-
-                    Log::info("Item analysé - Menu: {$menuName}, is_generated_from_complement: " . json_encode($isComplement));
-
-                    // Changement ici : on filtre pour garder uniquement true
                     if ($item->menu && $isComplement === true) {
                         $itemTotal = (float) ($item->total_price ?? (($item->unit_price ?? 0) * ($item->quantity_exactly ?? 0)));
-
-                        Log::info("-> Item validé et additionné : {$itemTotal}");
                         $total += $itemTotal;
                     }
                 }
             }
-
-            Log::info("--- Total final calculé : {$total} ---");
-
             return response()->json([
                 'success' => true,
                 'date' => $date,
@@ -209,8 +196,6 @@ class DataController extends Controller
             ], 200);
 
         } catch (\Exception $e) {
-            Log::error("Erreur dans get_restaurant_total_by_client_type : " . $e->getMessage());
-
             return response()->json([
                 'success' => false,
                 'message' => "Erreur lors du calcul du total des commandes.",
@@ -301,20 +286,30 @@ class DataController extends Controller
         $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : now()->toDateString();
 
         try {
-            $count = (int) OrderMenuRestaurant::whereDate('created_at', $date)
-                ->where('type_clients_for_payment', TypeClientsForPaiment::DEBTOR->value)
-                ->count();
+            $orders = OrderMenuRestaurant::whereDate('created_at', $date)
+                ->with(['items.menu'])
+                ->get();
+
+            $totalQuantityDivers = 0;
+
+            foreach ($orders as $order) {
+                $validItems = $order->items->filter(function ($item) {
+                    return $item->menu && $item->menu->is_generated_from_complement == true;
+                });
+
+                $totalQuantityDivers += (int) $validItems->sum('quantity_exactly');
+            }
 
             return response()->json([
                 'success' => true,
                 'date' => $date,
-                'count_order' => $count
+                'count_order' => $totalQuantityDivers
             ], 200);
 
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => "Erreur lors du comptage par type de client.",
+                'message' => "Erreur lors du comptage des divers.",
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -359,26 +354,27 @@ class DataController extends Controller
             foreach ($orders as $order) {
                 $categoryName = $order->salesCategory ? strtoupper($order->salesCategory->name) : 'AUTRES';
 
-                // 1. Filtrer les items principaux (is_generated_from_complement == false)
                 $formattedItems = $order->items
                     ->filter(function ($item) {
                         return $item->menu && !$item->menu->is_generated_from_complement;
                     })
-                    ->map(function ($item) {
+                    ->map(function ($item) use ($order) {
                         return [
                             'menu' => $item->menu ? $item->menu->name : null,
                             'quantity' => $item->quantity_exactly,
                             'unit_price' => $item->unit_price,
                             'total_price' => $item->total_price,
+                            'price_for_room_service' => (int) $order->price_for_room_service,
                         ];
                     });
 
-                $formattedDrinks = $order->drinks->map(function ($drink) {
+                $formattedDrinks = $order->drinks->map(function ($drink) use ($order) {
                     return [
                         'menu' => $drink->drinkConfig && $drink->drinkConfig->product ? $drink->drinkConfig->product->name : 'Boisson',
                         'quantity' => $drink->quantity_exactly,
                         'unit_price' => $drink->unit_price,
                         'total_price' => $drink->total_price,
+                        'price_for_room_service' => (int) $order->price_for_room_service,
                     ];
                 });
 
@@ -392,7 +388,6 @@ class DataController extends Controller
                     });
                 }
 
-                // Calcul du montant total de la facture (Items + Drinks ou via total_order)
                 $totalAmount = $order->total_order ?? 0;
 
                 $orderData = [
@@ -417,12 +412,13 @@ class DataController extends Controller
                 });
 
                 if ($debiteurItems->isNotEmpty()) {
-                    $formattedDebiteurItems = $debiteurItems->map(function ($item) {
+                    $formattedDebiteurItems = $debiteurItems->map(function ($item) use ($order) {
                         return [
                             'menu' => $item->menu ? $item->menu->name : null,
                             'quantity' => $item->quantity_exactly,
                             'unit_price' => $item->unit_price,
                             'total_price' => $item->total_price,
+                            'price_for_room_service' => (int) $order->price_for_room_service,
                         ];
                     });
 
@@ -453,6 +449,54 @@ class DataController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => "Erreur lors de la récupération des données de la main courante.",
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function get_total_room_service_quantity(Request $request)
+    {
+        $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : now()->toDateString();
+
+        try {
+            $totalQuantityRoomService = (int) OrderMenuRestaurant::whereDate('created_at', $date)
+                ->where('is_room_service', true)
+                ->sum('quantity_for_room_service');
+
+            return response()->json([
+                'success' => true,
+                'date' => $date,
+                'total_room_service_quantity' => $totalQuantityRoomService
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => "Erreur lors du calcul de la quantité totale des room services.",
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function get_total_room_service_amount(Request $request)
+    {
+        $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : now()->toDateString();
+
+        try {
+            $totalAmountRoomService = (int) OrderMenuRestaurant::whereDate('created_at', $date)
+                ->where('is_room_service', true)
+                ->sum('price_for_room_service');
+
+            return response()->json([
+                'success' => true,
+                'date' => $date,
+                'total_room_service_amount' => $totalAmountRoomService
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => "Erreur lors du calcul du montant total des room services.",
                 'error' => $e->getMessage()
             ], 500);
         }

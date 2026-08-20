@@ -2,20 +2,22 @@
 
 namespace App\Enums;
 
-enum ConsumptionType: string
+enum RoomServiceEnum: string
 {
-    case DINE_IN = 'dine_in';
-    case TAKE_AWAY = 'take_away';
+    CASE YES  = 'yes';
+    case NO     = 'no';
+
     public function label(): string
     {
         return match ($this) {
-            self::DINE_IN   => 'Sur place',
-            self::TAKE_AWAY => 'À emporter',
+            self::YES   => 'Oui',
+            self::NO => 'Non',
         };
     }
+
     public static function safeLabel(?string $value): string
     {
-        return self::tryFrom($value)?->label() ?? 'Inconnu';
+        return self::tryFrom($value)?->label() ?? '';
     }
 
     public static function toArray(): array
@@ -24,5 +26,6 @@ enum ConsumptionType: string
             ->mapWithKeys(fn($case) => [$case->value => $case->label()])
             ->toArray();
     }
-    //
+
+
 }

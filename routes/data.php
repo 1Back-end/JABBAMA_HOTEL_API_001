@@ -11,3 +11,5 @@ Route::get('data/count_restaurant_sales_category_totals', [\App\Http\Controllers
 Route::get('data/restaurant_bar_count', [\App\Http\Controllers\DataController::class, 'get_restaurant_bar_count']);
 Route::get('data/restaurant_count_by_client_type', [\App\Http\Controllers\DataController::class, 'get_restaurant_count_by_client_type']);
 Route::get('data/main_courante', [\App\Http\Controllers\DataController::class, 'getMainCouranteData']);
+Route::get('data/room_service_total_quantity', [\App\Http\Controllers\DataController::class, 'get_total_room_service_quantity']);
+Route::get('data/total_room_service', [\App\Http\Controllers\DataController::class, 'get_total_room_service_amount']);

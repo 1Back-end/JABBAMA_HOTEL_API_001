@@ -9,6 +9,7 @@ use App\Enums\HistoricsEncaissementsOrRecouvrements;
 use App\Enums\MenuOrderStatus;
 use App\Enums\PaymentOrderMenusStatus;
 use App\Enums\PurchaseOrdersStatus;
+use App\Enums\RoomServiceEnum;
 use App\Enums\RoomType;
 use App\Enums\StatusRecouvrements;
 use App\Enums\TypeClientsForPaiment;
@@ -86,6 +87,14 @@ class EnumController extends Controller
         return response()->json([
             'status' => 'success',
             'data'   => HistoricsEncaissementsOrRecouvrements::toArray(),
+        ]);
+    }
+
+    public function RoomServiceType()
+    {
+        return response()->json([
+            'status' => 'success',
+            'data'   => RoomServiceEnum::toArray(),
         ]);
     }
 

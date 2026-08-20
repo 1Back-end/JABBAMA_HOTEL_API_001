@@ -10,6 +10,7 @@ use App\Enums\MenuOrderStatus;
 use App\Enums\OrderMenuRestaurantItemStatus;
 use App\Enums\PaymentOrderItemStatus;
 use App\Enums\PaymentOrderMenusStatus;
+use App\Enums\RoomServiceEnum;
 use App\Enums\StatusRecouvrements;
 use App\Enums\TypeClientsForPaiment;
 use App\Enums\VirtualOrderMenuRestaurantStatus;
@@ -2649,7 +2650,6 @@ class OrderMenuRestaurantController extends Controller
         DB::beginTransaction();
 
         try {
-            // 1. Validation
             $validated = $request->validate([
                 'reservation_uuid' => ['nullable', 'uuid'],
                 'others_informations' => ['nullable', 'string'],
@@ -2667,7 +2667,6 @@ class OrderMenuRestaurantController extends Controller
                 'menus.*.quantity' => ['required_with:menus', 'numeric', 'min:1'],
                 'menus.*.unit_price' => ['nullable', 'numeric', 'min:0'],
 
-
                 'menus.*.complements' => ['nullable', 'array'],
                 'menus.*.complements.*.complement_uuid' => ['required', 'uuid', 'exists:configurations_complements,uuid'],
                 'menus.*.complements.*.quantity' => ['nullable', 'numeric', 'min:0'],
@@ -2683,6 +2682,11 @@ class OrderMenuRestaurantController extends Controller
 
                 'sales_category_type' => ['required', new Enum(ChooseRubriquesSall::class)],
                 'sales_category_uuid' => ['nullable', 'uuid', 'exists:sales_categories,uuid'],
+                'room_service_uuid' => ['nullable', 'uuid', 'exists:room_services,uuid'],
+                'price_for_room_service' => ['nullable', 'numeric'],
+                'is_room_service' => ['nullable', 'boolean'],
+                'quantity_for_room_service' => ['nullable', 'integer', 'min:0'],
+                'room_service_type' => ['nullable', new Enum(RoomServiceEnum::class)],
             ]);
 
             $warehouse = Warehouse::where('is_used_for_restaurant', true)->firstOrFail();
@@ -2694,15 +2698,11 @@ class OrderMenuRestaurantController extends Controller
             $warehouseTransformation = Warehouse::where('is_used_for_drinks_transformation', true)->firstOrFail();
             $warehouseTransformationUuid = $warehouseTransformation->uuid;
 
-            Log::info($warehouseUuid);
-            Log::info($warehouseDrinkUuid);
-            Log::info($warehouseTransformationUuid);
 
             if (!$warehouse || !$warehouseDrinks || !$warehouseTransformation) {
                 throw new \Exception("Configuration des entrepôts incomplète");
             }
 
-            // ✅ Vérification stock
             if (!empty($validated['menus'])) {
                 $errors = $this->verifyMenuStock(
                     $validated['menus'],
@@ -2747,47 +2747,34 @@ class OrderMenuRestaurantController extends Controller
             $now = Carbon::now('Africa/Douala');
             $orderTimeStr = $now->format('H:i:s');
 
-            Log::info('ORDER DEBUG (BASED ON NOW)', [
-                'type_frontend' => $validated['sales_category_type'],
-                'current_server_datetime' => $now->toDateTimeString(),
-                'extracted_time_str' => $orderTimeStr,
-            ]);
 
             if ($validated['sales_category_type'] === ChooseRubriquesSall::MANUAL->value) {
                 $salesCategoryUuid = $validated['sales_category_uuid'] ?? null;
-                Log::info('MANUAL SELECTED', ['uuid' => $salesCategoryUuid]);
             } else {
                 $salesCategories = SalesCategory::where('type', 'time_based')
                     ->where('is_active', true)
                     ->get();
 
-                Log::info('CATEGORIES TROUVEES EN BDD: ' . $salesCategories->count());
-
                 foreach ($salesCategories as $category) {
                     $startStr = Carbon::parse($category->start_time)->format('H:i:s');
                     $endStr   = Carbon::parse($category->end_time)->format('H:i:s');
 
-                    Log::info("Verification: {$orderTimeStr} entre-t-il dans {$startStr} -> {$endStr} ?");
 
-                    // 🔥 CAS NORMAL : Intervalle classique sur la même journée (ex: 03:00:00 -> 10:59:59)
                     if ($startStr <= $endStr) {
                         if ($orderTimeStr >= $startStr && $orderTimeStr <= $endStr) {
                             $salesCategoryUuid = $category->uuid;
-                            Log::info("MATCH TROUVÉ : " . $category->name);
                             break;
                         }
                     }
                     else {
                         if ($orderTimeStr >= $startStr || $orderTimeStr <= $endStr) {
                             $salesCategoryUuid = $category->uuid;
-                            Log::info("MATCH TROUVÉ (Minuit) : " . $category->name);
                             break;
                         }
                     }
                 }
 
                 if (!$salesCategoryUuid) {
-                    Log::warning("Aucun match horaire trouvé. Passage au premier fallback 'time_based'.");
                     $salesCategoryUuid = SalesCategory::where('type', 'time_based')
                         ->where('is_active', true)
                         ->orderBy('start_time')
@@ -2797,8 +2784,6 @@ class OrderMenuRestaurantController extends Controller
                 if (!$salesCategoryUuid) {
                     $salesCategoryUuid = SalesCategory::where('is_active', true)->first()?->uuid;
                 }
-
-                Log::info('FINAL VALUE ASSIGNED', ['uuid' => $salesCategoryUuid]);
             }
 
 
@@ -2829,6 +2814,11 @@ class OrderMenuRestaurantController extends Controller
                 'reservation_uuid' => $validated['reservation_uuid'] ?? null,
                 'sales_category_uuid' => $salesCategoryUuid,
                 'sales_category_type' => $validated['sales_category_type'],
+                'room_service_uuid' => $validated['room_service_uuid'] ?? null,
+                'price_for_room_service' => $validated['price_for_room_service'] ?? null,
+                'is_room_service' => isset($validated['room_service_type']) && $validated['room_service_type'] === \App\Enums\RoomServiceEnum::YES->value,
+                'room_service_type' => $validated['room_service_type'] ?? null,
+                'quantity_for_room_service' => $validated['quantity_for_room_service'] ?? null,
             ]);
             $order->timestamps = false;
             $order->created_at = $orderDate;
@@ -2838,7 +2828,6 @@ class OrderMenuRestaurantController extends Controller
 
             if (!empty($validated['menus']) && is_array($validated['menus'])) {
 
-                // 1. Vérification du stock spécifique aux menus
                 if ($errors = $this->verifyMenuStock($validated['menus'], $warehouseUuid)) {
                     $message = collect($errors)->map(function ($e) {
                         return "{$e['menu_name']} : demandé {$e['quantity_required']}, disponible {$e['quantity_available']}";
@@ -2851,7 +2840,6 @@ class OrderMenuRestaurantController extends Controller
                     ], 422);
                 }
 
-                // 2. Création des items
                 foreach ($validated['menus'] as $mInput) {
                     $menu = MenuRestaurant::where('uuid', $mInput['menus_restaurant_uuid'])->first();
 
@@ -2871,7 +2859,9 @@ class OrderMenuRestaurantController extends Controller
                         'status'                     => \App\Enums\OrderMenuRestaurantItemStatus::TRANSFERRED->value,
                         'created_by'                 => $auth->id,
                         'updated_by'                 => $auth->id,
-                        'is_last_items'              => true
+                        'is_last_items'              => true,
+                        'price_for_room_service'     => $order->price_for_room_service,
+                        'is_room_service'            => $order->is_room_service,
                     ]);
 
                     if (!empty($mInput['complements']) && is_array($mInput['complements'])) {
@@ -2972,6 +2962,8 @@ class OrderMenuRestaurantController extends Controller
                         'created_by' => $auth->id,
                         'updated_by' => $auth->id,
                         'is_last_items' => true,
+                        'price_for_room_service' => $order->price_for_room_service,
+                        'is_room_service' => $order->is_room_service,
                     ]);
 
                     OrderMenuItemStatusForDrink::create([
@@ -3494,6 +3486,12 @@ class OrderMenuRestaurantController extends Controller
 
                 'sales_category_type' => ['required', new Enum(ChooseRubriquesSall::class)],
                 'sales_category_uuid' => ['nullable', 'uuid', 'exists:sales_categories,uuid'],
+
+                'room_service_uuid' => ['nullable', 'uuid', 'exists:room_services,uuid'],
+                'price_for_room_service' => ['nullable', 'numeric'],
+                'is_room_service' => ['nullable', 'boolean'],
+                'quantity_for_room_service' => ['nullable', 'integer', 'min:0'],
+                'room_service_type' => ['nullable', new Enum(RoomServiceEnum::class)],
             ]);
 
 
@@ -3501,47 +3499,33 @@ class OrderMenuRestaurantController extends Controller
             $now = Carbon::now('Africa/Douala');
             $orderTimeStr = $now->format('H:i:s');
 
-            Log::info('ORDER DEBUG (BASED ON NOW)', [
-                'type_frontend' => $validated['sales_category_type'],
-                'current_server_datetime' => $now->toDateTimeString(),
-                'extracted_time_str' => $orderTimeStr,
-            ]);
 
             if ($validated['sales_category_type'] === ChooseRubriquesSall::MANUAL->value) {
                 $salesCategoryUuid = $validated['sales_category_uuid'] ?? null;
-                Log::info('MANUAL SELECTED', ['uuid' => $salesCategoryUuid]);
             } else {
                 $salesCategories = SalesCategory::where('type', 'time_based')
                     ->where('is_active', true)
                     ->get();
 
-                Log::info('CATEGORIES TROUVEES EN BDD: ' . $salesCategories->count());
-
                 foreach ($salesCategories as $category) {
                     $startStr = Carbon::parse($category->start_time)->format('H:i:s');
                     $endStr   = Carbon::parse($category->end_time)->format('H:i:s');
 
-                    Log::info("Verification: {$orderTimeStr} entre-t-il dans {$startStr} -> {$endStr} ?");
-
-                    // 🔥 CAS NORMAL : Intervalle classique sur la même journée (ex: 03:00:00 -> 10:59:59)
                     if ($startStr <= $endStr) {
                         if ($orderTimeStr >= $startStr && $orderTimeStr <= $endStr) {
                             $salesCategoryUuid = $category->uuid;
-                            Log::info("MATCH TROUVÉ : " . $category->name);
                             break;
                         }
                     }
                     else {
                         if ($orderTimeStr >= $startStr || $orderTimeStr <= $endStr) {
                             $salesCategoryUuid = $category->uuid;
-                            Log::info("MATCH TROUVÉ (Minuit) : " . $category->name);
                             break;
                         }
                     }
                 }
 
                 if (!$salesCategoryUuid) {
-                    Log::warning("Aucun match horaire trouvé. Passage au premier fallback 'time_based'.");
                     $salesCategoryUuid = SalesCategory::where('type', 'time_based')
                         ->where('is_active', true)
                         ->orderBy('start_time')
@@ -3551,10 +3535,9 @@ class OrderMenuRestaurantController extends Controller
                 if (!$salesCategoryUuid) {
                     $salesCategoryUuid = SalesCategory::where('is_active', true)->first()?->uuid;
                 }
-
-                Log::info('FINAL VALUE ASSIGNED', ['uuid' => $salesCategoryUuid]);
             }
 
+            $isRoomService = isset($validated['room_service_type']) && $validated['room_service_type'] === \App\Enums\RoomServiceEnum::YES->value;
             $orderDate = $validated['order_menu_restaurant_date'] ?? now();
             $order->update([
                 'regulation_status' => \App\Enums\MenuOrderStatus::TRANSFERRED->value,
@@ -3572,6 +3555,20 @@ class OrderMenuRestaurantController extends Controller
                 'updated_by' => $auth->id,
                 'sales_category_uuid' => $salesCategoryUuid,
                 'sales_category_type' => $validated['sales_category_type'],
+                'room_service_uuid' => $validated['room_service_uuid'] ?? null,
+                'price_for_room_service' => $isRoomService ? ($validated['price_for_room_service'] ?? 0) : 0,
+                'is_room_service' => $isRoomService,
+                'room_service_type' => $validated['room_service_type'] ?? null,
+                'quantity_for_room_service' => $isRoomService ? ($validated['quantity_for_room_service'] ?? 1) : 1,
+            ]);
+            $order->refresh();
+            $order->items()->update([
+                'price_for_room_service' => $order->price_for_room_service,
+                'is_room_service' => $order->is_room_service,
+            ]);
+            $order->drinks()->update([
+                'price_for_room_service' => $order->price_for_room_service,
+                'is_room_service' => $order->is_room_service,
             ]);
             $order->timestamps = false;
             $order->updated_at = $orderDate;
@@ -6124,6 +6121,7 @@ class OrderMenuRestaurantController extends Controller
     {
         try {
             $OrderMenu = OrderMenuRestaurant::with([
+                'roomService:uuid,prices',
                 'restaurantTable:uuid,code,table_number',
                 'creator:id,nom_utilisateur',
                 'updater:id,nom_utilisateur',
