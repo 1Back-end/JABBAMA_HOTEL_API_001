@@ -63,7 +63,9 @@ class OrderMenuRestaurantItem extends Model
         'rejected_after_validation_by',
         'reason_of_rejected_after_validation',
         'is_reason_of_rejected_after_validation',
-        'regulation_status'
+        'regulation_status',
+        'price_for_room_service',
+        'is_room_service'
     ];
 
     /**

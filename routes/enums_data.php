@@ -12,4 +12,6 @@ Route::get('enums/cash_register_filter_type', [\App\Http\Controllers\EnumControl
 Route::get('enums/payment_orders_menu_status', [\App\Http\Controllers\EnumController::class, 'PaymentOrderMenusStatus']);
 Route::get('enums/recouvrements_status', [\App\Http\Controllers\EnumController::class, 'StatusRecouvrements']);
 Route::get('enums/types_encaissements_recouvrements', [\App\Http\Controllers\EnumController::class, 'HistoricsEncaissementsOrRecouvrements']);
+Route::get('enums/room_service_type', [\App\Http\Controllers\EnumController::class, 'RoomServiceType']);
+
 

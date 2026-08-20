@@ -74,7 +74,12 @@ class OrderMenuRestaurant extends Model
         'regulation_status',
         'created_at',
         'updated_at',
-        'is_recouvrement'
+        'is_recouvrement',
+        'room_service_uuid',
+        'price_for_room_service',
+        'is_room_service',
+        'quantity_for_room_service',
+        'room_service_type'
     ];
 
     /**
@@ -181,7 +186,12 @@ class OrderMenuRestaurant extends Model
 
     public function getTotalOrderAttribute(): int
     {
-        return (int) ($this->total_items + $this->total_drinks);
+        $total = (int) ($this->total_items + $this->total_drinks);
+
+        if ($this->is_room_service) {
+            $total += (int) $this->price_for_room_service;
+        }
+        return $total;
     }
 
     public function getComputedPaidAmountAttribute(): int
@@ -309,7 +319,7 @@ class OrderMenuRestaurant extends Model
     {
         return $this->belongsTo(FreeClientRestaurant::class, 'free_client_for_restaurant_uuid', 'uuid');
     }
-    // 🔥 Relation inverse
+
     public function notifications()
     {
         return $this->hasMany(OrderNotification::class, 'order_menu_restaurant_uuid', 'uuid');
@@ -346,6 +356,10 @@ class OrderMenuRestaurant extends Model
     public function payment()
     {
         return $this->hasOne(Payment::class, 'order_menu_restaurant_uuid', 'uuid');
+    }
+    public function roomService()
+    {
+        return $this->belongsTo(RoomService::class, 'room_service_uuid', 'uuid');
     }
 
 }
