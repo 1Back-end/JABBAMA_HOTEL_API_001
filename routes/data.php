@@ -13,3 +13,4 @@ Route::get('data/restaurant_count_by_client_type', [\App\Http\Controllers\DataCo
 Route::get('data/main_courante', [\App\Http\Controllers\DataController::class, 'getMainCouranteData']);
 Route::get('data/room_service_total_quantity', [\App\Http\Controllers\DataController::class, 'get_total_room_service_quantity']);
 Route::get('data/total_room_service', [\App\Http\Controllers\DataController::class, 'get_total_room_service_amount']);
+Route::get('data/main_courante/pdf', [\App\Http\Controllers\DataController::class, 'exportMainCourantePdf']);
