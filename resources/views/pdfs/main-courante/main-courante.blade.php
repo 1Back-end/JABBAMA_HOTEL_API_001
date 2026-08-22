@@ -60,11 +60,9 @@
             text-align: left !important;
         }
 
-        /* Configuration des marges et en-tête automatique pour la page 2 et suivantes */
-        /* Configuration des marges et en-tête automatique pour la page 2 et suites */
         @page {
             size: A3 landscape;
-            margin: 8mm 5mm 5mm 5mm; /* Réduction de la marge du haut à 8mm au lieu de 15mm */
+            margin: 8mm 5mm 5mm 5mm;
             @top-center {
                 content: "SUITE DE LA MAIN COURANTE DU RESTAURANT DU {{ \Carbon\Carbon::parse($date)->locale('fr')->isoFormat('D MMMM YYYY') }}";
                 font-family: "Merriweather", serif;
@@ -73,8 +71,7 @@
                 text-transform: uppercase;
             }
         }
-
-        /* Empêche l'en-tête personnalisé d'apparaître sur la toute première page */
+        
         @page :first {
             @top-center {
                 content: "";
