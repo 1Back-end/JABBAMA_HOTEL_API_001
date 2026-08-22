@@ -8,6 +8,7 @@ use App\Enums\TypeClientsForPaiment;
 use App\Models\OrderMenuRestaurant;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class DataController extends Controller
@@ -497,6 +498,229 @@ class DataController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => "Erreur lors du calcul du montant total des room services.",
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function exportMainCourantePdf(Request $request)
+    {
+        $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : now()->toDateString();
+
+        try {
+            $orders = OrderMenuRestaurant::whereDate('created_at', $date)
+                ->with([
+                    'restaurantTable:uuid,code,table_number',
+                    'restaurant_room:uuid,rooms_number',
+                    'salesCategory:uuid,name,start_time,end_time',
+                    'items.menu:uuid,code,name,have_complements,type_complement_menu,is_generated_from_complement',
+                    'items.virtuals.product:uuid,name,code',
+                    'items.complements.complement',
+                    'payment.regulations.method',
+                    'drinks.drinkConfig.product',
+                ])
+                ->get();
+
+            // 2. Calculs globaux et synthèses
+            $totalGle = (int) $orders->sum('total_order');
+
+            // Encaissements (Payés + Partiellement payés)
+            $ordersEncaissement = $orders->filter(function ($order) {
+                return in_array($order->regulation_status, [
+                    PaymentOrderMenusStatus::PAID->value,
+                    PaymentOrderMenusStatus::PARTIALLY_PAID->value,
+                ]);
+            });
+            $totalEncaissement = (int) $ordersEncaissement->sum('computed_paid_amount');
+
+            // Débiteurs (Non payés + Partiellement payés)
+            $ordersNotPaid = $orders->filter(function ($order) {
+                return in_array($order->regulation_status, [
+                    PaymentOrderMenusStatus::NOT_PAID->value,
+                    PaymentOrderMenusStatus::PARTIALLY_PAID->value,
+                ]);
+            });
+            $totalNotPaid = (int) $ordersNotPaid->sum('total_order');
+
+            // Totaux et comptes par catégorie de vente
+            $countsByCategory = [];
+            $amountsByCategory = [];
+
+            foreach ($orders as $order) {
+                $categoryName = $order->salesCategory ? strtoupper(trim($order->salesCategory->name)) : 'AUTRES';
+
+                $validItems = $order->items->filter(function ($item) {
+                    return $item->menu && !$item->menu->is_generated_from_complement;
+                });
+
+                $countsByCategory[$categoryName] = ($countsByCategory[$categoryName] ?? 0) + (int) $validItems->sum('quantity_exactly');
+                $amountsByCategory[$categoryName] = ($amountsByCategory[$categoryName] ?? 0) + (float) $validItems->sum('total_price');
+            }
+
+            // Bar (Totaux et Quantités)
+            $totalBarAmount = (float) $orders->sum('total_drinks');
+            $totalBarCount = (int) $orders->sum(function ($order) {
+                return $order->drinks->sum('quantity_exactly');
+            });
+
+            $totalDiversAmount = 0;
+            $totalDiversCount = 0;
+            foreach ($orders as $order) {
+                $diversItemsFilter = $order->items->filter(function ($item) {
+                    return $item->menu && (bool)$item->menu->is_generated_from_complement === true;
+                });
+                $totalDiversAmount += (float) $diversItemsFilter->sum(function ($item) {
+                    return $item->total_price ?? (($item->unit_price ?? 0) * ($item->quantity_exactly ?? 0));
+                });
+                $totalDiversCount += (int) $diversItemsFilter->sum('quantity_exactly');
+            }
+
+            // Room Service
+            $totalRoomServiceAmount = (int) $orders->where('is_room_service', true)->sum('price_for_room_service');
+            $totalRoomServiceQuantity = (int) $orders->where('is_room_service', true)->sum('quantity_for_room_service');
+
+            $formattedOrders = [];
+            $debiteursOrders = [];
+
+            foreach ($orders as $order) {
+                $categoryName = $order->salesCategory ? strtoupper(trim($order->salesCategory->name)) : 'AUTRES';
+
+                // Items normaux
+                $formattedItems = $order->items->filter(function ($item) {
+                    return $item->menu && !$item->menu->is_generated_from_complement;
+                })->map(function ($item) use ($order) {
+                    return [
+                        'menu' => $item->menu->name ?? null,
+                        'quantity' => $item->quantity_exactly,
+                        'unit_price' => $item->unit_price,
+                        'total_price' => $item->total_price,
+                        'room_service_price' => (int) $order->price_for_room_service,
+                    ];
+                });
+
+                // Items Divers (générés depuis un complément)
+                $diversItems = $order->items->filter(function ($item) {
+                    return $item->menu && (bool)$item->menu->is_generated_from_complement === true;
+                })->map(function ($item) use ($order) {
+                    return [
+                        'menu' => $item->menu->name ?? null,
+                        'quantity' => $item->quantity_exactly,
+                        'unit_price' => $item->unit_price,
+                        'total_price' => $item->total_price,
+                        'room_service_price' => (int) $order->price_for_room_service,
+                    ];
+                });
+
+                // Boissons (Bar)
+                $formattedDrinks = $order->drinks->map(function ($drink) use ($order) {
+                    return [
+                        'menu' => $drink->drinkConfig->product->name ?? 'Boisson',
+                        'quantity' => $drink->quantity_exactly,
+                        'unit_price' => $drink->unit_price,
+                        'total_price' => $drink->total_price,
+                        'room_service_price' => (int) $order->price_for_room_service,
+                    ];
+                });
+
+                $paymentMethods = [];
+                if ($order->payment && $order->payment->regulations) {
+                    $paymentMethods = $order->payment->regulations->map(function ($regulation) {
+                        return [
+                            'amount' => $regulation->amount ?? 0,
+                            'method_name' => $regulation->method->name ?? 'Inconnu',
+                        ];
+                    });
+                }
+
+                // Gestion de la liste des débiteurs
+                if ($diversItems->isNotEmpty() && in_array($order->regulation_status, [
+                        PaymentOrderMenusStatus::NOT_PAID->value,
+                        PaymentOrderMenusStatus::PARTIALLY_PAID->value,
+                    ])) {
+                    $debiteursOrders[] = [
+                        'uuid' => $order->uuid,
+                        'code_facture' => $order->code,
+                        'no_table' => $order->restaurantTable->table_number ?? '',
+                        'chambre' => $order->restaurant_room->rooms_number ?? '',
+                        'sales_category' => $categoryName,
+                        'items' => $diversItems->values()->all(),
+                    ];
+                }
+
+                $formattedOrders[] = [
+                    'code_facture' => $order->code,
+                    'no_table' => $order->restaurantTable->table_number ?? '',
+                    'chambre' => $order->restaurant_room->rooms_number ?? '',
+                    'regulation_status' => $order->status_payment_label,
+                    'total_amount' => $order->total_order ?? 0,
+                    'payment_methods' => $paymentMethods,
+                    'sales_category' => $categoryName,
+                    'items' => $formattedItems->values()->all(),
+                    'drinks' => $formattedDrinks->values()->all(),
+                    'divers' => $diversItems->values()->all(),
+                    'is_room_service' => (bool) $order->is_room_service,
+                    'room_service_price' => (int) $order->price_for_room_service,
+                    'room_service_qty' => (int) $order->quantity_for_room_service,
+                ];
+            }
+
+            $fileName   = 'MAIN-COURANTE-' . $date . '.pdf';
+            $folderPath = 'storage/main-courante/' . now()->format('d-m-Y') . '/';
+            $filePath   = $folderPath . '/' . $fileName;
+
+            if (!is_dir($folderPath)) {
+                mkdir($folderPath, 0755, true);
+            }
+
+            $data = [
+                'date' => $date,
+                'total_gle' => $totalGle,
+                'total_encaissement' => $totalEncaissement,
+                'total_debiteur' => $totalNotPaid,
+                'counts_by_category' => $countsByCategory,
+                'amounts_by_category' => $amountsByCategory,
+                'total_bar_amount' => $totalBarAmount,
+                'total_bar_count' => $totalBarCount,
+                'total_divers_amount' => $totalDiversAmount,
+                'total_divers_count' => $totalDiversCount,
+                'total_room_service_amount' => $totalRoomServiceAmount,
+                'total_room_service_quantity' => $totalRoomServiceQuantity,
+                'orders' => $formattedOrders,
+                'debiteurs' => $debiteursOrders,
+            ];
+
+            $footer = 'pdfs.reports.factures.footer';
+
+            save_browser_shot_pdf(
+                view: 'pdfs.main-courante.main-courante',
+                data: $data,
+                folderPath: $folderPath,
+                path: $filePath,
+                format: 'A3',
+                direction: 'landscape',
+                footer: $footer,
+                margins: [5, 5, 5, 5]
+            );
+
+            if (!file_exists($filePath)) {
+                return response()->json(['message' => "Le fichier PDF n'a pas été généré."], 500);
+            }
+
+            $pdfContent = file_get_contents($filePath);
+            $base64     = base64_encode($pdfContent);
+
+            return response()->json([
+                'success'  => true,
+                'data'     => $data,
+                'base64'   => $base64,
+                'url'      => asset('storage/details-orders/' . $fileName),
+                'filename' => $fileName,
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => "Erreur lors de la génération du PDF de la main courante.",
                 'error' => $e->getMessage()
             ], 500);
         }
