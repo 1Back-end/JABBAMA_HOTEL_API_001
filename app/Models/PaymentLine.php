@@ -83,6 +83,15 @@ class PaymentLine extends Model
         )->where('payable_type', OrderRestaurantDrink::class);
     }
 
+    public function roomService()
+    {
+        return $this->belongsTo(
+            RoomService::class,
+            'payable_uuid',
+            'uuid'
+        )->where('payment_lines.payable_type', RoomService::class);
+    }
+
     public function payment_regulation()
     {
         return $this->belongsTo(PaymentRegulation::class, 'payment_regulation_uuid', 'uuid');

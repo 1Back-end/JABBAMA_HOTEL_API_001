@@ -4,6 +4,8 @@ namespace App\Models;
 
 use App\Enums\ConsumptionType;
 use App\Enums\MenuOrderStatus;
+use App\Enums\OrderMenuRestaurantItemStatus;
+use App\Enums\PaymentOrderItemStatus;
 use App\Enums\PaymentOrderMenusStatus;
 use App\Enums\PurchaseOrdersStatus;
 use App\Enums\TypeClientsForPaiment;
@@ -94,7 +96,103 @@ class OrderMenuRestaurant extends Model
         'order_menu_restaurant_date' => 'datetime',
     ];
 
-    protected $appends = ['debtor_amount_allocated','items_and_drinks_status','free_client_amount_allocated','total_cumul_arrhes','status_payment_label','partner_amount_allocated','consumption_type_label','clients_for_payment_label','status_label','status_payment_label','total_items','total_drinks','total_order','summary_items','remaining_amount','computed_paid_amount'];
+    protected $appends = [
+        'debtor_amount_allocated',
+        'items_and_drinks_status',
+        'free_client_amount_allocated',
+        'total_cumul_arrhes',
+        'status_payment_label',
+        'partner_amount_allocated',
+        'consumption_type_label',
+        'clients_for_payment_label',
+        'status_label',
+        'status_payment_label',
+        'total_items',
+        'total_drinks',
+        'total_order',
+        'summary_items',
+        'remaining_amount',
+        'computed_paid_amount',
+        'global_status_label',
+        'global_regulation_status',
+    ];
+    public function getGlobalStatusLabelAttribute(): string
+    {
+        $isRoomServiceActive = ($this->is_room_service);
+
+        if ($isRoomServiceActive) {
+            $total = (float) str_replace(',', '.', $this->price_for_room_service ?? 0);
+            if ($total <= 0) {
+                return PaymentOrderItemStatus::NOT_PAID->label();
+            }
+
+            if (!$this->relationLoaded('payment') || !$this->payment) {
+                return PaymentOrderItemStatus::NOT_PAID->label();
+            }
+
+            $paid = 0.0;
+            $paymentUuid = $this->payment->uuid;
+
+            if ($paymentUuid && $this->room_service_uuid) {
+                $paid = (float) \DB::table('payment_lines')
+                    ->where('payable_type', \App\Models\RoomService::class)
+                    ->where('payable_uuid', $this->room_service_uuid)
+                    ->where('payment_uuid', $paymentUuid)
+                    ->whereNull('deleted_at')
+                    ->sum('amount');
+            }
+
+            if ($paid <= 0) {
+                return PaymentOrderItemStatus::NOT_PAID->label();
+            }
+
+            if ($paid >= $total) {
+                return PaymentOrderItemStatus::PAID->label();
+            }
+            return PaymentOrderItemStatus::PARTIALLY_PAID->label();
+        }
+
+        return PaymentOrderItemStatus::NOT_PAID->label();
+    }
+
+    public function getGlobalRegulationStatusAttribute(): string
+    {
+        $isRoomServiceActive = ($this->is_room_service);
+
+        if ($isRoomServiceActive) {
+            $total = (float) str_replace(',', '.', $this->price_for_room_service ?? 0);
+            if ($total <= 0) {
+                return 'not_paid';
+            }
+            if (!$this->relationLoaded('payment') || !$this->payment) {
+                return 'not_paid';
+            }
+
+            $paid = 0.0;
+            $paymentUuid = $this->payment->uuid;
+
+            if ($paymentUuid && $this->room_service_uuid) {
+                $paid = (float) \DB::table('payment_lines')
+                    ->where('payable_type', \App\Models\RoomService::class)
+                    ->where('payable_uuid', $this->room_service_uuid)
+                    ->where('payment_uuid', $paymentUuid)
+                    ->whereNull('deleted_at')
+                    ->sum('amount');
+            }
+
+            if ($paid <= 0) {
+                return 'not_paid';
+            }
+
+            if ($paid >= $total) {
+                return 'paid';
+            }
+
+            return 'partially_paid';
+        }
+
+        return 'not_paid';
+    }
     public function getTotalCumulArrhesAttribute()
     {
         return $this->free_client_amount_allocated
@@ -290,7 +388,6 @@ class OrderMenuRestaurant extends Model
     {
         return $this->belongsTo(MenuRestaurant::class, 'menu_restaurant_uuid', 'uuid');
     }
-    // Récupérer tous les items d'une commande
     public function items()
     {
         return $this->hasMany(OrderMenuRestaurantItem::class, 'order_menu_restaurant_uuid', 'uuid');

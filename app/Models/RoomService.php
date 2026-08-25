@@ -37,4 +37,25 @@ class RoomService extends Model
     {
         return $this->belongsTo(User::class, 'updated_by');
     }
+    public function paymentLines()
+    {
+        return $this->hasMany(
+            PaymentLine::class,
+            'payable_uuid',
+            'uuid'
+        )->where('payable_type', RoomService::class);
+    }
+
+    public function paymentLinesForOrder(?string $orderUuid)
+    {
+        return $this->hasMany(
+            PaymentLine::class,
+            'payable_uuid',
+            'uuid'
+        )->where('payable_type', RoomService::class)
+            ->whereNull('deleted_at')
+            ->whereHas('payment', function ($q) use ($orderUuid) {
+                $q->where('order_menu_restaurant_uuid', $orderUuid);
+            });
+    }
 }

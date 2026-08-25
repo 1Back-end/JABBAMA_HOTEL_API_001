@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Enums\ChooseClients;
+use App\Enums\MenuOrderStatus;
 use App\Enums\PaymentOrderMenusStatus;
 use App\Enums\TypeClientsForPaiment;
+use App\Models\OrderMenuItemStatus;
 use App\Models\OrderMenuRestaurant;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -333,6 +335,7 @@ class DataController extends Controller
                     'payment.regulations.method',
                     'drinks.drinkConfig.product',
                 ])
+                ->where('status',MenuOrderStatus::FACTURATE->value)
                 ->get();
 
             $countsByCategory = $orders->groupBy(function ($order) {
@@ -519,9 +522,10 @@ class DataController extends Controller
                     'payment.regulations.method',
                     'drinks.drinkConfig.product',
                 ])
+                ->where('status',MenuOrderStatus::FACTURATE->value)
                 ->get();
 
-            // 2. Calculs globaux et synthèses
+
             $totalGle = (int) $orders->sum('total_order');
 
             // Encaissements (Payés + Partiellement payés)

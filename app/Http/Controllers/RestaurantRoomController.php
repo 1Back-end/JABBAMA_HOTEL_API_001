@@ -280,7 +280,6 @@ class RestaurantRoomController extends Controller
             });
         }
 
-        // 🔹 Pagination
         $data = $query->latest()->paginate($perPage, ['*'], 'page', $page);
         return response()->json([
             'data'         => $data->items(),

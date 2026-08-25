@@ -6150,7 +6150,13 @@ class OrderMenuRestaurantController extends Controller
                 'salesCategory:uuid,name,start_time,end_time',
                 'payment.regulations.method',
                 'items.paymentLines',
-                'drinks.paymentLines'
+                'drinks.paymentLines',
+                'roomService.paymentLines' => function ($query) use ($uuid) {
+                    $query->whereHas('payment', function ($q) use ($uuid) {
+                        $q->where('order_menu_restaurant_uuid', $uuid);
+                    })->whereNull('deleted_at');
+                },
+                'payment'
             ])
                 ->where('uuid', $uuid)
                 ->firstOrFail();

@@ -19,6 +19,7 @@ use App\Models\PaymentLine;
 use App\Models\PaymentRegulation;
 use App\Models\Recouvrement;
 use App\Models\RegulationMethod;
+use App\Models\RoomService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -34,27 +35,48 @@ class PaymentController extends Controller
 
         $allLines = $order->items->merge($order->drinks);
 
-        if ($allLines->isEmpty()) {
-            $order->status = PaymentOrderMenusStatus::NOT_PAID->value;
+        $isRoomServiceActive = ($order->is_room_service);
+        $roomServiceTotal = $isRoomServiceActive ? (float) str_replace(',', '.', $order->price_for_room_service ?? 0) : 0.0;
+
+        $roomServicePaid = 0.0;
+        if ($isRoomServiceActive && $order->room_service_uuid) {
+            $roomServicePaid = (float) \DB::table('payment_lines')
+                ->where('payable_type', \App\Models\RoomService::class)
+                ->where('payable_uuid', $order->room_service_uuid)
+                ->whereNull('deleted_at')
+                ->sum('amount');
+        }
+
+        $roomServiceStatus = 'not_paid';
+        if ($roomServiceTotal > 0) {
+            if ($roomServicePaid >= $roomServiceTotal) {
+                $roomServiceStatus = 'paid';
+            } elseif ($roomServicePaid > 0) {
+                $roomServiceStatus = 'partially_paid';
+            }
+        }
+
+        if ($allLines->isEmpty() && $roomServiceTotal <= 0) {
+            $order->regulation_status = PaymentOrderMenusStatus::NOT_PAID->value;
             $order->save();
             return;
         }
 
-        $total = $allLines->count();
+        $statuses = $allLines->pluck('regulation_status')->toArray();
+        if ($roomServiceTotal > 0) {
+            $statuses[] = $roomServiceStatus;
+        }
 
-        $paidCount    = $allLines->where('regulation_status', PaymentOrderItemStatus::PAID->value)->count();
-        $partialCount = $allLines->where('regulation_status', PaymentOrderItemStatus::PARTIALLY_PAID->value)->count();
-        $notPaidCount = $allLines->where('regulation_status', PaymentOrderItemStatus::NOT_PAID->value)->count();
-
-        if ($paidCount === $total) {
+        if (!empty($statuses) && collect($statuses)->every(fn($status) => $status === 'paid')) {
             $order->regulation_status = PaymentOrderMenusStatus::PAID->value;
         }
-        elseif ($notPaidCount === $total) {
+        elseif (!empty($statuses) && collect($statuses)->every(fn($status) => $status === 'not_paid')) {
             $order->regulation_status = PaymentOrderMenusStatus::NOT_PAID->value;
         }
         else {
             $order->regulation_status = PaymentOrderMenusStatus::PARTIALLY_PAID->value;
         }
+
         $order->save();
     }
 
@@ -62,7 +84,8 @@ class PaymentController extends Controller
     {
         $order->load([
             'items.paymentLines',
-            'drinks.paymentLines'
+            'drinks.paymentLines',
+            'roomService.paymentLines'
         ]);
 
         $lines = $order->items->merge($order->drinks);
@@ -87,6 +110,14 @@ class PaymentController extends Controller
             }
 
             $line->save();
+        }
+        if ($order->is_room_service && $order->roomService) {
+            $roomService = $order->roomService;
+            $totalRoomService = (float) ($roomService->price_for_room_service ?? 0);
+            if ($totalRoomService === 0.0) {
+            } else {
+                $paidRoomService = (float) $roomService->paymentLines->sum('amount');
+            }
         }
     }
 
@@ -222,11 +253,13 @@ class PaymentController extends Controller
                 $method = RegulationMethod::where('uuid', $regulation['method_uuid'])->first();
                 $cashReceiptType = CashReceiptType::where('is_linked_to_turnover', true)->first();
 
-                // 1. Regrouper et sommer les montants par type (item = resto, drink = bar)
                 $itemsAmount = 0;
                 $drinksAmount = 0;
+                $roomServiceAmount = 0;
+
                 $itemLines = [];
                 $drinkLines = [];
+                $roomServiceLines = [];
 
                 if (!empty($regulation['lines'])) {
                     foreach ($regulation['lines'] as $line) {
@@ -236,14 +269,25 @@ class PaymentController extends Controller
                         } elseif ($line['type'] === 'drink') {
                             $drinksAmount += (float) $line['amount'];
                             $drinkLines[] = $line;
+                        } elseif ($line['type'] === 'room_service') {
+                            $roomServiceAmount += (float) $line['amount'];
+                            $roomServiceLines[] = $line;
                         }
                     }
                 } else {
-                    // S'il n'y a pas de lignes détaillées, on attribue tout au montant global (par défaut Resto ou autre selon votre logique)
                     $itemsAmount = (float) $regulation['amount'];
                 }
 
-                // 2. Traitement de la partie RESTO (si présente)
+                if ($roomServiceAmount > 0) {
+                    $hasItems = $order->items()->count() > 0;
+                    if ($hasItems) {
+                        $itemsAmount += $roomServiceAmount;
+                        $roomServiceLinesSrc = $roomServiceLines;
+                    } else {
+                        $drinksAmount += $roomServiceAmount;
+                    }
+                }
+
                 if ($itemsAmount > 0) {
                     $restoFamily = CashReceiptFamily::where('indexation', 'Consommation Restaurant')->first();
 
@@ -263,7 +307,6 @@ class PaymentController extends Controller
                         'updated_at' => $createdAt,
                     ]);
 
-                    // Enregistrer les payment_lines liées au resto
                     foreach ($itemLines as $line) {
                         PaymentLine::create([
                             'payment_uuid' => $payment->uuid,
@@ -282,9 +325,29 @@ class PaymentController extends Controller
                             'updated_at' => $createdAt,
                         ]);
                     }
+
+                    if ($order->items()->count() > 0) {
+                        foreach ($roomServiceLines as $line) {
+                            PaymentLine::create([
+                                'payment_uuid' => $payment->uuid,
+                                'payment_regulation_uuid' => $regulationModelResto->uuid,
+                                'payable_type' => RoomService::class,
+                                'payable_uuid' => $line['uuid'],
+                                'amount' => $line['amount'],
+                                'slug' => 'RESTO',
+                                'regulation_method_uuid' => $method->uuid,
+                                'phone_number' => $regulation['phone_number'] ?? null,
+                                'reference' => $regulation['reference'] ?? null,
+                                'detail' => $regulation['detail'] ?? null,
+                                'created_by' => auth()->id(),
+                                'updated_by' => auth()->id(),
+                                'created_at' => $createdAt,
+                                'updated_at' => $createdAt,
+                            ]);
+                        }
+                    }
                 }
 
-                // 3. Traitement de la partie BAR (si présente)
                 if ($drinksAmount > 0) {
                     $barFamily = CashReceiptFamily::where('indexation', 'Consommation Bar')->first();
 
@@ -304,7 +367,6 @@ class PaymentController extends Controller
                         'updated_at' => $createdAt,
                     ]);
 
-                    // Enregistrer les payment_lines liées au bar
                     foreach ($drinkLines as $line) {
                         PaymentLine::create([
                             'payment_uuid' => $payment->uuid,
@@ -323,9 +385,29 @@ class PaymentController extends Controller
                             'updated_at' => $createdAt,
                         ]);
                     }
+
+                    if ($order->items()->count() === 0) {
+                        foreach ($roomServiceLines as $line) {
+                            PaymentLine::create([
+                                'payment_uuid' => $payment->uuid,
+                                'payment_regulation_uuid' => $regulationModelBar->uuid,
+                                'payable_type' => RoomService::class,
+                                'payable_uuid' => $line['uuid'],
+                                'amount' => $line['amount'],
+                                'slug' => 'BAR',
+                                'regulation_method_uuid' => $method->uuid,
+                                'phone_number' => $regulation['phone_number'] ?? null,
+                                'reference' => $regulation['reference'] ?? null,
+                                'detail' => $regulation['detail'] ?? null,
+                                'created_by' => auth()->id(),
+                                'updated_by' => auth()->id(),
+                                'created_at' => $createdAt,
+                                'updated_at' => $createdAt,
+                            ]);
+                        }
+                    }
                 }
             }
-
 
             $totalPaid = $alreadyPaid + $totalNewPaid;
 
@@ -395,7 +477,7 @@ class PaymentController extends Controller
         $auth = auth()->user();
 
         $request->validate([
-            'type' => 'required|in:item,drink,order,regulation',
+            'type' => 'required|in:item,drink,room_service,order,regulation',
             'password' => 'required|string'
         ]);
 
@@ -492,6 +574,39 @@ class PaymentController extends Controller
                 $totalAmountToRefund += $refund;
             }
 
+            if ($request->type === 'room_service') {
+                $lines = PaymentLine::where('payable_uuid', $request->target_uuid)
+                    ->where('payable_type', \App\Models\RoomService::class)
+                    ->where('payment_uuid', $payment->uuid)
+                    ->get();
+
+                if ($lines->isEmpty()) {
+                    throw new \Exception("Aucun règlement trouvé pour ce room service");
+                }
+
+                $refund = $lines->sum('amount');
+
+                foreach ($lines as $line) {
+                    $regulation = PaymentRegulation::where('uuid', $line->payment_regulation_uuid)
+                        ->first();
+
+                    if ($regulation) {
+                        $regulation->amount = max(0, (float)$regulation->amount - (float)$line->amount);
+                        if (round($regulation->amount, 2) <= 0) {
+                            $regulation->delete();
+                        } else {
+                            $regulation->save();
+                            $regulation->updated_by = auth()->id();
+                        }
+                    }
+                    $line->delete();
+                }
+
+                $payment->paid_amount = max(0, $payment->paid_amount - $refund);
+
+                $totalAmountToRefund += $refund;
+            }
+
 
             if ($request->type === 'order') {
                 $totalAmountToRefund = $payment->paid_amount;
@@ -521,6 +636,10 @@ class PaymentController extends Controller
                 $order->drinks()->whereIn('uuid', $paidDrinks)->update([
                     'regulation_status' => PaymentOrderItemStatus::NOT_PAID->value
                 ]);
+                if ($order->is_room_service === true) {
+                    $order->room_service_payment_lines = [];
+                    $order->save();
+                }
                 $hasOtherPaidItems = $order->items()
                     ->whereIn('regulation_status', [PaymentOrderItemStatus::PAID->value, PaymentOrderItemStatus::PARTIALLY_PAID->value])
                     ->exists();
@@ -1008,7 +1127,6 @@ class PaymentController extends Controller
 
         $slugLabel = $slug ? strtoupper($slug) : 'GLOBAL';
 
-        // --- CORRECTION DES TITRES SELON LE SLUG ---
         if (!$slug) {
             $expenseTitle = 'DEPENSES GLOBAL';
             $otherCashInTitle = 'AUTRES ENCAISSEMENTS';
@@ -1113,7 +1231,8 @@ class PaymentController extends Controller
                 'paymentLines.payable' => function ($morphTo) {
                     $morphTo->morphWith([
                         \App\Models\OrderMenuRestaurantItem::class => ['menu:uuid,name'],
-                        \App\Models\OrderRestaurantDrink::class => ['drinkConfig.product:uuid,name']
+                        \App\Models\OrderRestaurantDrink::class => ['drinkConfig.product:uuid,name'],
+                        \App\Models\RoomService::class => []
                     ]);
                 }
             ])
@@ -1189,7 +1308,8 @@ class PaymentController extends Controller
                 'paymentLines.payable' => function ($morphTo) {
                     $morphTo->morphWith([
                         \App\Models\OrderMenuRestaurantItem::class => ['menu:uuid,name'],
-                        \App\Models\OrderRestaurantDrink::class => ['drinkConfig.product:uuid,name']
+                        \App\Models\OrderRestaurantDrink::class => ['drinkConfig.product:uuid,name'],
+                        \App\Models\RoomService::class => []
                     ]);
                 }
             ])
@@ -1347,32 +1467,58 @@ class PaymentController extends Controller
             $orderCode = $order?->code;
             $method = $regulation->method;
 
-            $injectOrderCode = function($collection) use ($orderCode, $method) {
-                if (!$collection) return [];
-                return $collection->map(function ($item) use ($orderCode, $method) {
-                    $item->order_code = $orderCode;
-                    $item->payment_method = $method;
-                    return $item;
-                })->values();
-            };
+            $lines = $regulation->paymentLines ? $regulation->paymentLines->whereNull('deleted_at') : collect();
 
-            $lines = $regulation->paymentLines ?? collect();
-
-            $plats = $lines->filter(function ($line) {
+            $formattedPlats = $lines->filter(function ($line) {
                 return $line->payable_type === 'App\Models\OrderMenuRestaurantItem'
                     || str_contains($line->payable_type, 'Item');
-            })->map(function ($line) {
-                return $line->payable;
-            })->filter();
+            })->map(function ($line) use ($orderCode, $method) {
+                $item = $line->payable;
+                if (!$item) return null;
+                $item->order_code = $orderCode;
+                $item->payment_method = $method;
+                return $item;
+            })->filter()->values();
 
-            $boissons = $lines->filter(function ($line) {
-                return $line->payable_type === 'App\Models\OrderRestaurantDrink'
-                    || str_contains($line->payable_type, 'Drink');
-            })->map(function ($line) {
-                return $line->payable;
-            })->filter();
+            $formattedBoissons = $lines->filter(function ($line) {
+                if ($line->payable_type === 'App\Models\OrderRestaurantDrink' || str_contains($line->payable_type, 'Drink')) {
+                    return true;
+                }
+                if ($line->payable_type === 'App\Models\RoomService' && $line->slug === 'BAR') {
+                    return true;
+                }
+                return false;
+            })->map(function ($line) use ($orderCode, $method) {
+                $item = $line->payable;
+                if (!$item) return null;
 
-            // Calcule le total spécifiquement basé sur les lignes filtrées (ou sur paymentLines)
+                $item->order_code = $orderCode;
+                $item->payment_method = $method;
+
+                if ($line->payable_type === 'App\Models\RoomService') {
+                    $item->quantity_for_room_service = $line->quantity ?? 1;
+                    $item->price_for_room_service = $line->amount;
+                }
+
+                return $item;
+            })->filter()->values();
+
+            $roomServicePlats = $lines->filter(function ($line) {
+                return $line->payable_type === 'App\Models\RoomService' && $line->slug === 'RESTO';
+            })->map(function ($line) use ($orderCode, $method) {
+                $item = $line->payable;
+                if (!$item) return null;
+
+                $item->order_code = $orderCode;
+                $item->payment_method = $method;
+                $item->quantity_for_room_service = $line->quantity ?? 1;
+                $item->price_for_room_service = $line->amount;
+
+                return $item;
+            })->filter()->values();
+
+            $formattedPlats = $formattedPlats->concat($roomServicePlats)->values();
+
             $filteredTotal = $slug ? (float) $lines->sum('amount') : ($order ? (float) $order->total_order : 0);
 
             return [
@@ -1387,8 +1533,8 @@ class PaymentController extends Controller
                 'order_code'          => $orderCode,
                 'order_total_price'   => $filteredTotal,
                 'order_details'       => [
-                    'plats'    => $injectOrderCode($plats),
-                    'boissons' => $injectOrderCode($boissons)
+                    'plats'    => $formattedPlats,
+                    'boissons' => $formattedBoissons,
                 ]
             ];
         })->values();
@@ -1404,30 +1550,56 @@ class PaymentController extends Controller
             $orderCode = $order?->code;
             $method = $regulation->method;
 
-            $injectOrderCode = function($collection) use ($orderCode, $method) {
-                if (!$collection) return [];
-                return $collection->map(function ($item) use ($orderCode, $method) {
-                    $item->order_code = $orderCode;
-                    $item->payment_method = $method;
-                    return $item;
-                })->values();
-            };
-
             $lines = $regulation->paymentLines ?? collect();
 
-            $plats = $lines->filter(function ($line) {
-                return $line->payable_type === 'App\Models\OrderMenuRestaurantItem'
-                    || str_contains($line->payable_type, 'Item');
-            })->map(function ($line) {
-                return $line->payable;
-            })->filter();
+            $formattedPlats = $lines->filter(function ($line) {
+                return $line->payable_type === 'App\Models\OrderMenuRestaurantItem';
+            })->map(function ($line) use ($orderCode, $method) {
+                $item = $line->payable;
+                if (!$item) return null;
+                $item->order_code = $orderCode;
+                $item->payment_method = $method;
+                return $item;
+            })->filter()->values();
 
-            $boissons = $lines->filter(function ($line) {
-                return $line->payable_type === 'App\Models\OrderRestaurantDrink'
-                    || str_contains($line->payable_type, 'Drink');
-            })->map(function ($line) {
-                return $line->payable;
-            })->filter();
+            $formattedBoissons = $lines->filter(function ($line) {
+                if ($line->payable_type === 'App\Models\OrderRestaurantDrink' || str_contains($line->payable_type, 'Drink')) {
+                    return true;
+                }
+                if ($line->payable_type === 'App\Models\RoomService' && $line->slug === 'BAR') {
+                    return true;
+                }
+                return false;
+            })->map(function ($line) use ($orderCode, $method) {
+                $item = $line->payable;
+                if (!$item) return null;
+
+                $item->order_code = $orderCode;
+                $item->payment_method = $method;
+
+                if ($line->payable_type === 'App\Models\RoomService') {
+                    $item->quantity_for_room_service = $line->quantity ?? 1;
+                    $item->price_for_room_service = $line->amount;
+                }
+
+                return $item;
+            })->filter()->values();
+
+            $roomServicePlats = $lines->filter(function ($line) {
+                return $line->payable_type === 'App\Models\RoomService' && $line->slug === 'RESTO';
+            })->map(function ($line) use ($orderCode, $method) {
+                $item = $line->payable;
+                if (!$item) return null;
+
+                $item->order_code = $orderCode;
+                $item->payment_method = $method;
+                $item->quantity_for_room_service = $line->quantity ?? 1;
+                $item->price_for_room_service = $line->amount;
+
+                return $item;
+            })->filter()->values();
+
+            $formattedPlats = $formattedPlats->concat($roomServicePlats)->values();
 
             return [
                 'uuid'                => $regulation->uuid,
@@ -1441,16 +1613,12 @@ class PaymentController extends Controller
                 'order_code'          => $orderCode,
                 'order_total_price'   => $order ? (float) $order->total_order : 0,
                 'order_details'       => [
-                    'plats'    => $injectOrderCode($plats),
-                    'boissons' => $injectOrderCode($boissons)
+                    'plats'    => $formattedPlats,
+                    'boissons' => $formattedBoissons,
                 ]
             ];
         })->values();
     }
-
-
-
-
 
 
     public function store_recouvrements(Request $request)
@@ -1582,12 +1750,6 @@ class PaymentController extends Controller
 
             $remainingToPay = max(0, (float) $payment->total_amount - $alreadyPaid);
 
-            \Log::info('PAYMENT DEBUG', [
-                'payment_total_amount' => $payment->total_amount,
-                'already_paid' => $alreadyPaid,
-                'remaining' => $remainingToPay,
-                'request_total_amount' => $request->total_amount,
-            ]);
 
             if ($totalNewPaid > ($remainingToPay + 0.01)) {
                 return response()->json([
@@ -1597,17 +1759,37 @@ class PaymentController extends Controller
             }
 
 
+            $attachmentPath = null;
+            if ($request->hasFile('image_file')) {
+                $file = $request->file('image_file');
+                $filename = time() . '_' . $file->getClientOriginalName();
+                $attachmentPath = $file->store('regulations', 'public');
+
+                if (isset($product)) {
+                    $product->medias()->create([
+                        'name' => $filename,
+                        'disk' => 'public',
+                        'path' => $attachmentPath,
+                        'filename' => $filename,
+                        'mimetype' => $file->getClientMimeType(),
+                        'extension' => $file->getClientOriginalExtension(),
+                    ]);
+                }
+            }
+
             foreach ($request->regulations as $regulation) {
 
                 $method = RegulationMethod::where('uuid', $regulation['method_uuid'])->first();
                 $cashReceiptType = CashReceiptType::where('is_linked_to_turnover', true)->first();
-                $recouvrementRestoBar = Recouvrement::where('is_used_for_restaurant', true)
-                    ->first();
+                $recouvrementRestoBar = Recouvrement::where('is_used_for_restaurant', true)->first();
 
                 $itemsAmount = 0;
                 $drinksAmount = 0;
+                $roomServiceAmount = 0;
+
                 $itemLines = [];
                 $drinkLines = [];
+                $roomServiceLines = [];
 
                 if (!empty($regulation['lines'])) {
                     foreach ($regulation['lines'] as $line) {
@@ -1617,10 +1799,22 @@ class PaymentController extends Controller
                         } elseif ($line['type'] === 'drink') {
                             $drinksAmount += (float) $line['amount'];
                             $drinkLines[] = $line;
+                        } elseif ($line['type'] === 'room_service') {
+                            $roomServiceAmount += (float) $line['amount'];
+                            $roomServiceLines[] = $line;
                         }
                     }
                 } else {
                     $itemsAmount = (float) $regulation['amount'];
+                }
+
+                if ($roomServiceAmount > 0) {
+                    $hasItems = $order->items()->count() > 0;
+                    if ($hasItems) {
+                        $itemsAmount += $roomServiceAmount;
+                    } else {
+                        $drinksAmount += $roomServiceAmount;
+                    }
                 }
 
                 if ($itemsAmount > 0) {
@@ -1631,7 +1825,7 @@ class PaymentController extends Controller
                         'regulation_method_uuid' => $method->uuid,
                         'cash_receipt_families_uuid' => $restoFamily?->uuid,
                         'cash_receipt_type_uuid' => $cashReceiptType?->uuid,
-                        'recouvrement_uuid' => $recouvrementRestoBar->uuid,
+                        'recouvrement_uuid' => $recouvrementRestoBar?->uuid,
                         'slug' => 'ENCAISSEMENT RESTO',
                         'amount' => $itemsAmount,
                         'attachment' => $attachmentPath,
@@ -1645,7 +1839,6 @@ class PaymentController extends Controller
                         'updated_at' => $createdAt,
                     ]);
 
-                    // Enregistrer les payment_lines liées au resto
                     foreach ($itemLines as $line) {
                         PaymentLine::create([
                             'payment_uuid' => $payment->uuid,
@@ -1664,9 +1857,29 @@ class PaymentController extends Controller
                             'updated_at' => $createdAt,
                         ]);
                     }
+
+                    if ($order->items()->count() > 0) {
+                        foreach ($roomServiceLines as $line) {
+                            PaymentLine::create([
+                                'payment_uuid' => $payment->uuid,
+                                'payment_regulation_uuid' => $regulationModelResto->uuid,
+                                'payable_type' => RoomService::class,
+                                'payable_uuid' => $line['uuid'],
+                                'amount' => $line['amount'],
+                                'slug' => 'RESTO',
+                                'regulation_method_uuid' => $method->uuid,
+                                'phone_number' => $regulation['phone_number'] ?? null,
+                                'reference' => $regulation['reference'] ?? null,
+                                'detail' => $regulation['detail'] ?? null,
+                                'created_by' => auth()->id(),
+                                'updated_by' => auth()->id(),
+                                'created_at' => $createdAt,
+                                'updated_at' => $createdAt,
+                            ]);
+                        }
+                    }
                 }
 
-                // 3. Traitement de la partie BAR (si présente)
                 if ($drinksAmount > 0) {
                     $barFamily = CashReceiptFamily::where('indexation', 'Consommation Bar')->first();
 
@@ -1675,7 +1888,7 @@ class PaymentController extends Controller
                         'regulation_method_uuid' => $method->uuid,
                         'cash_receipt_families_uuid' => $barFamily?->uuid,
                         'cash_receipt_type_uuid' => $cashReceiptType?->uuid,
-                        'recouvrement_uuid' => $recouvrementRestoBar->uuid,
+                        'recouvrement_uuid' => $recouvrementRestoBar?->uuid,
                         'slug' => 'ENCAISSEMENT BAR',
                         'amount' => $drinksAmount,
                         'attachment' => $attachmentPath,
@@ -1689,7 +1902,6 @@ class PaymentController extends Controller
                         'updated_at' => $createdAt,
                     ]);
 
-                    // Enregistrer les payment_lines liées au bar
                     foreach ($drinkLines as $line) {
                         PaymentLine::create([
                             'payment_uuid' => $payment->uuid,
@@ -1708,22 +1920,28 @@ class PaymentController extends Controller
                             'updated_at' => $createdAt,
                         ]);
                     }
+
+                    if ($order->items()->count() === 0) {
+                        foreach ($roomServiceLines as $line) {
+                            PaymentLine::create([
+                                'payment_uuid' => $payment->uuid,
+                                'payment_regulation_uuid' => $regulationModelBar->uuid,
+                                'payable_type' => RoomService::class,
+                                'payable_uuid' => $line['uuid'],
+                                'amount' => $line['amount'],
+                                'slug' => 'BAR',
+                                'regulation_method_uuid' => $method->uuid,
+                                'phone_number' => $regulation['phone_number'] ?? null,
+                                'reference' => $regulation['reference'] ?? null,
+                                'detail' => $regulation['detail'] ?? null,
+                                'created_by' => auth()->id(),
+                                'updated_by' => auth()->id(),
+                                'created_at' => $createdAt,
+                                'updated_at' => $createdAt,
+                            ]);
+                        }
+                    }
                 }
-            }
-
-            if ($request->hasFile('image_file')) {
-                $file = $request->file('image_file');
-                $filename = time() . '_' . $file->getClientOriginalName();
-                $path = $file->store('products', 'public');
-
-                $product->medias()->create([
-                    'name' => $filename,
-                    'disk' => 'public',
-                    'path' => $path,
-                    'filename' => $filename,
-                    'mimetype' => $file->getClientMimeType(),
-                    'extension' => $file->getClientOriginalExtension(),
-                ]);
             }
 
 
@@ -1795,7 +2013,7 @@ class PaymentController extends Controller
         $auth = auth()->user();
 
         $request->validate([
-            'type' => 'required|in:item,drink,order,regulation',
+            'type' => 'required|in:item,drink,room_service,order,regulation',
             'password' => 'required|string'
         ]);
 
@@ -1888,6 +2106,39 @@ class PaymentController extends Controller
                     ->update([
                         'regulation_status' => PaymentOrderItemStatus::NOT_PAID->value
                     ]);
+
+                $totalAmountToRefund += $refund;
+            }
+
+            if ($request->type === 'room_service') {
+                $lines = PaymentLine::where('payable_uuid', $request->target_uuid)
+                    ->where('payable_type', \App\Models\RoomService::class)
+                    ->where('payment_uuid', $payment->uuid)
+                    ->get();
+
+                if ($lines->isEmpty()) {
+                    throw new \Exception("Aucun règlement trouvé pour ce room service");
+                }
+
+                $refund = $lines->sum('amount');
+
+                foreach ($lines as $line) {
+                    $regulation = PaymentRegulation::where('uuid', $line->payment_regulation_uuid)
+                        ->first();
+
+                    if ($regulation) {
+                        $regulation->amount = max(0, (float)$regulation->amount - (float)$line->amount);
+                        if (round($regulation->amount, 2) <= 0) {
+                            $regulation->delete();
+                        } else {
+                            $regulation->save();
+                            $regulation->updated_by = auth()->id();
+                        }
+                    }
+                    $line->delete();
+                }
+
+                $payment->paid_amount = max(0, $payment->paid_amount - $refund);
 
                 $totalAmountToRefund += $refund;
             }
