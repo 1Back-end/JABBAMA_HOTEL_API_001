@@ -45,11 +45,7 @@ class Payment extends Model
 
     public function order()
     {
-        return $this->belongsTo(
-            OrderMenuRestaurant::class,
-            'order_menu_restaurant_uuid',
-            'uuid'
-        );
+        return $this->belongsTo(OrderMenuRestaurant::class, 'order_menu_restaurant_uuid', 'uuid');
     }
 
     public function creator()

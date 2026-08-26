@@ -71,7 +71,7 @@
                 text-transform: uppercase;
             }
         }
-        
+
         @page :first {
             @top-center {
                 content: "";
@@ -270,7 +270,7 @@
         @endfor
     @empty
         <tr>
-            <td colspan="{{ 3 + (count($categories) * 5) + 5 + 4 + 2 }}" class="text-center">Aucune commande enregistrée pour cette date.</td>
+            <td colspan="{{ 3 + (count($categories) * 5) + 5 + 4 + 2 }}" class="text-center">Aucune donnée disponible pour cette date.</td>
         </tr>
     @endforelse
     </tbody>

@@ -54,32 +54,27 @@ class RoomServiceController extends Controller
         $validated = $request->validate([
             'name' => 'nullable|string|max:255',
             'prices' => 'required|array',
+            'prices.*' => 'required|numeric',
         ]);
 
         $serviceName = !empty($validated['name']) ? $validated['name'] : 'ROOM SERVICE';
+        $createdServices = [];
 
-        $roomService = RoomService::where('name', $serviceName)->first();
-
-        if ($roomService) {
-            $existingPrices = is_array($roomService->prices) ? $roomService->prices : [];
-            $mergedPrices = array_values(array_unique(array_merge($existingPrices, $validated['prices'])));
-
-            $roomService->update([
-                'prices' => $mergedPrices,
-                'updated_by' => auth()->id(),
-            ]);
-        } else {
+        foreach ($validated['prices'] as $price) {
             $roomService = RoomService::create([
                 'name' => $serviceName,
-                'prices' => $validated['prices'],
+                'prices' => [$price],
                 'created_by' => auth()->id(),
+                'updated_by' => auth()->id(),
             ]);
+
+            $createdServices[] = $roomService;
         }
 
         return response()->json([
             'status' => true,
-            'message' => 'Room service enregistré avec succès.',
-            'data' => $roomService,
+            'message' => 'Room services enregistrés avec succès.',
+            'data' => $createdServices,
         ], 201);
     }
 

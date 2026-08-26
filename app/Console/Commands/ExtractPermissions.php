@@ -300,6 +300,7 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des encaissements',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],
+       
         'save_regulations_for_orders_drinks' => [
             'description' => 'Enregistrer les encaissements des boissons d\'une commande',
             'category' => 'Gestion des encaissements',

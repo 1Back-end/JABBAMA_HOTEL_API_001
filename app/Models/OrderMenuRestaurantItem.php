@@ -78,7 +78,7 @@ class OrderMenuRestaurantItem extends Model
         'is_free'     => 'boolean',
         'is_last_items' => 'boolean',
         'is_new_items' => 'boolean',
-        'is_stock_deducted' => 'boolean', // ✅ AJOUT
+        'is_stock_deducted' => 'boolean',
 
     ];
 
