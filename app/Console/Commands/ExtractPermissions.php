@@ -300,7 +300,7 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des encaissements',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],
-       
+
         'save_regulations_for_orders_drinks' => [
             'description' => 'Enregistrer les encaissements des boissons d\'une commande',
             'category' => 'Gestion des encaissements',
@@ -571,6 +571,16 @@ class ExtractPermissions extends Command
         ],
         'cancel_recoveries_for_orders_items_and_drinks' => [
             'description' => 'Annuler le recouvrement global d\'une facture',
+            'category' => 'Gestion des encaissements',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'view_extended_cash_situation_sheets' => [
+            'description' => 'Afficher l\'interface de la feuille de situation',
+            'category' => 'Gestion des encaissements',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'view_extended_situation_sheets_date' => [
+            'description' => 'Changer la date pour afficher les données antérieures de la fiche de situation',
             'category' => 'Gestion des encaissements',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],

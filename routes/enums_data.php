@@ -13,5 +13,6 @@ Route::get('enums/payment_orders_menu_status', [\App\Http\Controllers\EnumContro
 Route::get('enums/recouvrements_status', [\App\Http\Controllers\EnumController::class, 'StatusRecouvrements']);
 Route::get('enums/types_encaissements_recouvrements', [\App\Http\Controllers\EnumController::class, 'HistoricsEncaissementsOrRecouvrements']);
 Route::get('enums/room_service_type', [\App\Http\Controllers\EnumController::class, 'RoomServiceType']);
+Route::get('enums/situation_sheet', [\App\Http\Controllers\EnumController::class, 'MainCouranteFilter']);
 
 

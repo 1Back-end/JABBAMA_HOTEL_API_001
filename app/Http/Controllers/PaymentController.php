@@ -1901,7 +1901,6 @@ class PaymentController extends Controller
                         'created_at' => $createdAt,
                         'updated_at' => $createdAt,
                     ]);
-
                     foreach ($drinkLines as $line) {
                         PaymentLine::create([
                             'payment_uuid' => $payment->uuid,
