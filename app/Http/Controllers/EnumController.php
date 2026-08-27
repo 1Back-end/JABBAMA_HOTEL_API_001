@@ -6,6 +6,7 @@ use App\Enums\CashRegisterFilterType;
 use App\Enums\ChooseRubriquesSall;
 use App\Enums\ConsumptionType;
 use App\Enums\HistoricsEncaissementsOrRecouvrements;
+use App\Enums\MainCouranteFilter;
 use App\Enums\MenuOrderStatus;
 use App\Enums\PaymentOrderMenusStatus;
 use App\Enums\PurchaseOrdersStatus;
@@ -95,6 +96,14 @@ class EnumController extends Controller
         return response()->json([
             'status' => 'success',
             'data'   => RoomServiceEnum::toArray(),
+        ]);
+    }
+
+    public function MainCouranteFilter()
+    {
+        return response()->json([
+            'status' => 'success',
+            'data'   => MainCouranteFilter::toArray(),
         ]);
     }
 
