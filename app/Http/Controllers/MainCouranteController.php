@@ -42,6 +42,26 @@ class MainCouranteController extends Controller
         $dateFinP2   = $request->filled('date_fin_p2') ? Carbon::parse($request->date_fin_p2)->toDateString() : $dateFinGlobal;
 
         try {
+            // 1. Calcul global absolu (sans filtre de date) pour tout le système
+            $globalOrdersSystem = OrderMenuRestaurant::with([
+                'items.menu:uuid,is_generated_from_complement'
+            ])
+                ->where('status', MenuOrderStatus::FACTURATE->value)
+                ->get();
+
+            $allSystemAmountDivers = 0;
+            foreach ($globalOrdersSystem as $order) {
+                $uniqueItems = $order->items->unique('uuid');
+                $validItems = $uniqueItems->filter(function ($item) {
+                    return $item->menu && (bool) $item->menu->is_generated_from_complement === true;
+                });
+                $allSystemAmountDivers += (float) $validItems->sum(function ($item) {
+                    return $item->total_price ?? (($item->unit_price ?? 0) * ($item->quantity_exactly ?? 0));
+                });
+            }
+            $all_p2_total_amount_divers = $allSystemAmountDivers;
+
+            // 2. Fonction de calcul des métriques par période
             $calculateMetrics = function ($startDate, $endDate) {
                 $query = OrderMenuRestaurant::with([
                     'salesCategory:uuid,name,code',
@@ -57,6 +77,21 @@ class MainCouranteController extends Controller
                 }
 
                 $orders = $query->get();
+
+                // Calcul des divers spécifique à la période
+                $totalAmountDivers = 0;
+                $totalQuantityDivers = 0;
+
+                foreach ($orders as $order) {
+                    $uniqueItems = $order->items->unique('uuid');
+                    $validItems = $uniqueItems->filter(function ($item) {
+                        return $item->menu && (bool) $item->menu->is_generated_from_complement === true;
+                    });
+                    $totalQuantityDivers += (int) $validItems->sum('quantity_exactly');
+                    $totalAmountDivers += (float) $validItems->sum(function ($item) {
+                        return $item->total_price ?? (($item->unit_price ?? 0) * ($item->quantity_exactly ?? 0));
+                    });
+                }
 
                 $groupedOrders = $orders->groupBy(function ($order) {
                     return $order->salesCategory ? $order->salesCategory->name : 'AUTRES';
@@ -83,24 +118,13 @@ class MainCouranteController extends Controller
                     return $order->drinks ? $order->drinks->sum('quantity_exactly') : 0;
                 });
 
-                $totalAmountRoomService = (float) $orders->where('is_room_service', true)->sum('price_for_room_service');
+                $totalAmountRoomService = (float) $orders->where('is_room_service', true)->sum(function ($order) {
+                    $price = (float) str_replace(',', '.', $order->price_for_room_service ?? 0);
+                    $quantity = (int) ($order->quantity_for_room_service ?? 0);
+                    return $price * $quantity;
+                });
                 $totalQuantityRoomService = (int) $orders->where('is_room_service', true)->sum('quantity_for_room_service');
 
-                $totalAmountDivers = 0;
-                $totalQuantityDivers = 0;
-
-                foreach ($orders as $order) {
-                    $uniqueItems = $order->items->unique('uuid');
-                    $validItems = $uniqueItems->filter(function ($item) {
-                        return $item->menu && (bool) $item->menu->is_generated_from_complement === true;
-                    });
-                    $totalQuantityDivers += (int) $validItems->sum('quantity_exactly');
-                    $totalAmountDivers += (float) $validItems->sum(function ($item) {
-                        return $item->total_price ?? (($item->unit_price ?? 0) * ($item->quantity_exactly ?? 0));
-                    });
-                }
-
-                // Calcul corrigé de l'encaissement basé sur votre logique
                 $encaissementQuery = OrderMenuRestaurant::whereIn('regulation_status', [
                     PaymentOrderMenusStatus::PAID->value,
                     PaymentOrderMenusStatus::PARTIALLY_PAID->value,
@@ -168,6 +192,8 @@ class MainCouranteController extends Controller
                 'p2_total_quantity_divers' => $dataP2['total_quantity_divers'],
                 'total_encaissement_p2' => $dataP2['total_encaissement'],
                 'total_recouvrements_p2' => $dataP2['total_recouvrements'],
+
+                'all_p2_total_amount_divers' => $all_p2_total_amount_divers,
             ], 200);
 
         } catch (\Exception $e) {

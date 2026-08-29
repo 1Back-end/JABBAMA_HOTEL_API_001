@@ -36,7 +36,7 @@ class PaymentController extends Controller
         $allLines = $order->items->merge($order->drinks);
 
         $isRoomServiceActive = ($order->is_room_service);
-        $roomServiceTotal = $isRoomServiceActive ? (float) str_replace(',', '.', $order->price_for_room_service ?? 0) : 0.0;
+        $roomServiceTotal = $isRoomServiceActive ? (float) str_replace(',', '.', $order->price_for_room_service ?? 0) * (int) ($order->quantity_for_room_service ?? 0) : 0.0;
 
         $roomServicePaid = 0.0;
         if ($isRoomServiceActive && $order->room_service_uuid) {
@@ -113,7 +113,7 @@ class PaymentController extends Controller
         }
         if ($order->is_room_service && $order->roomService) {
             $roomService = $order->roomService;
-            $totalRoomService = (float) ($roomService->price_for_room_service ?? 0);
+            $totalRoomService = (float) str_replace(',', '.', $roomService->price_for_room_service ?? 0) * (int) ($roomService->quantity_for_room_service ?? 0);
             if ($totalRoomService === 0.0) {
             } else {
                 $paidRoomService = (float) $roomService->paymentLines->sum('amount');

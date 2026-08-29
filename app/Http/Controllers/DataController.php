@@ -21,7 +21,9 @@ class DataController extends Controller
         $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : now()->toDateString();
 
         try {
-            $orders = OrderMenuRestaurant::whereDate('created_at', $date)->get();
+            $orders = OrderMenuRestaurant::whereDate('created_at', $date)
+                ->where('status', MenuOrderStatus::FACTURATE->value)
+                ->get();
             $totalGle = (int) $orders->sum(function ($order) {
                 return $order->total_order;
             });
@@ -117,6 +119,7 @@ class DataController extends Controller
                     'salesCategory:uuid,name,code',
                     'items.menu:uuid,is_generated_from_complement'
                 ])
+                ->where('status', MenuOrderStatus::FACTURATE->value)
                 ->get();
 
             $categoriesTotals = $orders->groupBy(function ($order) {
@@ -151,6 +154,7 @@ class DataController extends Controller
 
         try {
             $totalBar = (float) OrderMenuRestaurant::whereDate('created_at', $date)
+                ->where('status', MenuOrderStatus::FACTURATE->value)
                 ->get()
                 ->sum(function ($order) {
                     return $order->total_drinks;
@@ -178,6 +182,7 @@ class DataController extends Controller
 
         try {
             $orders = OrderMenuRestaurant::whereDate('created_at', $date)
+                ->where('status', MenuOrderStatus::FACTURATE->value)
                 ->with(['items.menu'])
                 ->get();
             $total = 0;
@@ -214,6 +219,7 @@ class DataController extends Controller
 
         try {
             $orders = OrderMenuRestaurant::whereDate('created_at', $date)
+                ->where('status', MenuOrderStatus::FACTURATE->value)
                 ->with([
                     'salesCategory:uuid,name,code',
                     'items.menu:uuid,is_generated_from_complement'
@@ -260,6 +266,7 @@ class DataController extends Controller
 
         try {
             $orders = OrderMenuRestaurant::whereDate('created_at', $date)
+                ->where('status', MenuOrderStatus::FACTURATE->value)
                 ->with('drinks')
                 ->get();
 
@@ -290,6 +297,7 @@ class DataController extends Controller
 
         try {
             $orders = OrderMenuRestaurant::whereDate('created_at', $date)
+                ->where('status', MenuOrderStatus::FACTURATE->value)
                 ->with(['items.menu'])
                 ->get();
 
@@ -335,7 +343,7 @@ class DataController extends Controller
                     'payment.regulations.method',
                     'drinks.drinkConfig.product',
                 ])
-                ->where('status',MenuOrderStatus::FACTURATE->value)
+                ->where('status', MenuOrderStatus::FACTURATE->value)
                 ->get();
 
             $countsByCategory = $orders->groupBy(function ($order) {
@@ -357,28 +365,27 @@ class DataController extends Controller
 
             foreach ($orders as $order) {
                 $categoryName = $order->salesCategory ? strtoupper($order->salesCategory->name) : 'AUTRES';
+                $roomServicePrice = (int) ($order->price_for_room_service ?? 0) * (int) ($order->quantity_for_room_service ?? 0) ;
 
                 $formattedItems = $order->items
                     ->filter(function ($item) {
                         return $item->menu && !$item->menu->is_generated_from_complement;
                     })
-                    ->map(function ($item) use ($order) {
+                    ->map(function ($item) {
                         return [
                             'menu' => $item->menu ? $item->menu->name : null,
                             'quantity' => $item->quantity_exactly,
                             'unit_price' => $item->unit_price,
                             'total_price' => $item->total_price,
-                            'price_for_room_service' => (int) $order->price_for_room_service,
                         ];
                     });
 
-                $formattedDrinks = $order->drinks->map(function ($drink) use ($order) {
+                $formattedDrinks = $order->drinks->map(function ($drink) {
                     return [
                         'menu' => $drink->drinkConfig && $drink->drinkConfig->product ? $drink->drinkConfig->product->name : 'Boisson',
                         'quantity' => $drink->quantity_exactly,
                         'unit_price' => $drink->unit_price,
                         'total_price' => $drink->total_price,
-                        'price_for_room_service' => (int) $order->price_for_room_service,
                     ];
                 });
 
@@ -394,6 +401,9 @@ class DataController extends Controller
 
                 $totalAmount = $order->total_order ?? 0;
 
+                $hasItems = $formattedItems->isNotEmpty();
+                $hasDrinks = $formattedDrinks->isNotEmpty();
+
                 $orderData = [
                     'uuid' => $order->uuid,
                     'code_facture' => $order->code,
@@ -403,10 +413,29 @@ class DataController extends Controller
                     'regulation_status' => $order->status_payment_label,
                     'payment_status' => $order->regulation_status,
                     'total_amount' => $totalAmount,
+                    'price_for_room_service' => ($hasItems || !$hasDrinks) ? $roomServicePrice : null,
                     'payment_methods' => $paymentMethods,
                     'sales_category' => $categoryName,
                     'items' => $formattedItems->values()->all(),
-                    'drinks' => $formattedDrinks
+                    'drinks' => $formattedDrinks->values()->all(),
+                    'price_for_room_service_drinks' => (!$hasItems && $hasDrinks) ? $roomServicePrice : null,
+                ];
+
+
+                $orderData = [
+                    'uuid' => $order->uuid,
+                    'code_facture' => $order->code,
+                    'no_table' => $order->restaurantTable->table_number ?? '',
+                    'chambre' => $order->restaurant_room->rooms_number ?? '',
+                    'payment_mode' => $order->status_payment_label ?? '',
+                    'regulation_status' => $order->status_payment_label,
+                    'payment_status' => $order->regulation_status,
+                    'total_amount' => $totalAmount,
+                    'price_for_room_service' => $roomServicePrice,
+                    'payment_methods' => $paymentMethods,
+                    'sales_category' => $categoryName,
+                    'items' => $formattedItems->values()->all(),
+                    'drinks' => $formattedDrinks->values()->all()
                 ];
 
                 $formattedOrders[] = $orderData;
@@ -416,13 +445,12 @@ class DataController extends Controller
                 });
 
                 if ($debiteurItems->isNotEmpty()) {
-                    $formattedDebiteurItems = $debiteurItems->map(function ($item) use ($order) {
+                    $formattedDebiteurItems = $debiteurItems->map(function ($item) {
                         return [
                             'menu' => $item->menu ? $item->menu->name : null,
                             'quantity' => $item->quantity_exactly,
                             'unit_price' => $item->unit_price,
                             'total_price' => $item->total_price,
-                            'price_for_room_service' => (int) $order->price_for_room_service,
                         ];
                     });
 
@@ -432,6 +460,7 @@ class DataController extends Controller
                         'no_table' => $order->restaurantTable->table_number ?? '',
                         'chambre' => $order->restaurant_room->rooms_number ?? '',
                         'sales_category' => $categoryName,
+                        'price_for_room_service' => $roomServicePrice,
                         'items' => $formattedDebiteurItems->values()->all(),
                     ];
                 }
@@ -464,6 +493,7 @@ class DataController extends Controller
 
         try {
             $totalQuantityRoomService = (int) OrderMenuRestaurant::whereDate('created_at', $date)
+                ->where('status', MenuOrderStatus::FACTURATE->value)
                 ->where('is_room_service', true)
                 ->sum('quantity_for_room_service');
 
@@ -488,8 +518,9 @@ class DataController extends Controller
 
         try {
             $totalAmountRoomService = (int) OrderMenuRestaurant::whereDate('created_at', $date)
+                ->where('status', MenuOrderStatus::FACTURATE->value)
                 ->where('is_room_service', true)
-                ->sum('price_for_room_service');
+                ->sum(DB::raw('price_for_room_service * quantity_for_room_service'));
 
             return response()->json([
                 'success' => true,
@@ -528,7 +559,7 @@ class DataController extends Controller
 
             $totalGle = (int) $orders->sum('total_order');
 
-            // Encaissements (Payés + Partiellement payés)
+
             $ordersEncaissement = $orders->filter(function ($order) {
                 return in_array($order->regulation_status, [
                     PaymentOrderMenusStatus::PAID->value,
@@ -537,7 +568,7 @@ class DataController extends Controller
             });
             $totalEncaissement = (int) $ordersEncaissement->sum('computed_paid_amount');
 
-            // Débiteurs (Non payés + Partiellement payés)
+
             $ordersNotPaid = $orders->filter(function ($order) {
                 return in_array($order->regulation_status, [
                     PaymentOrderMenusStatus::NOT_PAID->value,
@@ -546,7 +577,7 @@ class DataController extends Controller
             });
             $totalNotPaid = (int) $ordersNotPaid->sum('total_order');
 
-            // Totaux et comptes par catégorie de vente
+
             $countsByCategory = [];
             $amountsByCategory = [];
 
@@ -561,7 +592,7 @@ class DataController extends Controller
                 $amountsByCategory[$categoryName] = ($amountsByCategory[$categoryName] ?? 0) + (float) $validItems->sum('total_price');
             }
 
-            // Bar (Totaux et Quantités)
+
             $totalBarAmount = (float) $orders->sum('total_drinks');
             $totalBarCount = (int) $orders->sum(function ($order) {
                 return $order->drinks->sum('quantity_exactly');
@@ -579,7 +610,6 @@ class DataController extends Controller
                 $totalDiversCount += (int) $diversItemsFilter->sum('quantity_exactly');
             }
 
-            // Room Service
             $totalRoomServiceAmount = (int) $orders->where('is_room_service', true)->sum('price_for_room_service');
             $totalRoomServiceQuantity = (int) $orders->where('is_room_service', true)->sum('quantity_for_room_service');
 
@@ -589,7 +619,7 @@ class DataController extends Controller
             foreach ($orders as $order) {
                 $categoryName = $order->salesCategory ? strtoupper(trim($order->salesCategory->name)) : 'AUTRES';
 
-                // Items normaux
+
                 $formattedItems = $order->items->filter(function ($item) {
                     return $item->menu && !$item->menu->is_generated_from_complement;
                 })->map(function ($item) use ($order) {
@@ -602,7 +632,7 @@ class DataController extends Controller
                     ];
                 });
 
-                // Items Divers (générés depuis un complément)
+
                 $diversItems = $order->items->filter(function ($item) {
                     return $item->menu && (bool)$item->menu->is_generated_from_complement === true;
                 })->map(function ($item) use ($order) {
@@ -615,7 +645,6 @@ class DataController extends Controller
                     ];
                 });
 
-                // Boissons (Bar)
                 $formattedDrinks = $order->drinks->map(function ($drink) use ($order) {
                     return [
                         'menu' => $drink->drinkConfig->product->name ?? 'Boisson',
@@ -636,7 +665,6 @@ class DataController extends Controller
                     });
                 }
 
-                // Gestion de la liste des débiteurs
                 if ($diversItems->isNotEmpty() && in_array($order->regulation_status, [
                         PaymentOrderMenusStatus::NOT_PAID->value,
                         PaymentOrderMenusStatus::PARTIALLY_PAID->value,
