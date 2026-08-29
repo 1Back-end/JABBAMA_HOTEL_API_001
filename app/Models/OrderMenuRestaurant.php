@@ -121,7 +121,7 @@ class OrderMenuRestaurant extends Model
         $isRoomServiceActive = ($this->is_room_service);
 
         if ($isRoomServiceActive) {
-            $total = (float) str_replace(',', '.', $this->price_for_room_service ?? 0);
+            $total = (float) str_replace(',', '.', $this->price_for_room_service ?? 0) * (int) ($this->quantity_for_room_service ?? 0);
             if ($total <= 0) {
                 return PaymentOrderItemStatus::NOT_PAID->label();
             }
@@ -160,7 +160,7 @@ class OrderMenuRestaurant extends Model
         $isRoomServiceActive = ($this->is_room_service);
 
         if ($isRoomServiceActive) {
-            $total = (float) str_replace(',', '.', $this->price_for_room_service ?? 0);
+            $total = (float) str_replace(',', '.', $this->price_for_room_service ?? 0) * (int) ($this->quantity_for_room_service ?? 0);
             if ($total <= 0) {
                 return 'not_paid';
             }
@@ -287,7 +287,7 @@ class OrderMenuRestaurant extends Model
         $total = (int) ($this->total_items + $this->total_drinks);
 
         if ($this->is_room_service) {
-            $total += (int) $this->price_for_room_service;
+            $total += (int) $this->price_for_room_service * (int) $this->quantity_for_room_service;
         }
         return $total;
     }
