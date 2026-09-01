@@ -158,36 +158,58 @@
         <th rowspan="2" style="width: 5%; font-size: 8.5px;">CHAMBRE</th>
 
         @foreach($categories as $cat)
-            <th colspan="5" style="width: 16%; font-size: 8.5px;">{{ $cat }}</th>
+            <th colspan="5" style="font-size: 8.5px;">{{ $cat }}</th>
         @endforeach
 
-        <th colspan="5" style="width: 15%; font-size: 8.5px;">BAR</th>
-        <th colspan="4" style="width: 14%; font-size: 8.5px;">DIVERS</th>
+        @php
+            $hasAnyBar = collect($orders)->contains(fn($o) => !empty($o['drinks']));
+            $hasAnyDivers = collect($orders)->contains(function($o) {
+                $divs = [];
+                if(isset($o['debiteurs']) && is_array($o['debiteurs'])) {
+                    foreach($o['debiteurs'] as $deb) {
+                        if(!empty($deb['items']) || !empty($deb['drinks'])) $divs[] = true;
+                    }
+                } elseif(isset($o['divers']) && is_array($o['divers'])) {
+                    $divs = $o['divers'];
+                }
+                return !empty($divs);
+            });
+        @endphp
+
+        @if($hasAnyBar)
+            <th colspan="5" style="font-size: 8.5px;">BAR</th>
+        @endif
+
+        @if($hasAnyDivers)
+            <th colspan="4" style="font-size: 8.5px;">DIVERS</th>
+        @endif
 
         <th rowspan="2" style="width: 10%; font-size: 8.5px;">PAIEMENT</th>
         <th rowspan="2" style="width: 10%; font-size: 8.5px;">MONTANT</th>
     </tr>
     <tr>
         @foreach($categories as $cat)
-            <th class="sub-th" style="width: 5.5%; font-size: 8px;">LIBELLÉ</th>
-            <th class="sub-th" style="width: 2%; font-size: 8px;">QTÉ</th>
-            <th class="sub-th" style="width: 2.8%; font-size: 8px;">P.U</th>
-            <th class="sub-th" style="width: 2.8%; font-size: 8px;">P.T</th>
-            <th class="sub-th" style="width: 1.9%; font-size: 8px;">R/S</th>
+            <th class="sub-th" style="font-size: 8px;">LIBELLÉ</th>
+            <th class="sub-th" style="font-size: 8px;">QTÉ</th>
+            <th class="sub-th" style="font-size: 8px;">P.U</th>
+            <th class="sub-th" style="font-size: 8px;">P.T</th>
+            <th class="sub-th" style="font-size: 8px;">R/S</th>
         @endforeach
 
-        {{-- Sous-colonnes Bar --}}
-        <th class="sub-th" style="width: 5.5%; font-size: 8px;">LIBELLÉ</th>
-        <th class="sub-th" style="width: 2%; font-size: 8px;">QTÉ</th>
-        <th class="sub-th" style="width: 2.8%; font-size: 8px;">P.U</th>
-        <th class="sub-th" style="width: 2.8%; font-size: 8px;">P.T</th>
-        <th class="sub-th" style="width: 1.9%; font-size: 8px;">R/S</th>
+        @if($hasAnyBar)
+            <th class="sub-th" style="font-size: 8px;">LIBELLÉ</th>
+            <th class="sub-th" style="font-size: 8px;">QTÉ</th>
+            <th class="sub-th" style="font-size: 8px;">P.U</th>
+            <th class="sub-th" style="font-size: 8px;">P.T</th>
+            <th class="sub-th" style="font-size: 8px;">R/S</th>
+        @endif
 
-        {{-- Sous-colonnes Divers --}}
-        <th class="sub-th" style="width: 6%; font-size: 8px;">LIBELLÉ</th>
-        <th class="sub-th" style="width: 2%; font-size: 8px;">QTÉ</th>
-        <th class="sub-th" style="width: 2.5%; font-size: 8px;">P.U</th>
-        <th class="sub-th" style="width: 1.9%; font-size: 8px;">R/S</th>
+        @if($hasAnyDivers)
+            <th class="sub-th" style="font-size: 8px;">LIBELLÉ</th>
+            <th class="sub-th" style="font-size: 8px;">QTÉ</th>
+            <th class="sub-th" style="font-size: 8px;">P.U</th>
+            <th class="sub-th" style="font-size: 8px;">R/S</th>
+        @endif
     </tr>
     </thead>
     <tbody>
@@ -198,70 +220,132 @@
                 $orderCatItems[$cat] = [];
             }
 
-            $catName = strtoupper(trim($order['sales_category'] ?? ''));
-            if(isset($orderCatItems[$catName])) {
-                $orderCatItems[$catName] = $order['items'] ?? [];
+            $items = $order['items'] ?? [];
+            foreach($items as $item) {
+                $itemCat = strtoupper(trim($item['sales_category'] ?? $item['category'] ?? ($order['sales_category'] ?? '')));
+                if(isset($orderCatItems[$itemCat])) {
+                    $orderCatItems[$itemCat][] = $item;
+                } else {
+                    $fallbackCat = strtoupper(trim($order['sales_category'] ?? ''));
+                    if(isset($orderCatItems[$fallbackCat])) {
+                        $orderCatItems[$fallbackCat][] = $item;
+                    } elseif(count($categories) > 0) {
+                        $orderCatItems[$categories[0]][] = $item;
+                    }
+                }
             }
 
             $barItems = $order['drinks'] ?? [];
-            $diversItems = $order['divers'] ?? [];
 
-            $rsPrice = $order['room_service_price'] ?? 0;
+            $diversItems = [];
+            if(isset($order['debiteurs']) && is_array($order['debiteurs'])) {
+                foreach($order['debiteurs'] as $deb) {
+                    if(isset($deb['items']) && is_array($deb['items'])) {
+                        foreach($deb['items'] as $dItem) { $diversItems[] = $dItem; }
+                    }
+                    if(isset($deb['drinks']) && is_array($deb['drinks'])) {
+                        foreach($deb['drinks'] as $dDrink) { $diversItems[] = $dDrink; }
+                    }
+                }
+            } elseif(isset($order['divers']) && is_array($order['divers'])) {
+                $diversItems = $order['divers'];
+            }
+
+            $rsPrice = $order['price_for_room_service'] ?? $order['room_service_price'] ?? 0;
 
             $counts = [1];
             foreach($categories as $cat) {
                 $counts[] = count($orderCatItems[$cat]);
             }
-            $counts[] = count($barItems);
-            $counts[] = count($diversItems);
+            if($hasAnyBar) $counts[] = count($barItems);
+            if($hasAnyDivers) $counts[] = count($diversItems);
             $maxLines = max($counts);
+            $middleIndex = (int) floor($maxLines / 2);
+
+            $targetInfo = null;
+            if ($rsPrice > 0) {
+                foreach($categories as $catIdx => $cat) {
+                    if (isset($orderCatItems[$cat][$middleIndex])) {
+                        $targetInfo = ['type' => 'cat', 'key' => $cat];
+                        break;
+                    }
+                }
+                if (!$targetInfo && $hasAnyBar && isset($barItems[$middleIndex])) {
+                    $targetInfo = ['type' => 'bar', 'key' => null];
+                }
+                if (!$targetInfo && $hasAnyDivers && isset($diversItems[$middleIndex])) {
+                    $targetInfo = ['type' => 'divers', 'key' => null];
+                }
+
+                if (!$targetInfo) {
+                    foreach($categories as $cat) {
+                        if (!empty($orderCatItems[$cat])) {
+                            $targetInfo = ['type' => 'cat', 'key' => $cat];
+                            break;
+                        }
+                    }
+                }
+            }
         @endphp
 
         @for($i = 0; $i < $maxLines; $i++)
+            @php
+                $isMiddleRow = ($i === $middleIndex);
+            @endphp
             <tr>
                 @if($i === 0)
-                    <td rowspan="{{ $maxLines }}" class="fw-bold" style="white-space: nowrap; font-size: 7.5px;">{{ $order['code_facture'] }}</td>
-                    <td rowspan="{{ $maxLines }}">{{ $order['no_table'] }}</td>
+                    <td rowspan="{{ $maxLines }}" class="fw-bold" style="white-space: nowrap; font-size: 7.5px;">{{ $order['code_facture'] ?? '' }}</td>
+                    <td rowspan="{{ $maxLines }}">{{ $order['no_table'] ?? '' }}</td>
                     <td rowspan="{{ $maxLines }}">{{ $order['chambre'] ?? '' }}</td>
                 @endif
 
-                {{-- Catégories dynamiques (ex: Petit Déjeuner) --}}
+
                 @foreach($categories as $cat)
                     @php
                         $item = $orderCatItems[$cat][$i] ?? null;
+                        $showRsHere = ($isMiddleRow && $targetInfo && $targetInfo['type'] === 'cat' && $targetInfo['key'] === $cat);
                     @endphp
-                    <td class="text-start">{{ $item['menu'] ?? '' }}</td>
-                    <td>{{ $item ? $item['quantity'] : '' }}</td>
-                    <td>{{ $item ? \App\Helpers\FormatPrice::format($item['unit_price']) : '' }}</td>
-                    <td>{{ $item ? \App\Helpers\FormatPrice::format($item['total_price']) : '' }}</td>
-                    {{-- R/S s'affiche uniquement si la ligne possède un article ET que rsPrice > 0 --}}
-                    <td>{{ ($item && $rsPrice > 0) ? \App\Helpers\FormatPrice::format($rsPrice) : '' }}</td>
+                    <td class="text-start {{ $item ? 'bg-light' : '' }}">{{ $item['menu'] ?? '' }}</td>
+                    <td class="{{ $item ? 'bg-light' : '' }}">{{ $item ? $item['quantity'] : '' }}</td>
+                    <td class="{{ $item ? 'bg-light' : '' }}">{{ $item ? \App\Helpers\FormatPrice::format($item['unit_price']) : '' }}</td>
+                    <td class="{{ $item ? 'bg-light' : '' }}">{{ $item ? \App\Helpers\FormatPrice::format($item['total_price']) : '' }}</td>
+                    <td class="fw-bold {{ $item ? 'bg-light' : '' }}">{{ $showRsHere ? \App\Helpers\FormatPrice::format($rsPrice) : '' }}</td>
                 @endforeach
 
-                {{-- Bar --}}
-                @php $drink = $barItems[$i] ?? null; @endphp
-                <td class="text-start">{{ $drink['menu'] ?? '' }}</td>
-                <td>{{ $drink ? $drink['quantity'] : '' }}</td>
-                <td>{{ $drink ? \App\Helpers\FormatPrice::format($drink['unit_price']) : '' }}</td>
-                <td>{{ $drink ? \App\Helpers\FormatPrice::format($drink['total_price']) : '' }}</td>
-                <td>{{ ($drink && $rsPrice > 0) ? \App\Helpers\FormatPrice::format($rsPrice) : '' }}</td>
+                {{-- Colonnes Bar --}}
+                @if($hasAnyBar)
+                    @php
+                        $drink = $barItems[$i] ?? null;
+                        $showRsBar = ($isMiddleRow && $targetInfo && $targetInfo['type'] === 'bar');
+                    @endphp
+                    <td class="text-start {{ $drink ? 'bg-light' : '' }}">{{ $drink['menu'] ?? '' }}</td>
+                    <td class="{{ $drink ? 'bg-light' : '' }}">{{ $drink ? $drink['quantity'] : '' }}</td>
+                    <td class="{{ $drink ? 'bg-light' : '' }}">{{ $drink ? \App\Helpers\FormatPrice::format($drink['unit_price']) : '' }}</td>
+                    <td class="{{ $drink ? 'bg-light' : '' }}">{{ $drink ? \App\Helpers\FormatPrice::format($drink['total_price']) : '' }}</td>
+                    <td class="fw-bold">{{ $showRsBar ? \App\Helpers\FormatPrice::format($rsPrice) : '' }}</td>
+                @endif
 
-                {{-- Divers --}}
-                @php $divers = $diversItems[$i] ?? null; @endphp
-                <td class="text-start">{{ $divers['menu'] ?? '' }}</td>
-                <td>{{ $divers ? $divers['quantity'] : '' }}</td>
-                <td>{{ $divers ? \App\Helpers\FormatPrice::format($divers['unit_price']) : '' }}</td>
-                <td>{{ ($divers && $rsPrice > 0) ? \App\Helpers\FormatPrice::format($rsPrice) : '' }}</td>
+                {{-- Colonnes Divers --}}
+                @if($hasAnyDivers)
+                    @php
+                        $divers = $diversItems[$i] ?? null;
+                        $showRsDivers = ($isMiddleRow && $targetInfo && $targetInfo['type'] === 'divers');
+                    @endphp
+                    <td class="text-start {{ $divers ? 'bg-light' : '' }}">{{ $divers['menu'] ?? '' }}</td>
+                    <td class="{{ $divers ? 'bg-light' : '' }}">{{ $divers ? $divers['quantity'] : '' }}</td>
+                    <td class="{{ $divers ? 'bg-light' : '' }}">{{ $divers ? \App\Helpers\FormatPrice::format($divers['unit_price']) : '' }}</td>
+                    <td class="fw-bold">{{ $showRsDivers ? \App\Helpers\FormatPrice::format($rsPrice) : '' }}</td>
+                @endif
 
                 @if($i === 0)
                     <td rowspan="{{ $maxLines }}">
-                        <div class="fw-bold">{{ $order['regulation_status'] }}</div>
-
+                        <div class="fw-bold">{{ $order['regulation_status'] ?? '' }}</div>
                     </td>
                     <td rowspan="{{ $maxLines }}" class="fw-bold">
+                        <div>{{ \App\Helpers\FormatPrice::format($order['total_amount'] ?? 0) }}</div>
                         @if(!empty($order['payment_methods']))
                             @foreach($order['payment_methods'] as $pm)
-                                <div style="font-size: 6px; color: #555;">{{ $pm['method_name'] }} ({{ \App\Helpers\FormatPrice::format($pm['amount']) }})</div>
+                                <div style="font-size: 6px; color: #555;">{{ $pm['method_name'] ?? '' }} ({{ \App\Helpers\FormatPrice::format($pm['amount'] ?? 0) }})</div>
                             @endforeach
                         @endif
                     </td>
@@ -270,7 +354,7 @@
         @endfor
     @empty
         <tr>
-            <td colspan="{{ 3 + (count($categories) * 5) + 5 + 4 + 2 }}" class="text-center">Aucune donnée disponible pour cette date.</td>
+            <td colspan="10" class="text-center">Aucune donnée disponible pour cette date.</td>
         </tr>
     @endforelse
     </tbody>

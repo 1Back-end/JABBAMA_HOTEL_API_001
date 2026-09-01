@@ -366,6 +366,7 @@ class DataController extends Controller
             foreach ($orders as $order) {
                 $categoryName = $order->salesCategory ? strtoupper($order->salesCategory->name) : 'AUTRES';
                 $roomServicePrice = (int) ($order->price_for_room_service ?? 0) * (int) ($order->quantity_for_room_service ?? 0) ;
+                $roomServiceQuantity = (int) ($order->quantity_for_room_service ?? 0);
 
                 $formattedItems = $order->items
                     ->filter(function ($item) {
@@ -401,27 +402,6 @@ class DataController extends Controller
 
                 $totalAmount = $order->total_order ?? 0;
 
-                $hasItems = $formattedItems->isNotEmpty();
-                $hasDrinks = $formattedDrinks->isNotEmpty();
-
-                $orderData = [
-                    'uuid' => $order->uuid,
-                    'code_facture' => $order->code,
-                    'no_table' => $order->restaurantTable->table_number ?? '',
-                    'chambre' => $order->restaurant_room->rooms_number ?? '',
-                    'payment_mode' => $order->status_payment_label ?? '',
-                    'regulation_status' => $order->status_payment_label,
-                    'payment_status' => $order->regulation_status,
-                    'total_amount' => $totalAmount,
-                    'price_for_room_service' => ($hasItems || !$hasDrinks) ? $roomServicePrice : null,
-                    'payment_methods' => $paymentMethods,
-                    'sales_category' => $categoryName,
-                    'items' => $formattedItems->values()->all(),
-                    'drinks' => $formattedDrinks->values()->all(),
-                    'price_for_room_service_drinks' => (!$hasItems && $hasDrinks) ? $roomServicePrice : null,
-                ];
-
-
                 $orderData = [
                     'uuid' => $order->uuid,
                     'code_facture' => $order->code,
@@ -432,6 +412,7 @@ class DataController extends Controller
                     'payment_status' => $order->regulation_status,
                     'total_amount' => $totalAmount,
                     'price_for_room_service' => $roomServicePrice,
+                    'quantity_for_room_service' => $roomServiceQuantity,
                     'payment_methods' => $paymentMethods,
                     'sales_category' => $categoryName,
                     'items' => $formattedItems->values()->all(),
@@ -461,6 +442,7 @@ class DataController extends Controller
                         'chambre' => $order->restaurant_room->rooms_number ?? '',
                         'sales_category' => $categoryName,
                         'price_for_room_service' => $roomServicePrice,
+                        'quantity_for_room_service' => $roomServiceQuantity,
                         'items' => $formattedDebiteurItems->values()->all(),
                     ];
                 }
@@ -553,12 +535,10 @@ class DataController extends Controller
                     'payment.regulations.method',
                     'drinks.drinkConfig.product',
                 ])
-                ->where('status',MenuOrderStatus::FACTURATE->value)
+                ->where('status', MenuOrderStatus::FACTURATE->value)
                 ->get();
 
-
             $totalGle = (int) $orders->sum('total_order');
-
 
             $ordersEncaissement = $orders->filter(function ($order) {
                 return in_array($order->regulation_status, [
@@ -568,7 +548,6 @@ class DataController extends Controller
             });
             $totalEncaissement = (int) $ordersEncaissement->sum('computed_paid_amount');
 
-
             $ordersNotPaid = $orders->filter(function ($order) {
                 return in_array($order->regulation_status, [
                     PaymentOrderMenusStatus::NOT_PAID->value,
@@ -576,7 +555,6 @@ class DataController extends Controller
                 ]);
             });
             $totalNotPaid = (int) $ordersNotPaid->sum('total_order');
-
 
             $countsByCategory = [];
             $amountsByCategory = [];
@@ -591,7 +569,6 @@ class DataController extends Controller
                 $countsByCategory[$categoryName] = ($countsByCategory[$categoryName] ?? 0) + (int) $validItems->sum('quantity_exactly');
                 $amountsByCategory[$categoryName] = ($amountsByCategory[$categoryName] ?? 0) + (float) $validItems->sum('total_price');
             }
-
 
             $totalBarAmount = (float) $orders->sum('total_drinks');
             $totalBarCount = (int) $orders->sum(function ($order) {
@@ -610,8 +587,14 @@ class DataController extends Controller
                 $totalDiversCount += (int) $diversItemsFilter->sum('quantity_exactly');
             }
 
-            $totalRoomServiceAmount = (int) $orders->where('is_room_service', true)->sum('price_for_room_service');
-            $totalRoomServiceQuantity = (int) $orders->where('is_room_service', true)->sum('quantity_for_room_service');
+            // Calcul mis à jour du montant total Room Service (en multipliant prix unitaire et quantité si renseigné)
+            $totalRoomServiceAmount = (int) $orders->sum(function ($order) {
+                $rsPrice = (int) ($order->price_for_room_service ?? 0);
+                $rsQty = (int) ($order->quantity_for_room_service ?? 1); // par défaut 1 si non spécifié
+                return $rsPrice * $rsQty;
+            });
+
+            $totalRoomServiceQuantity = (int) $orders->sum('quantity_for_room_service');
 
             $formattedOrders = [];
             $debiteursOrders = [];
@@ -619,39 +602,37 @@ class DataController extends Controller
             foreach ($orders as $order) {
                 $categoryName = $order->salesCategory ? strtoupper(trim($order->salesCategory->name)) : 'AUTRES';
 
+                // Calcul du prix total Room Service pour cette commande précise
+                $roomServicePriceCalculated = (int) ($order->price_for_room_service ?? 0) * (int) ($order->quantity_for_room_service ?? 1);
 
                 $formattedItems = $order->items->filter(function ($item) {
                     return $item->menu && !$item->menu->is_generated_from_complement;
-                })->map(function ($item) use ($order) {
+                })->map(function ($item) {
                     return [
                         'menu' => $item->menu->name ?? null,
                         'quantity' => $item->quantity_exactly,
                         'unit_price' => $item->unit_price,
                         'total_price' => $item->total_price,
-                        'room_service_price' => (int) $order->price_for_room_service,
                     ];
                 });
-
 
                 $diversItems = $order->items->filter(function ($item) {
                     return $item->menu && (bool)$item->menu->is_generated_from_complement === true;
-                })->map(function ($item) use ($order) {
+                })->map(function ($item) {
                     return [
                         'menu' => $item->menu->name ?? null,
                         'quantity' => $item->quantity_exactly,
                         'unit_price' => $item->unit_price,
                         'total_price' => $item->total_price,
-                        'room_service_price' => (int) $order->price_for_room_service,
                     ];
                 });
 
-                $formattedDrinks = $order->drinks->map(function ($drink) use ($order) {
+                $formattedDrinks = $order->drinks->map(function ($drink) {
                     return [
-                        'menu' => $drink->drinkConfig->product->name ?? 'Boisson',
+                        'menu' => $drink->drinkConfig && $drink->drinkConfig->product ? $drink->drinkConfig->product->name : 'Boisson',
                         'quantity' => $drink->quantity_exactly,
                         'unit_price' => $drink->unit_price,
                         'total_price' => $drink->total_price,
-                        'room_service_price' => (int) $order->price_for_room_service,
                     ];
                 });
 
@@ -665,34 +646,37 @@ class DataController extends Controller
                     });
                 }
 
-                if ($diversItems->isNotEmpty() && in_array($order->regulation_status, [
-                        PaymentOrderMenusStatus::NOT_PAID->value,
-                        PaymentOrderMenusStatus::PARTIALLY_PAID->value,
-                    ])) {
+                // Gestion de l'affichage des débiteurs (basée sur is_generated_from_complement)
+                if ($diversItems->isNotEmpty()) {
                     $debiteursOrders[] = [
                         'uuid' => $order->uuid,
                         'code_facture' => $order->code,
                         'no_table' => $order->restaurantTable->table_number ?? '',
                         'chambre' => $order->restaurant_room->rooms_number ?? '',
                         'sales_category' => $categoryName,
+                        'price_for_room_service' => $roomServicePriceCalculated,
+                        'quantity_for_room_service' => (int) ($order->quantity_for_room_service ?? 0),
                         'items' => $diversItems->values()->all(),
+                        'drinks' => [], // Garde la structure cohérente si besoin
                     ];
                 }
 
                 $formattedOrders[] = [
+                    'uuid' => $order->uuid,
                     'code_facture' => $order->code,
                     'no_table' => $order->restaurantTable->table_number ?? '',
                     'chambre' => $order->restaurant_room->rooms_number ?? '',
+                    'payment_mode' => $order->status_payment_label ?? '',
                     'regulation_status' => $order->status_payment_label,
+                    'payment_status' => $order->regulation_status,
                     'total_amount' => $order->total_order ?? 0,
+                    'price_for_room_service' => $roomServicePriceCalculated,
+                    'quantity_for_room_service' => (int) ($order->quantity_for_room_service ?? 0),
                     'payment_methods' => $paymentMethods,
                     'sales_category' => $categoryName,
                     'items' => $formattedItems->values()->all(),
                     'drinks' => $formattedDrinks->values()->all(),
                     'divers' => $diversItems->values()->all(),
-                    'is_room_service' => (bool) $order->is_room_service,
-                    'room_service_price' => (int) $order->price_for_room_service,
-                    'room_service_qty' => (int) $order->quantity_for_room_service,
                 ];
             }
 
