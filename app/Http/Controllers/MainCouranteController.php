@@ -276,31 +276,45 @@ class MainCouranteController extends Controller
         }
 
         try {
-            // Calcul des commandes globales système pour les montants divers non réglés / partiellement réglés
-            $globalOrdersSystem = OrderMenuRestaurant::where('status', MenuOrderStatus::FACTURATE->value)
-                ->whereIn('regulation_status', [
-                    PaymentOrderMenusStatus::PARTIALLY_PAID->value,
-                    PaymentOrderMenusStatus::NOT_PAID->value,
-                ])
-                ->with('payment')
-                ->get();
+            // --- CALCUL DES MONTANTS DE RAPPORT (P1 et P2) ---
+            $getUnpaidOrdersForPeriod = function ($startDate, $endDate) {
+                $query = OrderMenuRestaurant::where('status', MenuOrderStatus::FACTURATE->value)
+                    ->whereIn('regulation_status', [
+                        PaymentOrderMenusStatus::PARTIALLY_PAID->value,
+                        PaymentOrderMenusStatus::NOT_PAID->value,
+                    ])
+                    ->with('payment');
 
-            $allSystemAmountDivers = 0;
-            $totalAlreadyPaid = 0;
-
-            foreach ($globalOrdersSystem as $order) {
-                if ($order->regulation_status === PaymentOrderMenusStatus::PARTIALLY_PAID->value) {
-                    $amount = (float) ($order->remaining_amount ?? 0);
+                if ($startDate === $endDate) {
+                    $query->whereDate('created_at', $startDate);
                 } else {
-                    $amount = (float) ($order->total_order ?? 0);
+                    $query->whereBetween('created_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
                 }
 
-                $paidOnThisOrder = (float) ($order->payment?->paid_amount ?? 0);
-                $totalAlreadyPaid += $paidOnThisOrder;
-                $allSystemAmountDivers += $amount;
+                return $query->get();
+            };
+
+            $globalOrdersP1 = $getUnpaidOrdersForPeriod($dateDebutP1, $dateFinP1);
+            $report_amount_p1 = 0;
+            foreach ($globalOrdersP1 as $order) {
+                $amount = ($order->regulation_status === PaymentOrderMenusStatus::PARTIALLY_PAID->value)
+                    ? (float) ($order->remaining_amount ?? 0)
+                    : (float) ($order->total_order ?? 0);
+                $report_amount_p1 += $amount;
             }
 
-            $all_p2_total_amount_divers = $allSystemAmountDivers;
+            $globalOrdersP2 = $getUnpaidOrdersForPeriod($dateDebutP2, $dateFinP2);
+            $report_amount_p2 = 0;
+            foreach ($globalOrdersP2 as $order) {
+                $amount = ($order->regulation_status === PaymentOrderMenusStatus::PARTIALLY_PAID->value)
+                    ? (float) ($order->remaining_amount ?? 0)
+                    : (float) ($order->total_order ?? 0);
+                $report_amount_p2 += $amount;
+            }
+
+            $allSystemAmountDivers = $report_amount_p2;
+            $all_p2_total_amount_divers = $report_amount_p2;
+            // ------------------------------------------------
 
             // Fonction interne de calcul des métriques par période
             $calculateMetrics = function ($startDate, $endDate) {
@@ -477,6 +491,7 @@ class MainCouranteController extends Controller
                 'total_quantity_divers' => $dataP1['total_quantity_divers'],
                 'total_encaissement_p1' => $dataP1['total_encaissement'],
                 'total_recouvrements_p1' => $dataP1['total_recouvrements'],
+                'report_amount_p1' => $report_amount_p1,
 
                 'p2_totals_by_category' => $dataP2['totals_by_category'],
                 'p2_count_by_category' => $dataP2['count_by_category'],
@@ -490,6 +505,8 @@ class MainCouranteController extends Controller
                 'total_recouvrements_p2' => $dataP2['total_recouvrements'],
 
                 'all_p2_total_amount_divers' => $all_p2_total_amount_divers,
+                'report_amount_p2' => $report_amount_p2,
+                'report_amount' => $report_amount_p2,
             ];
 
             $fileName   = 'FEUILLE-DE-SITUATION-DU-' . $dateDebutP1 . '.pdf';
