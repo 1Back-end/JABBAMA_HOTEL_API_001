@@ -16,70 +16,79 @@ class MainCouranteController extends Controller
     {
         $auth = auth()->user();
 
-        // 1. Gestion de la Période 1 : ON FORCE UNE DATE UNIQUE (ex: la date de fin ou la date du jour)
-        if ($request->filled('date_fin')) {
-            // Si une date de fin est fournie, la Période 1 prend cette unique date
-            $dateP1 = Carbon::parse($request->input('date_fin'))->toDateString();
-        } elseif ($request->filled('date_debut')) {
-            // Sinon, si seule la date de debut est là
-            $dateP1 = Carbon::parse($request->input('date_debut'))->toDateString();
-        } else {
-            // Sinon, on cherche dans le champ 'date' ou on prend aujourd'hui
-            $dateInput = $request->input('date', now()->toDateString());
+        // 1. Période 1 : Gérée par le filtre "Filtrer par jour"
+        $hasExplicitDate = $request->has('date') || $request->has('date_debut');
+        $dateInput = $request->input('date', now()->toDateString());
 
-            if (str_contains($dateInput, ' to ')) {
-                $dates = explode(' to ', $dateInput);
-                // On prend la fin de l'intervalle pour n'avoir qu'une seule date
-                $dateP1 = Carbon::parse(trim($dates[1] ?? $dates[0]))->toDateString();
-            } elseif (str_contains($dateInput, ' - ')) {
-                $dates = explode(' - ', $dateInput);
-                $dateP1 = Carbon::parse(trim($dates[1] ?? $dates[0]))->toDateString();
-            } else {
-                $dateP1 = Carbon::parse($dateInput)->toDateString();
-            }
+        if (str_contains($dateInput, ' to ')) {
+            $dates = explode(' to ', $dateInput);
+            $dateP1 = Carbon::parse(trim($dates[1] ?? $dates[0]))->toDateString();
+        } elseif (str_contains($dateInput, ' - ')) {
+            $dates = explode(' - ', $dateInput);
+            $dateP1 = Carbon::parse(trim($dates[1] ?? $dates[0]))->toDateString();
+        } else {
+            $dateP1 = Carbon::parse($dateInput)->toDateString();
         }
 
-        // Pour Période 1, debut = fin = la même date unique
+        // Application du N-1 uniquement si AUCUN filtre n'a été explicitement envoyé
+        if (!$hasExplicitDate) {
+            $dateP1 = Carbon::parse($dateP1)->subDay()->toDateString();
+        }
+
         $dateDebutP1 = $dateP1;
         $dateFinP1   = $dateP1;
 
-        // 2. Gestion de la Période 2 (Mois entier basé sur la Période 1 ou les paramètres p2)
-        if ($request->filled('p2_date_debut') && $request->filled('p2_date_fin')) {
+        // 2. Période 2 : Gérée par le "Filtrer par intervalle" (DE et À)
+        if ($request->filled('date_debut') && $request->filled('date_fin')) {
+            $dateDebutP2 = Carbon::parse($request->input('date_debut'))->toDateString();
+            $dateFinP2   = Carbon::parse($request->input('date_fin'))->toDateString();
+        } elseif ($request->filled('p2_date_debut') && $request->filled('p2_date_fin')) {
             $dateDebutP2 = Carbon::parse($request->input('p2_date_debut'))->toDateString();
             $dateFinP2   = Carbon::parse($request->input('p2_date_fin'))->toDateString();
         } else {
-            // La Période 2 prend tout le mois correspondant à la Période 1
             $dateReference = Carbon::parse($dateFinP1);
             $dateDebutP2 = $dateReference->copy()->startOfMonth()->toDateString();
             $dateFinP2   = $dateReference->copy()->endOfMonth()->toDateString();
         }
 
         try {
+            $getUnpaidOrdersForPeriod = function ($startDate, $endDate) {
+                $query = OrderMenuRestaurant::where('status', MenuOrderStatus::FACTURATE->value)
+                    ->whereIn('regulation_status', [
+                        PaymentOrderMenusStatus::PARTIALLY_PAID->value,
+                        PaymentOrderMenusStatus::NOT_PAID->value,
+                    ])
+                    ->with('payment');
 
-            $globalOrdersSystem = OrderMenuRestaurant::where('status', MenuOrderStatus::FACTURATE->value)
-                ->whereIn('regulation_status', [
-                    PaymentOrderMenusStatus::PARTIALLY_PAID->value,
-                    PaymentOrderMenusStatus::NOT_PAID->value,
-                ])
-                ->with('payment')
-                ->get();
-
-            $allSystemAmountDivers = 0;
-            $totalAlreadyPaid = 0;
-
-            foreach ($globalOrdersSystem as $order) {
-                if ($order->regulation_status === PaymentOrderMenusStatus::PARTIALLY_PAID->value) {
-                    $amount = (float) ($order->remaining_amount ?? 0);
+                if ($startDate === $endDate) {
+                    $query->whereDate('created_at', $startDate);
                 } else {
-                    $amount = (float) ($order->total_order ?? 0);
+                    $query->whereBetween('created_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
                 }
 
-                $paidOnThisOrder = (float) ($order->payment?->paid_amount ?? 0);
-                $totalAlreadyPaid += $paidOnThisOrder;
-                $allSystemAmountDivers += $amount;
+                return $query->get();
+            };
+
+            $globalOrdersP1 = $getUnpaidOrdersForPeriod($dateDebutP1, $dateFinP1);
+            $report_amount_p1 = 0;
+            foreach ($globalOrdersP1 as $order) {
+                $amount = ($order->regulation_status === PaymentOrderMenusStatus::PARTIALLY_PAID->value)
+                    ? (float) ($order->remaining_amount ?? 0)
+                    : (float) ($order->total_order ?? 0);
+                $report_amount_p1 += $amount;
             }
 
-            $all_p2_total_amount_divers = $allSystemAmountDivers;
+            $globalOrdersP2 = $getUnpaidOrdersForPeriod($dateDebutP2, $dateFinP2);
+            $report_amount_p2 = 0;
+            foreach ($globalOrdersP2 as $order) {
+                $amount = ($order->regulation_status === PaymentOrderMenusStatus::PARTIALLY_PAID->value)
+                    ? (float) ($order->remaining_amount ?? 0)
+                    : (float) ($order->total_order ?? 0);
+                $report_amount_p2 += $amount;
+            }
+
+            $allSystemAmountDivers = $report_amount_p2;
+            $all_p2_total_amount_divers = $report_amount_p2;
 
             $calculateMetrics = function ($startDate, $endDate) {
                 $query = OrderMenuRestaurant::with([
@@ -186,8 +195,8 @@ class MainCouranteController extends Controller
 
             return response()->json([
                 'success' => true,
-                'periode_1' => ['date_debut' => $dateDebutP1, 'date_fin' => $dateFinP1], // Sera identique (ex: 2026-08-31 / 2026-08-31)
-                'periode_2' => ['date_debut' => $dateDebutP2, 'date_fin' => $dateFinP2], // Mois entier (ex: 2026-08-01 / 2026-08-31)
+                'periode_1' => ['date_debut' => $dateDebutP1, 'date_fin' => $dateFinP1],
+                'periode_2' => ['date_debut' => $dateDebutP2, 'date_fin' => $dateFinP2],
 
                 'totals_by_category' => $dataP1['totals_by_category'],
                 'count_by_category' => $dataP1['count_by_category'],
@@ -199,6 +208,7 @@ class MainCouranteController extends Controller
                 'total_quantity_divers' => $dataP1['total_quantity_divers'],
                 'total_encaissement_p1' => $dataP1['total_encaissement'],
                 'total_recouvrements_p1' => $dataP1['total_recouvrements'],
+                'report_amount_p1' => $report_amount_p1,
 
                 'p2_totals_by_category' => $dataP2['totals_by_category'],
                 'p2_count_by_category' => $dataP2['count_by_category'],
@@ -212,6 +222,8 @@ class MainCouranteController extends Controller
                 'total_recouvrements_p2' => $dataP2['total_recouvrements'],
 
                 'all_p2_total_amount_divers' => $all_p2_total_amount_divers,
+                'report_amount_p2' => $report_amount_p2,
+                'report_amount' => $report_amount_p2,
             ], 200);
 
         } catch (\Exception $e) {
@@ -228,35 +240,37 @@ class MainCouranteController extends Controller
     {
         $auth = auth()->user();
 
-        // 1. Gestion de la Période 1 (Récupération de date_debut / date_fin ou du champ 'date')
-        if ($request->filled('date_debut') && $request->filled('date_fin')) {
-            $dateDebutP1 = Carbon::parse($request->input('date_debut'))->toDateString();
-            $dateFinP1   = Carbon::parse($request->input('date_fin'))->toDateString();
-        } elseif ($request->filled('date')) {
-            $dateInput = $request->input('date');
-            if (str_contains($dateInput, ' to ')) {
-                $dates = explode(' to ', $dateInput);
-                $dateDebutP1 = Carbon::parse(trim($dates[0]))->toDateString();
-                $dateFinP1   = Carbon::parse(trim($dates[1] ?? $dates[0]))->toDateString();
-            } elseif (str_contains($dateInput, ' - ')) {
-                $dates = explode(' - ', $dateInput);
-                $dateDebutP1 = Carbon::parse(trim($dates[0]))->toDateString();
-                $dateFinP1   = Carbon::parse(trim($dates[1] ?? $dates[0]))->toDateString();
-            } else {
-                $dateDebutP1 = Carbon::parse($dateInput)->toDateString();
-                $dateFinP1   = $dateDebutP1;
-            }
+        // 1. Période 1 : Gérée par le filtre "Filtrer par jour"
+        $hasExplicitDate = $request->has('date') || $request->has('date_debut');
+        $dateInput = $request->input('date', now()->toDateString());
+
+        if (str_contains($dateInput, ' to ')) {
+            $dates = explode(' to ', $dateInput);
+            $dateP1 = Carbon::parse(trim($dates[1] ?? $dates[0]))->toDateString();
+        } elseif (str_contains($dateInput, ' - ')) {
+            $dates = explode(' - ', $dateInput);
+            $dateP1 = Carbon::parse(trim($dates[1] ?? $dates[0]))->toDateString();
         } else {
-            $dateDebutP1 = now()->toDateString();
-            $dateFinP1   = $dateDebutP1;
+            $dateP1 = Carbon::parse($dateInput)->toDateString();
         }
 
-        // 2. Gestion de la Période 2 (Intervalle ou Mois global envoyé par le front-end)
-        if ($request->filled('p2_date_debut') && $request->filled('p2_date_fin')) {
+        // Application du N-1 uniquement si AUCUN filtre n'a été explicitement envoyé
+        if (!$hasExplicitDate) {
+            $dateP1 = Carbon::parse($dateP1)->subDay()->toDateString();
+        }
+
+        $dateDebutP1 = $dateP1;
+        $dateFinP1   = $dateP1;
+
+        // 2. Période 2 : Gérée par le "Filtrer par intervalle" (date_debut / date_fin)
+        if ($request->filled('date_debut') && $request->filled('date_fin')) {
+            $dateDebutP2 = Carbon::parse($request->input('date_debut'))->toDateString();
+            $dateFinP2   = Carbon::parse($request->input('date_fin'))->toDateString();
+        } elseif ($request->filled('p2_date_debut') && $request->filled('p2_date_fin')) {
             $dateDebutP2 = Carbon::parse($request->input('p2_date_debut'))->toDateString();
             $dateFinP2   = Carbon::parse($request->input('p2_date_fin'))->toDateString();
         } else {
-            $dateReference = Carbon::parse($dateDebutP1);
+            $dateReference = Carbon::parse($dateFinP1);
             $dateDebutP2 = $dateReference->copy()->startOfMonth()->toDateString();
             $dateFinP2   = $dateReference->copy()->endOfMonth()->toDateString();
         }
