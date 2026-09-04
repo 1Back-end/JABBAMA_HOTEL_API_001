@@ -94,280 +94,182 @@
 <p class="fst-italic text-end">
     Date d'impression : {{ now()->format('d/m/Y H:i') }}
 </p>
+<div class="row px-2 mt-3">
+    <div class="col-12 p-0">
+        <div class="table-responsive">
+            <table class="table table-bordered table-striped border-black" style="font-size: 11px;">
+                <thead class="table-light text-primary fw-bold sticky-top" style="font-size: 0.85rem; z-index: 1">
+                <tr>
+                    <th rowspan="2" class="align-middle py-1 border-primary" style="width: 20%; border-width: 2px">
+                        CATÉGORIE
+                    </th>
+                    <th rowspan="2" class="align-middle py-1 border-primary" style="width: 30%; border-width: 2px">
+                        TYPE
+                    </th>
+                    <th colspan="2" class="border-primary text-uppercase border-bottom" style="border-width: 2px; width: 25%">
+                        JOUR ({{ \Carbon\Carbon::parse($date)->locale('fr')->isoFormat('D MMMM YYYY') }})
+                    </th>
+                    <th colspan="2" class="border-primary text-uppercase border-bottom" style="border-width: 2px; width: 25%">
+                        DU {{ \Carbon\Carbon::parse($start_date)->locale('fr')->isoFormat('D MMMM YYYY') }} AU
+                        {{ \Carbon\Carbon::parse($end_date)->locale('fr')->isoFormat('D MMMM YYYY') }}
+                    </th>
+                </tr>
+                <tr>
+                    <th class="py-1 border-primary" style="width: 10%; border-width: 2px">QTÉ</th>
+                    <th class="py-1 border-primary" style="width: 15%; border-width: 2px">MONTANT</th>
+                    <th class="py-1 border-primary" style="width: 10%; border-width: 2px">QTÉ</th>
+                    <th class="py-1 border-primary" style="width: 15%; border-width: 2px">MONTANT</th>
+                </tr>
+                </thead>
 
-<table class="table table-bordered table-striped border-black" style="font-size: 11px;">
-    <thead style="display: table-header-group;">
-    <tr>
-        <th rowspan="2" class="align-middle py-1 border-black" style="width: 20%;">
-            CATÉGORIE
-        </th>
-        <th rowspan="2" class="align-middle py-1 border-black" style="width: 30%;">
-            TYPE
-        </th>
-        <th colspan="2" class="border-black text-uppercase border-bottom" style="width: 25%;">
-            JOUR ({{ \Carbon\Carbon::parse($date)->locale('fr')->isoFormat('D MMMM YYYY') }})
-        </th>
-        <th colspan="2" class="border-black text-uppercase border-bottom" style="width: 25%;">
-            DU {{ \Carbon\Carbon::parse($start_date)->locale('fr')->isoFormat('D MMMM YYYY') }} AU {{ \Carbon\Carbon::parse($end_date)->locale('fr')->isoFormat('D MMMM YYYY') }}
-        </th>
-    </tr>
-    <tr>
-        <th class="py-1 border-black" style="width: 10%;">QTÉ</th>
-        <th class="py-1 border-black" style="width: 15%;">MONTANT</th>
-        <th class="py-1 border-black" style="width: 10%;">QTÉ</th>
-        <th class="py-1 border-black" style="width: 15%;">MONTANT</th>
-    </tr>
-    </thead>
+                <tbody>
+                <!-- Restaurant -->
+                <tr>
+                    <td rowspan="5" class="fw-bold text-uppercase align-middle bg-light text-secondary py-1 border-primary" style="border-width: 2px">
+                        Restaurant
+                    </td>
+                    <td class="text-start ps-2 py-1 border-primary" style="border-width: 2px">PETIT DÉJEUNER</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ $count_by_category['PETIT DEJEUNER'] ?? 0 }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ \App\Helpers\FormatPrice::format($totals_by_category['PETIT DEJEUNER'] ?? 0) }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ $p2_count_by_category['PETIT DEJEUNER'] ?? 0 }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ \App\Helpers\FormatPrice::format($p2_totals_by_category['PETIT DEJEUNER'] ?? 0) }}</td>
+                </tr>
 
-    <tbody>
-    <!-- Restaurant (rowspan réduit à 5 car Room Service est sorti) -->
-    <tr>
-        <td rowspan="5" class="fw-bold text-uppercase align-middle bg-light py-1 border-black">
-            Restaurant
-        </td>
-        <td class="text-start ps-2 py-1 border-black">
-            PETIT DÉJEUNER
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ $count_by_category["PETIT DEJEUNER"] ?? 0 }}
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ \App\Helpers\FormatPrice::format($totals_by_category["PETIT DEJEUNER"] ?? 0) }}
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ $p2_count_by_category["PETIT DEJEUNER"] ?? 0 }}
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ \App\Helpers\FormatPrice::format($p2_totals_by_category["PETIT DEJEUNER"] ?? 0) }}
-        </td>
-    </tr>
+                <tr>
+                    <td class="text-start ps-2 py-1 border-primary" style="border-width: 2px">DÉJEUNER</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ $count_by_category['DEJEUNER'] ?? 0 }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ \App\Helpers\FormatPrice::format($totals_by_category['DEJEUNER'] ?? 0) }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ $p2_count_by_category['DEJEUNER'] ?? 0 }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ \App\Helpers\FormatPrice::format($p2_totals_by_category['DEJEUNER'] ?? 0) }}</td>
+                </tr>
 
-    <tr>
-        <td class="text-start ps-2 py-1 border-black">
-            DÉJEUNER
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ $count_by_category["DEJEUNER"] ?? 0 }}
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ \App\Helpers\FormatPrice::format($totals_by_category["DEJEUNER"] ?? 0) }}
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ $p2_count_by_category["DEJEUNER"] ?? 0 }}
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ \App\Helpers\FormatPrice::format($p2_totals_by_category["DEJEUNER"] ?? 0) }}
-        </td>
-    </tr>
+                <tr>
+                    <td class="text-start ps-2 py-1 border-primary" style="border-width: 2px">DINER</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ $count_by_category['DINER'] ?? $count_by_category['DINNER'] ?? 0 }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ \App\Helpers\FormatPrice::format($totals_by_category['DINER'] ?? $totals_by_category['DINNER'] ?? 0) }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ $p2_count_by_category['DINER'] ?? $p2_count_by_category['DINNER'] ?? 0 }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ \App\Helpers\FormatPrice::format($p2_totals_by_category['DINER'] ?? $p2_totals_by_category['DINNER'] ?? 0) }}</td>
+                </tr>
 
-    <tr>
-        <td class="text-start ps-2 py-1 border-black">
-            DINER
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ $count_by_category["DINER"] ?? $count_by_category["DINNER"] ?? 0 }}
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ \App\Helpers\FormatPrice::format($totals_by_category["DINER"] ?? $totals_by_category["DINNER"] ?? 0) }}
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ $p2_count_by_category["DINER"] ?? $p2_count_by_category["DINNER"] ?? 0 }}
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ \App\Helpers\FormatPrice::format($p2_totals_by_category["DINER"] ?? $p2_totals_by_category["DINNER"] ?? 0) }}
-        </td>
-    </tr>
+                <tr>
+                    <td class="text-start ps-2 py-1 border-primary" style="border-width: 2px">DIVERS RESTAURANT</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ $total_quantity_divers ?? 0 }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ \App\Helpers\FormatPrice::format($total_amount_divers ?? 0) }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ $p2_total_quantity_divers ?? 0 }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ \App\Helpers\FormatPrice::format($p2_total_amount_divers ?? 0) }}</td>
+                </tr>
 
-    <tr>
-        <td class="text-start ps-2 py-1 border-black">
-            DIVERS RESTAURANT
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ $total_quantity_divers ?? 0 }}
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ \App\Helpers\FormatPrice::format($total_amount_divers ?? 0) }}
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ $p2_total_quantity_divers ?? 0 }}
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ \App\Helpers\FormatPrice::format($p2_total_amount_divers ?? 0) }}
-        </td>
-    </tr>
+                <!-- Total Restaurant -->
+                <tr class="fw-bold table-active">
+                    <td class="text-start ps-2 text-primary py-1 border-primary" style="border-width: 2px">TOTAL RESTAURANT</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ $totalQtyJour ?? 0 }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ \App\Helpers\FormatPrice::format($totalAmtJour ?? 0) }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ $p2TotalQty ?? 0 }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ \App\Helpers\FormatPrice::format($p2TotalAmt ?? 0) }}</td>
+                </tr>
 
-    <!-- Total Restaurant -->
-    <tr class="fw-bold" style="background-color: #f2f2f2 !important;">
-        <td class="text-start ps-2 py-1 border-black">
-            TOTAL RESTAURANT
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ $totalQtyJour }}
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ \App\Helpers\FormatPrice::format($totalAmtJour) }}
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ $p2TotalQty }}
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ \App\Helpers\FormatPrice::format($p2TotalAmt) }}
-        </td>
-    </tr>
+                <!-- Bar -->
+                <tr>
+                    <td rowspan="2" class="fw-bold text-uppercase align-middle bg-light text-secondary py-1 border-primary" style="border-width: 2px">Bar</td>
+                    <td class="text-start ps-2 py-1 border-primary" style="border-width: 2px">BOISSONS / BAR</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ $total_drinks_quantity ?? 0 }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ \App\Helpers\FormatPrice::format($total_bar ?? 0) }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ $p2_total_drinks_quantity ?? 0 }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ \App\Helpers\FormatPrice::format($p2_total_bar ?? 0) }}</td>
+                </tr>
 
-    <!-- Bar -->
-    <tr>
-        <td rowspan="2" class="fw-bold text-uppercase align-middle bg-light py-1 border-black">
-            Bar
-        </td>
-        <td class="text-start ps-2 py-1 border-black">
-            BOISSONS / BAR
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ $total_drinks_quantity ?? 0 }}
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ \App\Helpers\FormatPrice::format($total_bar ?? 0) }}
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ $p2_total_drinks_quantity ?? 0 }}
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ \App\Helpers\FormatPrice::format($p2_total_bar ?? 0) }}
-        </td>
-    </tr>
+                <!-- Total Bar -->
+                <tr class="fw-bold table-active">
+                    <td class="text-start ps-2 text-primary py-1 border-primary" style="border-width: 2px">TOTAL BAR</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ $total_drinks_quantity ?? 0 }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ \App\Helpers\FormatPrice::format($total_bar ?? 0) }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ $p2_total_drinks_quantity ?? 0 }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ \App\Helpers\FormatPrice::format($p2_total_bar ?? 0) }}</td>
+                </tr>
 
-    <!-- Total Bar -->
-    <tr class="fw-bold" style="background-color: #f2f2f2 !important;">
-        <td class="text-start ps-2 py-1 border-black">
-            TOTAL BAR
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ $total_drinks_quantity ?? 0 }}
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ \App\Helpers\FormatPrice::format($total_bar ?? 0) }}
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ $p2_total_drinks_quantity ?? 0 }}
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ \App\Helpers\FormatPrice::format($p2_total_bar ?? 0) }}
-        </td>
-    </tr>
+                <!-- Room Service -->
+                <tr>
+                    <td rowspan="2" class="fw-bold text-uppercase align-middle bg-light text-secondary py-1 border-primary" style="border-width: 2px">Room Service</td>
+                    <td class="text-start ps-2 py-1 border-primary" style="border-width: 2px">PRESTATIONS ROOM SERVICE</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ $total_quantity_room_service ?? 0 }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ \App\Helpers\FormatPrice::format($total_amount_room_service ?? 0) }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ $p2_total_quantity_room_service ?? 0 }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ \App\Helpers\FormatPrice::format($p2_total_amount_room_service ?? 0) }}</td>
+                </tr>
 
-    <!-- Room Service (Nouvelle catégorie indépendante) -->
-    <tr>
-        <td rowspan="2" class="fw-bold text-uppercase align-middle bg-light py-1 border-black">
-            Room Service
-        </td>
-        <td class="text-start ps-2 py-1 border-black">
-            PRESTATIONS ROOM SERVICE
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ $total_quantity_room_service ?? 0 }}
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ \App\Helpers\FormatPrice::format($total_amount_room_service ?? 0) }}
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ $p2_total_quantity_room_service ?? 0 }}
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ \App\Helpers\FormatPrice::format($p2_total_amount_room_service ?? 0) }}
-        </td>
-    </tr>
+                <!-- Total Room Service -->
+                <tr class="fw-bold table-active">
+                    <td class="text-start ps-2 text-primary py-1 border-primary" style="border-width: 2px">TOTAL ROOM SERVICE</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ $total_quantity_room_service ?? 0 }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ \App\Helpers\FormatPrice::format($total_amount_room_service ?? 0) }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ $p2_total_quantity_room_service ?? 0 }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ \App\Helpers\FormatPrice::format($p2_total_amount_room_service ?? 0) }}</td>
+                </tr>
+                </tbody>
 
-    <!-- Total Room Service -->
-    <tr class="fw-bold" style="background-color: #f2f2f2 !important;">
-        <td class="text-start ps-2 py-1 border-black">
-            TOTAL ROOM SERVICE
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ $total_quantity_room_service ?? 0 }}
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ \App\Helpers\FormatPrice::format($total_amount_room_service ?? 0) }}
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ $p2_total_quantity_room_service ?? 0 }}
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ \App\Helpers\FormatPrice::format($p2_total_amount_room_service ?? 0) }}
-        </td>
-    </tr>
-    </tbody>
+                <tfoot class="fw-bold">
+                <!-- Totaux Généraux -->
+                <tr class="table-secondary">
+                    <td colspan="2" class="text-end py-1 pe-3 border-primary" style="border-width: 2px">TOTAUX GÉNÉRAUX</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">
+                        {{ ($totalQtyJour ?? 0) + ($total_drinks_quantity ?? 0) + ($total_quantity_room_service ?? 0) }}
+                    </td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">
+                        {{ \App\Helpers\FormatPrice::format(($totalAmtJour ?? 0) + ($total_bar ?? 0) + ($total_amount_room_service ?? 0)) }}
+                    </td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">
+                        {{ ($p2TotalQty ?? 0) + ($p2_total_drinks_quantity ?? 0) + ($p2_total_quantity_room_service ?? 0) }}
+                    </td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">
+                        {{ \App\Helpers\FormatPrice::format(($p2TotalAmt ?? 0) + ($p2_total_bar ?? 0) + ($p2_total_amount_room_service ?? 0)) }}
+                    </td>
+                </tr>
 
-    <tfoot class="fw-bold">
-    <!-- Totaux Généraux (Restaurant + Bar + Room Service) -->
-    <tr style="background-color: #e2e8f0 !important;">
-        <td colspan="2" class="text-end py-1 pe-3 border-black">
-            TOTAUX GÉNÉRAUX
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ $totalQtyJour + ($total_drinks_quantity ?? 0) + ($total_quantity_room_service ?? 0) }}
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ \App\Helpers\FormatPrice::format($totalAmtJour + ($total_bar ?? 0) + ($total_amount_room_service ?? 0)) }}
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ $p2TotalQty + ($p2_total_drinks_quantity ?? 0) + ($p2_total_quantity_room_service ?? 0) }}
-        </td>
-        <td class="py-1 border-black text-center">
-            {{ \App\Helpers\FormatPrice::format($p2TotalAmt + ($p2_total_bar ?? 0) + ($p2_total_amount_room_service ?? 0)) }}
-        </td>
-    </tr>
+                <!-- Encaissement -->
+                <tr>
+                    <td colspan="2" class="text-end py-1 pe-3 border-primary" style="border-width: 2px">ENCAISSEMENT</td>
+                    <td colspan="2" class="py-1 border-primary text-center" style="border-width: 2px">
+                        {{ \App\Helpers\FormatPrice::format($total_encaissement_p1 ?? $total_encaissement_jour ?? 0) }}
+                    </td>
+                    <td colspan="2" class="py-1 border-primary text-center" style="border-width: 2px">
+                        {{ \App\Helpers\FormatPrice::format($total_encaissement_p2 ?? 0) }}
+                    </td>
+                </tr>
 
-    <!-- Encaissement -->
-    <tr>
-        <td colspan="2" class="text-end py-1 pe-3 border-black">
-            ENCAISSEMENT
-        </td>
-        <td colspan="2" class="py-1 border-black text-center">
-            {{ \App\Helpers\FormatPrice::format($total_encaissement_p1 ?? $total_encaissement_jour) }}
-        </td>
-        <td colspan="2" class="py-1 border-black text-center">
-            {{ \App\Helpers\FormatPrice::format($total_encaissement_p2 ?? 0) }}
-        </td>
-    </tr>
+                <!-- A Reporter -->
+                <tr>
+                    <td colspan="2" class="text-end py-1 pe-3 border-primary" style="border-width: 2px">A REPORTER</td>
+                    <td colspan="2" class="py-1 border-primary text-center" style="border-width: 2px">
+                        {{ \App\Helpers\FormatPrice::format($report_amount_p1 ?? 0) }}
+                    </td>
+                    <td colspan="2" class="py-1 border-primary text-center" style="border-width: 2px">
+                        {{ \App\Helpers\FormatPrice::format($report_amount_p2 ?? 0) }}
+                    </td>
+                </tr>
 
-    <!-- À Reporter (Intègre le Room Service dans le calcul) -->
-    <tr>
-        <td colspan="2" class="text-end py-1 pe-3 border-black">
-            A REPORTER
-        </td>
-        <td colspan="2" class="py-1 border-black text-center">
-            {{ \App\Helpers\FormatPrice::format($totalAmtJour + ($total_bar ?? 0) + ($total_amount_room_service ?? 0) - ($total_encaissement_p1 ?? $total_encaissement_jour)) }}
-        </td>
-        <td colspan="2" class="py-1 border-black text-center">
-            {{ \App\Helpers\FormatPrice::format($p2TotalAmt + ($p2_total_bar ?? 0) + ($p2_total_amount_room_service ?? 0) - ($total_encaissement_p2 ?? 0)) }}
-        </td>
-    </tr>
+                <!-- Recouvrement -->
+                <tr>
+                    <td colspan="2" class="text-end py-1 pe-3 border-primary" style="border-width: 2px">RECOUVREMENT</td>
+                    <td colspan="2" class="py-1 border-primary text-center" style="border-width: 2px">
+                        {{ \App\Helpers\FormatPrice::format($total_recouvrements_p1 ?? $total_recouvrements_jour ?? 0) }}
+                    </td>
+                    <td colspan="2" class="py-1 border-primary text-center" style="border-width: 2px">
+                        {{ \App\Helpers\FormatPrice::format($total_recouvrements_p2 ?? 0) }}
+                    </td>
+                </tr>
 
-    <!-- Recouvrement -->
-    <tr>
-        <td colspan="2" class="text-end py-1 pe-3 border-black">
-            RECOUVREMENT
-        </td>
-        <td colspan="2" class="py-1 border-black text-center">
-            {{ \App\Helpers\FormatPrice::format($total_recouvrements_p1 ?? $total_recouvrements_jour) }}
-        </td>
-        <td colspan="2" class="py-1 border-black text-center">
-            {{ \App\Helpers\FormatPrice::format($total_recouvrements_p2 ?? 0) }}
-        </td>
-    </tr>
-
-    <!-- Total des débiteurs -->
-    <tr>
-        <td colspan="2" class="text-end py-1 pe-3 border-black">
-            TOTAL DES DEBITEURS
-        </td>
-        <td colspan="4" class="py-1 border-black text-center">
-            {{ \App\Helpers\FormatPrice::format($all_p2_total_amount_divers ?? 0) }}
-        </td>
-    </tr>
-    </tfoot>
-</table>
+                <!-- Total des débiteurs -->
+                <tr>
+                    <td colspan="2" class="text-end py-1 pe-3 border-primary" style="border-width: 2px">TOTAL DES DEBITEURS</td>
+                    <td colspan="4" class="py-1 border-primary text-center" style="border-width: 2px">
+                        {{ \App\Helpers\FormatPrice::format($all_p2_total_amount_divers ?? 0) }}
+                    </td>
+                </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+</div>
 
 </body>
 </html>
