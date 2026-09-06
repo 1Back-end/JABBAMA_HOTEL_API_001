@@ -35,14 +35,15 @@
         }
 
         th, td {
-            border: 1px solid #000 !important;
+            border: 1px solid #9ec5fe !important;
             padding: 3px !important;
             text-align: center;
             vertical-align: middle;
         }
 
         th {
-            background-color: #f2f2f2 !important;
+            background-color: #cfe2ff !important;
+            color: #084298 !important;
             font-size: 7.5px !important;
             font-weight: bold;
         }
@@ -112,7 +113,7 @@
     <tr>
         <td class="fw-bold">{{ \App\Helpers\FormatPrice::format($total_gle) }}</td>
         <td class="text-success fw-bold">{{ \App\Helpers\FormatPrice::format($total_encaissement) }}</td>
-        <td class="text-danger fw-bold">{{ \App\Helpers\FormatPrice::format($total_debiteur) }}</td>
+        <td class="text-danger fw-bold">{{ \App\Helpers\FormatPrice::format($total_gle - $total_encaissement) }}</td>
         <td>{{ \App\Helpers\FormatPrice::format($amounts_by_category['PETIT DEJEUNER'] ?? 0) }}</td>
         <td>{{ \App\Helpers\FormatPrice::format($amounts_by_category['DEJEUNER'] ?? 0) }}</td>
         <td>{{ \App\Helpers\FormatPrice::format($amounts_by_category['DINNER'] ?? 0) }}</td>
@@ -131,6 +132,7 @@
         <th>N.BAR</th>
         <th>N.ROOM SERVICE</th>
         <th>N.DIVERS</th>
+        <th>COMMANDE NON FACTURÉES</th>
     </tr>
     </thead>
     <tbody>
@@ -142,6 +144,7 @@
         <td>{{ $total_bar_count }}</td>
         <td>{{ $total_room_service_quantity }}</td>
         <td>{{ $total_divers_count }}</td>
+        <td class="fw-bold text-danger">{{ count($orders_not_traited ?? []) }}</td>
     </tr>
     </tbody>
 </table>
@@ -158,7 +161,7 @@
         <th rowspan="2" style="width: 5%; font-size: 8.5px;">CHAMBRE</th>
 
         @foreach($categories as $cat)
-            <th colspan="5" style="font-size: 8.5px;">{{ $cat }}</th>
+            <th colspan="4" style="font-size: 8.5px;">{{ $cat }}</th>
         @endforeach
 
         @php
@@ -177,7 +180,7 @@
         @endphp
 
         @if($hasAnyBar)
-            <th colspan="5" style="font-size: 8.5px;">BAR</th>
+            <th colspan="4" style="font-size: 8.5px;">BAR</th>
         @endif
 
         @if($hasAnyDivers)
@@ -193,7 +196,6 @@
             <th class="sub-th" style="font-size: 8px;">QTÉ</th>
             <th class="sub-th" style="font-size: 8px;">P.U</th>
             <th class="sub-th" style="font-size: 8px;">P.T</th>
-            <th class="sub-th" style="font-size: 8px;">R/S</th>
         @endforeach
 
         @if($hasAnyBar)
@@ -201,14 +203,13 @@
             <th class="sub-th" style="font-size: 8px;">QTÉ</th>
             <th class="sub-th" style="font-size: 8px;">P.U</th>
             <th class="sub-th" style="font-size: 8px;">P.T</th>
-            <th class="sub-th" style="font-size: 8px;">R/S</th>
         @endif
 
         @if($hasAnyDivers)
             <th class="sub-th" style="font-size: 8px;">LIBELLÉ</th>
             <th class="sub-th" style="font-size: 8px;">QTÉ</th>
             <th class="sub-th" style="font-size: 8px;">P.U</th>
-            <th class="sub-th" style="font-size: 8px;">R/S</th>
+            <th class="sub-th" style="font-size: 8px;">P.T</th>
         @endif
     </tr>
     </thead>
@@ -252,89 +253,104 @@
             }
 
             $rsPrice = $order['price_for_room_service'] ?? $order['room_service_price'] ?? 0;
+            $rsQty = $order['quantity_for_room_service'] ?? 1;
+            $rsUnitPrice = $order['unit_price_for_room_service'] ?? $rsPrice;
+            $hasRs = ($rsPrice > 0);
 
-            $counts = [1];
-            foreach($categories as $cat) {
-                $counts[] = count($orderCatItems[$cat]);
-            }
-            if($hasAnyBar) $counts[] = count($barItems);
-            if($hasAnyDivers) $counts[] = count($diversItems);
-            $maxLines = max($counts);
-            $middleIndex = (int) floor($maxLines / 2);
-
-            $targetInfo = null;
-            if ($rsPrice > 0) {
-                foreach($categories as $catIdx => $cat) {
-                    if (isset($orderCatItems[$cat][$middleIndex])) {
-                        $targetInfo = ['type' => 'cat', 'key' => $cat];
-                        break;
-                    }
-                }
-                if (!$targetInfo && $hasAnyBar && isset($barItems[$middleIndex])) {
-                    $targetInfo = ['type' => 'bar', 'key' => null];
-                }
-                if (!$targetInfo && $hasAnyDivers && isset($diversItems[$middleIndex])) {
-                    $targetInfo = ['type' => 'divers', 'key' => null];
-                }
-
-                if (!$targetInfo) {
+            // Détermination de la catégorie cible pour insérer la ligne Room Service
+            $targetCat = null;
+            if ($hasRs) {
+                $targetCat = strtoupper(trim($order['sales_category'] ?? ''));
+                if (!isset($orderCatItems[$targetCat])) {
                     foreach($categories as $cat) {
                         if (!empty($orderCatItems[$cat])) {
-                            $targetInfo = ['type' => 'cat', 'key' => $cat];
+                            $targetCat = $cat;
                             break;
                         }
                     }
+                    if (!$targetCat && count($categories) > 0) {
+                        $targetCat = $categories[0];
+                    }
                 }
             }
+
+            // Calcul du nombre total de lignes nécessaires pour cette commande
+            $counts = [1];
+            foreach($categories as $cat) {
+                $c = count($orderCatItems[$cat]);
+                if ($hasRs && $cat === $targetCat) {
+                    $c += 1; // Ajout de la ligne Room Service
+                }
+                $counts[] = $c;
+            }
+            if($hasAnyBar) $counts[] = count($barItems);
+            if($hasAnyDivers) $counts[] = count($diversItems);
+
+            $maxLines = max($counts);
         @endphp
 
         @for($i = 0; $i < $maxLines; $i++)
-            @php
-                $isMiddleRow = ($i === $middleIndex);
-            @endphp
             <tr>
                 @if($i === 0)
-                    <td rowspan="{{ $maxLines }}" class="fw-bold" style="white-space: nowrap; font-size: 7.5px;">{{ $order['code_facture'] ?? '' }}</td>
+                    <td rowspan="{{ $maxLines }}" class="fw-bold" style="width: 12%; word-break: break-all; white-space: normal; font-size: 7.5px;">{{ $order['code_facture'] ?? '' }}</td>
                     <td rowspan="{{ $maxLines }}">{{ $order['no_table'] ?? '' }}</td>
                     <td rowspan="{{ $maxLines }}">{{ $order['chambre'] ?? '' }}</td>
                 @endif
 
-
                 @foreach($categories as $cat)
                     @php
-                        $item = $orderCatItems[$cat][$i] ?? null;
-                        $showRsHere = ($isMiddleRow && $targetInfo && $targetInfo['type'] === 'cat' && $targetInfo['key'] === $cat);
+                        $catItems = $orderCatItems[$cat];
+                        $isTarget = ($hasRs && $cat === $targetCat);
+                        $itemIndex = $i;
+
+                        $item = null;
+                        $isRsRow = false;
+
+                        if ($isTarget) {
+                            $normalCount = count($catItems);
+                            if ($i < $normalCount) {
+                                $item = $catItems[$i] ?? null;
+                            } elseif ($i === $normalCount) {
+                                $isRsRow = true;
+                            }
+                        } else {
+                            $item = $catItems[$i] ?? null;
+                        }
                     @endphp
-                    <td class="text-start {{ $item ? 'bg-light' : '' }}">{{ $item['menu'] ?? '' }}</td>
-                    <td class="{{ $item ? 'bg-light' : '' }}">{{ $item ? $item['quantity'] : '' }}</td>
-                    <td class="{{ $item ? 'bg-light' : '' }}">{{ $item ? \App\Helpers\FormatPrice::format($item['unit_price']) : '' }}</td>
-                    <td class="{{ $item ? 'bg-light' : '' }}">{{ $item ? \App\Helpers\FormatPrice::format($item['total_price']) : '' }}</td>
-                    <td class="fw-bold {{ $item ? 'bg-light' : '' }}">{{ $showRsHere ? \App\Helpers\FormatPrice::format($rsPrice) : '' }}</td>
+
+                    @if($isRsRow)
+                        <td class="text-start ps-1 text-uppercase fw-bold text-primary {{ $isTarget ? 'bg-light' : '' }}">ROOM SERVICE</td>
+                        <td class="fw-bold {{ $isTarget ? 'bg-light' : '' }}">{{ $rsQty }}</td>
+                        <td class="fw-bold {{ $isTarget ? 'bg-light' : '' }}">{{ \App\Helpers\FormatPrice::format($rsUnitPrice) }}</td>
+                        <td class="fw-bold {{ $isTarget ? 'bg-light' : '' }}">{{ \App\Helpers\FormatPrice::format($rsPrice) }}</td>
+                    @else
+                        <td class="text-start {{ $item ? 'bg-light' : '' }}">{{ $item['menu'] ?? '' }}</td>
+                        <td class="{{ $item ? 'bg-light' : '' }}">{{ $item ? $item['quantity'] : '' }}</td>
+                        <td class="{{ $item ? 'bg-light' : '' }}">{{ $item ? \App\Helpers\FormatPrice::format($item['unit_price']) : '' }}</td>
+                        <td class="{{ $item ? 'bg-light' : '' }}">{{ $item ? \App\Helpers\FormatPrice::format($item['total_price']) : '' }}</td>
+                    @endif
                 @endforeach
 
                 {{-- Colonnes Bar --}}
                 @if($hasAnyBar)
                     @php
                         $drink = $barItems[$i] ?? null;
-                        $showRsBar = ($isMiddleRow && $targetInfo && $targetInfo['type'] === 'bar');
                     @endphp
                     <td class="text-start {{ $drink ? 'bg-light' : '' }}">{{ $drink['menu'] ?? '' }}</td>
                     <td class="{{ $drink ? 'bg-light' : '' }}">{{ $drink ? $drink['quantity'] : '' }}</td>
                     <td class="{{ $drink ? 'bg-light' : '' }}">{{ $drink ? \App\Helpers\FormatPrice::format($drink['unit_price']) : '' }}</td>
                     <td class="{{ $drink ? 'bg-light' : '' }}">{{ $drink ? \App\Helpers\FormatPrice::format($drink['total_price']) : '' }}</td>
-                    <td class="fw-bold">{{ $showRsBar ? \App\Helpers\FormatPrice::format($rsPrice) : '' }}</td>
                 @endif
 
                 {{-- Colonnes Divers --}}
                 @if($hasAnyDivers)
                     @php
                         $divers = $diversItems[$i] ?? null;
-                        $showRsDivers = ($isMiddleRow && $targetInfo && $targetInfo['type'] === 'divers');
                     @endphp
                     <td class="text-start {{ $divers ? 'bg-light' : '' }}">{{ $divers['menu'] ?? '' }}</td>
                     <td class="{{ $divers ? 'bg-light' : '' }}">{{ $divers ? $divers['quantity'] : '' }}</td>
                     <td class="{{ $divers ? 'bg-light' : '' }}">{{ $divers ? \App\Helpers\FormatPrice::format($divers['unit_price']) : '' }}</td>
-                    <td class="fw-bold">{{ $showRsDivers ? \App\Helpers\FormatPrice::format($rsPrice) : '' }}</td>
+                    <td class="{{ $divers ? 'bg-light' : '' }}">{{ $divers ? \App\Helpers\FormatPrice::format($divers['total_price'] ?? ($divers['total_previous'] ?? 0)) : '' }}</td>
                 @endif
 
                 @if($i === 0)

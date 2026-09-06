@@ -205,6 +205,24 @@
                     <td class="py-1 border-primary text-center" style="border-width: 2px">{{ $p2_total_quantity_room_service ?? 0 }}</td>
                     <td class="py-1 border-primary text-center" style="border-width: 2px">{{ \App\Helpers\FormatPrice::format($p2_total_amount_room_service ?? 0) }}</td>
                 </tr>
+
+                <tr>
+                    <td rowspan="2" class="fw-bold text-uppercase align-middle bg-light text-secondary py-1 border-primary" style="border-width: 2px">COMMANDES NON FACTURÉES</td>
+                    <td class="text-start ps-2 py-1 border-primary" style="border-width: 2px">COMMANDES NON FACTURÉES</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ $orders_not_traited_p1 ?? 0 }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ \App\Helpers\FormatPrice::format($orders_not_traited_total_order_p1 ?? 0) }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ $orders_not_traited_p2 ?? 0 }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ \App\Helpers\FormatPrice::format($orders_not_traited_total_order_p2 ?? 0) }}</td>
+                </tr>
+
+                <!-- Total Commandes non traitées -->
+                <tr class="fw-bold table-active">
+                    <td class="text-start ps-2 text-primary py-1 border-primary" style="border-width: 2px">TOTAL COMMANDES NON FACTURÉES</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ $orders_not_traited_p1 ?? 0 }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ \App\Helpers\FormatPrice::format($orders_not_traited_total_order_p1 ?? 0) }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ $orders_not_traited_p2 ?? 0 }}</td>
+                    <td class="py-1 border-primary text-center" style="border-width: 2px">{{ \App\Helpers\FormatPrice::format($orders_not_traited_total_order_p2 ?? 0) }}</td>
+                </tr>
                 </tbody>
 
                 <tfoot class="fw-bold">

@@ -16,7 +16,6 @@ class MainCouranteController extends Controller
     {
         $auth = auth()->user();
 
-        // 1. Période 1 : Gérée par le filtre "Filtrer par jour"
         $hasExplicitDate = $request->has('date') || $request->has('date_debut');
         $dateInput = $request->input('date', now()->toDateString());
 
@@ -30,7 +29,6 @@ class MainCouranteController extends Controller
             $dateP1 = Carbon::parse($dateInput)->toDateString();
         }
 
-        // Application du N-1 uniquement si AUCUN filtre n'a été explicitement envoyé
         if (!$hasExplicitDate) {
             $dateP1 = Carbon::parse($dateP1)->subDay()->toDateString();
         }
@@ -38,7 +36,6 @@ class MainCouranteController extends Controller
         $dateDebutP1 = $dateP1;
         $dateFinP1   = $dateP1;
 
-        // 2. Période 2 : Gérée par le "Filtrer par intervalle" (DE et À)
         if ($request->filled('date_debut') && $request->filled('date_fin')) {
             $dateDebutP2 = Carbon::parse($request->input('date_debut'))->toDateString();
             $dateFinP2   = Carbon::parse($request->input('date_fin'))->toDateString();
@@ -190,8 +187,30 @@ class MainCouranteController extends Controller
                 ];
             };
 
+            $getNotTraitedOrdersData = function ($startDate, $endDate) {
+                $query = OrderMenuRestaurant::where('status', '!=', MenuOrderStatus::FACTURATE->value);
+
+                if ($startDate === $endDate) {
+                    $query->whereDate('created_at', $startDate);
+                } else {
+                    $query->whereBetween('created_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
+                }
+
+                $orders = $query->get();
+
+                return [
+                    'count' => $orders->count(),
+                    'total_order' => (float) $orders->sum(function ($order) {
+                        return $order->total_order;
+                    }),
+                ];
+            };
+
             $dataP1 = $calculateMetrics($dateDebutP1, $dateFinP1);
             $dataP2 = $calculateMetrics($dateDebutP2, $dateFinP2);
+
+            $notTraitedP1 = $getNotTraitedOrdersData($dateDebutP1, $dateFinP1);
+            $notTraitedP2 = $getNotTraitedOrdersData($dateDebutP2, $dateFinP2);
 
             return response()->json([
                 'success' => true,
@@ -210,6 +229,9 @@ class MainCouranteController extends Controller
                 'total_recouvrements_p1' => $dataP1['total_recouvrements'],
                 'report_amount_p1' => $report_amount_p1,
 
+                'orders_not_traited_p1' => $notTraitedP1['count'],
+                'orders_not_traited_total_order_p1' => $notTraitedP1['total_order'],
+
                 'p2_totals_by_category' => $dataP2['totals_by_category'],
                 'p2_count_by_category' => $dataP2['count_by_category'],
                 'p2_total_bar' => $dataP2['total_bar'],
@@ -220,6 +242,9 @@ class MainCouranteController extends Controller
                 'p2_total_quantity_divers' => $dataP2['total_quantity_divers'],
                 'total_encaissement_p2' => $dataP2['total_encaissement'],
                 'total_recouvrements_p2' => $dataP2['total_recouvrements'],
+
+                'orders_not_traited_p2' => $notTraitedP2['count'],
+                'orders_not_traited_total_order_p2' => $notTraitedP2['total_order'],
 
                 'all_p2_total_amount_divers' => $all_p2_total_amount_divers,
                 'report_amount_p2' => $report_amount_p2,
@@ -379,6 +404,22 @@ class MainCouranteController extends Controller
                 });
                 $totalQuantityRoomService = (int) $orders->where('is_room_service', true)->sum('quantity_for_room_service');
 
+
+                $notTraitedQuery = OrderMenuRestaurant::where('status', '!=', MenuOrderStatus::FACTURATE->value);
+
+                if ($startDate === $endDate) {
+                    $notTraitedQuery->whereDate('created_at', $startDate);
+                } else {
+                    $notTraitedQuery->whereBetween('created_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
+                }
+
+                $ordersNotTraited = $notTraitedQuery->get();
+                $ordersNotTraitedCount = $ordersNotTraited->count();
+                $ordersNotTraitedTotalAmount = (float) $ordersNotTraited->sum(function ($order) {
+                    return (float) ($order->total_order ?? 0);
+                });
+                // ----------------------------------------
+
                 $encaissementQuery = OrderMenuRestaurant::whereIn('regulation_status', [
                     PaymentOrderMenusStatus::PAID->value,
                     PaymentOrderMenusStatus::PARTIALLY_PAID->value,
@@ -412,6 +453,8 @@ class MainCouranteController extends Controller
                     'total_quantity_room_service' => $totalQuantityRoomService,
                     'total_amount_divers' => $totalAmountDivers,
                     'total_quantity_divers' => $totalQuantityDivers,
+                    'orders_not_traited' => $ordersNotTraitedCount,
+                    'orders_not_traited_total_order' => $ordersNotTraitedTotalAmount,
                     'total_encaissement' => $totalEncaissement,
                     'total_recouvrements' => $totalRecouvrements,
                 ];
@@ -489,6 +532,11 @@ class MainCouranteController extends Controller
                 'total_quantity_room_service' => $dataP1['total_quantity_room_service'],
                 'total_amount_divers' => $dataP1['total_amount_divers'],
                 'total_quantity_divers' => $dataP1['total_quantity_divers'],
+
+                // Commandes non traitées P1
+                'orders_not_traited_p1' => $dataP1['orders_not_traited'],
+                'orders_not_traited_total_order_p1' => $dataP1['orders_not_traited_total_order'],
+
                 'total_encaissement_p1' => $dataP1['total_encaissement'],
                 'total_recouvrements_p1' => $dataP1['total_recouvrements'],
                 'report_amount_p1' => $report_amount_p1,
@@ -501,6 +549,11 @@ class MainCouranteController extends Controller
                 'p2_total_quantity_room_service' => $dataP2['total_quantity_room_service'],
                 'p2_total_amount_divers' => $dataP2['total_amount_divers'],
                 'p2_total_quantity_divers' => $dataP2['total_quantity_divers'],
+
+                // Commandes non traitées P2
+                'orders_not_traited_p2' => $dataP2['orders_not_traited'],
+                'orders_not_traited_total_order_p2' => $dataP2['orders_not_traited_total_order'],
+
                 'total_encaissement_p2' => $dataP2['total_encaissement'],
                 'total_recouvrements_p2' => $dataP2['total_recouvrements'],
 

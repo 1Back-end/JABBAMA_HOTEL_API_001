@@ -367,6 +367,7 @@ class DataController extends Controller
                 $categoryName = $order->salesCategory ? strtoupper($order->salesCategory->name) : 'AUTRES';
                 $roomServicePrice = (int) ($order->price_for_room_service ?? 0) * (int) ($order->quantity_for_room_service ?? 0) ;
                 $roomServiceQuantity = (int) ($order->quantity_for_room_service ?? 0);
+                $roomServiceUnitPrice = (int) ($order->price_for_room_service ?? 0);
 
                 $formattedItems = $order->items
                     ->filter(function ($item) {
@@ -413,6 +414,7 @@ class DataController extends Controller
                     'total_amount' => $totalAmount,
                     'price_for_room_service' => $roomServicePrice,
                     'quantity_for_room_service' => $roomServiceQuantity,
+                    'unit_price_for_room_service' => $roomServiceUnitPrice,
                     'payment_methods' => $paymentMethods,
                     'sales_category' => $categoryName,
                     'items' => $formattedItems->values()->all(),
@@ -519,6 +521,18 @@ class DataController extends Controller
         }
     }
 
+
+    public function get_all_order_not_traited(Request $request)
+    {
+        $count = OrderMenuRestaurant::where('status', '!=', MenuOrderStatus::FACTURATE->value)
+            ->count();
+
+        return response()->json([
+            'success' => true,
+            'count' => $count
+        ]);
+    }
+
     public function exportMainCourantePdf(Request $request)
     {
         $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : now()->toDateString();
@@ -536,6 +550,15 @@ class DataController extends Controller
                     'drinks.drinkConfig.product',
                 ])
                 ->where('status', MenuOrderStatus::FACTURATE->value)
+                ->get();
+
+
+            $ordersNotTraited = OrderMenuRestaurant::where('status', '!=', MenuOrderStatus::FACTURATE->value)
+                ->with([
+                    'restaurantTable:uuid,code,table_number',
+                    'restaurant_room:uuid,rooms_number',
+                    'salesCategory:uuid,name',
+                ])
                 ->get();
 
             $totalGle = (int) $orders->sum('total_order');
@@ -587,10 +610,9 @@ class DataController extends Controller
                 $totalDiversCount += (int) $diversItemsFilter->sum('quantity_exactly');
             }
 
-            // Calcul mis à jour du montant total Room Service (en multipliant prix unitaire et quantité si renseigné)
             $totalRoomServiceAmount = (int) $orders->sum(function ($order) {
                 $rsPrice = (int) ($order->price_for_room_service ?? 0);
-                $rsQty = (int) ($order->quantity_for_room_service ?? 1); // par défaut 1 si non spécifié
+                $rsQty = (int) ($order->quantity_for_room_service ?? 1);
                 return $rsPrice * $rsQty;
             });
 
@@ -601,8 +623,6 @@ class DataController extends Controller
 
             foreach ($orders as $order) {
                 $categoryName = $order->salesCategory ? strtoupper(trim($order->salesCategory->name)) : 'AUTRES';
-
-                // Calcul du prix total Room Service pour cette commande précise
                 $roomServicePriceCalculated = (int) ($order->price_for_room_service ?? 0) * (int) ($order->quantity_for_room_service ?? 1);
 
                 $formattedItems = $order->items->filter(function ($item) {
@@ -646,7 +666,6 @@ class DataController extends Controller
                     });
                 }
 
-                // Gestion de l'affichage des débiteurs (basée sur is_generated_from_complement)
                 if ($diversItems->isNotEmpty()) {
                     $debiteursOrders[] = [
                         'uuid' => $order->uuid,
@@ -657,7 +676,7 @@ class DataController extends Controller
                         'price_for_room_service' => $roomServicePriceCalculated,
                         'quantity_for_room_service' => (int) ($order->quantity_for_room_service ?? 0),
                         'items' => $diversItems->values()->all(),
-                        'drinks' => [], // Garde la structure cohérente si besoin
+                        'drinks' => [],
                     ];
                 }
 
@@ -679,6 +698,18 @@ class DataController extends Controller
                     'divers' => $diversItems->values()->all(),
                 ];
             }
+
+            // Formatage des commandes non traitées pour la vue
+            $formattedOrdersNotTraited = $ordersNotTraited->map(function ($order) {
+                return [
+                    'code_facture' => $order->code,
+                    'no_table' => $order->restaurantTable->table_number ?? '',
+                    'chambre' => $order->restaurant_room->rooms_number ?? '',
+                    'sales_category' => $order->salesCategory ? strtoupper(trim($order->salesCategory->name)) : 'AUTRES',
+                    'total_amount' => $order->total_order ?? 0,
+                    'status' => $order->status,
+                ];
+            })->values()->all();
 
             $fileName   = 'MAIN-COURANTE-' . $date . '.pdf';
             $folderPath = 'storage/main-courante/' . now()->format('d-m-Y') . '/';
@@ -702,6 +733,7 @@ class DataController extends Controller
                 'total_room_service_amount' => $totalRoomServiceAmount,
                 'total_room_service_quantity' => $totalRoomServiceQuantity,
                 'orders' => $formattedOrders,
+                'orders_not_traited' => $formattedOrdersNotTraited,
                 'debiteurs' => $debiteursOrders,
             ];
 
@@ -726,10 +758,10 @@ class DataController extends Controller
             $base64     = base64_encode($pdfContent);
 
             return response()->json([
-                'success'  => true,
-                'data'     => $data,
-                'base64'   => $base64,
-                'url'      => asset('storage/details-orders/' . $fileName),
+                'success' => true,
+                'data' => $data,
+                'base64' => $base64,
+                'url' => asset('storage/details-orders/' . $fileName),
                 'filename' => $fileName,
             ], 200);
 
@@ -741,4 +773,6 @@ class DataController extends Controller
             ], 500);
         }
     }
+
 }
+
