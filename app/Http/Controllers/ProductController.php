@@ -39,10 +39,9 @@ class ProductController extends Controller
     public function index(Request $request)
     {
         $auth = auth()->user();
-        $perPage = $request->input('limit', 25);
-        $page = $request->input('page', 1);
+        $perPage = (int) $request->input('limit', 25);
+        $page = (int) $request->input('page', 1);
 
-        // 🔹 null = tous les entrepôts
         $pointUuid = $request->input('point_uuid');
 
         $query = Product::with([
@@ -53,52 +52,36 @@ class ProductController extends Controller
             'subCategories',
             'medias',
             'points' => function ($q) use ($auth, $pointUuid) {
-
-                // 🔐 Restriction managers (basée sur permissions)
-                if (
-                    !$auth->hasRole('SUPER_ADMIN') &&
-                    !$auth->can('view_all_products_access') &&
-                    !$auth->can('view_role_related_data')
-                ) {
+                if (!$auth->hasRole('SUPER_ADMIN')) {
                     $q->whereHas('managers', function ($m) use ($auth) {
-                        $m->where('warehouse_managers.user_id', $auth->id);
+                        $m->where('warehouse_managers.user_id', $auth->id)
+                            ->whereNull('warehouse_managers.deleted_at');
                     });
                 }
 
-                // 🏭 Filtrer SEULEMENT si un entrepôt est choisi
                 if ($pointUuid && $pointUuid !== 'all') {
                     $q->where('warehouses.uuid', $pointUuid);
                 }
             }
         ]);
 
-        /**
-         * 🔹 Produits visibles
-         */
-        if (
-            !$auth->hasRole('SUPER_ADMIN') &&
-            !$auth->can('view_all_products_access') &&
-            !$auth->can('view_role_related_data')
-        ) {
+        if (!$auth->hasRole('SUPER_ADMIN')) {
             $query->whereHas('points', function ($q) use ($auth, $pointUuid) {
-
                 $q->whereHas('managers', function ($m) use ($auth) {
-                    $m->where('warehouse_managers.user_id', $auth->id);
+                    $m->where('warehouse_managers.user_id', $auth->id)
+                        ->whereNull('warehouse_managers.deleted_at');
                 });
 
                 if ($pointUuid && $pointUuid !== 'all') {
                     $q->where('warehouses.uuid', $pointUuid);
                 }
             });
-
         } elseif ($pointUuid && $pointUuid !== 'all') {
-            // SUPER_ADMIN ou permissions globales + entrepôt précis
             $query->whereHas('points', function ($q) use ($pointUuid) {
                 $q->where('warehouses.uuid', $pointUuid);
             });
         }
 
-        // 🔹 Filtres simples
         if ($request->filled('category_uuid')) {
             $query->where('category_uuid', $request->category_uuid);
         }
@@ -107,7 +90,6 @@ class ProductController extends Controller
             $query->where('unit_uuid', $request->unit_uuid);
         }
 
-        // 🔹 Recherche
         if ($search = trim($request->input('search'))) {
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")

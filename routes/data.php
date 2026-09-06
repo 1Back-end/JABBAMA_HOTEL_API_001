@@ -14,3 +14,4 @@ Route::get('data/main_courante', [\App\Http\Controllers\DataController::class, '
 Route::get('data/room_service_total_quantity', [\App\Http\Controllers\DataController::class, 'get_total_room_service_quantity']);
 Route::get('data/total_room_service', [\App\Http\Controllers\DataController::class, 'get_total_room_service_amount']);
 Route::get('data/main_courante/pdf', [\App\Http\Controllers\DataController::class, 'exportMainCourantePdf']);
+Route::get('data/orders_not_traited_count', [\App\Http\Controllers\DataController::class, 'get_all_order_not_traited']);
