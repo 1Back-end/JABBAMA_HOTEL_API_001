@@ -584,6 +584,16 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des encaissements',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],
+        'view_extended_operational_monitoring_date' => [
+            'description' => 'Changer la date pour afficher les données antérieures du suivie d\'exploitation',
+            'category' => 'Gestion des encaissements',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'view_extended_operational_monitoring' => [
+            'description' => 'Afficher l\'interface du suivie d\'exploitation',
+            'category' => 'Gestion des encaissements',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
 
     ];
 

@@ -524,7 +524,9 @@ class DataController extends Controller
 
     public function get_all_order_not_traited(Request $request)
     {
-        $count = OrderMenuRestaurant::where('status', '!=', MenuOrderStatus::FACTURATE->value)
+        $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : now()->toDateString();
+        $count = OrderMenuRestaurant::whereDate('created_at', $date)
+            ->where('status', '!=', MenuOrderStatus::FACTURATE->value)
             ->count();
 
         return response()->json([
@@ -553,12 +555,8 @@ class DataController extends Controller
                 ->get();
 
 
-            $ordersNotTraited = OrderMenuRestaurant::where('status', '!=', MenuOrderStatus::FACTURATE->value)
-                ->with([
-                    'restaurantTable:uuid,code,table_number',
-                    'restaurant_room:uuid,rooms_number',
-                    'salesCategory:uuid,name',
-                ])
+            $ordersNotTraited = OrderMenuRestaurant::whereDate('created_at', $date)
+                ->where('status', '!=', MenuOrderStatus::FACTURATE->value)
                 ->get();
 
             $totalGle = (int) $orders->sum('total_order');
