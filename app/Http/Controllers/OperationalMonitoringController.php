@@ -8,9 +8,8 @@ use App\Models\OrderMenuRestaurant;
 use App\Models\PaymentRegulation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Log;
 
-class MainCouranteController extends Controller
+class OperationalMonitoringController extends Controller
 {
     public function index(Request $request)
     {
@@ -69,269 +68,6 @@ class MainCouranteController extends Controller
             $globalOrdersP1 = $getUnpaidOrdersForPeriod($dateDebutP1, $dateFinP1);
             $report_amount_p1 = 0;
             foreach ($globalOrdersP1 as $order) {
-                $report_amount_p1 += ($order->regulation_status === PaymentOrderMenusStatus::PARTIALLY_PAID->value)
-                    ? (float) ($order->remaining_amount ?? 0)
-                    : (float) ($order->total_order ?? 0);
-            }
-
-            $globalOrdersP2 = $getUnpaidOrdersForPeriod($dateDebutP2, $dateFinP2);
-            $report_amount_p2 = 0;
-            foreach ($globalOrdersP2 as $order) {
-                $report_amount_p2 += ($order->regulation_status === PaymentOrderMenusStatus::PARTIALLY_PAID->value)
-                    ? (float) ($order->remaining_amount ?? 0)
-                    : (float) ($order->total_order ?? 0);
-            }
-
-            $all_p2_total_amount_divers = $report_amount_p2;
-
-            $calculateMetrics = function ($startDate, $endDate) {
-                $query = OrderMenuRestaurant::with([
-                    'salesCategory:uuid,name,code',
-                    'items.menu:uuid,is_generated_from_complement',
-                    'drinks'
-                ])->where('status', MenuOrderStatus::FACTURATE->value);
-
-                if ($startDate === $endDate) {
-                    $query->whereDate('created_at', $startDate);
-                } else {
-                    $query->whereBetween('created_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
-                }
-
-                $orders = $query->get();
-
-                $totalAmountDivers = 0;
-                $totalQuantityDivers = 0;
-
-                foreach ($orders as $order) {
-                    $uniqueItems = $order->items->unique('uuid');
-                    $validItems = $uniqueItems->filter(function ($item) {
-                        return $item->menu && (bool) $item->menu->is_generated_from_complement === true;
-                    });
-                    $totalQuantityDivers += (int) $validItems->sum('quantity_exactly');
-                    $totalAmountDivers += (float) $validItems->sum(function ($item) {
-                        return $item->total_price ?? (($item->unit_price ?? 0) * ($item->quantity_exactly ?? 0));
-                    });
-                }
-
-                $groupedOrders = $orders->groupBy(function ($order) {
-                    return $order->salesCategory ? $order->salesCategory->name : 'AUTRES';
-                });
-
-                $categoriesTotals = $groupedOrders->map(function ($group) {
-                    return (float) $group->sum(function ($order) {
-                        return $order->items->filter(function ($item) {
-                            return $item->menu && !$item->menu->is_generated_from_complement;
-                        })->sum('total_price');
-                    });
-                });
-
-                $categoriesCounts = $groupedOrders->map(function ($group) {
-                    return (int) $group->sum(function ($order) {
-                        return $order->items->filter(function ($item) {
-                            return $item->menu && !$item->menu->is_generated_from_complement;
-                        })->sum('quantity_exactly');
-                    });
-                });
-
-                $totalBar = (float) $orders->sum('total_drinks');
-                $totalDrinksQuantity = (int) $orders->sum(function ($order) {
-                    return $order->drinks ? $order->drinks->sum('quantity_exactly') : 0;
-                });
-
-                $totalAmountRoomService = (float) $orders->where('is_room_service', true)->sum(function ($order) {
-                    $price = (float) str_replace(',', '.', $order->price_for_room_service ?? 0);
-                    $quantity = (int) ($order->quantity_for_room_service ?? 0);
-                    return $price * $quantity;
-                });
-                $totalQuantityRoomService = (int) $orders->where('is_room_service', true)->sum('quantity_for_room_service');
-
-                $encaissementQuery = OrderMenuRestaurant::whereIn('regulation_status', [
-                    PaymentOrderMenusStatus::PAID->value,
-                    PaymentOrderMenusStatus::PARTIALLY_PAID->value,
-                ]);
-
-                if ($startDate === $endDate) {
-                    $encaissementQuery->whereDate('created_at', $startDate);
-                } else {
-                    $encaissementQuery->whereBetween('created_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
-                }
-
-                $totalEncaissement = (float) $encaissementQuery->get()->sum(function ($order) {
-                    return $order->computed_paid_amount ?? 0;
-                });
-
-                $recouvrementsQuery = PaymentRegulation::where('type', 'recouvrement');
-                if ($startDate === $endDate) {
-                    $recouvrementsQuery->whereDate('created_at', $startDate);
-                } else {
-                    $recouvrementsQuery->whereBetween('created_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
-                }
-                $totalRecouvrements = (float) $recouvrementsQuery->sum('amount');
-
-                return [
-                    'totals_by_category' => $categoriesTotals,
-                    'count_by_category' => $categoriesCounts,
-                    'total_bar' => $totalBar,
-                    'total_drinks_quantity' => $totalDrinksQuantity,
-                    'total_amount_room_service' => $totalAmountRoomService,
-                    'total_quantity_room_service' => $totalQuantityRoomService,
-                    'total_amount_divers' => $totalAmountDivers,
-                    'total_quantity_divers' => $totalQuantityDivers,
-                    'total_encaissement' => $totalEncaissement,
-                    'total_recouvrements' => $totalRecouvrements,
-                ];
-            };
-
-            $getNotTraitedOrdersData = function ($startDate, $endDate) {
-                $query = OrderMenuRestaurant::where('status', '!=', MenuOrderStatus::FACTURATE->value);
-                if ($startDate === $endDate) {
-                    $query->whereDate('created_at', $startDate);
-                } else {
-                    $query->whereBetween('created_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
-                }
-                $orders = $query->get();
-                return [
-                    'count' => $orders->count(),
-                    'total_order' => (float) $orders->sum('total_order'),
-                ];
-            };
-
-            $dataP1 = $calculateMetrics($dateDebutP1, $dateFinP1);
-            $dataP2 = $calculateMetrics($dateDebutP2, $dateFinP2);
-
-            $notTraitedP1 = $getNotTraitedOrdersData($dateDebutP1, $dateFinP1);
-            $notTraitedP2 = $getNotTraitedOrdersData($dateDebutP2, $dateFinP2);
-
-            // --- CALCULS GLOBAUX & SOMME DES CATÉGORIES P2 ---
-            $sumCategoriesP2 = collect($dataP2['totals_by_category'])->sum();
-            $hasValidCategoriesP2 = $sumCategoriesP2 > 0; // Booleen ou indicateur utile
-
-            $totalAmtP1 = collect($dataP1['totals_by_category'])->sum() + $dataP1['total_bar'] + $dataP1['total_amount_room_service'] + $dataP1['total_amount_divers'];
-            $totalQtyP1 = collect($dataP1['count_by_category'])->sum() + $dataP1['total_drinks_quantity'] + $dataP1['total_quantity_room_service'] + $dataP1['total_quantity_divers'];
-
-            $totalAmtP2 = $sumCategoriesP2 + $dataP2['total_bar'] + $dataP2['total_amount_room_service'] + $dataP2['total_amount_divers'];
-            $totalQtyP2 = collect($dataP2['count_by_category'])->sum() + $dataP2['total_drinks_quantity'] + $dataP2['total_quantity_room_service'] + $dataP2['total_quantity_divers'];
-
-            return response()->json([
-                'success' => true,
-                'periode_1' => ['date_debut' => $dateDebutP1, 'date_fin' => $dateFinP1],
-                'periode_2' => ['date_debut' => $dateDebutP2, 'date_fin' => $dateFinP2],
-
-                'totals_by_category' => $dataP1['totals_by_category'],
-                'count_by_category' => $dataP1['count_by_category'],
-                'total_bar' => $dataP1['total_bar'],
-                'total_drinks_quantity' => $dataP1['total_drinks_quantity'],
-                'total_amount_room_service' => $dataP1['total_amount_room_service'],
-                'total_quantity_room_service' => $dataP1['total_quantity_room_service'],
-                'total_amount_divers' => $dataP1['total_amount_divers'],
-                'total_quantity_divers' => $dataP1['total_quantity_divers'],
-                'total_encaissement_p1' => $dataP1['total_encaissement'],
-                'total_recouvrements_p1' => $dataP1['total_recouvrements'],
-                'report_amount_p1' => $report_amount_p1,
-
-                'orders_not_traited_p1' => $notTraitedP1['count'],
-                'orders_not_traited_total_order_p1' => $notTraitedP1['total_order'],
-
-                'p2_totals_by_category' => $dataP2['totals_by_category'],
-                'p2_count_by_category' => $dataP2['count_by_category'],
-                'p2_total_bar' => $dataP2['total_bar'],
-                'p2_total_drinks_quantity' => $dataP2['total_drinks_quantity'],
-                'p2_total_amount_room_service' => $dataP2['total_amount_room_service'],
-                'p2_total_quantity_room_service' => $dataP2['total_quantity_room_service'],
-                'p2_total_amount_divers' => $dataP2['total_amount_divers'],
-                'p2_total_quantity_divers' => $dataP2['total_quantity_divers'],
-                'total_encaissement_p2' => $dataP2['total_encaissement'],
-                'total_recouvrements_p2' => $dataP2['total_recouvrements'],
-
-                'orders_not_traited_p2' => $notTraitedP2['count'],
-                'orders_not_traited_total_order_p2' => $notTraitedP2['total_order'],
-
-                'all_p2_total_amount_divers' => $all_p2_total_amount_divers,
-                'report_amount_p2' => $report_amount_p2,
-                'report_amount' => $report_amount_p2,
-
-                // Variables globales prêtes
-                'total_amount_p1' => $totalAmtP1,
-                'total_quantity_p1' => $totalQtyP1,
-                'total_amount_p2' => $totalAmtP2,
-                'total_quantity_p2' => $totalQtyP2,
-
-                // Somme des catégories P2 + Indicateur booléen
-                'p2_sum_categories_amount' => $sumCategoriesP2,
-                'p2_has_categories_amount' => $hasValidCategoriesP2,
-            ], 200);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Erreur lors de la récupération des données : ' . $e->getMessage()
-            ], 500);
-        }
-    }
-
-
-
-    public function print_situations_sheet(Request $request)
-    {
-        $auth = auth()->user();
-
-        // 1. Période 1 : Gérée par le filtre "Filtrer par jour"
-        $hasExplicitDate = $request->has('date') || $request->has('date_debut');
-        $dateInput = $request->input('date', now()->toDateString());
-
-        if (str_contains($dateInput, ' to ')) {
-            $dates = explode(' to ', $dateInput);
-            $dateP1 = Carbon::parse(trim($dates[1] ?? $dates[0]))->toDateString();
-        } elseif (str_contains($dateInput, ' - ')) {
-            $dates = explode(' - ', $dateInput);
-            $dateP1 = Carbon::parse(trim($dates[1] ?? $dates[0]))->toDateString();
-        } else {
-            $dateP1 = Carbon::parse($dateInput)->toDateString();
-        }
-
-        // Application du N-1 uniquement si AUCUN filtre n'a été explicitement envoyé
-        if (!$hasExplicitDate) {
-            $dateP1 = Carbon::parse($dateP1)->subDay()->toDateString();
-        }
-
-        $dateDebutP1 = $dateP1;
-        $dateFinP1   = $dateP1;
-
-        // 2. Période 2 : Gérée par le "Filtrer par intervalle" (date_debut / date_fin)
-        if ($request->filled('date_debut') && $request->filled('date_fin')) {
-            $dateDebutP2 = Carbon::parse($request->input('date_debut'))->toDateString();
-            $dateFinP2   = Carbon::parse($request->input('date_fin'))->toDateString();
-        } elseif ($request->filled('p2_date_debut') && $request->filled('p2_date_fin')) {
-            $dateDebutP2 = Carbon::parse($request->input('p2_date_debut'))->toDateString();
-            $dateFinP2   = Carbon::parse($request->input('p2_date_fin'))->toDateString();
-        } else {
-            $dateReference = Carbon::parse($dateFinP1);
-            $dateDebutP2 = $dateReference->copy()->startOfMonth()->toDateString();
-            $dateFinP2   = $dateReference->copy()->endOfMonth()->toDateString();
-        }
-
-        try {
-            // --- CALCUL DES MONTANTS DE RAPPORT (P1 et P2) ---
-            $getUnpaidOrdersForPeriod = function ($startDate, $endDate) {
-                $query = OrderMenuRestaurant::where('status', MenuOrderStatus::FACTURATE->value)
-                    ->whereIn('regulation_status', [
-                        PaymentOrderMenusStatus::PARTIALLY_PAID->value,
-                        PaymentOrderMenusStatus::NOT_PAID->value,
-                    ])
-                    ->with('payment');
-
-                if ($startDate === $endDate) {
-                    $query->whereDate('created_at', $startDate);
-                } else {
-                    $query->whereBetween('created_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
-                }
-
-                return $query->get();
-            };
-
-            $globalOrdersP1 = $getUnpaidOrdersForPeriod($dateDebutP1, $dateFinP1);
-            $report_amount_p1 = 0;
-            foreach ($globalOrdersP1 as $order) {
                 $amount = ($order->regulation_status === PaymentOrderMenusStatus::PARTIALLY_PAID->value)
                     ? (float) ($order->remaining_amount ?? 0)
                     : (float) ($order->total_order ?? 0);
@@ -347,11 +83,6 @@ class MainCouranteController extends Controller
                 $report_amount_p2 += $amount;
             }
 
-            $allSystemAmountDivers = $report_amount_p2;
-            $all_p2_total_amount_divers = $report_amount_p2;
-            // ------------------------------------------------
-
-            // Fonction interne de calcul des métriques par période
             $calculateMetrics = function ($startDate, $endDate) {
                 $query = OrderMenuRestaurant::with([
                     'salesCategory:uuid,name,code',
@@ -414,21 +145,218 @@ class MainCouranteController extends Controller
                 });
                 $totalQuantityRoomService = (int) $orders->where('is_room_service', true)->sum('quantity_for_room_service');
 
-
-                $notTraitedQuery = OrderMenuRestaurant::where('status', '!=', MenuOrderStatus::FACTURATE->value);
+                $encaissementQuery = OrderMenuRestaurant::whereIn('regulation_status', [
+                    PaymentOrderMenusStatus::PAID->value,
+                    PaymentOrderMenusStatus::PARTIALLY_PAID->value,
+                ]);
 
                 if ($startDate === $endDate) {
-                    $notTraitedQuery->whereDate('created_at', $startDate);
+                    $encaissementQuery->whereDate('created_at', $startDate);
                 } else {
-                    $notTraitedQuery->whereBetween('created_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
+                    $encaissementQuery->whereBetween('created_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
                 }
 
-                $ordersNotTraited = $notTraitedQuery->get();
-                $ordersNotTraitedCount = $ordersNotTraited->count();
-                $ordersNotTraitedTotalAmount = (float) $ordersNotTraited->sum(function ($order) {
-                    return (float) ($order->total_order ?? 0);
+                $totalEncaissement = (float) $encaissementQuery->get()->sum(function ($order) {
+                    return $order->computed_paid_amount ?? 0;
                 });
-                // ----------------------------------------
+
+                $recouvrementsQuery = PaymentRegulation::where('type', 'recouvrement');
+
+                if ($startDate === $endDate) {
+                    $recouvrementsQuery->whereDate('created_at', $startDate);
+                } else {
+                    $recouvrementsQuery->whereBetween('created_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
+                }
+                $totalRecouvrements = (float) $recouvrementsQuery->sum('amount');
+
+
+                $expensesQuery = PaymentRegulation::where('type', 'expense');
+
+                if ($startDate === $endDate) {
+                    $expensesQuery->whereDate('created_at', $startDate);
+                } else {
+                    $expensesQuery->whereBetween('created_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
+                }
+                $totalExpenses = (float) $expensesQuery->sum('amount');
+
+                $totalProduits = (float) $categoriesTotals->sum()
+                    + (float) $totalBar
+                    + (float) $totalAmountRoomService
+                    + (float) $totalAmountDivers;
+
+                return [
+                    'total_produits' => $totalProduits,
+                    'totals_by_category' => $categoriesTotals,
+                    'count_by_category' => $categoriesCounts,
+                    'total_bar' => $totalBar,
+                    'total_drinks_quantity' => $totalDrinksQuantity,
+                    'total_amount_room_service' => $totalAmountRoomService,
+                    'total_quantity_room_service' => $totalQuantityRoomService,
+                    'total_amount_divers' => $totalAmountDivers,
+                    'total_quantity_divers' => $totalQuantityDivers,
+                    'total_encaissement' => $totalEncaissement,
+                    'total_recouvrements' => $totalRecouvrements,
+                    'total_expenses' => $totalExpenses,
+                ];
+            };
+
+            $dataP1 = $calculateMetrics($dateDebutP1, $dateFinP1);
+            $dataP2 = $calculateMetrics($dateDebutP2, $dateFinP2);
+
+            return response()->json([
+                'success' => true,
+                'periode_1' => ['date_debut' => $dateDebutP1, 'date_fin' => $dateFinP1],
+                'periode_2' => ['date_debut' => $dateDebutP2, 'date_fin' => $dateFinP2],
+
+
+                'total_produits_p1' => $dataP1['total_produits'],
+                'total_produits_p2' => $dataP2['total_produits'],
+
+                'expenses_1' => $dataP1['total_expenses'],
+                'expenses_2' => $dataP2['total_expenses'],
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de la récupération des données : ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function print_situations_sheet(Request $request)
+    {
+        $auth = auth()->user();
+
+        $hasExplicitDate = $request->has('date') || $request->has('date_debut');
+        $dateInput = $request->input('date', now()->toDateString());
+
+        if (str_contains($dateInput, ' to ')) {
+            $dates = explode(' to ', $dateInput);
+            $dateP1 = Carbon::parse(trim($dates[1] ?? $dates[0]))->toDateString();
+        } elseif (str_contains($dateInput, ' - ')) {
+            $dates = explode(' - ', $dateInput);
+            $dateP1 = Carbon::parse(trim($dates[1] ?? $dates[0]))->toDateString();
+        } else {
+            $dateP1 = Carbon::parse($dateInput)->toDateString();
+        }
+
+        if (!$hasExplicitDate) {
+            $dateP1 = Carbon::parse($dateP1)->subDay()->toDateString();
+        }
+
+        $dateDebutP1 = $dateP1;
+        $dateFinP1   = $dateP1;
+
+        if ($request->filled('date_debut') && $request->filled('date_fin')) {
+            $dateDebutP2 = Carbon::parse($request->input('date_debut'))->toDateString();
+            $dateFinP2   = Carbon::parse($request->input('date_fin'))->toDateString();
+        } elseif ($request->filled('p2_date_debut') && $request->filled('p2_date_fin')) {
+            $dateDebutP2 = Carbon::parse($request->input('p2_date_debut'))->toDateString();
+            $dateFinP2   = Carbon::parse($request->input('p2_date_fin'))->toDateString();
+        } else {
+            $dateReference = Carbon::parse($dateFinP1);
+            $dateDebutP2 = $dateReference->copy()->startOfMonth()->toDateString();
+            $dateFinP2   = $dateReference->copy()->endOfMonth()->toDateString();
+        }
+
+        try {
+            $getUnpaidOrdersForPeriod = function ($startDate, $endDate) {
+                $query = OrderMenuRestaurant::where('status', MenuOrderStatus::FACTURATE->value)
+                    ->whereIn('regulation_status', [
+                        PaymentOrderMenusStatus::PARTIALLY_PAID->value,
+                        PaymentOrderMenusStatus::NOT_PAID->value,
+                    ])
+                    ->with('payment');
+
+                if ($startDate === $endDate) {
+                    $query->whereDate('created_at', $startDate);
+                } else {
+                    $query->whereBetween('created_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
+                }
+
+                return $query->get();
+            };
+
+            $globalOrdersP1 = $getUnpaidOrdersForPeriod($dateDebutP1, $dateFinP1);
+            $report_amount_p1 = 0;
+            foreach ($globalOrdersP1 as $order) {
+                $amount = ($order->regulation_status === PaymentOrderMenusStatus::PARTIALLY_PAID->value)
+                    ? (float) ($order->remaining_amount ?? 0)
+                    : (float) ($order->total_order ?? 0);
+                $report_amount_p1 += $amount;
+            }
+
+            $globalOrdersP2 = $getUnpaidOrdersForPeriod($dateDebutP2, $dateFinP2);
+            $report_amount_p2 = 0;
+            foreach ($globalOrdersP2 as $order) {
+                $amount = ($order->regulation_status === PaymentOrderMenusStatus::PARTIALLY_PAID->value)
+                    ? (float) ($order->remaining_amount ?? 0)
+                    : (float) ($order->total_order ?? 0);
+                $report_amount_p2 += $amount;
+            }
+
+            $calculateMetrics = function ($startDate, $endDate) {
+                $query = OrderMenuRestaurant::with([
+                    'salesCategory:uuid,name,code',
+                    'items.menu:uuid,is_generated_from_complement',
+                    'drinks'
+                ])
+                    ->where('status', MenuOrderStatus::FACTURATE->value);
+
+                if ($startDate === $endDate) {
+                    $query->whereDate('created_at', $startDate);
+                } else {
+                    $query->whereBetween('created_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
+                }
+
+                $orders = $query->get();
+
+                $totalAmountDivers = 0;
+                $totalQuantityDivers = 0;
+
+                foreach ($orders as $order) {
+                    $uniqueItems = $order->items->unique('uuid');
+                    $validItems = $uniqueItems->filter(function ($item) {
+                        return $item->menu && (bool) $item->menu->is_generated_from_complement === true;
+                    });
+                    $totalQuantityDivers += (int) $validItems->sum('quantity_exactly');
+                    $totalAmountDivers += (float) $validItems->sum(function ($item) {
+                        return $item->total_price ?? (($item->unit_price ?? 0) * ($item->quantity_exactly ?? 0));
+                    });
+                }
+
+                $groupedOrders = $orders->groupBy(function ($order) {
+                    return $order->salesCategory ? $order->salesCategory->name : 'AUTRES';
+                });
+
+                $categoriesTotals = $groupedOrders->map(function ($group) {
+                    return (float) $group->sum(function ($order) {
+                        return $order->items->filter(function ($item) {
+                            return $item->menu && !$item->menu->is_generated_from_complement;
+                        })->sum('total_price');
+                    });
+                });
+
+                $categoriesCounts = $groupedOrders->map(function ($group) {
+                    return (int) $group->sum(function ($order) {
+                        return $order->items->filter(function ($item) {
+                            return $item->menu && !$item->menu->is_generated_from_complement;
+                        })->sum('quantity_exactly');
+                    });
+                });
+
+                $totalBar = (float) $orders->sum('total_drinks');
+                $totalDrinksQuantity = (int) $orders->sum(function ($order) {
+                    return $order->drinks ? $order->drinks->sum('quantity_exactly') : 0;
+                });
+
+                $totalAmountRoomService = (float) $orders->where('is_room_service', true)->sum(function ($order) {
+                    $price = (float) str_replace(',', '.', $order->price_for_room_service ?? 0);
+                    $quantity = (int) ($order->quantity_for_room_service ?? 0);
+                    return $price * $quantity;
+                });
+                $totalQuantityRoomService = (int) $orders->where('is_room_service', true)->sum('quantity_for_room_service');
 
                 $encaissementQuery = OrderMenuRestaurant::whereIn('regulation_status', [
                     PaymentOrderMenusStatus::PAID->value,
@@ -454,7 +382,22 @@ class MainCouranteController extends Controller
                 }
                 $totalRecouvrements = (float) $recouvrementsQuery->sum('amount');
 
+                $expensesQuery = PaymentRegulation::where('type', 'expense');
+
+                if ($startDate === $endDate) {
+                    $expensesQuery->whereDate('created_at', $startDate);
+                } else {
+                    $expensesQuery->whereBetween('created_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
+                }
+                $totalExpenses = (float) $expensesQuery->sum('amount');
+
+                $totalProduits = (float) $categoriesTotals->sum()
+                    + (float) $totalBar
+                    + (float) $totalAmountRoomService
+                    + (float) $totalAmountDivers;
+
                 return [
+                    'total_produits' => $totalProduits,
                     'totals_by_category' => $categoriesTotals,
                     'count_by_category' => $categoriesCounts,
                     'total_bar' => $totalBar,
@@ -463,61 +406,32 @@ class MainCouranteController extends Controller
                     'total_quantity_room_service' => $totalQuantityRoomService,
                     'total_amount_divers' => $totalAmountDivers,
                     'total_quantity_divers' => $totalQuantityDivers,
-                    'orders_not_traited' => $ordersNotTraitedCount,
-                    'orders_not_traited_total_order' => $ordersNotTraitedTotalAmount,
                     'total_encaissement' => $totalEncaissement,
                     'total_recouvrements' => $totalRecouvrements,
+                    'total_expenses' => $totalExpenses,
                 ];
             };
 
             $dataP1 = $calculateMetrics($dateDebutP1, $dateFinP1);
             $dataP2 = $calculateMetrics($dateDebutP2, $dateFinP2);
 
-            // --- CALCUL DES TOTAUX RESTAURANT (P1 et P2) ---
-            $dinerKeyP1 = $dataP1['count_by_category']["DINER"] ?? $dataP1['count_by_category']["DINNER"] ?? 0;
-            $dinerAmtP1 = $dataP1['totals_by_category']["DINER"] ?? $dataP1['totals_by_category']["DINNER"] ?? 0;
+            $totalProduitsP1 = $dataP1['total_produits'];
+            $expensesP1 = $dataP1['total_expenses'];
+            $expenseRateP1 = $totalProduitsP1 > 0 ? ($expensesP1 / $totalProduitsP1) * 100 : 0;
+            $marginP1 = $totalProduitsP1 - $expensesP1;
+            $marginRateP1 = 100 - $expenseRateP1;
 
-            $totalQtyJour = ($dataP1['count_by_category']["PETIT DEJEUNER"] ?? 0)
-                + ($dataP1['count_by_category']["DEJEUNER"] ?? 0)
-                + $dinerKeyP1
-                + ($dataP1['total_quantity_room_service'] ?? 0)
-                + ($dataP1['total_quantity_divers'] ?? 0);
-
-            $totalAmtJour = ($dataP1['totals_by_category']["PETIT DEJEUNER"] ?? 0)
-                + ($dataP1['totals_by_category']["DEJEUNER"] ?? 0)
-                + $dinerAmtP1
-                + ($dataP1['total_amount_room_service'] ?? 0)
-                + ($dataP1['total_amount_divers'] ?? 0);
-
-            $dinerKeyP2 = $dataP2['count_by_category']["DINER"] ?? $dataP2['count_by_category']["DINNER"] ?? 0;
-            $dinerAmtP2 = $dataP2['totals_by_category']["DINER"] ?? $dataP2['totals_by_category']["DINNER"] ?? 0;
-
-            $p2TotalQty = ($dataP2['count_by_category']["PETIT DEJEUNER"] ?? 0)
-                + ($dataP2['count_by_category']["DEJEUNER"] ?? 0)
-                + $dinerKeyP2
-                + ($dataP2['total_quantity_room_service'] ?? 0)
-                + ($dataP2['total_quantity_divers'] ?? 0);
-
-            $p2TotalAmt = ($dataP2['totals_by_category']["PETIT DEJEUNER"] ?? 0)
-                + ($dataP2['totals_by_category']["DEJEUNER"] ?? 0)
-                + $dinerAmtP2
-                + ($dataP2['total_amount_room_service'] ?? 0)
-                + ($dataP2['total_amount_divers'] ?? 0);
-            // ----------------------------------------------
-
-
-            \Log::info('DEBUG SITUATION SHEET DATES', [
-                'dateDebutP1' => $dateDebutP1,
-                'dateFinP1'   => $dateFinP1,
-                'dateDebutP2' => $dateDebutP2,
-                'dateFinP2'   => $dateFinP2,
-            ]);
+            $totalProduitsP2 = $dataP2['total_produits'];
+            $expensesP2 = $dataP2['total_expenses'];
+            $expenseRateP2 = $totalProduitsP2 > 0 ? ($expensesP2 / $totalProduitsP2) * 100 : 0;
+            $marginP2 = $totalProduitsP2 - $expensesP2;
+            $marginRateP2 = 100 - $expenseRateP2;
 
             $dateFinP1Formatted = mb_strtoupper(Carbon::parse($dateFinP1)->locale('fr')->isoFormat('D MMMM YYYY'));
             $dateDebutP2Formatted = mb_strtoupper(Carbon::parse($dateDebutP2)->locale('fr')->isoFormat('D MMMM YYYY'));
             $dateFinP2Formatted = mb_strtoupper(Carbon::parse($dateFinP2)->locale('fr')->isoFormat('D MMMM YYYY'));
 
-            $dynamicTitle = "FEUILLE DE SITUATION DU " . $dateFinP1Formatted . " - INTERVALLE DU " . $dateDebutP2Formatted . " AU " . $dateFinP2Formatted;
+            $dynamicTitle = "SUIVI D'EXPLOITATION DU " . $dateFinP1Formatted . " - INTERVALLE DU " . $dateDebutP2Formatted . " AU " . $dateFinP2Formatted;
 
             $data = [
                 'success' => true,
@@ -527,53 +441,20 @@ class MainCouranteController extends Controller
                 'end_date' => $dateFinP2,
                 'periode_1' => ['date_debut' => $dateDebutP1, 'date_fin' => $dateFinP1],
                 'periode_2' => ['date_debut' => $dateDebutP2, 'date_fin' => $dateFinP2],
-
-                // Injection des totaux restaurant calculés
-                'totalQtyJour' => $totalQtyJour,
-                'totalAmtJour' => $totalAmtJour,
-                'p2TotalQty' => $p2TotalQty,
-                'p2TotalAmt' => $p2TotalAmt,
-
-                'totals_by_category' => $dataP1['totals_by_category'],
-                'count_by_category' => $dataP1['count_by_category'],
-                'total_bar' => $dataP1['total_bar'],
-                'total_drinks_quantity' => $dataP1['total_drinks_quantity'],
-                'total_amount_room_service' => $dataP1['total_amount_room_service'],
-                'total_quantity_room_service' => $dataP1['total_quantity_room_service'],
-                'total_amount_divers' => $dataP1['total_amount_divers'],
-                'total_quantity_divers' => $dataP1['total_quantity_divers'],
-
-                // Commandes non traitées P1
-                'orders_not_traited_p1' => $dataP1['orders_not_traited'],
-                'orders_not_traited_total_order_p1' => $dataP1['orders_not_traited_total_order'],
-
-                'total_encaissement_p1' => $dataP1['total_encaissement'],
-                'total_recouvrements_p1' => $dataP1['total_recouvrements'],
-                'report_amount_p1' => $report_amount_p1,
-
-                'p2_totals_by_category' => $dataP2['totals_by_category'],
-                'p2_count_by_category' => $dataP2['count_by_category'],
-                'p2_total_bar' => $dataP2['total_bar'],
-                'p2_total_drinks_quantity' => $dataP2['total_drinks_quantity'],
-                'p2_total_amount_room_service' => $dataP2['total_amount_room_service'],
-                'p2_total_quantity_room_service' => $dataP2['total_quantity_room_service'],
-                'p2_total_amount_divers' => $dataP2['total_amount_divers'],
-                'p2_total_quantity_divers' => $dataP2['total_quantity_divers'],
-
-                // Commandes non traitées P2
-                'orders_not_traited_p2' => $dataP2['orders_not_traited'],
-                'orders_not_traited_total_order_p2' => $dataP2['orders_not_traited_total_order'],
-
-                'total_encaissement_p2' => $dataP2['total_encaissement'],
-                'total_recouvrements_p2' => $dataP2['total_recouvrements'],
-
-                'all_p2_total_amount_divers' => $all_p2_total_amount_divers,
-                'report_amount_p2' => $report_amount_p2,
-                'report_amount' => $report_amount_p2,
+                'total_produits_p1' => $totalProduitsP1,
+                'total_produits_p2' => $totalProduitsP2,
+                'expenses_1' => $expensesP1,
+                'expenses_2' => $expensesP2,
+                'expense_rate_p1' => $expenseRateP1,
+                'expense_rate_p2' => $expenseRateP2,
+                'margin_p1' => $marginP1,
+                'margin_p2' => $marginP2,
+                'margin_rate_p1' => $marginRateP1,
+                'margin_rate_p2' => $marginRateP2,
             ];
 
-            $fileName   = 'FEUILLE-DE-SITUATION-DU-' . $dateDebutP1 . '.pdf';
-            $folderPath = 'storage/situation_sheets/' . now()->format('d-m-Y') . '/';
+            $fileName   = 'SUIVIE-DEXPLOITATION-' . $dateDebutP1 . '.pdf';
+            $folderPath = 'storage/operational_monitoring/' . now()->format('d-m-Y') . '/';
             $filePath   = $folderPath . $fileName;
 
             if (!is_dir($folderPath)) {
@@ -583,7 +464,7 @@ class MainCouranteController extends Controller
             $footer = 'pdfs.reports.factures.footer';
 
             save_browser_shot_pdf(
-                view: 'pdfs.situation_sheets.situation_sheets',
+                view: 'pdfs.operational_monitoring.operational_monitoring',
                 data: $data,
                 folderPath: $folderPath,
                 path: $filePath,
@@ -604,15 +485,14 @@ class MainCouranteController extends Controller
                 'success'  => true,
                 'data'     => $data,
                 'base64'   => $base64,
-                'url'      => asset('storage/situation_sheets/' . now()->format('d-m-Y') . '/' . $fileName),
+                'url'      => asset('storage/operational_monitoring/' . now()->format('d-m-Y') . '/' . $fileName),
                 'filename' => $fileName,
             ], 200);
 
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => "Erreur lors de la génération du PDF de la situation.",
-                'error'   => $e->getMessage()
+                'message' => 'Erreur lors de la génération du PDF : ' . $e->getMessage()
             ], 500);
         }
     }

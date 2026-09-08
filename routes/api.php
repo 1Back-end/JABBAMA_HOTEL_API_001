@@ -59,6 +59,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
          | GESTION DU RESTAURANT
          |---------------------------------------------------------------------------
        */
+        require __DIR__ . '/operational_monitoring.php';
         require __DIR__ . '/database_settings.php';
         require __DIR__ . '/situation_sheets.php';
         require __DIR__ . '/room_services.php';

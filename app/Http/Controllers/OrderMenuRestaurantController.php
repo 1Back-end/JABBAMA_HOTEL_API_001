@@ -3539,6 +3539,7 @@ class OrderMenuRestaurantController extends Controller
 
             $isRoomService = isset($validated['room_service_type']) && $validated['room_service_type'] === \App\Enums\RoomServiceEnum::YES->value;
             $orderDate = $validated['order_menu_restaurant_date'] ?? now();
+            $formattedOrderDate = \Carbon\Carbon::createFromFormat('d-m-Y', $orderDate)->format('Y-m-d H:i:s');
             $order->update([
                 'regulation_status' => \App\Enums\MenuOrderStatus::TRANSFERRED->value,
                 'type_clients_for_payment' => $validated['type_clients_for_payment'],
@@ -3548,7 +3549,7 @@ class OrderMenuRestaurantController extends Controller
                 'partners_restaurant_uuid' => $validated['partners_restaurant_uuid'] ?? null,
                 'restaurant_room_uuid' => $validated['restaurant_room_uuid'] ?? null,
                 'free_client_for_restaurant_uuid' => $validated['free_client_for_restaurant_uuid'] ?? null,
-                'order_menu_restaurant_date' => $orderDate,
+                'order_menu_restaurant_date' => $formattedOrderDate,
                 'remise' => $validated['remise'] ?? 0,
                 'full_name' => $validated['full_name'] ?? null,
                 'full_name_for_client_free' => $validated['full_name_for_client_free'] ?? null,
@@ -3571,7 +3572,7 @@ class OrderMenuRestaurantController extends Controller
                 'is_room_service' => $order->is_room_service,
             ]);
             $order->timestamps = false;
-            $order->updated_at = $orderDate;
+            $order->updated_at = $formattedOrderDate;
             $order->save();
 
 
@@ -5993,14 +5994,13 @@ class OrderMenuRestaurantController extends Controller
         ]);
 
         if ($request->filled('date')) {
-            $query->whereDate('created_at', $request->date);
+            $date = Carbon::createFromFormat('d-m-Y', $request->date)->format('Y-m-d');
+            $query->whereDate('created_at', $date);
         } elseif ($request->filled('order_menu_restaurant_date')) {
-            $query->whereDate('order_menu_restaurant_date', $request->order_menu_restaurant_date);
+            $date = Carbon::createFromFormat('d-m-Y', $request->order_menu_restaurant_date)->format('Y-m-d');
+            $query->whereDate('order_menu_restaurant_date', $date);
         } else {
             $query->whereDate('created_at', Carbon::today());
-        }
-        if ($request->filled('restaurant_table_uuid')) {
-            $query->where('restaurant_table_uuid', $request->restaurant_table_uuid);
         }
 
         if ($request->filled('menu_restaurant_uuid')) {
@@ -10558,8 +10558,12 @@ class OrderMenuRestaurantController extends Controller
             $query->where('full_name', 'LIKE', "%{$debtor}%");
         }
 
-        if ($auth->can('change_order_payment_date') && $request->filled('date')) {
-            $query->whereDate('created_at', $request->date);
+        if ($request->filled('date')) {
+            $date = Carbon::createFromFormat('d-m-Y', $request->date)->format('Y-m-d');
+            $query->whereDate('created_at', $date);
+        } elseif ($request->filled('order_menu_restaurant_date')) {
+            $date = Carbon::createFromFormat('d-m-Y', $request->order_menu_restaurant_date)->format('Y-m-d');
+            $query->whereDate('order_menu_restaurant_date', $date);
         } else {
             $query->whereDate('created_at', Carbon::today());
         }
