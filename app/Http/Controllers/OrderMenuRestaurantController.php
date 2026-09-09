@@ -10485,7 +10485,6 @@ class OrderMenuRestaurantController extends Controller
     }
 
 
-
     public function get_facture_for_clients(Request $request)
     {
         $auth = auth()->user();
