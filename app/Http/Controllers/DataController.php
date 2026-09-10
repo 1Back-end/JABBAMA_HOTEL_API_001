@@ -393,15 +393,22 @@ class DataController extends Controller
 
                 $paymentMethods = [];
                 if ($order->payment && $order->payment->regulations) {
-                    $paymentMethods = $order->payment->regulations->map(function ($regulation) {
-                        return [
-                            'amount' => $regulation->amount ?? 0,
-                            'method_name' => $regulation->method->name ?? 'Inconnu',
-                        ];
-                    });
+                    $paymentMethods = $order->payment->regulations
+                        ->groupBy(function ($regulation) {
+                            return $regulation->method->name ?? 'Inconnu';
+                        })
+                        ->map(function ($group, $methodName) {
+                            return [
+                                'method_name' => $methodName,
+                                'amount' => $group->sum('amount'),
+                            ];
+                        })
+                        ->values()
+                        ->all();
                 }
 
                 $totalAmount = $order->total_order ?? 0;
+                $clientTypeVal = $order->type_clients_for_payment ?? null;
 
                 $orderData = [
                     'uuid' => $order->uuid,
@@ -417,6 +424,7 @@ class DataController extends Controller
                     'unit_price_for_room_service' => $roomServiceUnitPrice,
                     'payment_methods' => $paymentMethods,
                     'sales_category' => $categoryName,
+                    'type_clients_for_payment' => TypeClientsForPaiment::safeLabel($clientTypeVal),
                     'items' => $formattedItems->values()->all(),
                     'drinks' => $formattedDrinks->values()->all()
                 ];
@@ -656,12 +664,18 @@ class DataController extends Controller
 
                 $paymentMethods = [];
                 if ($order->payment && $order->payment->regulations) {
-                    $paymentMethods = $order->payment->regulations->map(function ($regulation) {
-                        return [
-                            'amount' => $regulation->amount ?? 0,
-                            'method_name' => $regulation->method->name ?? 'Inconnu',
-                        ];
-                    });
+                    $paymentMethods = $order->payment->regulations
+                        ->groupBy(function ($regulation) {
+                            return $regulation->method->name ?? 'Inconnu';
+                        })
+                        ->map(function ($group, $methodName) {
+                            return [
+                                'method_name' => $methodName,
+                                'amount' => $group->sum('amount'),
+                            ];
+                        })
+                        ->values()
+                        ->all();
                 }
 
                 if ($diversItems->isNotEmpty()) {
@@ -677,6 +691,7 @@ class DataController extends Controller
                         'drinks' => [],
                     ];
                 }
+                $clientTypeVal = $order->type_clients_for_payment ?? null;
 
                 $formattedOrders[] = [
                     'uuid' => $order->uuid,
@@ -691,6 +706,7 @@ class DataController extends Controller
                     'quantity_for_room_service' => (int) ($order->quantity_for_room_service ?? 0),
                     'payment_methods' => $paymentMethods,
                     'sales_category' => $categoryName,
+                    'type_clients_for_payment' => TypeClientsForPaiment::safeLabel($clientTypeVal),
                     'items' => $formattedItems->values()->all(),
                     'drinks' => $formattedDrinks->values()->all(),
                     'divers' => $diversItems->values()->all(),

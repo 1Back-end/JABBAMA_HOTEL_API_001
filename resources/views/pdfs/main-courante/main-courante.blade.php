@@ -257,7 +257,7 @@
             $rsUnitPrice = $order['unit_price_for_room_service'] ?? $rsPrice;
             $hasRs = ($rsPrice > 0);
 
-            // Détermination de la catégorie cible pour insérer la ligne Room Service
+
             $targetCat = null;
             if ($hasRs) {
                 $targetCat = strtoupper(trim($order['sales_category'] ?? ''));
@@ -274,7 +274,6 @@
                 }
             }
 
-            // Calcul du nombre total de lignes nécessaires pour cette commande
             $counts = [1];
             foreach($categories as $cat) {
                 $c = count($orderCatItems[$cat]);
@@ -292,7 +291,13 @@
         @for($i = 0; $i < $maxLines; $i++)
             <tr>
                 @if($i === 0)
-                    <td rowspan="{{ $maxLines }}" class="fw-bold" style="width: 12%; word-break: break-all; white-space: normal; font-size: 7.5px;">{{ $order['code_facture'] ?? '' }}</td>
+                    <td rowspan="{{ $maxLines }}" class="fw-bold" style="width: 12%; word-break: break-all; white-space: normal; font-size: 7.5px;">
+                        {{ $order['code_facture'] ?? '' }}
+                        <br>
+                        <span class="text-muted" style="font-size: 6.5px;">
+                            {{ $order['type_clients_for_payment'] ?? '' }}
+                        </span>
+                    </td>
                     <td rowspan="{{ $maxLines }}">{{ $order['no_table'] ?? '' }}</td>
                     <td rowspan="{{ $maxLines }}">{{ $order['chambre'] ?? '' }}</td>
                 @endif

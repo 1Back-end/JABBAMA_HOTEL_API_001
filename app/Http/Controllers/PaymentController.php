@@ -1171,6 +1171,7 @@ class PaymentController extends Controller
             ])
                 ->where('status', 'paid')
                 ->whereDate('paid_at', $date)
+                ->whereNotNull('slug')
                 ->whereNull('deleted_at');
 
             if ($slug) {
