@@ -13,6 +13,10 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Merriweather:ital,opsz,wght@0,18..144,300..900;1,18..144,300..900&display=swap');
 
+        * {
+            box-sizing: border-box;
+        }
+
         body, html {
             height: 100%;
             margin: 0;
@@ -45,8 +49,28 @@
             text-align: left !important;
         }
 
+        table {
+            width: 100%;
+            table-layout: fixed;
+        }
+
+        .col-descriptif {
+            width: 16%;
+            text-align: center;
+        }
+
+        .col-montant {
+            width: 21%;
+            text-align: center;
+        }
+
+        .col-taux {
+            width: 21%;
+            text-align: center;
+        }
+
         @page {
-            size: A5 landscape;
+            size: A4;
             margin: 8mm 5mm 5mm 5mm;
             @top-center {
                 content: "";
@@ -70,30 +94,30 @@
 <div class="mt-2 w-100" style="border-top: 1px double rgba(0,0,0,0.75); margin-bottom: 2px"></div>
 <div class="mb-2 w-100" style="border-top: 1px double rgba(0,0,0,0.75);"></div>
 
-<table class="table text-center mb-0" style="border-collapse: collapse; border: 2px solid #084298;">
+<table class="table text-center mb-0 mt-3" style="border-collapse: collapse; border: 2px solid #084298;">
     <thead>
     <tr class="fw-bold" style="background-color: #f8f9fa;">
-        <th rowspan="2" class="align-middle text-start ps-2" style="width: 28%; border: 2px solid #084298; color: #000000 !important; background-color: #ffffff;">
+        <th rowspan="2" class="align-middle text-start ps-2 col-descriptif" style="border: 2px solid #084298; color: #000000 !important; background-color: #ffffff;">
             DESCRIPTIF
         </th>
-        <th colspan="2" class="text-uppercase" style="background-color: #eaf4eb; color: #198754 !important; width: 36%; border: 2px solid #084298;">
+        <th colspan="2" class="text-uppercase" style="background-color: #eaf4eb; color: #198754 !important; border: 2px solid #084298;">
             JOUR ({{ \Carbon\Carbon::parse($periode_1['date_debut'])->locale('fr')->isoFormat('D MMMM YYYY') }})
         </th>
-        <th colspan="2" class="text-uppercase" style="background-color: #fef9e7; color: #b78103 !important; width: 36%; border: 2px solid #084298;">
+        <th colspan="2" class="text-uppercase" style="background-color: #fef9e7; color: #b78103 !important; border: 2px solid #084298;">
             DU {{ \Carbon\Carbon::parse($periode_2['date_debut'])->locale('fr')->isoFormat('D MMMM YYYY') }} AU {{ \Carbon\Carbon::parse($periode_2['date_fin'])->locale('fr')->isoFormat('D MMMM YYYY') }}
         </th>
     </tr>
     <tr class="fw-bold" style="font-size: 8px;">
-        <th style="background-color: #eaf4eb; color: #198754 !important; border: 2px solid #084298;">MONTANT</th>
-        <th style="background-color: #eaf4eb; color: #198754 !important; border: 2px solid #084298;">TAUX</th>
-        <th style="background-color: #fef9e7; color: #b78103 !important; border: 2px solid #084298;">MONTANT</th>
-        <th style="background-color: #fef9e7; color: #b78103 !important; border: 2px solid #084298;">TAUX</th>
+        <th class="col-montant" style="background-color: #eaf4eb; color: #198754 !important; border: 2px solid #084298;">MONTANT</th>
+        <th class="col-taux" style="background-color: #eaf4eb; color: #198754 !important; border: 2px solid #084298;">TAUX</th>
+        <th class="col-montant" style="background-color: #fef9e7; color: #b78103 !important; border: 2px solid #084298;">MONTANT</th>
+        <th class="col-taux" style="background-color: #fef9e7; color: #b78103 !important; border: 2px solid #084298;">TAUX</th>
     </tr>
     </thead>
     <tbody>
     <!-- PRODUITS -->
     <tr>
-        <td class="fw-bold text-start ps-2" style="background-color: #ffffff; border: 2px solid #084298; color: #000000 !important;">
+        <td class="fw-bold text-center ps-2" style="background-color: #ffffff; border: 2px solid #084298; color: #000000 !important;">
             PRODUITS
         </td>
         <td colspan="2" style="background-color: #f4f9f4; color: #198754 !important; border: 2px solid #084298;" class="fw-semibold">
@@ -105,7 +129,7 @@
     </tr>
     <!-- DEPENSES -->
     <tr>
-        <td class="fw-bold text-start ps-2" style="background-color: #ffffff; border: 2px solid #084298; color: #dc3545 !important;">
+        <td class="fw-bold text-center ps-2" style="background-color: #ffffff; border: 2px solid #084298; color: #dc3545 !important;">
             DEPENSES
         </td>
         <td style="background-color: #fdf2f2; color: #dc3545 !important; border: 2px solid #084298;" class="fw-semibold">
@@ -123,7 +147,7 @@
     </tr>
     <!-- MARGES -->
     <tr>
-        <td class="fw-bold text-start ps-2" style="background-color: #ffffff; border: 2px solid #084298; color: #000000 !important;">
+        <td class="fw-bold text-center ps-2" style="background-color: #ffffff; border: 2px solid #084298; color: #000000 !important;">
             MARGES
         </td>
         <td style="background-color: #f4f9f4; border: 2px solid #084298;" class="fw-semibold {{ $margin_p1 >= 0 ? 'text-success' : 'text-danger' }}">
@@ -142,7 +166,7 @@
     </tbody>
 </table>
 
-<p class="fst-italic text-end m-0" style="font-size: 7px;">
+<p class="fst-italic text-end m-0 mt-2" style="font-size: 7px;">
     Date d'impression : {{ now()->format('d/m/Y H:i') }}
 </p>
 

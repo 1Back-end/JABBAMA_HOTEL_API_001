@@ -587,8 +587,6 @@ class MainCouranteController extends Controller
                 data: $data,
                 folderPath: $folderPath,
                 path: $filePath,
-                format: 'A5',
-                direction: 'landscape',
                 footer: $footer,
                 margins: [5, 5, 5, 5]
             );

@@ -475,8 +475,6 @@ class OperationalMonitoringController extends Controller
                 data: $data,
                 folderPath: $folderPath,
                 path: $filePath,
-                format: 'A5',
-                direction: 'landscape',
                 footer: $footer,
                 margins: [5, 5, 5, 5]
             );
@@ -639,91 +637,107 @@ class OperationalMonitoringController extends Controller
     {
         $auth = auth()->user();
 
-        $hasExplicitDate = $request->has('date') || $request->has('date_debut');
-        $dateInput = $request->input('date', now()->toDateString());
+        // 1. Parsing sécurisé de la date du jour (supporte 28-07-2026 ou 2026-07-28)
+        $rawDate = $request->input('date') ?? $request->input('date_debut') ?? now()->toDateString();
 
-        if (str_contains($dateInput, ' to ')) {
-            $dates = explode(' to ', $dateInput);
-            $dateP1 = Carbon::parse(trim($dates[1] ?? $dates[0]))->toDateString();
-        } elseif (str_contains($dateInput, ' - ')) {
-            $dates = explode(' - ', $dateInput);
-            $dateP1 = Carbon::parse(trim($dates[1] ?? $dates[0]))->toDateString();
-        } else {
-            $dateP1 = Carbon::parse($dateInput)->toDateString();
-        }
-
-        if (!$hasExplicitDate) {
-            $dateP1 = Carbon::parse($dateP1)->subDay()->toDateString();
+        try {
+            $dateP1 = Carbon::parse($rawDate)->format('Y-m-d');
+        } catch (\Exception $e) {
+            $dateP1 = now()->toDateString();
         }
 
         $dateDebutP1 = $dateP1;
         $dateFinP1   = $dateP1;
 
+        // 2. Traitement des dates de la période globale (P2)
         if ($request->filled('date_debut') && $request->filled('date_fin')) {
-            $dateDebutP2 = Carbon::parse($request->input('date_debut'))->toDateString();
-            $dateFinP2   = Carbon::parse($request->input('date_fin'))->toDateString();
+            $dateDebutP2 = Carbon::parse($request->input('date_debut'))->format('Y-m-d');
+            $dateFinP2   = Carbon::parse($request->input('date_fin'))->format('Y-m-d');
         } elseif ($request->filled('p2_date_debut') && $request->filled('p2_date_fin')) {
-            $dateDebutP2 = Carbon::parse($request->input('p2_date_debut'))->toDateString();
-            $dateFinP2   = Carbon::parse($request->input('p2_date_fin'))->toDateString();
+            $dateDebutP2 = Carbon::parse($request->input('p2_date_debut'))->format('Y-m-d');
+            $dateFinP2   = Carbon::parse($request->input('p2_date_fin'))->format('Y-m-d');
         } else {
             $dateReference = Carbon::parse($dateFinP1);
-            $dateDebutP2 = $dateReference->copy()->startOfMonth()->toDateString();
-            $dateFinP2   = $dateReference->copy()->endOfMonth()->toDateString();
+            $dateDebutP2 = $dateReference->copy()->startOfMonth()->format('Y-m-d');
+            $dateFinP2   = $dateReference->copy()->endOfMonth()->format('Y-m-d');
         }
 
         $createdBy  = $request->filled('created_by') ? $request->created_by : null;
         $filterType = $request->input('filter_type', null);
 
-
         $allowedSlugs = RestaurantExpenseSlug::values();
 
-        $expenses = collect();
+        $dailyExpenses = collect();
+        $expenses      = collect();
 
         $shouldFetchExpenses = $filterType !== 'payment_type' || $request->filled('restaurant_expense_type_uuid');
 
         if ($shouldFetchExpenses) {
-            $expensesQuery = ExpensePayment::with([
-                'creator:id,nom_utilisateur',
-                'updater:id,nom_utilisateur',
-                'expenseType:uuid,name,slug',
-                'family:uuid,name',
-                'method:uuid,name',
-            ])
-                ->where('status', 'paid')
-                ->whereBetween('paid_at', [$dateDebutP2, $dateFinP2])
-                ->whereNull('deleted_at')
-                ->whereNotNull('slug')
-                ->whereIn(\DB::raw('UPPER(slug)'), $allowedSlugs);
+            // --- A. REQUÊTE POUR LA JOURNÉE SPÉCIFIQUE (28 JUILLET) ---
+            $dailyExpenses = $this->fetchExpensesByDateRange(
+                Carbon::parse($dateDebutP1)->startOfDay(),
+                Carbon::parse($dateFinP1)->endOfDay(),
+                $createdBy,
+                $allowedSlugs
+            );
 
-            if ($createdBy) {
-                $expensesQuery->where('created_by', $createdBy);
-            }
-
-            $expenses = $expensesQuery->orderByDesc('paid_at')
-                ->get()
-                ->groupBy(function ($item) {
-                    return strtoupper($item->slug ?? '');
-                })
-                ->map(function ($items, $slug) {
-                    $firstItem = $items->first();
-
-                    return [
-                        'expense_type' => $firstItem->expenseType,
-                        'title'        => 'DEPENSES ' . $slug,
-                        'total_amount' => (float) $items->sum('amount'),
-                        'families'     => $this->buildExpenseTree($items),
-                        'isLoading'    => false,
-                    ];
-                })
-                ->values();
+            // --- B. REQUÊTE POUR LA PÉRIODE GLOBALE ---
+            $expenses = $this->fetchExpensesByDateRange(
+                Carbon::parse($dateDebutP2)->startOfDay(),
+                Carbon::parse($dateFinP2)->endOfDay(),
+                $createdBy,
+                $allowedSlugs
+            );
         }
 
         return response()->json([
-            'success'      => true,
-            'date_p1'      => $dateDebutP1,
-            'period_p2'    => [$dateDebutP2, $dateFinP2],
-            'expenses'     => $expenses,
+            'success'        => true,
+            'date_p1'        => $dateDebutP1,
+            'period_p2'      => [$dateDebutP2, $dateFinP2],
+            'daily_expenses' => $dailyExpenses, // Clé attendue par le tableau "PÉRIODE DU JOUR"
+            'expenses'       => $expenses,      // Clé attendue par le tableau "DU ... AU ..."
         ], 200);
+    }
+
+    /**
+     * Fonction helper privée pour exécuter la requête d'expenses
+     */
+    private function fetchExpensesByDateRange($startDate, $endDate, $createdBy, array $allowedSlugs)
+    {
+        $query = ExpensePayment::with([
+            'creator:id,nom_utilisateur',
+            'updater:id,nom_utilisateur',
+            'expenseType:uuid,name,slug',
+            'family:uuid,name',
+            'method:uuid,name',
+        ])
+            ->where('status', 'paid')
+            ->whereBetween('paid_at', [$startDate, $endDate])
+            ->whereNull('deleted_at')
+            ->whereNotNull('slug')
+            ->whereIn(\DB::raw('UPPER(slug)'), $allowedSlugs);
+
+        if ($createdBy) {
+            $query->where('created_by', $createdBy);
+        }
+
+        return $query->orderByDesc('paid_at')
+            ->get()
+            ->groupBy(function ($item) {
+                return strtoupper($item->slug ?? '');
+            })
+            ->map(function ($items, $slug) {
+                $firstItem = $items->first();
+
+                return [
+                    'expense_type' => $firstItem->expenseType,
+                    'title'        => 'DEPENSES ' . $slug,
+                    'total_amount' => (float) $items->sum('amount'),
+                    'families'     => $this->buildExpenseTree($items),
+                    'isLoading'    => false,
+                ];
+            })
+            ->values();
     }
 
 

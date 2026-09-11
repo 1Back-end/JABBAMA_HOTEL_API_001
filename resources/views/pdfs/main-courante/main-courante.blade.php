@@ -34,11 +34,17 @@
             page-break-inside: auto;
         }
 
+        /* Force le respect strict des largeurs définies sur le tableau détaillé */
+        table.table-orders {
+            table-layout: fixed;
+        }
+
         th, td {
             border: 1px solid #9ec5fe !important;
             padding: 3px !important;
             text-align: center;
             vertical-align: middle;
+            overflow: hidden;
         }
 
         th {
@@ -59,6 +65,29 @@
 
         .text-start {
             text-align: left !important;
+        }
+
+        .col-no-fact {
+            width: 4% !important;
+            padding: 2px !important;
+        }
+
+        .col-table {
+            width: 3% !important;
+        }
+
+        .col-chambre {
+            width: 3% !important;
+        }
+
+        .col-paiement {
+            width: 3% !important;
+            padding: 2px !important;
+        }
+
+        .col-montant {
+            width: 5% !important;
+            padding: 2px !important;
         }
 
         @page {
@@ -153,12 +182,12 @@
     $categories = array_keys($amounts_by_category ?? []);
 @endphp
 
-<table class="table table-bordered table-striped border-black" style="font-size: 9px;">
+<table class="table table-bordered table-striped border-black table-orders" style="font-size: 9px;">
     <thead>
     <tr>
-        <th rowspan="2" style="width: 12%; font-size: 8.5px;">N° FACT</th>
-        <th rowspan="2" style="width: 4%; font-size: 8.5px;">TABLE</th>
-        <th rowspan="2" style="width: 5%; font-size: 8.5px;">CHAMBRE</th>
+        <th rowspan="2" class="col-no-fact" style="font-size: 8.5px;">N° FACT</th>
+        <th rowspan="2" class="col-table" style="font-size: 8.5px;">TABLE</th>
+        <th rowspan="2" class="col-chambre" style="font-size: 8.5px;">CHAMBRE</th>
 
         @foreach($categories as $cat)
             <th colspan="4" style="font-size: 8.5px;">{{ $cat }}</th>
@@ -187,8 +216,8 @@
             <th colspan="4" style="font-size: 8.5px;">DIVERS</th>
         @endif
 
-        <th rowspan="2" style="width: 10%; font-size: 8.5px;">PAIEMENT</th>
-        <th rowspan="2" style="width: 10%; font-size: 8.5px;">MONTANT</th>
+        <th rowspan="2" class="col-paiement" style="font-size: 8.5px;">PAIEMENT</th>
+        <th rowspan="2" class="col-montant" style="font-size: 8.5px;">MONTANT</th>
     </tr>
     <tr>
         @foreach($categories as $cat)
@@ -278,7 +307,7 @@
             foreach($categories as $cat) {
                 $c = count($orderCatItems[$cat]);
                 if ($hasRs && $cat === $targetCat) {
-                    $c += 1; // Ajout de la ligne Room Service
+                    $c += 1;
                 }
                 $counts[] = $c;
             }
@@ -291,15 +320,15 @@
         @for($i = 0; $i < $maxLines; $i++)
             <tr>
                 @if($i === 0)
-                    <td rowspan="{{ $maxLines }}" class="fw-bold" style="width: 12%; word-break: break-all; white-space: normal; font-size: 7.5px;">
+                    <td rowspan="{{ $maxLines }}" class="fw-bold col-no-fact" style="word-break: break-all; white-space: normal; font-size: 7.5px;">
                         {{ $order['code_facture'] ?? '' }}
                         <br>
                         <span class="text-muted" style="font-size: 6.5px;">
                             {{ $order['type_clients_for_payment'] ?? '' }}
                         </span>
                     </td>
-                    <td rowspan="{{ $maxLines }}">{{ $order['no_table'] ?? '' }}</td>
-                    <td rowspan="{{ $maxLines }}">{{ $order['chambre'] ?? '' }}</td>
+                    <td rowspan="{{ $maxLines }}" class="col-table">{{ $order['no_table'] ?? '' }}</td>
+                    <td rowspan="{{ $maxLines }}" class="col-chambre">{{ $order['chambre'] ?? '' }}</td>
                 @endif
 
                 @foreach($categories as $cat)
@@ -358,19 +387,46 @@
                     <td class="{{ $divers ? 'bg-light' : '' }}">{{ $divers ? \App\Helpers\FormatPrice::format($divers['total_price'] ?? ($divers['total_previous'] ?? 0)) : '' }}</td>
                 @endif
 
-                @if($i === 0)
-                    <td rowspan="{{ $maxLines }}">
-                        <div class="fw-bold">{{ $order['regulation_status'] ?? '' }}</div>
-                    </td>
-                    <td rowspan="{{ $maxLines }}" class="fw-bold">
-                        <div>{{ \App\Helpers\FormatPrice::format($order['total_amount'] ?? 0) }}</div>
-                        @if(!empty($order['payment_methods']))
-                            @foreach($order['payment_methods'] as $pm)
-                                <div style="font-size: 6px; color: #555;">{{ $pm['method_name'] ?? '' }} ({{ \App\Helpers\FormatPrice::format($pm['amount'] ?? 0) }})</div>
-                            @endforeach
-                        @endif
-                    </td>
-                @endif
+                    @if($i === 0)
+                        <td rowspan="{{ $maxLines }}" class="col-paiement">
+                            {{ $order['payment_mode'] ?? '' }}
+                        </td>
+                        <td rowspan="{{ $maxLines }}" class="fw-bold col-montant">
+                            @php
+                                $paymentStatus = $order['payment_status'] ?? null;
+                                $paymentMethods = $order['payment_methods'] ?? [];
+                                $totalPaid = collect($paymentMethods)->sum('amount');
+                                $remaining = ($order['total_amount'] ?? 0) - $totalPaid;
+                            @endphp
+                            @if($paymentStatus === 'paid')
+                                <span class="text-success fw-bold">
+                                @foreach($paymentMethods as $pm)
+                                        {{ $pm['method_name'] ?? '' }}
+                                        <br>
+                                        ({{ \App\Helpers\FormatPrice::format($pm['amount'] ?? 0) }}){{ !$loop->last ? ',' : '' }}
+                                    @endforeach
+                            </span>
+                            @elseif($paymentStatus === 'partially_paid')
+                                <span class="text-success fw-bold">
+                            Payé :
+                            <br>
+                            @foreach($paymentMethods as $pm)
+                                        {{ $pm['method_name'] ?? '' }}
+                                        <br>
+                                        ({{ \App\Helpers\FormatPrice::format($pm['amount'] ?? 0) }}){{ !$loop->last ? ',' : '' }}
+                                    @endforeach
+                            </span>
+                                <br>
+                                <span class="text-danger fw-bold">
+                                Reste :<br>{{ \App\Helpers\FormatPrice::format($remaining) }}
+                            </span>
+                            @else
+                                <span class="text-danger fw-bold">
+                                {{ \App\Helpers\FormatPrice::format($order['total_amount'] ?? 0) }}
+                            </span>
+                            @endif
+                        </td>
+                    @endif
             </tr>
         @endfor
     @empty
