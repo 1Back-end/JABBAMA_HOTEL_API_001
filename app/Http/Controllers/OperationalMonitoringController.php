@@ -2,8 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\ExpenseSlug;
 use App\Enums\MenuOrderStatus;
 use App\Enums\PaymentOrderMenusStatus;
+use App\Enums\RestaurantExpenseSlug;
+use App\Models\ExpensePayment;
 use App\Models\OrderMenuRestaurant;
 use App\Models\PaymentRegulation;
 use Illuminate\Http\Request;
@@ -170,7 +173,9 @@ class OperationalMonitoringController extends Controller
                 $totalRecouvrements = (float) $recouvrementsQuery->sum('amount');
 
 
-                $expensesQuery = PaymentRegulation::where('type', 'expense');
+                $expensesQuery = PaymentRegulation::where('type', 'expense')
+                    ->whereNotNull('slug')
+                    ->whereIn(\DB::raw('UPPER(slug)'), ExpenseSlug::values());
 
                 if ($startDate === $endDate) {
                     $expensesQuery->whereDate('created_at', $startDate);
@@ -382,7 +387,9 @@ class OperationalMonitoringController extends Controller
                 }
                 $totalRecouvrements = (float) $recouvrementsQuery->sum('amount');
 
-                $expensesQuery = PaymentRegulation::where('type', 'expense');
+                $expensesQuery = PaymentRegulation::where('type', 'expense')
+                    ->whereNotNull('slug')
+                    ->whereIn(\DB::raw('UPPER(slug)'), ExpenseSlug::values());
 
                 if ($startDate === $endDate) {
                     $expensesQuery->whereDate('created_at', $startDate);
@@ -496,4 +503,234 @@ class OperationalMonitoringController extends Controller
             ], 500);
         }
     }
+
+    private function buildExpenseTree($items)
+    {
+        $tree = [];
+
+        foreach ($items as $item) {
+
+            $current = &$tree;
+
+            if ($item->hierarchy_families->isEmpty() && !$item->family) {
+                $typeName = optional($item->expenseType)->name ?? 'Dépenses directes';
+                $typeUuid = optional($item->expenseType)->uuid ?? null;
+                $defaultKey = 'direct_type_' . ($typeUuid ?? 'general');
+
+                if (!isset($current[$defaultKey])) {
+                    $current[$defaultKey] = [
+                        'uuid'     => $typeUuid,
+                        'name'     => $typeName, // 🔹 Utilise le nom exact ici
+                        'amount'   => 0,
+                        'children' => [],
+                        'items'    => [],
+                    ];
+                }
+
+                $current[$defaultKey]['amount'] += (float) $item->amount;
+                $current[$defaultKey]['items'][] = [
+                    'uuid'   => $item->uuid,
+                    'name'   => $item->name,
+                    'amount' => (float) $item->amount,
+                    'method' => $item->method,
+                ];
+
+                continue;
+            }
+
+            // Trier la hiérarchie par niveau
+            $hierarchy = $item->hierarchy_families
+                ->sortBy('level')
+                ->values();
+
+            /**
+             * Construire :
+             * DEPENSES RESTO
+             *    └── CHARGES VARIABLE RESTO
+             */
+            foreach ($hierarchy as $family) {
+
+                $uuid = $family->uuid;
+
+                if (!isset($current[$uuid])) {
+
+                    $current[$uuid] = [
+                        'uuid'     => $uuid,
+                        'name'     => $family->name,
+                        'amount'   => 0,
+                        'children' => [],
+                        'items'    => [],
+                    ];
+                }
+
+                $current[$uuid]['amount'] += (float) $item->amount;
+
+                $current = &$current[$uuid]['children'];
+            }
+
+            /**
+             * Ajouter la famille finale
+             * FACT VARIABLE RESTO
+             */
+            if ($item->family) {
+
+                $family = $item->family;
+
+                if (!isset($current[$family->uuid])) {
+
+                    $current[$family->uuid] = [
+                        'uuid'     => $family->uuid,
+                        'name'     => $family->name,
+                        'amount'   => 0,
+                        'children' => [],
+                        'items'    => [],
+                    ];
+                }
+
+                $current[$family->uuid]['amount'] += (float) $item->amount;
+
+                $current[$family->uuid]['items'][] = [
+                    'uuid'   => $item->uuid,
+                    'name'   => $item->name,
+                    'amount' => (float) $item->amount,
+                    'method' => $item->method,
+                ];
+            } else {
+                // Cas où il y a une hiérarchie mais pas de famille finale
+                $current_key = 'direct_' . $item->uuid;
+                $current[$current_key] = [
+                    'uuid'   => $item->uuid,
+                    'name'   => $item->name,
+                    'amount' => (float) $item->amount,
+                    'children' => [],
+                    'items'  => [
+                        [
+                            'uuid'   => $item->uuid,
+                            'name'   => $item->name,
+                            'amount' => (float) $item->amount,
+                            'method' => $item->method,
+                        ]
+                    ],
+                ];
+            }
+
+            unset($current);
+        }
+
+        return $this->normalizeTree($tree);
+    }
+
+    private function normalizeTree(array $tree): array
+    {
+        return collect($tree)
+            ->map(function ($node) {
+
+                $node['children'] = $this->normalizeTree($node['children']);
+
+                return $node;
+
+            })
+            ->values()
+            ->toArray();
+    }
+
+
+    public function get_detais_for_expenses(Request $request)
+    {
+        $auth = auth()->user();
+
+        $hasExplicitDate = $request->has('date') || $request->has('date_debut');
+        $dateInput = $request->input('date', now()->toDateString());
+
+        if (str_contains($dateInput, ' to ')) {
+            $dates = explode(' to ', $dateInput);
+            $dateP1 = Carbon::parse(trim($dates[1] ?? $dates[0]))->toDateString();
+        } elseif (str_contains($dateInput, ' - ')) {
+            $dates = explode(' - ', $dateInput);
+            $dateP1 = Carbon::parse(trim($dates[1] ?? $dates[0]))->toDateString();
+        } else {
+            $dateP1 = Carbon::parse($dateInput)->toDateString();
+        }
+
+        if (!$hasExplicitDate) {
+            $dateP1 = Carbon::parse($dateP1)->subDay()->toDateString();
+        }
+
+        $dateDebutP1 = $dateP1;
+        $dateFinP1   = $dateP1;
+
+        if ($request->filled('date_debut') && $request->filled('date_fin')) {
+            $dateDebutP2 = Carbon::parse($request->input('date_debut'))->toDateString();
+            $dateFinP2   = Carbon::parse($request->input('date_fin'))->toDateString();
+        } elseif ($request->filled('p2_date_debut') && $request->filled('p2_date_fin')) {
+            $dateDebutP2 = Carbon::parse($request->input('p2_date_debut'))->toDateString();
+            $dateFinP2   = Carbon::parse($request->input('p2_date_fin'))->toDateString();
+        } else {
+            $dateReference = Carbon::parse($dateFinP1);
+            $dateDebutP2 = $dateReference->copy()->startOfMonth()->toDateString();
+            $dateFinP2   = $dateReference->copy()->endOfMonth()->toDateString();
+        }
+
+        $createdBy  = $request->filled('created_by') ? $request->created_by : null;
+        $filterType = $request->input('filter_type', null);
+
+
+        $allowedSlugs = RestaurantExpenseSlug::values();
+
+        $expenses = collect();
+
+        $shouldFetchExpenses = $filterType !== 'payment_type' || $request->filled('restaurant_expense_type_uuid');
+
+        if ($shouldFetchExpenses) {
+            $expensesQuery = ExpensePayment::with([
+                'creator:id,nom_utilisateur',
+                'updater:id,nom_utilisateur',
+                'expenseType:uuid,name,slug',
+                'family:uuid,name',
+                'method:uuid,name',
+            ])
+                ->where('status', 'paid')
+                ->whereBetween('paid_at', [$dateDebutP2, $dateFinP2])
+                ->whereNull('deleted_at')
+                ->whereNotNull('slug')
+                ->whereIn(\DB::raw('UPPER(slug)'), $allowedSlugs);
+
+            if ($createdBy) {
+                $expensesQuery->where('created_by', $createdBy);
+            }
+
+            $expenses = $expensesQuery->orderByDesc('paid_at')
+                ->get()
+                ->groupBy(function ($item) {
+                    return strtoupper($item->slug ?? '');
+                })
+                ->map(function ($items, $slug) {
+                    $firstItem = $items->first();
+
+                    return [
+                        'expense_type' => $firstItem->expenseType,
+                        'title'        => 'DEPENSES ' . $slug,
+                        'total_amount' => (float) $items->sum('amount'),
+                        'families'     => $this->buildExpenseTree($items),
+                        'isLoading'    => false,
+                    ];
+                })
+                ->values();
+        }
+
+        return response()->json([
+            'success'      => true,
+            'date_p1'      => $dateDebutP1,
+            'period_p2'    => [$dateDebutP2, $dateFinP2],
+            'expenses'     => $expenses,
+        ], 200);
+    }
+
+
+
+
+
+
+
+
 }
