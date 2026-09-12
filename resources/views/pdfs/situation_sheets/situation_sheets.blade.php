@@ -13,13 +13,19 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Merriweather:ital,opsz,wght@0,18..144,300..900;1,18..144,300..900&display=swap');
 
+        * {
+            box-sizing: border-box;
+        }
+
         body, html {
             height: 100%;
             margin: 0;
             padding: 5px;
-            font-size: 8px !important;
+            font-size: 5px !important;
             font-family: "Merriweather", serif;
             color: #000;
+            width: 100%;
+            overflow-x: auto;
         }
 
         h3 {
@@ -29,9 +35,16 @@
 
         table {
             width: 100%;
+            max-width: 100%;
             border-collapse: collapse;
             margin-bottom: 8px;
             page-break-inside: auto;
+            table-layout: fixed;
+        }
+        .table-responsive {
+            overflow-x: auto !important;
+            -webkit-overflow-scrolling: touch;
+            width: 100%;
         }
 
         th, td {
@@ -39,6 +52,8 @@
             padding: 3px !important;
             text-align: center;
             vertical-align: middle;
+            overflow: hidden;
+            word-wrap: break-word;
         }
 
         th {
@@ -75,8 +90,24 @@
             color: #dc3545 !important;
         }
 
+        .col-categorie {
+            width: 15%;
+        }
+
+        .col-type {
+            width: 30%;
+        }
+
+        .col-qte {
+            width: 2%;
+        }
+
+        .col-montant {
+            width: 17%;
+        }
+
         @page {
-            size: A3 landscape;
+            size: A4;
             margin: 8mm 5mm 5mm 5mm;
             @top-center {
                 content: "SUITE DE LA MAIN COURANTE DU RESTAURANT DU {{ \Carbon\Carbon::parse($date)->locale('fr')->isoFormat('D MMMM YYYY') }}";
@@ -98,7 +129,6 @@
 <body>
 
 @php
-    // Normalisation des tableaux et variables de catégories
     $cat_j = $count_by_category ?? [];
     $tot_j = $totals_by_category ?? [];
     $cat_p2 = $p2_count_by_category ?? $month_count_by_category ?? [];
@@ -151,25 +181,25 @@
             <table class="table table-bordered mb-0" style="font-size: 11px; color: #000000;">
                 <thead style="font-size: 0.85rem;">
                 <tr>
-                    <th rowspan="2" class="align-middle py-1" style="width: 20%;">
+                    <th rowspan="2" class="align-middle py-1 col-categorie">
                         CATÉGORIE
                     </th>
-                    <th rowspan="2" class="align-middle py-1" style="width: 30%;">
+                    <th rowspan="2" class="align-middle py-1 col-type">
                         TYPE
                     </th>
-                    <th colspan="2" class="text-uppercase" style="width: 25%">
+                    <th colspan="2" class="text-uppercase">
                         JOUR ({{ \Carbon\Carbon::parse($date)->locale('fr')->isoFormat('D MMMM YYYY') }})
                     </th>
-                    <th colspan="2" class="text-uppercase" style="width: 25%">
+                    <th colspan="2" class="text-uppercase">
                         DU {{ \Carbon\Carbon::parse($start_date)->locale('fr')->isoFormat('D MMMM YYYY') }} AU
                         {{ \Carbon\Carbon::parse($end_date)->locale('fr')->isoFormat('D MMMM YYYY') }}
                     </th>
                 </tr>
                 <tr>
-                    <th class="py-1" style="width: 10%;">QTÉ</th>
-                    <th class="py-1" style="width: 15%;">MONTANT</th>
-                    <th class="py-1" style="width: 10%;">QTÉ</th>
-                    <th class="py-1" style="width: 15%;">MONTANT</th>
+                    <th class="py-1 col-qte">QTÉ</th>
+                    <th class="py-1 col-montant">MONTANT</th>
+                    <th class="py-1 col-qte">QTÉ</th>
+                    <th class="py-1 col-montant">MONTANT</th>
                 </tr>
                 </thead>
 
