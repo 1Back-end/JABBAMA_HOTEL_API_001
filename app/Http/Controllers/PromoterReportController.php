@@ -151,7 +151,6 @@ class PromoterReportController extends Controller
             });
         });
 
-        $totalBar = (float) $orders->sum('total_drinks');
 
         $totalAmountRoomService = (float) $orders->where('is_room_service', true)->sum(function ($order) {
             $price = (float) str_replace(',', '.', $order->price_for_room_service ?? 0);
@@ -171,7 +170,6 @@ class PromoterReportController extends Controller
         }
 
         $chiffreAffaire = (float) $categoriesTotals->sum()
-            + (float) $totalBar
             + (float) $totalAmountRoomService
             + (float) $totalAmountDivers;
 
