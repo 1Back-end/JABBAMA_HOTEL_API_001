@@ -142,7 +142,7 @@ class PromoterReportController extends Controller
             ->get();
 
         $categoriesTotals = $orders->groupBy(function ($order) {
-            return $order->salesCategory ? $order->salesCategory->name : 'AUTRES';
+            return $order->salesCategory ? strtoupper(trim($order->salesCategory->name)) : 'AUTRES';
         })->map(function ($group) {
             return (float) $group->sum(function ($order) {
                 return $order->items->filter(function ($item) {
@@ -150,7 +150,6 @@ class PromoterReportController extends Controller
                 })->sum('total_price');
             });
         });
-
 
         $totalAmountRoomService = (float) $orders->where('is_room_service', true)->sum(function ($order) {
             $price = (float) str_replace(',', '.', $order->price_for_room_service ?? 0);
@@ -169,16 +168,18 @@ class PromoterReportController extends Controller
             });
         }
 
-        $chiffreAffaire = (float) $categoriesTotals->sum()
-            + (float) $totalAmountRoomService
-            + (float) $totalAmountDivers;
+        $sumCategories = (float) $categoriesTotals->sum();
+        $chiffreAffaire = $sumCategories + $totalAmountRoomService + $totalAmountDivers;
 
-        $encaissement = (float) PaymentRegulation::where('slug', PaymentRegulationSlug::ENCAISSEMENT_RESTO->value)
+        $encaissement = (float) PaymentRegulation::whereIn('slug', [
+            PaymentRegulationSlug::ENCAISSEMENT_RESTO->value,
+            PaymentRegulationSlug::ENCAISSEMENT_BAR->value,
+        ])
             ->whereBetween('created_at', [$startDate, $endDate])
             ->sum('amount');
 
         $depenses = (float) PaymentRegulation::where('slug', ExpenseSlug::DepensesResto->value)
-        ->whereBetween('created_at', [$startDate, $endDate])
+            ->whereBetween('created_at', [$startDate, $endDate])
             ->sum('amount');
 
         $solde = $encaissement - $depenses;
