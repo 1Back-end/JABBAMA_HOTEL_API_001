@@ -594,6 +594,11 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des encaissements',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],
+        'view_promoter_report' => [
+            'description' => 'Afficher l\'interface du rapport promoteur',
+            'category' => 'Gestion des encaissements',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
 
     ];
 

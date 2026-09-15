@@ -1239,6 +1239,7 @@ class PaymentController extends Controller
             ])
                 ->where('type', 'encaissement')
                 ->whereNotNull('cash_receipt_type_uuid')
+                ->whereNotNull('slug')
                 ->whereDate('created_at', $date)
                 ->whereNull('deleted_at');
 
@@ -1316,6 +1317,7 @@ class PaymentController extends Controller
             ])
                 ->where('type', 'recouvrement')
                 ->whereNotNull('recouvrement_uuid')
+                ->whereNotNull('slug')
                 ->whereDate('created_at', $date)
                 ->whereNull('deleted_at');
 
@@ -1405,6 +1407,7 @@ class PaymentController extends Controller
             ])
                 ->where('status', 'validated')
                 ->whereDate('created_at', $date)
+                ->whereNotNull('slug')
                 ->whereNull('deleted_at');
 
             if ($slug) {

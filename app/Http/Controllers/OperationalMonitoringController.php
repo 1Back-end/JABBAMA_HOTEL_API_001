@@ -518,34 +518,21 @@ class OperationalMonitoringController extends Controller
                 if (!isset($current[$defaultKey])) {
                     $current[$defaultKey] = [
                         'uuid'     => $typeUuid,
-                        'name'     => $typeName, // 🔹 Utilise le nom exact ici
+                        'name'     => $typeName,
                         'amount'   => 0,
                         'children' => [],
-                        'items'    => [],
                     ];
                 }
 
                 $current[$defaultKey]['amount'] += (float) $item->amount;
-                $current[$defaultKey]['items'][] = [
-                    'uuid'   => $item->uuid,
-                    'name'   => $item->name,
-                    'amount' => (float) $item->amount,
-                    'method' => $item->method,
-                ];
 
                 continue;
             }
 
-            // Trier la hiérarchie par niveau
             $hierarchy = $item->hierarchy_families
                 ->sortBy('level')
                 ->values();
 
-            /**
-             * Construire :
-             * DEPENSES RESTO
-             *    └── CHARGES VARIABLE RESTO
-             */
             foreach ($hierarchy as $family) {
 
                 $uuid = $family->uuid;
@@ -557,7 +544,6 @@ class OperationalMonitoringController extends Controller
                         'name'     => $family->name,
                         'amount'   => 0,
                         'children' => [],
-                        'items'    => [],
                     ];
                 }
 
@@ -566,10 +552,6 @@ class OperationalMonitoringController extends Controller
                 $current = &$current[$uuid]['children'];
             }
 
-            /**
-             * Ajouter la famille finale
-             * FACT VARIABLE RESTO
-             */
             if ($item->family) {
 
                 $family = $item->family;
@@ -581,34 +563,18 @@ class OperationalMonitoringController extends Controller
                         'name'     => $family->name,
                         'amount'   => 0,
                         'children' => [],
-                        'items'    => [],
                     ];
                 }
 
                 $current[$family->uuid]['amount'] += (float) $item->amount;
 
-                $current[$family->uuid]['items'][] = [
-                    'uuid'   => $item->uuid,
-                    'name'   => $item->name,
-                    'amount' => (float) $item->amount,
-                    'method' => $item->method,
-                ];
             } else {
-                // Cas où il y a une hiérarchie mais pas de famille finale
                 $current_key = 'direct_' . $item->uuid;
                 $current[$current_key] = [
-                    'uuid'   => $item->uuid,
-                    'name'   => $item->name,
-                    'amount' => (float) $item->amount,
+                    'uuid'     => $item->uuid,
+                    'name'     => $item->name,
+                    'amount'   => (float) $item->amount,
                     'children' => [],
-                    'items'  => [
-                        [
-                            'uuid'   => $item->uuid,
-                            'name'   => $item->name,
-                            'amount' => (float) $item->amount,
-                            'method' => $item->method,
-                        ]
-                    ],
                 ];
             }
 
@@ -637,7 +603,6 @@ class OperationalMonitoringController extends Controller
     {
         $auth = auth()->user();
 
-        // 1. Parsing sécurisé de la date du jour (supporte 28-07-2026 ou 2026-07-28)
         $rawDate = $request->input('date') ?? $request->input('date_debut') ?? now()->toDateString();
 
         try {
@@ -649,7 +614,6 @@ class OperationalMonitoringController extends Controller
         $dateDebutP1 = $dateP1;
         $dateFinP1   = $dateP1;
 
-        // 2. Traitement des dates de la période globale (P2)
         if ($request->filled('date_debut') && $request->filled('date_fin')) {
             $dateDebutP2 = Carbon::parse($request->input('date_debut'))->format('Y-m-d');
             $dateFinP2   = Carbon::parse($request->input('date_fin'))->format('Y-m-d');
@@ -673,7 +637,6 @@ class OperationalMonitoringController extends Controller
         $shouldFetchExpenses = $filterType !== 'payment_type' || $request->filled('restaurant_expense_type_uuid');
 
         if ($shouldFetchExpenses) {
-            // --- A. REQUÊTE POUR LA JOURNÉE SPÉCIFIQUE (28 JUILLET) ---
             $dailyExpenses = $this->fetchExpensesByDateRange(
                 Carbon::parse($dateDebutP1)->startOfDay(),
                 Carbon::parse($dateFinP1)->endOfDay(),
@@ -681,7 +644,7 @@ class OperationalMonitoringController extends Controller
                 $allowedSlugs
             );
 
-            // --- B. REQUÊTE POUR LA PÉRIODE GLOBALE ---
+
             $expenses = $this->fetchExpensesByDateRange(
                 Carbon::parse($dateDebutP2)->startOfDay(),
                 Carbon::parse($dateFinP2)->endOfDay(),
@@ -694,8 +657,8 @@ class OperationalMonitoringController extends Controller
             'success'        => true,
             'date_p1'        => $dateDebutP1,
             'period_p2'      => [$dateDebutP2, $dateFinP2],
-            'daily_expenses' => $dailyExpenses, // Clé attendue par le tableau "PÉRIODE DU JOUR"
-            'expenses'       => $expenses,      // Clé attendue par le tableau "DU ... AU ..."
+            'daily_expenses' => $dailyExpenses,
+            'expenses'       => $expenses,
         ], 200);
     }
 
@@ -728,12 +691,18 @@ class OperationalMonitoringController extends Controller
             })
             ->map(function ($items, $slug) {
                 $firstItem = $items->first();
+                $tree = $this->buildExpenseTree($items);
+                if (count($tree) === 1 && strtoupper($tree[0]['name']) === strtoupper('DEPENSES ' . $slug)) {
+                    $families = $tree[0]['children'];
+                } else {
+                    $families = $tree;
+                }
 
                 return [
                     'expense_type' => $firstItem->expenseType,
                     'title'        => 'DEPENSES ' . $slug,
                     'total_amount' => (float) $items->sum('amount'),
-                    'families'     => $this->buildExpenseTree($items),
+                    'families'     => $families,
                     'isLoading'    => false,
                 ];
             })
