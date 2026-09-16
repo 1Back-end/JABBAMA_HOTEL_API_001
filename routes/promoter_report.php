@@ -11,3 +11,6 @@ Route::get('/promoter_pdg_expenses', [PromoterReportController::class, 'getPdgEx
 Route::get('/summary_payment_methods', [PromoterReportController::class, 'getPaymentMethodsSummary']);
 Route::get('/promoter_debtors_summary', [PromoterReportController::class, 'getDebtorsSummary']);
 Route::get('/detailed_sales_summary_restaurant', [PromoterReportController::class, 'getDetailedSalesSummary']);
+Route::get('/restaurant_cash_receipt_items', [PromoterReportController::class, 'getRestaurantCashReceiptItems']);
+Route::get('/promoter_restaurant_expenses', [PromoterReportController::class, 'get_expenses']);
+Route::get('/promoter_sales_categories_summary', [PromoterReportController::class, 'getSalesCategoriesSummary']);

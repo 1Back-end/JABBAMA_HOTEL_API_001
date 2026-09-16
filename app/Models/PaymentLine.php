@@ -71,7 +71,7 @@ class PaymentLine extends Model
             OrderMenuRestaurantItem::class,
             'payable_uuid',
             'uuid'
-        )->where('payable_type', OrderMenuRestaurantItem::class);
+        );
     }
 
     public function drink()
@@ -80,7 +80,7 @@ class PaymentLine extends Model
             OrderRestaurantDrink::class,
             'payable_uuid',
             'uuid'
-        )->where('payable_type', OrderRestaurantDrink::class);
+        );
     }
 
     public function roomService()

@@ -7,7 +7,9 @@ use App\Enums\MenuOrderStatus;
 use App\Enums\OrderMenuRestaurantItemStatus;
 use App\Enums\PaymentOrderItemStatus;
 use App\Enums\PaymentOrderMenusStatus;
+use App\Enums\PaymentRegulationSlug;
 use App\Enums\PaymentStatus;
+use App\Enums\RestaurantExpenseSlug;
 use App\Models\CashReceiptFamily;
 use App\Models\CashReceiptType;
 use App\Models\ExpensePayment;
@@ -289,14 +291,14 @@ class PaymentController extends Controller
                 }
 
                 if ($itemsAmount > 0) {
-                    $restoFamily = CashReceiptFamily::where('indexation', 'Consommation Restaurant')->first();
+                    $restoFamily = CashReceiptFamily::where('indexation', \App\Enums\CashReceiptType::CONSOMMATION_RESTAURANT->value)->first();
 
                     $regulationModelResto = PaymentRegulation::create([
                         'payment_uuid' => $payment->uuid,
                         'regulation_method_uuid' => $method->uuid,
                         'cash_receipt_families_uuid' => $restoFamily?->uuid,
                         'cash_receipt_type_uuid' => $cashReceiptType?->uuid,
-                        'slug' => 'ENCAISSEMENT RESTO',
+                        'slug' => PaymentRegulationSlug::ENCAISSEMENT_RESTO->value,
                         'amount' => $itemsAmount,
                         'phone_number' => $regulation['phone_number'] ?? null,
                         'reference' => $regulation['reference'] ?? null,
@@ -314,7 +316,7 @@ class PaymentController extends Controller
                             'payable_type' => get_class($order->items()->getModel()),
                             'payable_uuid' => $line['uuid'],
                             'amount' => $line['amount'],
-                            'slug' => 'RESTO',
+                            'slug' => RestaurantExpenseSlug::RESTO->value,
                             'regulation_method_uuid' => $method->uuid,
                             'phone_number' => $regulation['phone_number'] ?? null,
                             'reference' => $regulation['reference'] ?? null,
@@ -334,7 +336,7 @@ class PaymentController extends Controller
                                 'payable_type' => RoomService::class,
                                 'payable_uuid' => $line['uuid'],
                                 'amount' => $line['amount'],
-                                'slug' => 'RESTO',
+                                'slug' => RestaurantExpenseSlug::RESTO->value,
                                 'regulation_method_uuid' => $method->uuid,
                                 'phone_number' => $regulation['phone_number'] ?? null,
                                 'reference' => $regulation['reference'] ?? null,
@@ -349,14 +351,14 @@ class PaymentController extends Controller
                 }
 
                 if ($drinksAmount > 0) {
-                    $barFamily = CashReceiptFamily::where('indexation', 'Consommation Bar')->first();
+                    $barFamily = CashReceiptFamily::where('indexation', \App\Enums\CashReceiptType::CONSOMMATION_BAR->value)->first();
 
                     $regulationModelBar = PaymentRegulation::create([
                         'payment_uuid' => $payment->uuid,
                         'regulation_method_uuid' => $method->uuid,
                         'cash_receipt_families_uuid' => $barFamily?->uuid,
                         'cash_receipt_type_uuid' => $cashReceiptType?->uuid,
-                        'slug' => 'ENCAISSEMENT BAR',
+                        'slug' => PaymentRegulationSlug::ENCAISSEMENT_RESTO->value,
                         'amount' => $drinksAmount,
                         'phone_number' => $regulation['phone_number'] ?? null,
                         'reference' => $regulation['reference'] ?? null,
@@ -374,7 +376,7 @@ class PaymentController extends Controller
                             'payable_type' => get_class($order->drinks()->getModel()),
                             'payable_uuid' => $line['uuid'],
                             'amount' => $line['amount'],
-                            'slug' => 'BAR',
+                            'slug' => RestaurantExpenseSlug::BAR->value,
                             'regulation_method_uuid' => $method->uuid,
                             'phone_number' => $regulation['phone_number'] ?? null,
                             'reference' => $regulation['reference'] ?? null,
@@ -394,7 +396,7 @@ class PaymentController extends Controller
                                 'payable_type' => RoomService::class,
                                 'payable_uuid' => $line['uuid'],
                                 'amount' => $line['amount'],
-                                'slug' => 'BAR',
+                                'slug' => RestaurantExpenseSlug::BAR->value,
                                 'regulation_method_uuid' => $method->uuid,
                                 'phone_number' => $regulation['phone_number'] ?? null,
                                 'reference' => $regulation['reference'] ?? null,
