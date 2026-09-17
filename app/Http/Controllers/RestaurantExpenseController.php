@@ -120,7 +120,6 @@ class RestaurantExpenseController extends Controller
         DB::beginTransaction();
 
         try {
-            // --- RECHERCHE RÉCURSIVE DE L'INDEXATION POUR LES SLUGS ---
             $expenseSlug = 'AUTRES DEPENSES';
             $paymentSlug = 'AUTRES DEPENSES';
 
@@ -148,8 +147,6 @@ class RestaurantExpenseController extends Controller
                     $currentFamilyUuid = $family->parent_uuid;
                 }
             }
-            // ---------------------------------------------------------
-
             $expense = new ExpensePayment([
                 'restaurant_expense_type_uuid'   => $request->restaurant_expense_type_uuid,
                 'restaurant_expense_family_uuid' => $request->restaurant_expense_family_uuid,
@@ -185,7 +182,6 @@ class RestaurantExpenseController extends Controller
                 ]);
             }
 
-            // 2. Enregistrement du Type avec le préfixe _type_
             if ($request->hasFile('type_document')) {
                 $file = $request->file('type_document');
                 $originalName = $file->getClientOriginalName();

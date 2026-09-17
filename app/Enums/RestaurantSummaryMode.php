@@ -2,10 +2,10 @@
 
 namespace App\Enums;
 
-enum RestaurantExpenseSlug: string
+enum RestaurantSummaryMode: string
 {
-    case BAR = 'BAR';
-    case RESTO = 'RESTO';
+    case ZERO_ON_EMPTY = 'zero_on_empty';
+    case ALLOW_CUMULATIVE = 'allow_cumulative';
 
     public static function values(): array
     {

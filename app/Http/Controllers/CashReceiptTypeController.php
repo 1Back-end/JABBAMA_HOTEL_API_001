@@ -71,8 +71,9 @@ class CashReceiptTypeController extends Controller
         try {
 
             $type = CashReceiptType::create([
-                'code' => Str::slug($validated['name'], '_'),
-                'name' => $validated['name'],
+                'code' => mb_strtoupper(Str::slug($validated['name'], '_')),
+                'name' => mb_strtoupper($validated['name']),
+                'slug' => mb_strtoupper($validated['name']),
                 'is_linked_to_turnover' => $validated['is_linked_to_turnover'],
                 'created_by' => auth()->id(),
             ]);
@@ -129,8 +130,9 @@ class CashReceiptTypeController extends Controller
         try {
 
             $type->update([
-                'code' => Str::slug($validated['name'], '_'),
-                'name' => $validated['name'],
+                'code' => mb_strtoupper(Str::slug($validated['name'], '_')),
+                'name' => mb_strtoupper($validated['name']),
+                'slug' => mb_strtoupper($validated['name']),
                 'is_linked_to_turnover' => $validated['is_linked_to_turnover'],
                 'updated_by' => auth()->id(),
             ]);
@@ -230,7 +232,6 @@ class CashReceiptTypeController extends Controller
                 ->map(fn($n) => strtoupper($n))
                 ->toArray();
 
-            // ❌ SI DOUBLONS → STOP AVANT INSERT
             if (!empty($existing)) {
                 DB::rollBack();
 
@@ -241,7 +242,6 @@ class CashReceiptTypeController extends Controller
                 ], 409);
             }
 
-            // ✅ INSERT SEULEMENT SI TOUT EST OK
             foreach ($validated['families'] as $family) {
 
                 $name = strtoupper(trim($family['name']));
@@ -250,8 +250,8 @@ class CashReceiptTypeController extends Controller
                 CashReceiptFamily::create([
                     'uuid' => (string) Str::uuid(),
                     'name' => $name,
-                    'code' => $baseCode,
-                    'indexation' => $family['indexation'],
+                    'code' => mb_strtoupper($baseCode),
+                    'indexation' => mb_strtoupper($family['indexation']),
                     'cash_receipt_type_uuid' => $typeUuid,
                     'created_by' => $createdBy,
                     'updated_by' => $createdBy,
@@ -330,8 +330,8 @@ class CashReceiptTypeController extends Controller
 
                     $model->update([
                         'name' => $name,
-                        'code' => Str::slug($name, '_') . '_' . substr($uuid ?? Str::uuid(), 0, 8),
-                        'indexation' => $family['indexation'],
+                        'code' => mb_strtoupper(Str::slug($name, '_') . '_' . substr($uuid ?? Str::uuid(), 0, 8)),
+                        'indexation' => mb_strtoupper($family['indexation']),
                         'cash_receipt_type_uuid' => $typeUuid,
                         'updated_by' => $userId,
                     ]);
@@ -341,8 +341,8 @@ class CashReceiptTypeController extends Controller
                     $model = CashReceiptFamily::create([
                         'uuid' => (string) Str::uuid(),
                         'name' => $name,
-                        'code' => Str::slug($name, '_') . '_' . substr($uuid ?? Str::uuid(), 0, 8),
-                        'indexation' => $family['indexation'],
+                        'code' => mb_strtoupper(Str::slug($name, '_') . '_' . substr($uuid ?? Str::uuid(), 0, 8)),
+                        'indexation' => mb_strtoupper($family['indexation']),
                         'cash_receipt_type_uuid' => $typeUuid,
                         'created_by' => $userId,
                         'updated_by' => $userId,
