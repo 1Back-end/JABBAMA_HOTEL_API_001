@@ -14,3 +14,6 @@ Route::get('/detailed_sales_summary_restaurant', [PromoterReportController::clas
 Route::get('/restaurant_cash_receipt_items', [PromoterReportController::class, 'getRestaurantCashReceiptItems']);
 Route::get('/promoter_restaurant_expenses', [PromoterReportController::class, 'get_expenses']);
 Route::get('/promoter_sales_categories_summary', [PromoterReportController::class, 'getSalesCategoriesSummary']);
+Route::get('/promoter_turnover_details', [PromoterReportController::class, 'getTurnoverDetails']);
+Route::get('/promoter_paid_detailed', [PromoterReportController::class, 'getPaidDetailedSalesSummary']);
+Route::get('/promoter_paid_detailed_items', [PromoterReportController::class, 'getTurnoverDetailsSalesPaid']);
