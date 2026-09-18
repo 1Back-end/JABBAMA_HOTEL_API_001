@@ -89,7 +89,7 @@ class PaymentLine extends Model
             RoomService::class,
             'payable_uuid',
             'uuid'
-        )->where('payment_lines.payable_type', RoomService::class);
+        );
     }
 
     public function payment_regulation()

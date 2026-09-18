@@ -8,10 +8,13 @@ use App\Enums\ExpenseSlug;
 use App\Enums\KpiAnnualSummaryResponse;
 use App\Enums\MenuOrderStatus;
 use App\Enums\MetricKeyResponse;
+use App\Enums\PaymentOrderItemStatus;
 use App\Enums\PaymentOrderMenusStatus;
 use App\Enums\PaymentRegulationSlug;
+use App\Enums\PaymentStatus;
 use App\Enums\PdgCategory;
 use App\Enums\RestaurantExpenseSlug;
+use App\Enums\RestaurantRubricEnum;
 use App\Enums\RestaurantSummaryMode;
 use App\Enums\RestaurantSummaryResponse;
 use App\Models\ExpensePayment;
@@ -20,10 +23,14 @@ use App\Models\OrderMenuRestaurantItem;
 use App\Models\PaymentLine;
 use App\Models\PaymentRegulation;
 use App\Models\RegulationMethod;
+use App\Models\RoomService;
+use App\Models\SalesCategory;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+
 
 class PromoterReportController extends Controller
 {
@@ -33,22 +40,20 @@ class PromoterReportController extends Controller
             ? Carbon::createFromFormat('d-m-Y', $request->date)
             : Carbon::yesterday();
 
-        $dayStart   = $parsedDate->copy()->startOfDay()->toDateTimeString();
-        $dayEnd     = $parsedDate->copy()->endOfDay()->toDateTimeString();
+        $startOfYear = $parsedDate->copy()->startOfYear()->toDateTimeString();
+
+        $currentDateEnd = $parsedDate->copy()->endOfDay()->toDateTimeString();
 
         $mode = RestaurantSummaryMode::ZERO_ON_EMPTY;
 
-        $hasDataForDay = OrderMenuRestaurant::where('status', MenuOrderStatus::FACTURATE->value)
-                ->whereBetween('created_at', [$dayStart, $dayEnd])
+        $hasDataUpToDate = OrderMenuRestaurant::where('status', MenuOrderStatus::FACTURATE->value)
+                ->whereBetween('created_at', [$startOfYear, $currentDateEnd])
                 ->exists()
-            || PaymentRegulation::whereBetween('created_at', [$dayStart, $dayEnd])->exists();
+            || PaymentRegulation::whereBetween('created_at', [$startOfYear, $currentDateEnd])->exists();
 
-        if (!$hasDataForDay && $mode === RestaurantSummaryMode::ZERO_ON_EMPTY) {
+        if (!$hasDataUpToDate && $mode === RestaurantSummaryMode::ZERO_ON_EMPTY) {
             return response()->json(KpiAnnualSummaryResponse::values());
         }
-
-        $startOfYear = $parsedDate->copy()->startOfYear()->toDateTimeString();
-        $endOfYear   = $parsedDate->copy()->endOfYear()->toDateTimeString();
 
         $orders = OrderMenuRestaurant::with([
             'salesCategory:uuid,name,code',
@@ -56,7 +61,7 @@ class PromoterReportController extends Controller
             'drinks'
         ])
             ->where('status', MenuOrderStatus::FACTURATE->value)
-            ->whereBetween('created_at', [$startOfYear, $endOfYear])
+            ->whereBetween('created_at', [$startOfYear, $currentDateEnd])
             ->get();
 
         $categoriesTotals = $orders->groupBy(function ($order) {
@@ -97,7 +102,7 @@ class PromoterReportController extends Controller
             PaymentRegulationSlug::ENCAISSEMENT_RESTO->value,
             PaymentRegulationSlug::ENCAISSEMENT_BAR->value,
         ])
-            ->whereBetween('created_at', [$startOfYear, $endOfYear])
+            ->whereBetween('created_at', [$startOfYear, $currentDateEnd])
             ->sum('amount');
 
         $tauxEncaissement = $chiffreAffaireAnnuel > 0
@@ -105,7 +110,7 @@ class PromoterReportController extends Controller
             : 0;
 
         $chargesAnnuelles = (float) PaymentRegulation::whereIn('slug', ExpenseSlug::values())
-            ->whereBetween('created_at', [$startOfYear, $endOfYear])
+            ->whereBetween('created_at', [$startOfYear, $currentDateEnd])
             ->sum('amount');
 
         $tauxDepense = $chiffreAffaireAnnuel > 0
@@ -135,16 +140,17 @@ class PromoterReportController extends Controller
             ? Carbon::createFromFormat('d-m-Y', $request->date)
             : Carbon::yesterday();
 
-        $dayStart   = $parsedDate->copy()->startOfDay()->toDateTimeString();
-        $dayEnd     = $parsedDate->copy()->endOfDay()->toDateTimeString();
+        $startOfYear    = $parsedDate->copy()->startOfYear()->toDateTimeString();
+        $currentDateEnd = $parsedDate->copy()->endOfDay()->toDateTimeString();
 
         $mode = RestaurantSummaryMode::ZERO_ON_EMPTY;
 
-        $hasDataForDay = OrderMenuRestaurant::where('status', MenuOrderStatus::FACTURATE->value)
-            ->whereBetween('created_at', [$dayStart, $dayEnd])
-            ->exists();
+        $hasDataUpToDate = OrderMenuRestaurant::where('status', MenuOrderStatus::FACTURATE->value)
+                ->whereBetween('created_at', [$startOfYear, $currentDateEnd])
+                ->exists()
+            || PaymentRegulation::whereBetween('created_at', [$startOfYear, $currentDateEnd])->exists();
 
-        if (!$hasDataForDay && $mode === RestaurantSummaryMode::ZERO_ON_EMPTY) {
+        if (!$hasDataUpToDate && $mode === RestaurantSummaryMode::ZERO_ON_EMPTY) {
             return response()->json([
                 'jour'  => RestaurantSummaryResponse::values(),
                 'mois'  => RestaurantSummaryResponse::values(),
@@ -152,11 +158,14 @@ class PromoterReportController extends Controller
             ]);
         }
 
+        $dayStart   = $parsedDate->copy()->startOfDay()->toDateTimeString();
+        $dayEnd     = $parsedDate->copy()->endOfDay()->toDateTimeString();
+
         $monthStart = $parsedDate->copy()->startOfMonth()->toDateTimeString();
         $monthEnd   = $parsedDate->copy()->endOfMonth()->toDateTimeString();
 
-        $yearStart  = $parsedDate->copy()->startOfYear()->toDateTimeString();
-        $yearEnd    = $parsedDate->copy()->endOfYear()->toDateTimeString();
+        $yearStart  = $startOfYear;
+        $yearEnd    = $parsedDate->copy()->endOfYear()->toDateTimeString(); // ou $currentDateEnd selon si vous voulez l'année complète ou s'arrêter à la date du jour
 
         return response()->json([
             'jour'  => $this->calculateMetricsForPeriod($dayStart, $dayEnd),
@@ -235,16 +244,17 @@ class PromoterReportController extends Controller
             ? Carbon::createFromFormat('d-m-Y', $request->date)
             : Carbon::yesterday();
 
-        $dayStart   = $parsedDate->copy()->startOfDay()->toDateTimeString();
-        $dayEnd     = $parsedDate->copy()->endOfDay()->toDateTimeString();
+        $startOfYear    = $parsedDate->copy()->startOfYear()->toDateTimeString();
+        $currentDateEnd = $parsedDate->copy()->endOfDay()->toDateTimeString();
 
         $mode = RestaurantSummaryMode::ZERO_ON_EMPTY;
 
-        $hasDataForDay = OrderMenuRestaurant::where('status', MenuOrderStatus::FACTURATE->value)
-            ->whereBetween('created_at', [$dayStart, $dayEnd])
-            ->exists();
+        $hasDataUpToDate = OrderMenuRestaurant::where('status', MenuOrderStatus::FACTURATE->value)
+                ->whereBetween('created_at', [$startOfYear, $currentDateEnd])
+                ->exists()
+            || PaymentRegulation::whereBetween('created_at', [$startOfYear, $currentDateEnd])->exists();
 
-        if (!$hasDataForDay && $mode === RestaurantSummaryMode::ZERO_ON_EMPTY) {
+        if (!$hasDataUpToDate && $mode === RestaurantSummaryMode::ZERO_ON_EMPTY) {
             return response()->json([
                 'jour'  => RestaurantSummaryResponse::values(),
                 'mois'  => RestaurantSummaryResponse::values(),
@@ -252,10 +262,13 @@ class PromoterReportController extends Controller
             ]);
         }
 
+        $dayStart   = $parsedDate->copy()->startOfDay()->toDateTimeString();
+        $dayEnd     = $parsedDate->copy()->endOfDay()->toDateTimeString();
+
         $monthStart = $parsedDate->copy()->startOfMonth()->toDateTimeString();
         $monthEnd   = $parsedDate->copy()->endOfMonth()->toDateTimeString();
 
-        $yearStart  = $parsedDate->copy()->startOfYear()->toDateTimeString();
+        $yearStart  = $startOfYear;
         $yearEnd    = $parsedDate->copy()->endOfYear()->toDateTimeString();
 
         return response()->json([
@@ -305,16 +318,16 @@ class PromoterReportController extends Controller
             ? Carbon::createFromFormat('d-m-Y', $request->date)
             : Carbon::yesterday();
 
-        $dayStart   = $parsedDate->copy()->startOfDay()->toDateTimeString();
-        $dayEnd     = $parsedDate->copy()->endOfDay()->toDateTimeString();
+        $startOfYear    = $parsedDate->copy()->startOfYear()->toDateTimeString();
+        $currentDateEnd = $parsedDate->copy()->endOfDay()->toDateTimeString();
 
         $mode = RestaurantSummaryMode::ZERO_ON_EMPTY;
 
-        $hasDataForDay = PaymentRegulation::where('slug', PdgCategory::AUTRES_ENCAISSEMENTS->value)
-            ->whereBetween('created_at', [$dayStart, $dayEnd])
+        $hasDataUpToDate = PaymentRegulation::where('slug', PdgCategory::AUTRES_ENCAISSEMENTS->value)
+            ->whereBetween('created_at', [$startOfYear, $currentDateEnd])
             ->exists();
 
-        if (!$hasDataForDay && $mode === RestaurantSummaryMode::ZERO_ON_EMPTY) {
+        if (!$hasDataUpToDate && $mode === RestaurantSummaryMode::ZERO_ON_EMPTY) {
             return response()->json([
                 'jour'  => MetricKeyResponse::format(MetricKeyResponse::ENCAISSEMENT, 0),
                 'mois'  => MetricKeyResponse::format(MetricKeyResponse::ENCAISSEMENT, 0),
@@ -322,10 +335,13 @@ class PromoterReportController extends Controller
             ]);
         }
 
+        $dayStart   = $parsedDate->copy()->startOfDay()->toDateTimeString();
+        $dayEnd     = $parsedDate->copy()->endOfDay()->toDateTimeString();
+
         $monthStart = $parsedDate->copy()->startOfMonth()->toDateTimeString();
         $monthEnd   = $parsedDate->copy()->endOfMonth()->toDateTimeString();
 
-        $yearStart  = $parsedDate->copy()->startOfYear()->toDateTimeString();
+        $yearStart  = $startOfYear;
         $yearEnd    = $parsedDate->copy()->endOfYear()->toDateTimeString();
 
         return response()->json([
@@ -351,16 +367,16 @@ class PromoterReportController extends Controller
             ? Carbon::createFromFormat('d-m-Y', $request->date)
             : Carbon::yesterday();
 
-        $dayStart   = $parsedDate->copy()->startOfDay()->toDateTimeString();
-        $dayEnd     = $parsedDate->copy()->endOfDay()->toDateTimeString();
+        $startOfYear    = $parsedDate->copy()->startOfYear()->toDateTimeString();
+        $currentDateEnd = $parsedDate->copy()->endOfDay()->toDateTimeString();
 
         $mode = RestaurantSummaryMode::ZERO_ON_EMPTY;
 
-        $hasDataForDay = PaymentRegulation::where('slug', PdgCategory::AUTRES_DEPENSES->value)
-            ->whereBetween('created_at', [$dayStart, $dayEnd])
+        $hasDataUpToDate = PaymentRegulation::where('slug', PdgCategory::AUTRES_DEPENSES->value)
+            ->whereBetween('created_at', [$startOfYear, $currentDateEnd])
             ->exists();
 
-        if (!$hasDataForDay && $mode === RestaurantSummaryMode::ZERO_ON_EMPTY) {
+        if (!$hasDataUpToDate && $mode === RestaurantSummaryMode::ZERO_ON_EMPTY) {
             return response()->json([
                 'jour'  => MetricKeyResponse::format(MetricKeyResponse::DEPENSES, 0),
                 'mois'  => MetricKeyResponse::format(MetricKeyResponse::DEPENSES, 0),
@@ -368,10 +384,13 @@ class PromoterReportController extends Controller
             ]);
         }
 
+        $dayStart   = $parsedDate->copy()->startOfDay()->toDateTimeString();
+        $dayEnd     = $parsedDate->copy()->endOfDay()->toDateTimeString();
+
         $monthStart = $parsedDate->copy()->startOfMonth()->toDateTimeString();
         $monthEnd   = $parsedDate->copy()->endOfMonth()->toDateTimeString();
 
-        $yearStart  = $parsedDate->copy()->startOfYear()->toDateTimeString();
+        $yearStart  = $startOfYear;
         $yearEnd    = $parsedDate->copy()->endOfYear()->toDateTimeString();
 
         return response()->json([
@@ -393,15 +412,38 @@ class PromoterReportController extends Controller
 
     public function getPaymentMethodsSummary(Request $request): JsonResponse
     {
-        if ($request->filled('date')) {
-            $parsedDate = Carbon::createFromFormat('d-m-Y', $request->date);
-            $startOfPeriod = $parsedDate->copy()->startOfDay()->toDateTimeString();
-            $endOfPeriod   = $parsedDate->copy()->endOfDay()->toDateTimeString();
-        } else {
-            $parsedDate = Carbon::now();
-            $startOfPeriod = $parsedDate->copy()->startOfYear()->toDateTimeString();
-            $endOfPeriod   = $parsedDate->copy()->endOfYear()->toDateTimeString();
+        $parsedDate = $request->filled('date')
+            ? Carbon::createFromFormat('d-m-Y', $request->date)
+            : Carbon::yesterday();
+
+        $startOfYear    = $parsedDate->copy()->startOfYear()->toDateTimeString();
+        $currentDateEnd = $parsedDate->copy()->endOfDay()->toDateTimeString();
+
+        $mode = RestaurantSummaryMode::ZERO_ON_EMPTY;
+
+        $hasDataUpToDate = PaymentRegulation::whereBetween('created_at', [$startOfYear, $currentDateEnd])->exists();
+
+        if (!$hasDataUpToDate && $mode === RestaurantSummaryMode::ZERO_ON_EMPTY) {
+            $methods = RegulationMethod::where('active', true)->get();
+            $emptyDetails = $methods->map(function ($method) {
+                return [
+                    'uuid'          => $method->uuid,
+                    'code'          => $method->code,
+                    'label'         => CaisseType::formatLabel($method->name),
+                    'encaissements' => 0.0,
+                    'depenses'      => 0.0,
+                    'solde'         => 0.0,
+                ];
+            });
+
+            return response()->json([
+                'solde_total' => 0.0,
+                'caisses'     => $emptyDetails,
+            ]);
         }
+
+        $startOfPeriod = $startOfYear;
+        $endOfPeriod   = $currentDateEnd;
 
         $methods = RegulationMethod::where('active', true)->get();
 
@@ -501,13 +543,31 @@ class PromoterReportController extends Controller
             ? Carbon::createFromFormat('d-m-Y', $request->date)
             : Carbon::yesterday();
 
+        $startOfYear    = $parsedDate->copy()->startOfYear()->toDateTimeString();
+        $currentDateEnd = $parsedDate->copy()->endOfDay()->toDateTimeString();
+
+        $mode = RestaurantSummaryMode::ZERO_ON_EMPTY;
+
+        $hasDataUpToDate = OrderMenuRestaurant::where('status', MenuOrderStatus::FACTURATE->value)
+                ->whereBetween('created_at', [$startOfYear, $currentDateEnd])
+                ->exists()
+            || PaymentRegulation::whereBetween('created_at', [$startOfYear, $currentDateEnd])->exists();
+
+        if (!$hasDataUpToDate && $mode === RestaurantSummaryMode::ZERO_ON_EMPTY) {
+            return response()->json([
+                'jour'  => [],
+                'mois'  => [],
+                'annee' => [],
+            ]);
+        }
+
         $dayStart   = $parsedDate->copy()->startOfDay()->toDateTimeString();
         $dayEnd     = $parsedDate->copy()->endOfDay()->toDateTimeString();
 
         $monthStart = $parsedDate->copy()->startOfMonth()->toDateTimeString();
         $monthEnd   = $parsedDate->copy()->endOfMonth()->toDateTimeString();
 
-        $yearStart  = $parsedDate->copy()->startOfYear()->toDateTimeString();
+        $yearStart  = $startOfYear;
         $yearEnd    = $parsedDate->copy()->endOfYear()->toDateTimeString();
 
         return response()->json([
@@ -530,15 +590,26 @@ class PromoterReportController extends Controller
             ->whereBetween('created_at', [$startDate, $endDate])
             ->get();
 
-        $categoriesTotals = $orders->groupBy(function ($order) {
+        $categoriesTotals = [];
+
+        $groupedBySalesCategory = $orders->groupBy(function ($order) {
             return $order->salesCategory ? strtoupper($order->salesCategory->name) : 'AUTRES';
-        })->map(function ($group) {
-            return (float) $group->sum(function ($order) {
+        });
+
+        foreach ($groupedBySalesCategory as $name => $group) {
+            $uuid = optional($group->first()->salesCategory)->uuid;
+
+            $total = (float) $group->sum(function ($order) {
                 return $order->items->filter(function ($item) {
                     return $item->menu && !$item->menu->is_generated_from_complement;
                 })->sum('total_price');
             });
-        })->toArray();
+
+            $categoriesTotals[$name] = [
+                'uuid'   => $uuid,
+                'amount' => $total
+            ];
+        }
 
         $totalAmountRoomService = (float) $orders->where('is_room_service', true)->sum(function ($order) {
             $price = (float) str_replace(',', '.', $order->price_for_room_service ?? 0);
@@ -558,8 +629,16 @@ class PromoterReportController extends Controller
         }
 
         $result = $categoriesTotals;
-        $result['ROOM SERVICE'] = $totalAmountRoomService;
-        $result['DIVERS RESTAURANT'] = $totalAmountDivers;
+
+        $result['ROOM SERVICE'] = [
+            'uuid'   => null,
+            'amount' => $totalAmountRoomService
+        ];
+
+        $result['DIVERS RESTAURANT'] = [
+            'uuid'   => null,
+            'amount' => $totalAmountDivers
+        ];
 
         return $result;
     }
@@ -659,7 +738,6 @@ class PromoterReportController extends Controller
             ];
         })->toArray();
     }
-
 
     public function get_expenses(Request $request): JsonResponse
     {
@@ -854,8 +932,24 @@ class PromoterReportController extends Controller
             ? Carbon::createFromFormat('d-m-Y', $request->date)
             : Carbon::yesterday();
 
-        $dayStart = $parsedDate->copy()->startOfDay()->toDateTimeString();
-        $dayEnd   = $parsedDate->copy()->endOfDay()->toDateTimeString();
+        $startOfYear    = $parsedDate->copy()->startOfYear()->toDateTimeString();
+        $currentDateEnd = $parsedDate->copy()->endOfDay()->toDateTimeString();
+
+        $mode = RestaurantSummaryMode::ZERO_ON_EMPTY;
+
+        $hasDataUpToDate = OrderMenuRestaurant::where('status', MenuOrderStatus::FACTURATE->value)
+                ->whereBetween('created_at', [$startOfYear, $currentDateEnd])
+                ->exists()
+            || PaymentRegulation::whereBetween('created_at', [$startOfYear, $currentDateEnd])->exists();
+
+        if (!$hasDataUpToDate && $mode === RestaurantSummaryMode::ZERO_ON_EMPTY) {
+            return response()->json([
+                'success'      => true,
+                'date'         => $parsedDate->format('d-m-Y'),
+                'data'         => [],
+                'total_global' => 0
+            ]);
+        }
 
         $orders = OrderMenuRestaurant::with([
             'salesCategory:uuid,name,code',
@@ -863,7 +957,7 @@ class PromoterReportController extends Controller
             'drinks'
         ])
             ->where('status', MenuOrderStatus::FACTURATE->value)
-            ->whereBetween('created_at', [$dayStart, $dayEnd])
+            ->whereBetween('created_at', [$startOfYear, $currentDateEnd])
             ->get();
 
         $groupedOrders = $orders->groupBy(function ($order) {
@@ -907,6 +1001,342 @@ class PromoterReportController extends Controller
     }
 
 
+    public function getTurnoverDetails(Request $request)
+    {
+        $rubricInput = $request->input('rubric');
+        $rawDate = $request->input('date', Carbon::today()->toDateString());
+
+        try {
+            $date = Carbon::createFromFormat('d-m-Y', $rawDate)->toDateString();
+        } catch (\Exception $e) {
+            $date = Carbon::parse($rawDate)->toDateString();
+        }
+
+        $salesCategory = $rubricInput ? SalesCategory::find($rubricInput) : null;
+        $rubricName = $salesCategory ? strtoupper(trim($salesCategory->name)) : ($rubricInput ? strtoupper(trim($rubricInput)) : null);
+
+        $isRoomService = ($rubricName === RestaurantRubricEnum::ROOM_SERVICE->value);
+
+        $itemsData = collect();
+
+        if (!$isRoomService) {
+            $restoQuery = OrderMenuRestaurantItem::with([
+                'menu',
+                'order.salesCategory',
+                'order.payment'
+            ])
+                ->whereHas('order', function ($orderQuery) use ($date, $salesCategory, $rubricInput, $rubricName) {
+                    $orderQuery->whereDate('created_at', $date);
+
+                    if ($salesCategory) {
+                        $orderQuery->where('sales_category_uuid', $salesCategory->uuid);
+                    } elseif ($rubricInput && $rubricName !== RestaurantRubricEnum::DIVERS_RESTAURANT->value) {
+                        $orderQuery->where('sales_category_uuid', $rubricInput);
+                    }
+                });
+
+            if ($rubricName === RestaurantRubricEnum::DIVERS_RESTAURANT->value) {
+                $restoQuery->whereHas('menu', function ($menuQuery) {
+                    $menuQuery->where('is_generated_from_complement', true);
+                });
+            } else {
+                $restoQuery->whereHas('menu', function ($menuQuery) {
+                    $menuQuery->where('is_generated_from_complement', false);
+                });
+            }
+
+            $restoItems = $restoQuery->get()->map(function ($item) {
+                $menuName = optional($item->menu)->name ?? $item->name;
+                $orderCode = optional($item->order)->code ?? '';
+                $salesCategoryName = optional(optional($item->order)->salesCategory)->name;
+                $methodName = $item->status_payment_label;
+
+                return [
+                    'uuid'           => $item->uuid,
+                    'code'           => $orderCode,
+                    'description'    => $menuName,
+                    'menu_name'      => $menuName,
+                    'sales_category' => $salesCategoryName,
+                    'amount'         => (float) ($item->total_price ?? ($item->quantity * $item->unit_price) ?? 0),
+                    'method'         => $methodName,
+                    'created_at'     => optional($item->order)->created_at ? optional($item->order)->created_at->toDateTimeString() : $item->created_at->toDateTimeString(),
+                ];
+            });
+
+            $itemsData = $itemsData->concat($restoItems);
+        }
+
+        if (!$rubricInput || $isRoomService) {
+            $roomServiceQuery = OrderMenuRestaurant::with(['items.menu'])
+                ->where('is_room_service', true)
+                ->whereDate('created_at', $date)
+                ->get()
+                ->map(function ($item) {
+                    $menuName = optional($item->menu)->name ?? $item->description ?? 'Room Service';
+                    $orderCode = optional($item->order)->code ?? $item->code ?? '';
+
+                    $unitPrice = (float) ($item->price_for_room_service ?? $item->total_price ?? 0);
+                    $quantity  = (int) ($item->quantity_for_room_service ?? 1);
+                    $calculatedAmount = $unitPrice * $quantity;
+
+                    return [
+                        'uuid'           => $item->uuid,
+                        'code'           => $orderCode,
+                        'description'    => $menuName,
+                        'menu_name'      => $menuName,
+                        'sales_category' => 'ROOM SERVICE',
+                        'amount'                    => $calculatedAmount,
+                        'method'         => $item->global_status_label,
+                        'created_at'     => $item->created_at ? $item->created_at->toDateTimeString() : now()->toDateTimeString(),
+                    ];
+                });
+
+            if ($isRoomService) {
+                $itemsData = $roomServiceQuery;
+            } else {
+                $itemsData = $itemsData->concat($roomServiceQuery);
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'date_parsed' => $date,
+            'rubric_input' => $rubricInput,
+            'total_lines_found_for_date' => $itemsData->count(),
+            'data'    => $itemsData->values()
+        ]);
+    }
+
+    public function getPaidDetailedSalesSummary(Request $request): JsonResponse
+    {
+        $parsedDate = $request->filled('date')
+            ? Carbon::createFromFormat('d-m-Y', $request->date)
+            : Carbon::yesterday();
+
+        $startOfYear    = $parsedDate->copy()->startOfYear()->toDateTimeString();
+        $currentDateEnd = $parsedDate->copy()->endOfDay()->toDateTimeString();
+
+        $mode = RestaurantSummaryMode::ZERO_ON_EMPTY;
+
+        $hasDataUpToDate = OrderMenuRestaurant::where('status', MenuOrderStatus::FACTURATE->value)
+                ->whereBetween('created_at', [$startOfYear, $currentDateEnd])
+                ->exists()
+            || PaymentRegulation::whereBetween('created_at', [$startOfYear, $currentDateEnd])->exists();
+
+        if (!$hasDataUpToDate && $mode === RestaurantSummaryMode::ZERO_ON_EMPTY) {
+            return response()->json([
+                'jour'  => [],
+                'mois'  => [],
+                'annee' => [],
+            ]);
+        }
+
+        $dayStart   = $parsedDate->copy()->startOfDay()->toDateTimeString();
+        $dayEnd     = $parsedDate->copy()->endOfDay()->toDateTimeString();
+
+        $monthStart = $parsedDate->copy()->startOfMonth()->toDateTimeString();
+        $monthEnd   = $parsedDate->copy()->endOfMonth()->toDateTimeString();
+
+        $yearStart  = $startOfYear;
+        $yearEnd    = $parsedDate->copy()->endOfYear()->toDateTimeString();
+
+        return response()->json([
+            'jour'  => $this->calculatePaidDetailedMetricsForPeriod($dayStart, $dayEnd),
+            'mois'  => $this->calculatePaidDetailedMetricsForPeriod($monthStart, $monthEnd),
+            'annee' => $this->calculatePaidDetailedMetricsForPeriod($yearStart, $yearEnd),
+        ]);
+    }
+
+    /**
+     * Calcule le détail par descriptif (Dîner, Bar, Petit déjeuner, Divers, Déjeuner, Room Service) pour une période
+     * en se basant sur les lignes de paiement (PaymentLine).
+     */
+    private function calculatePaidDetailedMetricsForPeriod(string $startDate, string $endDate): array
+    {
+        $paymentLines = PaymentLine::with([
+            'item.menu:uuid,is_generated_from_complement',
+            'item.order.salesCategory:uuid,name,code',
+            'roomService'
+        ])
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->get();
+
+        $categoriesTotals = [];
+        $totalAmountRoomService = 0;
+        $totalAmountDivers = 0;
+
+        foreach ($paymentLines as $line) {
+            if ($line->roomService || str_contains(strtolower($line->payable_type ?? ''), 'roomservice')) {
+                $totalAmountRoomService += (float) $line->amount;
+                continue;
+            }
+
+            if ($line->item) {
+                $item = $line->item;
+                $isComplement = optional($item->menu)->is_generated_from_complement ?? false;
+
+                if ($isComplement) {
+                    $totalAmountDivers += (float) $line->amount;
+                } else {
+                    $salesCategory = optional(optional(optional($item->order)->salesCategory));
+                    $categoryName = $salesCategory->name ? strtoupper($salesCategory->name) : 'AUTRES';
+                    $categoryUuid = $salesCategory->uuid ?? null;
+
+                    if (!isset($categoriesTotals[$categoryName])) {
+                        $categoriesTotals[$categoryName] = [
+                            'uuid'   => $categoryUuid,
+                            'amount' => 0.0
+                        ];
+                    }
+
+                    $categoriesTotals[$categoryName]['amount'] += (float) $line->amount;
+                }
+            }
+        }
+
+        $result = $categoriesTotals;
+
+        $result['ROOM SERVICE'] = [
+            'uuid'   => null,
+            'amount' => $totalAmountRoomService
+        ];
+
+        $result['DIVERS RESTAURANT'] = [
+            'uuid'   => null,
+            'amount' => $totalAmountDivers
+        ];
+
+        return $result;
+    }
+
+    public function getTurnoverDetailsSalesPaid(Request $request)
+    {
+        $rubricInput = $request->input('rubric');
+        $rawDate = $request->input('date', Carbon::today()->toDateString());
+
+        try {
+            $date = Carbon::createFromFormat('d-m-Y', $rawDate)->toDateString();
+        } catch (\Exception $e) {
+            $date = Carbon::parse($rawDate)->toDateString();
+        }
+
+        $salesCategory = $rubricInput ? SalesCategory::find($rubricInput) : null;
+        $rubricName = $salesCategory ? strtoupper(trim($salesCategory->name)) : ($rubricInput ? strtoupper(trim($rubricInput)) : null);
+
+        $paymentLines = PaymentLine::with([
+            'payment.order.salesCategory',
+            'method',
+            'item.menu',
+            'item.order.salesCategory',
+            'roomService'
+        ])
+            ->whereDate('created_at', $date)
+            ->where('slug', RestaurantExpenseSlug::RESTO->value)
+            ->where(function ($query) use ($rubricName, $rubricInput, $salesCategory) {
+
+                if ($rubricName === RestaurantRubricEnum::DIVERS_RESTAURANT->value) {
+                    $query->where('payable_type', OrderMenuRestaurantItem::class)
+                        ->whereHas('item.menu', function ($menuQuery) {
+                            $menuQuery->where('is_generated_from_complement', true);
+                        })
+                        ->whereHas('item.order', function ($orderQuery) use ($salesCategory, $rubricInput) {
+                            $orderQuery->where('status', MenuOrderStatus::FACTURATE->value);
+                            if ($salesCategory) {
+                                $orderQuery->where('sales_category_uuid', $salesCategory->uuid);
+                            }
+                        });
+
+                } elseif ($rubricName === RestaurantRubricEnum::ROOM_SERVICE->value) {
+                    $query->where('payable_type', RoomService::class);
+
+                } else {
+                    $query->where(function ($subQuery) use ($salesCategory, $rubricInput) {
+                        $subQuery->where(function ($q) use ($salesCategory, $rubricInput) {
+                            $q->whereIn('payable_type', [
+                                OrderMenuRestaurantItem::class,
+                            ])
+                                ->where(function ($innerQuery) use ($salesCategory, $rubricInput) {
+                                    $innerQuery->orWhere(function ($itemQuery) use ($salesCategory, $rubricInput) {
+                                        $itemQuery->where('payable_type', OrderMenuRestaurantItem::class)
+                                            ->whereHas('item.menu', function ($menuQuery) {
+                                                $menuQuery->where('is_generated_from_complement', false);
+                                            })
+                                            ->whereHas('item.order', function ($orderQuery) use ($salesCategory, $rubricInput) {
+                                                $orderQuery->where('status', MenuOrderStatus::FACTURATE->value);
+
+                                                if ($salesCategory) {
+                                                    $orderQuery->where('sales_category_uuid', $salesCategory->uuid);
+                                                } elseif ($rubricInput) {
+                                                    $orderQuery->where('sales_category_uuid', $rubricInput);
+                                                }
+                                            });
+                                    })
+                                        ->orWhere(function ($roomQuery) use ($salesCategory, $rubricInput) {
+                                            $roomQuery->where('payable_type', RoomService::class);
+                                        });
+                                });
+                        });
+
+                        if (!$rubricInput) {
+                            $subQuery->orWhere('payable_type', RoomService::class);
+                        }
+                    });
+                }
+            })
+            ->get();
+
+        $formattedLines = $paymentLines->map(function ($line) {
+            $description = 'Encaissement Restaurant';
+            $menuName = null;
+            $salesCategoryName = null;
+            $quantity = 1;
+            $amount = (float) $line->amount;
+
+            if ($line->payable_type === OrderMenuRestaurantItem::class) {
+                $restaurantItem = $line->item;
+                $menuName = optional($restaurantItem?->menu)->name
+                    ?? optional($restaurantItem)->name;
+                $description = $menuName ?? 'Encaissement Restaurant';
+
+                $salesCategoryName = optional(optional($restaurantItem?->order)?->salesCategory)->name;
+                $quantity = (int) ($restaurantItem?->quantity ?? 1);
+
+            } elseif ($line->payable_type === RoomService::class) {
+                $roomServiceItem = $line->roomService;
+                $menuName = optional($roomServiceItem)->name ?? optional($roomServiceItem)->description ?? 'Room Service';
+                $description = $menuName;
+
+                $quantity = (int) ($roomServiceItem?->quantity_for_room_service ?? $roomServiceItem?->quantity ?? 1);
+
+                $unitPrice = (float) ($roomServiceItem?->price_for_room_service ?? $roomServiceItem?->total_price ?? 0);
+                if ($unitPrice > 0 && $amount <= 0) {
+                    $amount = $unitPrice * $quantity;
+                }
+            }
+
+            $orderCode = optional(optional($line->payment)->order)->code ?? '';
+
+            return [
+                'uuid'                      => $line->uuid,
+                'code'                      => $orderCode,
+                'description'               => $description,
+                'menu_name'                 => $menuName,
+                'sales_category'            => $salesCategoryName,
+                'quantity_for_room_service' => $quantity,
+                'amount'                    => $amount,
+                'method'                    => optional($line->method)->name ?? '',
+                'created_at'                => $line->created_at->toDateTimeString(),
+            ];
+        })->values();
+
+        return response()->json([
+            'success' => true,
+            'date_parsed' => $date,
+            'rubric_input' => $rubricInput,
+            'total_lines_found_for_date' => $formattedLines->count(),
+            'data'    => $formattedLines
+        ]);
+    }
 
 
 }
