@@ -740,12 +740,11 @@ class PaymentController extends Controller
             DB::raw('DATE(payment_regulations.created_at)'),
         ];
 
-        $query = PaymentRegulation::query();
-        $totalsQuery = PaymentRegulation::whereDate('created_at', $date);
+        $query = PaymentRegulation::query()->whereNotNull('payment_regulations.slug');
+        $totalsQuery = PaymentRegulation::whereDate('created_at', $date)->whereNotNull('slug');
 
         if ($request->cash_register_filter_type === CashRegisterFilterType::PAYMENT_METHOD->value) {
 
-            // --- 1. FILTRE PAR MODE DE RÈGLEMENT ---
             $selectColumns[] = 'payment_regulations.regulation_method_uuid';
             $selectColumns[] = DB::raw("SUM(CASE WHEN payment_regulations.type IN ('encaissement', 'recouvrement') THEN payment_regulations.amount ELSE 0 END) as total_encaissements");
             $selectColumns[] = DB::raw("SUM(CASE WHEN payment_regulations.type = 'expense' THEN payment_regulations.amount ELSE 0 END) as total_depenses");
@@ -761,7 +760,6 @@ class PaymentController extends Controller
 
         } elseif ($request->cash_register_filter_type === CashRegisterFilterType::PAYMENT_TYPE->value) {
 
-            // --- 2. FILTRE PAR TYPE DE PAIEMENT (BAR / RESTO / AUTRES regroupés) ---
             $selectColumns[] = DB::raw("
             CASE
                 WHEN payment_regulations.slug LIKE '%BAR%' THEN 'BAR'

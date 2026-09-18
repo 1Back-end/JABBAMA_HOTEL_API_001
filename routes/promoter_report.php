@@ -17,3 +17,4 @@ Route::get('/promoter_sales_categories_summary', [PromoterReportController::clas
 Route::get('/promoter_turnover_details', [PromoterReportController::class, 'getTurnoverDetails']);
 Route::get('/promoter_paid_detailed', [PromoterReportController::class, 'getPaidDetailedSalesSummary']);
 Route::get('/promoter_paid_detailed_items', [PromoterReportController::class, 'getTurnoverDetailsSalesPaid']);
+Route::get('promoter/pdf', [\App\Http\Controllers\PromoterReportController::class, 'exportPromoterReportPdf']);

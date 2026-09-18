@@ -79,7 +79,7 @@ class OrderMenuRestaurantController extends Controller
         $reservationUuid = null
     ) {
 
-        // 🔥 Stock réel
+
         $realStock = (float) ProductPoint::where('produit_uuid', $productUuid)
             ->where('point_uuid', $warehouseUuid)
             ->value('quantity') ?? 0;

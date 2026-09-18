@@ -599,6 +599,21 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des encaissements',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],
+        'view_main_courante_promotor' => [
+            'description' => 'Afficher l\'interface de la main courante du promoteur',
+            'category' => 'Gestion des encaissements',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'view_cash_register_sheet_promotor' => [
+            'description' => 'Afficher l\'interface de la fiche de caisse du promoteur',
+            'category' => 'Gestion des encaissements',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'view_operational_monitoring_promotor' => [
+            'description' => 'Afficher l\'interface du suivi d\'exploitation du promoteur',
+            'category' => 'Gestion des encaissements',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
 
     ];
 

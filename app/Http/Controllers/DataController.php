@@ -15,319 +15,8 @@ use Illuminate\Support\Facades\Log;
 
 class DataController extends Controller
 {
-    public function get_GLE_for_main_courante(Request $request)
-    {
-        $auth = auth()->user();
-        $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : now()->toDateString();
 
-        try {
-            $orders = OrderMenuRestaurant::whereDate('created_at', $date)
-                ->where('status', MenuOrderStatus::FACTURATE->value)
-                ->get();
-            $totalGle = (int) $orders->sum(function ($order) {
-                return $order->total_order;
-            });
-
-            return response()->json([
-                'success' => true,
-                'date' => $date,
-                'nombre_factures' => $orders->count(),
-                'total_gle' => $totalGle
-            ], 200);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => "Erreur lors du calcul du total général.",
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    public function get_encaissement_for_main_courante(Request $request)
-    {
-        $auth = auth()->user();
-        $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : now()->toDateString();
-
-        try {
-            $orders = OrderMenuRestaurant::whereDate('created_at', $date)
-                ->whereIn('regulation_status', [
-                    PaymentOrderMenusStatus::PAID->value,
-                    PaymentOrderMenusStatus::PARTIALLY_PAID->value,
-                ])
-                ->get();
-            $totalEncaissement = (int) $orders->sum(function ($order) {
-                return $order->computed_paid_amount;
-            });
-
-            return response()->json([
-                'success' => true,
-                'date' => $date,
-                'nombre_encaissements' => $orders->count(),
-                'total_encaissement' => $totalEncaissement
-            ], 200);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => "Erreur lors du calcul de l'encaissement.",
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    public function get_not_paid_for_main_courante(Request $request)
-    {
-        $auth = auth()->user();
-        $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : now()->toDateString();
-
-        try {
-            $orders = OrderMenuRestaurant::whereDate('created_at', $date)
-                ->whereIn('regulation_status', [
-                    PaymentOrderMenusStatus::NOT_PAID->value,
-                    PaymentOrderMenusStatus::PARTIALLY_PAID->value,
-                ])
-                ->get();
-            $totalNotPaid = (int) $orders->sum(function ($order) {
-                return $order->total_order;
-            });
-
-            return response()->json([
-                'success' => true,
-                'date' => $date,
-                'nombre_not_paid' => $orders->count(),
-                'total_not_paid' => $totalNotPaid
-            ], 200);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => "Erreur lors du calcul des factures non payées.",
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    public function get_sales_category_totals_for_main_courante(Request $request)
-    {
-        $auth = auth()->user();
-        $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : now()->toDateString();
-
-        try {
-            $orders = OrderMenuRestaurant::whereDate('created_at', $date)
-                ->with([
-                    'salesCategory:uuid,name,code',
-                    'items.menu:uuid,is_generated_from_complement'
-                ])
-                ->where('status', MenuOrderStatus::FACTURATE->value)
-                ->get();
-
-            $categoriesTotals = $orders->groupBy(function ($order) {
-                return $order->salesCategory ? $order->salesCategory->name : 'AUTRES';
-            })->map(function ($group) {
-                return (float) $group->sum(function ($order) {
-                    return $order->items->filter(function ($item) {
-                        return $item->menu && !$item->menu->is_generated_from_complement;
-                    })->sum('total_price');
-                });
-            });
-
-            return response()->json([
-                'success' => true,
-                'date' => $date,
-                'totals_by_category' => $categoriesTotals
-            ], 200);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => "Erreur lors du calcul des montants par catégorie de vente.",
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    public function get_restaurant_bar_total(Request $request)
-    {
-        $auth = auth()->user();
-        $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : now()->toDateString();
-
-        try {
-            $totalBar = (float) OrderMenuRestaurant::whereDate('created_at', $date)
-                ->where('status', MenuOrderStatus::FACTURATE->value)
-                ->get()
-                ->sum(function ($order) {
-                    return $order->total_drinks;
-                });
-
-            return response()->json([
-                'success' => true,
-                'date' => $date,
-                'total_bar' => $totalBar
-            ], 200);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => "Erreur lors du calcul du total bar.",
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    public function get_restaurant_total_by_client_type(Request $request)
-    {
-        $auth = auth()->user();
-        $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : now()->toDateString();
-
-        try {
-            $orders = OrderMenuRestaurant::whereDate('created_at', $date)
-                ->where('status', MenuOrderStatus::FACTURATE->value)
-                ->with(['items.menu'])
-                ->get();
-            $total = 0;
-
-            foreach ($orders as $order) {
-                $uniqueItems = $order->items->unique('uuid');
-                foreach ($uniqueItems as $item) {
-                    $isComplement = $item->menu ? (bool)$item->menu->is_generated_from_complement : false;
-                    if ($item->menu && $isComplement === true) {
-                        $itemTotal = (float) ($item->total_price ?? (($item->unit_price ?? 0) * ($item->quantity_exactly ?? 0)));
-                        $total += $itemTotal;
-                    }
-                }
-            }
-            return response()->json([
-                'success' => true,
-                'date' => $date,
-                'total_order' => $total
-            ], 200);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => "Erreur lors du calcul du total des commandes.",
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    public function get_count_sales_category_totals_for_main_courante(Request $request)
-    {
-        $auth = auth()->user();
-        $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : now()->toDateString();
-
-        try {
-            $orders = OrderMenuRestaurant::whereDate('created_at', $date)
-                ->where('status', MenuOrderStatus::FACTURATE->value)
-                ->with([
-                    'salesCategory:uuid,name,code',
-                    'items.menu:uuid,is_generated_from_complement'
-                ])
-                ->get();
-
-            $categoriesCounts = [];
-
-            foreach ($orders as $order) {
-                $categoryName = $order->salesCategory ? $order->salesCategory->name : 'AUTRES';
-
-                $validItems = $order->items->filter(function ($item) {
-                    return $item->menu && !$item->menu->is_generated_from_complement;
-                });
-
-                $totalQuantityItems = $validItems->sum('quantity_exactly');
-
-                if (!isset($categoriesCounts[$categoryName])) {
-                    $categoriesCounts[$categoryName] = 0;
-                }
-
-                $categoriesCounts[$categoryName] += (int) $totalQuantityItems;
-            }
-
-            return response()->json([
-                'success' => true,
-                'date' => $date,
-                'counts_by_category' => $categoriesCounts
-            ], 200);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => "Erreur lors du calcul des totaux par catégorie de vente.",
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    public function get_restaurant_bar_count(Request $request)
-    {
-        $auth = auth()->user();
-        $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : now()->toDateString();
-
-        try {
-            $orders = OrderMenuRestaurant::whereDate('created_at', $date)
-                ->where('status', MenuOrderStatus::FACTURATE->value)
-                ->with('drinks')
-                ->get();
-
-            $totalDrinksQuantity = (int) $orders->sum(function ($order) {
-                return $order->drinks->sum('quantity_exactly');
-            });
-
-            return response()->json([
-                'success' => true,
-                'date' => $date,
-                'count_bar' => $totalDrinksQuantity
-            ], 200);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => "Erreur lors du comptage des commandes bar.",
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-
-    public function get_restaurant_count_by_client_type(Request $request)
-    {
-        $auth = auth()->user();
-        $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : now()->toDateString();
-
-        try {
-            $orders = OrderMenuRestaurant::whereDate('created_at', $date)
-                ->where('status', MenuOrderStatus::FACTURATE->value)
-                ->with(['items.menu'])
-                ->get();
-
-            $totalQuantityDivers = 0;
-
-            foreach ($orders as $order) {
-                $validItems = $order->items->filter(function ($item) {
-                    return $item->menu && $item->menu->is_generated_from_complement == true;
-                });
-
-                $totalQuantityDivers += (int) $validItems->sum('quantity_exactly');
-            }
-
-            return response()->json([
-                'success' => true,
-                'date' => $date,
-                'count_order' => $totalQuantityDivers
-            ], 200);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => "Erreur lors du comptage des divers.",
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-
-    public function getMainCouranteData(Request $request)
+    public function getCompleteMainCouranteData(Request $request)
     {
         $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : now()->toDateString();
 
@@ -336,81 +25,118 @@ class DataController extends Controller
                 ->with([
                     'restaurantTable:uuid,code,table_number',
                     'restaurant_room:uuid,rooms_number',
-                    'salesCategory:uuid,name,start_time,end_time',
-                    'items.menu:uuid,code,name,have_complements,type_complement_menu,have_complements,have_drinks,is_generated_from_complement',
+                    'salesCategory:uuid,name,code,start_time,end_time',
+                    'items.menu:uuid,code,name,have_complements,type_complement_menu,is_generated_from_complement',
                     'items.virtuals.product:uuid,name,code',
                     'items.complements.complement',
                     'payment.regulations.method',
                     'drinks.drinkConfig.product',
                 ])
-                ->where('status', MenuOrderStatus::FACTURATE->value)
                 ->get();
 
-            $countsByCategory = $orders->groupBy(function ($order) {
-                return $order->salesCategory ? strtoupper($order->salesCategory->name) : 'AUTRES';
-            })->map(function ($group) {
-                return (int) $group->sum(function ($order) {
-                    return $order->items->where('menu.is_generated_from_complement', false)->sum('quantity_exactly');
-                });
+
+            $facturedOrders = $orders->where('status', MenuOrderStatus::FACTURATE->value);
+
+            $totalGle = (int) $facturedOrders->sum('total_order');
+
+            $totalEncaissement = (int) $orders->filter(function ($order) {
+                return in_array($order->regulation_status, [
+                    PaymentOrderMenusStatus::PAID->value,
+                    PaymentOrderMenusStatus::PARTIALLY_PAID->value,
+                ]);
+            })->sum('computed_paid_amount');
+
+            $totalNotPaid = (int) $orders->filter(function ($order) {
+                return in_array($order->regulation_status, [
+                    PaymentOrderMenusStatus::NOT_PAID->value,
+                    PaymentOrderMenusStatus::PARTIALLY_PAID->value,
+                ]);
+            })->sum('total_order');
+
+            $countNotTraited = $orders->where('status', '!=', MenuOrderStatus::FACTURATE->value)->count();
+
+            $roomServiceOrders = $facturedOrders->where('is_room_service', true);
+            $totalRoomServiceQuantity = (int) $roomServiceOrders->sum('quantity_for_room_service');
+            $totalRoomServiceAmount = (int) $roomServiceOrders->sum(function ($order) {
+                return (int)($order->price_for_room_service ?? 0) * (int)($order->quantity_for_room_service ?? 0);
             });
 
-            $totalBar = (int) $orders->sum(function ($order) {
+            $totalBar = (float) $facturedOrders->sum('total_drinks');
+            $countBar = (int) $facturedOrders->sum(function ($order) {
                 return $order->drinks->sum('quantity_exactly');
             });
 
-            $totalRoomService = (int) $orders->sum('total_order');
+            $categoriesTotals = [];
+            $categoriesCounts = [];
+
+            foreach ($facturedOrders as $order) {
+                $catName = $order->salesCategory ? strtoupper($order->salesCategory->name) : 'AUTRES';
+
+                $validItems = $order->items->filter(function ($item) {
+                    return $item->menu && !$item->menu->is_generated_from_complement;
+                });
+
+                if (!isset($categoriesTotals[$catName])) {
+                    $categoriesTotals[$catName] = 0.0;
+                    $categoriesCounts[$catName] = 0;
+                }
+
+                $categoriesTotals[$catName] += (float) $validItems->sum('total_price');
+                $categoriesCounts[$catName] += (int) $validItems->sum('quantity_exactly');
+            }
+
+            $totalDiversOrder = 0;
+            $totalQuantityDivers = 0;
+
+            foreach ($facturedOrders as $order) {
+                $diversItems = $order->items->filter(function ($item) {
+                    return $item->menu && (bool)$item->menu->is_generated_from_complement === true;
+                });
+
+                foreach ($diversItems as $item) {
+                    $totalDiversOrder += (float) ($item->total_price ?? (($item->unit_price ?? 0) * ($item->quantity_exactly ?? 0)));
+                }
+                $totalQuantityDivers += (int) $diversItems->sum('quantity_exactly');
+            }
 
             $formattedOrders = [];
             $debiteursOrders = [];
 
-            foreach ($orders as $order) {
+            foreach ($facturedOrders as $order) {
                 $categoryName = $order->salesCategory ? strtoupper($order->salesCategory->name) : 'AUTRES';
-                $roomServicePrice = (int) ($order->price_for_room_service ?? 0) * (int) ($order->quantity_for_room_service ?? 0) ;
+                $roomServicePrice = (int) ($order->price_for_room_service ?? 0) * (int) ($order->quantity_for_room_service ?? 0);
                 $roomServiceQuantity = (int) ($order->quantity_for_room_service ?? 0);
                 $roomServiceUnitPrice = (int) ($order->price_for_room_service ?? 0);
 
                 $formattedItems = $order->items
-                    ->filter(function ($item) {
-                        return $item->menu && !$item->menu->is_generated_from_complement;
-                    })
-                    ->map(function ($item) {
-                        return [
-                            'menu' => $item->menu ? $item->menu->name : null,
-                            'quantity' => $item->quantity_exactly,
-                            'unit_price' => $item->unit_price,
-                            'total_price' => $item->total_price,
-                        ];
-                    });
+                    ->filter(fn($item) => $item->menu && !$item->menu->is_generated_from_complement)
+                    ->map(fn($item) => [
+                        'menu' => $item->menu?->name,
+                        'quantity' => $item->quantity_exactly,
+                        'unit_price' => $item->unit_price,
+                        'total_price' => $item->total_price,
+                    ]);
 
-                $formattedDrinks = $order->drinks->map(function ($drink) {
-                    return [
-                        'menu' => $drink->drinkConfig && $drink->drinkConfig->product ? $drink->drinkConfig->product->name : 'Boisson',
-                        'quantity' => $drink->quantity_exactly,
-                        'unit_price' => $drink->unit_price,
-                        'total_price' => $drink->total_price,
-                    ];
-                });
+                $formattedDrinks = $order->drinks->map(fn($drink) => [
+                    'menu' => $drink->drinkConfig?->product?->name ?? 'Boisson',
+                    'quantity' => $drink->quantity_exactly,
+                    'unit_price' => $drink->unit_price,
+                    'total_price' => $drink->total_price,
+                ]);
 
                 $paymentMethods = [];
                 if ($order->payment && $order->payment->regulations) {
                     $paymentMethods = $order->payment->regulations
-                        ->groupBy(function ($regulation) {
-                            return $regulation->method->name ?? 'Inconnu';
-                        })
-                        ->map(function ($group, $methodName) {
-                            return [
-                                'method_name' => $methodName,
-                                'amount' => $group->sum('amount'),
-                            ];
-                        })
+                        ->groupBy(fn($reg) => $reg->method->name ?? 'Inconnu')
+                        ->map(fn($group, $methodName) => [
+                            'method_name' => $methodName,
+                            'amount' => $group->sum('amount'),
+                        ])
                         ->values()
                         ->all();
                 }
 
-                $totalAmount = $order->total_order ?? 0;
-                $clientTypeVal = $order->type_clients_for_payment ?? null;
-
-                $orderData = [
+                $formattedOrders[] = [
                     'uuid' => $order->uuid,
                     'code_facture' => $order->code,
                     'no_table' => $order->restaurantTable->table_number ?? '',
@@ -418,32 +144,25 @@ class DataController extends Controller
                     'payment_mode' => $order->status_payment_label ?? '',
                     'regulation_status' => $order->status_payment_label,
                     'payment_status' => $order->regulation_status,
-                    'total_amount' => $totalAmount,
+                    'total_amount' => $order->total_order ?? 0,
                     'price_for_room_service' => $roomServicePrice,
                     'quantity_for_room_service' => $roomServiceQuantity,
                     'unit_price_for_room_service' => $roomServiceUnitPrice,
                     'payment_methods' => $paymentMethods,
                     'sales_category' => $categoryName,
-                    'type_clients_for_payment' => TypeClientsForPaiment::safeLabel($clientTypeVal),
+                    'type_clients_for_payment' => TypeClientsForPaiment::safeLabel($order->type_clients_for_payment),
                     'items' => $formattedItems->values()->all(),
                     'drinks' => $formattedDrinks->values()->all()
                 ];
 
-                $formattedOrders[] = $orderData;
-
-                $debiteurItems = $order->items->filter(function ($item) {
-                    return $item->menu && $item->menu->is_generated_from_complement == true;
-                });
-
+                $debiteurItems = $order->items->filter(fn($item) => $item->menu && (bool)$item->menu->is_generated_from_complement === true);
                 if ($debiteurItems->isNotEmpty()) {
-                    $formattedDebiteurItems = $debiteurItems->map(function ($item) {
-                        return [
-                            'menu' => $item->menu ? $item->menu->name : null,
-                            'quantity' => $item->quantity_exactly,
-                            'unit_price' => $item->unit_price,
-                            'total_price' => $item->total_price,
-                        ];
-                    });
+                    $formattedDebiteurItems = $debiteurItems->map(fn($item) => [
+                        'menu' => $item->menu?->name,
+                        'quantity' => $item->quantity_exactly,
+                        'unit_price' => $item->unit_price,
+                        'total_price' => $item->total_price,
+                    ]);
 
                     $debiteursOrders[] = [
                         'uuid' => $order->uuid,
@@ -461,10 +180,22 @@ class DataController extends Controller
             return response()->json([
                 'success' => true,
                 'date' => $date,
+                'total_gle' => $totalGle,
+                'total_encaissement' => $totalEncaissement,
+                'total_not_paid' => $totalNotPaid,
+                'total_bar' => $totalBar,
+                'count_bar' => $countBar,
+                'total_order' => $totalDiversOrder,
+                'count_order' => $totalQuantityDivers,
+                'total_room_service_quantity' => $totalRoomServiceQuantity,
+                'total_room_service_amount' => $totalRoomServiceAmount,
+                'count_not_traited' => $countNotTraited,
+                'totals_by_category' => $categoriesTotals,
+                'counts_by_category' => $categoriesCounts,
                 'summary_counts' => [
-                    'total_room_service' => $totalRoomService,
+                    'total_room_service' => $totalRoomServiceAmount,
                     'bar' => $totalBar,
-                    'by_category' => $countsByCategory
+                    'by_category' => $categoriesCounts
                 ],
                 'orders' => $formattedOrders,
                 'debiteurs' => $debiteursOrders
@@ -473,74 +204,10 @@ class DataController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => "Erreur lors de la récupération des données de la main courante.",
+                'message' => "Erreur lors de la récupération globale de la main courante.",
                 'error' => $e->getMessage()
             ], 500);
         }
-    }
-
-    public function get_total_room_service_quantity(Request $request)
-    {
-        $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : now()->toDateString();
-
-        try {
-            $totalQuantityRoomService = (int) OrderMenuRestaurant::whereDate('created_at', $date)
-                ->where('status', MenuOrderStatus::FACTURATE->value)
-                ->where('is_room_service', true)
-                ->sum('quantity_for_room_service');
-
-            return response()->json([
-                'success' => true,
-                'date' => $date,
-                'total_room_service_quantity' => $totalQuantityRoomService
-            ], 200);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => "Erreur lors du calcul de la quantité totale des room services.",
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    public function get_total_room_service_amount(Request $request)
-    {
-        $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : now()->toDateString();
-
-        try {
-            $totalAmountRoomService = (int) OrderMenuRestaurant::whereDate('created_at', $date)
-                ->where('status', MenuOrderStatus::FACTURATE->value)
-                ->where('is_room_service', true)
-                ->sum(DB::raw('price_for_room_service * quantity_for_room_service'));
-
-            return response()->json([
-                'success' => true,
-                'date' => $date,
-                'total_room_service_amount' => $totalAmountRoomService
-            ], 200);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => "Erreur lors du calcul du montant total des room services.",
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-
-    public function get_all_order_not_traited(Request $request)
-    {
-        $date = $request->filled('date') ? Carbon::parse($request->date)->toDateString() : now()->toDateString();
-        $count = OrderMenuRestaurant::whereDate('created_at', $date)
-            ->where('status', '!=', MenuOrderStatus::FACTURATE->value)
-            ->count();
-
-        return response()->json([
-            'success' => true,
-            'count' => $count
-        ]);
     }
 
     public function exportMainCourantePdf(Request $request)
