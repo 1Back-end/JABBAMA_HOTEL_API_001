@@ -41,10 +41,11 @@ class PromoterReportController extends Controller
     {
         $methods = RegulationMethod::where('active', true)->get();
 
-        $encaissementSlugs = array_merge(
-            PaymentRegulationSlug::values(),
-            [PdgCategory::AUTRES_ENCAISSEMENTS->value]
-        );
+        $encaissementSlugs = [
+            PaymentRegulationSlug::ENCAISSEMENT_RESTO->value,
+            PaymentRegulationSlug::ENCAISSEMENT_BAR->value,
+            PdgCategory::AUTRES_ENCAISSEMENTS->value,
+        ];
 
         $expenseSlugs = array_merge(
             ExpenseSlug::values(),
@@ -72,10 +73,12 @@ class PromoterReportController extends Controller
             $solde = $encaissements - $depenses;
             $soldeGlobalTotal += $solde;
 
+            $formattedLabel = CaisseType::formatLabel($method->name);
+
             $details[] = [
                 'uuid'          => $method->uuid,
                 'code'          => $method->code,
-                'label'         => CaisseType::formatLabel($method->name),
+                'label'         => $formattedLabel,
                 'encaissements' => $encaissements,
                 'depenses'      => $depenses,
                 'solde'         => $solde,
@@ -87,6 +90,7 @@ class PromoterReportController extends Controller
             'caisses'     => $details,
         ];
     }
+
     public function exportPromoterReportPdf(Request $request)
     {
         $parsedDate = $request->filled('date')
@@ -95,17 +99,6 @@ class PromoterReportController extends Controller
 
         $startOfYear = $parsedDate->copy()->startOfYear()->toDateTimeString();
         $currentDateEnd = $parsedDate->copy()->endOfDay()->toDateTimeString();
-
-        $mode = RestaurantSummaryMode::ZERO_ON_EMPTY;
-
-        $hasDataUpToDate = OrderMenuRestaurant::where('status', MenuOrderStatus::FACTURATE->value)
-                ->whereBetween('created_at', [$startOfYear, $currentDateEnd])
-                ->exists()
-            || PaymentRegulation::whereBetween('created_at', [$startOfYear, $currentDateEnd])->exists();
-
-        if (!$hasDataUpToDate && $mode === RestaurantSummaryMode::ZERO_ON_EMPTY) {
-            return response()->json(KpiAnnualSummaryResponse::values());
-        }
 
         $orders = OrderMenuRestaurant::with([
             'salesCategory:uuid,name,code',
@@ -175,15 +168,14 @@ class PromoterReportController extends Controller
             ? round(100 - $tauxDepense, 2)
             : 0;
 
-        // Définition des bornes (s'arrêtant à la date sélectionnée)
         $dayStart   = $parsedDate->copy()->startOfDay()->toDateTimeString();
         $dayEnd     = $parsedDate->copy()->endOfDay()->toDateTimeString();
 
         $monthStart = $parsedDate->copy()->startOfMonth()->toDateTimeString();
-        $monthEnd   = $dayEnd; // S'arrête au jour sélectionné
+        $monthEnd   = $dayEnd;
 
         $yearStart  = $parsedDate->copy()->startOfYear()->toDateTimeString();
-        $yearEnd    = $dayEnd; // S'arrête au jour sélectionné
+        $yearEnd    = $dayEnd;
 
         $metricsJour  = $this->calculateMetricsForPeriod($dayStart, $dayEnd);
         $metricsMois  = $this->calculateMetricsForPeriod($monthStart, $monthEnd);
@@ -207,10 +199,20 @@ class PromoterReportController extends Controller
         ];
         $caisseJour = $this->calculateCaisseSummaryForPeriod($dayStart, $dayEnd);
 
-        // Calcul du Total des Ventes selon la même logique que getSalesCategoriesSummary
-        $categoriesCounts = $orders->groupBy(function ($order) {
+        $orders = OrderMenuRestaurant::with([
+            'salesCategory:uuid,name,code',
+            'items.menu:uuid,is_generated_from_complement',
+            'drinks'
+        ])
+            ->where('status', MenuOrderStatus::FACTURATE->value)
+            ->whereBetween('created_at', [$dayStart, $dayEnd])
+            ->get();
+
+        $groupedOrders = $orders->groupBy(function ($order) {
             return $order->salesCategory ? $order->salesCategory->name : 'AUTRES';
-        })->map(function ($group) {
+        });
+
+        $categoriesCounts = $groupedOrders->map(function ($group) {
             return (int) $group->sum(function ($order) {
                 return $order->items->filter(function ($item) {
                     return $item->menu && !$item->menu->is_generated_from_complement;
@@ -219,12 +221,17 @@ class PromoterReportController extends Controller
         });
 
         $totalQuantityDivers = 0;
+        $totalAmountDivers = 0;
+
         foreach ($orders as $order) {
             $uniqueItems = $order->items->unique('uuid');
             $validItems = $uniqueItems->filter(function ($item) {
                 return $item->menu && (bool) $item->menu->is_generated_from_complement === true;
             });
             $totalQuantityDivers += (int) $validItems->sum('quantity_exactly');
+            $totalAmountDivers += (float) $validItems->sum(function ($item) {
+                return $item->total_price ?? (($item->unit_price ?? 0) * ($item->quantity_exactly ?? 0));
+            });
         }
 
         if ($totalQuantityDivers > 0) {
@@ -408,21 +415,6 @@ class PromoterReportController extends Controller
         $yearStart  = $parsedDate->copy()->startOfYear()->toDateTimeString();
         $yearEnd    = $dayEnd;
 
-        $mode = RestaurantSummaryMode::ZERO_ON_EMPTY;
-
-        $hasDataForDay = OrderMenuRestaurant::where('status', MenuOrderStatus::FACTURATE->value)
-                ->whereBetween('created_at', [$dayStart, $dayEnd])
-                ->exists()
-            || PaymentRegulation::whereBetween('created_at', [$dayStart, $dayEnd])->exists();
-
-        if (!$hasDataForDay && $mode === RestaurantSummaryMode::ZERO_ON_EMPTY) {
-            return response()->json([
-                'jour'  => RestaurantSummaryResponse::values(),
-                'mois'  => RestaurantSummaryResponse::values(),
-                'annee' => RestaurantSummaryResponse::values(),
-            ]);
-        }
-
         return response()->json([
             'jour'  => $this->calculateMetricsForPeriod($dayStart, $dayEnd),
             'mois'  => $this->calculateMetricsForPeriod($monthStart, $monthEnd),
@@ -509,21 +501,6 @@ class PromoterReportController extends Controller
         $yearStart  = $parsedDate->copy()->startOfYear()->toDateTimeString();
         $yearEnd    = $dayEnd;
 
-        $mode = RestaurantSummaryMode::ZERO_ON_EMPTY;
-
-        $hasDataForDay = OrderMenuRestaurant::where('status', MenuOrderStatus::FACTURATE->value)
-                ->whereBetween('created_at', [$dayStart, $dayEnd])
-                ->exists()
-            || PaymentRegulation::whereBetween('created_at', [$dayStart, $dayEnd])->exists();
-
-        if (!$hasDataForDay && $mode === RestaurantSummaryMode::ZERO_ON_EMPTY) {
-            return response()->json([
-                'jour'  => RestaurantSummaryResponse::values(),
-                'mois'  => RestaurantSummaryResponse::values(),
-                'annee' => RestaurantSummaryResponse::values(),
-            ]);
-        }
-
         return response()->json([
             'jour'  => $this->calculateBarMetricsForPeriod($dayStart, $dayEnd),
             'mois'  => $this->calculateBarMetricsForPeriod($monthStart, $monthEnd),
@@ -580,20 +557,6 @@ class PromoterReportController extends Controller
         $yearStart  = $parsedDate->copy()->startOfYear()->toDateTimeString();
         $yearEnd    = $dayEnd;
 
-        $mode = RestaurantSummaryMode::ZERO_ON_EMPTY;
-
-        $hasDataForDay = PaymentRegulation::where('slug', PdgCategory::AUTRES_ENCAISSEMENTS->value)
-            ->whereBetween('created_at', [$dayStart, $dayEnd])
-            ->exists();
-
-        if (!$hasDataForDay && $mode === RestaurantSummaryMode::ZERO_ON_EMPTY) {
-            return response()->json([
-                'jour'  => MetricKeyResponse::format(MetricKeyResponse::ENCAISSEMENT, 0),
-                'mois'  => MetricKeyResponse::format(MetricKeyResponse::ENCAISSEMENT, 0),
-                'annee' => MetricKeyResponse::format(MetricKeyResponse::ENCAISSEMENT, 0),
-            ]);
-        }
-
         return response()->json([
             'jour'  => MetricKeyResponse::format(MetricKeyResponse::ENCAISSEMENT, $this->calculateOtherIncomesMetrics(PdgCategory::AUTRES_ENCAISSEMENTS, $dayStart, $dayEnd)),
             'mois'  => MetricKeyResponse::format(MetricKeyResponse::ENCAISSEMENT, $this->calculateOtherIncomesMetrics(PdgCategory::AUTRES_ENCAISSEMENTS, $monthStart, $monthEnd)),
@@ -626,20 +589,6 @@ class PromoterReportController extends Controller
         $yearStart  = $parsedDate->copy()->startOfYear()->toDateTimeString();
         $yearEnd    = $dayEnd;
 
-        $mode = RestaurantSummaryMode::ZERO_ON_EMPTY;
-
-        $hasDataForDay = PaymentRegulation::where('slug', PdgCategory::AUTRES_DEPENSES->value)
-            ->whereBetween('created_at', [$dayStart, $dayEnd])
-            ->exists();
-
-        if (!$hasDataForDay && $mode === RestaurantSummaryMode::ZERO_ON_EMPTY) {
-            return response()->json([
-                'jour'  => MetricKeyResponse::format(MetricKeyResponse::DEPENSES, 0),
-                'mois'  => MetricKeyResponse::format(MetricKeyResponse::DEPENSES, 0),
-                'annee' => MetricKeyResponse::format(MetricKeyResponse::DEPENSES, 0),
-            ]);
-        }
-
         return response()->json([
             'jour'  => MetricKeyResponse::format(MetricKeyResponse::DEPENSES, $this->calculatePdgExpensesMetrics(PdgCategory::AUTRES_DEPENSES, $dayStart, $dayEnd)),
             'mois'  => MetricKeyResponse::format(MetricKeyResponse::DEPENSES, $this->calculatePdgExpensesMetrics(PdgCategory::AUTRES_DEPENSES, $monthStart, $monthEnd)),
@@ -663,34 +612,8 @@ class PromoterReportController extends Controller
             ? Carbon::createFromFormat('d-m-Y', $request->date)
             : Carbon::yesterday();
 
-        $dayStart   = $parsedDate->copy()->startOfDay()->toDateTimeString();
-        $dayEnd     = $parsedDate->copy()->endOfDay()->toDateTimeString();
-
-        $mode = RestaurantSummaryMode::ZERO_ON_EMPTY;
-
-        $hasDataForDay = PaymentRegulation::whereBetween('created_at', [$dayStart, $dayEnd])->exists();
-
-        if (!$hasDataForDay && $mode === RestaurantSummaryMode::ZERO_ON_EMPTY) {
-            $methods = RegulationMethod::where('active', true)->get();
-            $emptyDetails = $methods->map(function ($method) {
-                return [
-                    'uuid'          => $method->uuid,
-                    'code'          => $method->code,
-                    'label'         => CaisseType::formatLabel($method->name),
-                    'encaissements' => 0.0,
-                    'depenses'      => 0.0,
-                    'solde'         => 0.0,
-                ];
-            });
-
-            return response()->json([
-                'solde_total' => 0.0,
-                'caisses'     => $emptyDetails,
-            ]);
-        }
-
-        $startOfPeriod = $dayStart;
-        $endOfPeriod   = $dayEnd;
+        $startOfDay = $parsedDate->copy()->startOfDay()->toDateTimeString();
+        $endOfDay   = $parsedDate->copy()->endOfDay()->toDateTimeString();
 
         $methods = RegulationMethod::where('active', true)->get();
 
@@ -704,7 +627,7 @@ class PromoterReportController extends Controller
             [PdgCategory::AUTRES_DEPENSES->value]
         );
 
-        $regulations = PaymentRegulation::whereBetween('created_at', [$startOfPeriod, $endOfPeriod])
+        $regulations = PaymentRegulation::whereBetween('created_at', [$startOfDay, $endOfDay])
             ->get()
             ->groupBy('regulation_method_uuid');
 
@@ -798,21 +721,6 @@ class PromoterReportController extends Controller
 
         $yearStart  = $parsedDate->copy()->startOfYear()->toDateTimeString();
         $yearEnd    = $dayEnd;
-
-        $mode = RestaurantSummaryMode::ZERO_ON_EMPTY;
-
-        $hasDataForDay = OrderMenuRestaurant::where('status', MenuOrderStatus::FACTURATE->value)
-                ->whereBetween('created_at', [$dayStart, $dayEnd])
-                ->exists()
-            || PaymentRegulation::whereBetween('created_at', [$dayStart, $dayEnd])->exists();
-
-        if (!$hasDataForDay && $mode === RestaurantSummaryMode::ZERO_ON_EMPTY) {
-            return response()->json([
-                'jour'  => [],
-                'mois'  => [],
-                'annee' => [],
-            ]);
-        }
 
         return response()->json([
             'jour'  => $this->calculateDetailedMetricsForPeriod($dayStart, $dayEnd),
@@ -1175,23 +1083,6 @@ class PromoterReportController extends Controller
         $dayStart   = $parsedDate->copy()->startOfDay()->toDateTimeString();
         $dayEnd     = $parsedDate->copy()->endOfDay()->toDateTimeString();
 
-        $mode = RestaurantSummaryMode::ZERO_ON_EMPTY;
-
-        $hasDataForDay = OrderMenuRestaurant::where('status', MenuOrderStatus::FACTURATE->value)
-                ->whereBetween('created_at', [$dayStart, $dayEnd])
-                ->exists()
-            || PaymentRegulation::whereBetween('created_at', [$dayStart, $dayEnd])->exists();
-
-        if (!$hasDataForDay && $mode === RestaurantSummaryMode::ZERO_ON_EMPTY) {
-            return response()->json([
-                'success'      => true,
-                'date'         => $parsedDate->format('d-m-Y'),
-                'data'         => [],
-                'total_global' => 0
-            ]);
-        }
-
-
         $orders = OrderMenuRestaurant::with([
             'salesCategory:uuid,name,code',
             'items.menu:uuid,is_generated_from_complement',
@@ -1338,13 +1229,14 @@ class PromoterReportController extends Controller
                 $itemsData = $itemsData->concat($roomServiceQuery);
             }
         }
+        $sortedItems = $itemsData->sortBy('created_at')->values();
 
         return response()->json([
             'success' => true,
             'date_parsed' => $date,
             'rubric_input' => $rubricInput,
             'total_lines_found_for_date' => $itemsData->count(),
-            'data'    => $itemsData->values()
+            'data'    => $sortedItems
         ]);
     }
 
@@ -1354,31 +1246,13 @@ class PromoterReportController extends Controller
             ? Carbon::createFromFormat('d-m-Y', $request->date)
             : Carbon::yesterday();
 
-        $startOfYear    = $parsedDate->copy()->startOfYear()->toDateTimeString();
-        $currentDateEnd = $parsedDate->copy()->endOfDay()->toDateTimeString();
-
-        $mode = RestaurantSummaryMode::ZERO_ON_EMPTY;
-
-        $hasDataUpToDate = OrderMenuRestaurant::where('status', MenuOrderStatus::FACTURATE->value)
-                ->whereBetween('created_at', [$startOfYear, $currentDateEnd])
-                ->exists()
-            || PaymentRegulation::whereBetween('created_at', [$startOfYear, $currentDateEnd])->exists();
-
-        if (!$hasDataUpToDate && $mode === RestaurantSummaryMode::ZERO_ON_EMPTY) {
-            return response()->json([
-                'jour'  => [],
-                'mois'  => [],
-                'annee' => [],
-            ]);
-        }
-
         $dayStart   = $parsedDate->copy()->startOfDay()->toDateTimeString();
         $dayEnd     = $parsedDate->copy()->endOfDay()->toDateTimeString();
 
         $monthStart = $parsedDate->copy()->startOfMonth()->toDateTimeString();
         $monthEnd   = $parsedDate->copy()->endOfMonth()->toDateTimeString();
 
-        $yearStart  = $startOfYear;
+        $yearStart  = $parsedDate->copy()->startOfYear()->toDateTimeString();
         $yearEnd    = $parsedDate->copy()->endOfYear()->toDateTimeString();
 
         return response()->json([

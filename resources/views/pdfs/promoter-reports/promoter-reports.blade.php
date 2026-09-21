@@ -79,7 +79,7 @@
             </div>
             <div class="d-flex justify-content-between align-items-center">
                 <span class="fw-bold text-uppercase" style="font-size: 2.2mm;">Taux encaissement :</span>
-                <span class="fw-bold" style="font-size: 2.4mm;">{{ $taux_encaissement }} %</span>
+                <span class="fw-bold {{ $taux_encaissement < 0 ? 'text-danger' : 'text-success' }}" style="font-size: 2.4mm;">{{ $taux_encaissement }} %</span>
             </div>
         </div>
     </div>
@@ -89,7 +89,7 @@
         <div class="kpi-card kpi-red">
             <div class="d-flex justify-content-between align-items-center mb-2">
                 <span class="fw-bold text-uppercase" style="font-size: 2.2mm;">Charges annuelles :</span>
-                <span class="fw-bold" style="font-size: 2.4mm;">{{ \App\Helpers\FormatPrice::format($charges_annuelles) }}</span>
+                <span class="fw-bold text-danger" style="font-size: 2.4mm;">{{ \App\Helpers\FormatPrice::format($charges_annuelles) }}</span>
             </div>
             <div class="d-flex justify-content-between align-items-center mb-2" style="visibility: hidden;">
                 <span style="font-size: 2.2mm;">-</span>
@@ -97,7 +97,7 @@
             </div>
             <div class="d-flex justify-content-between align-items-center">
                 <span class="fw-bold text-uppercase" style="font-size: 2.2mm;">Taux de dépense :</span>
-                <span class="fw-bold" style="font-size: 2.4mm;">{{ $taux_depense }} %</span>
+                <span class="fw-bold {{ $taux_depense < 0 ? 'text-danger' : 'text-success' }}" style="font-size: 2.4mm;">{{ $taux_depense }} %</span>
             </div>
         </div>
     </div>
@@ -115,7 +115,7 @@
             </div>
             <div class="d-flex justify-content-between align-items-center">
                 <span class="fw-bold text-uppercase" style="font-size: 2.2mm;">Taux marge brute :</span>
-                <span class="fw-bold" style="font-size: 2.4mm;">{{ $taux_marge_brute }} %</span>
+                <span class="fw-bold {{ $taux_marge_brute < 0 ? 'text-danger' : 'text-success' }}" style="font-size: 2.4mm;">{{ $taux_marge_brute }} %</span>
             </div>
         </div>
     </div>

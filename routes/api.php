@@ -25,7 +25,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
             }
         });
 
-
         Route::get("/get_users_where_role_is_gestionnaire_stock",[UserController::class,'get_users_where_role_is_gestionnaire_stock']);
         Route::get("/get_users_where_role_is_cuisinier",[UserController::class,'get_users_where_role_is_cuisinier']);
         Route::get('/permissions_by_category', [PermissionController::class, 'permissionsByCategory']);

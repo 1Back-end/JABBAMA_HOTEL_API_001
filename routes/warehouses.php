@@ -15,8 +15,3 @@ Route::get('/warehouses/inventory/export', [WarehouseController::class, 'export_
 Route::get('/warehouses/{point_uuid}/inventory/print', [WarehouseController::class, 'print_inventory_by_warehouse']);
 Route::get("/exports/warehouses", [WarehouseController::class, 'export_warehouses']);
 Route::patch('natures_warehouses/{uuid}/is_active', [WarehouseController::class, 'update_status']);
-Route::get('get_warehouses_is_used_for_restaurant', [WarehouseController::class, 'get_warehouses_is_used_for_restaurant']);
-Route::get('get_warehouses_is_bar_warehouse', [WarehouseController::class, 'get_warehouses_is_bar_warehouse']);
-Route::get('get_warehouses_is_used_for_drinks_transformation', [WarehouseController::class, 'get_warehouses_is_used_for_drinks_transformation']);
-Route::get('get_warehouses_is_drinks_or_is_cuisine', [WarehouseController::class, 'get_warehouses_is_drinks_or_is_cuisine']);
-

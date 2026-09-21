@@ -177,6 +177,7 @@ class DataController extends Controller
                 }
             }
 
+
             return response()->json([
                 'success' => true,
                 'date' => $date,

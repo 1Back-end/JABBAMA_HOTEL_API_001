@@ -614,6 +614,26 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des encaissements',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],
+        'print_operational_monitoring_promotor' => [
+            'description' => 'Imprimer le rapport de suivi d\'exploitation',
+            'category' => 'Gestion des encaissements',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'print_extended_operational_monitoring' => [
+            'description' => 'Imprimer le rapport du suivi d\'exploitation',
+            'category' => 'Gestion des encaissements',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'print_extended_cash_situation_sheets' => [
+            'description' => 'Imprimer le rapport de la feuille de situation',
+            'category' => 'Gestion des encaissements',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'print_main_courante' => [
+            'description' => 'Imprimer le rapport de la main courante',
+            'category' => 'Gestion des encaissements',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
 
     ];
 
@@ -626,7 +646,6 @@ class ExtractPermissions extends Command
         $systemId = $systemUser?->id ?? 1;
         $superAdminRole = Role::find(1);
 
-        // 1️⃣ Extraction des permissions depuis les contrôleurs
         foreach ($this->getControllers($controllersPath) as $controller) {
             $this->extractPermissionsFromController($controller, $permissions);
         }
@@ -635,7 +654,7 @@ class ExtractPermissions extends Command
 
         $validPermissions = [];
 
-        // ----------------------- Permissions des contrôleurs -----------------------
+
         foreach ($permissions as $controller => $methods) {
             ksort($methods);
             usort($methods, fn($a, $b) => strcmp($a['permission'], $b['permission']));
@@ -643,7 +662,6 @@ class ExtractPermissions extends Command
                 $categoryName = $perm['category'] ?? 'Autres';
                 $modules = $perm['modules'] ?? [$this->defaultManualModule];
 
-                // ✅ Catégorie
                 $category = PermissionCategory::firstOrCreate(
                     ['libelle' => $categoryName],
                     [
@@ -653,7 +671,6 @@ class ExtractPermissions extends Command
                     ]
                 );
 
-                // ✅ Permission
                 $permission = Permission::updateOrCreate(
                     ['name' => $perm['permission']],
                     [
@@ -668,7 +685,6 @@ class ExtractPermissions extends Command
 
                 $validPermissions[] = $permission->name;
 
-                // ✅ Attachement à tous les modules
                 foreach ($modules as $moduleName) {
                     $moduleSlug = \Str::slug($moduleName);
 
@@ -692,12 +708,11 @@ class ExtractPermissions extends Command
                         ]);
                     }
 
-                    // ✅ Optionnel : remplir module_uuid si tu veux le lien direct
                     $permission->module_uuid = $module->uuid;
                     $permission->save();
                 }
 
-                // ✅ Attachement au super admin
+
                 if ($permission->wasRecentlyCreated && $superAdminRole) {
                     $superAdminRole->permissions()->attach($permission->id, [
                         'created_by' => $systemId,
@@ -709,7 +724,6 @@ class ExtractPermissions extends Command
             }
         }
 
-        // ----------------------- Permissions manuelles -----------------------
         $manualPermissions = $this->manualPermissions;
         uksort($manualPermissions, fn($a, $b) => strcmp($a['description'] ?? '', $b['description'] ?? ''));
         foreach ($this->manualPermissions as $name => $data) {
@@ -762,7 +776,6 @@ class ExtractPermissions extends Command
                     ]);
                 }
 
-                // Optionnel : module_uuid
                 $permission->module_uuid = $module->uuid;
                 $permission->save();
             }
@@ -777,7 +790,6 @@ class ExtractPermissions extends Command
             $this->info("✅ Permission manuelle synchronisée : {$permission->name}");
         }
 
-        // ----------------------- Nettoyage -----------------------
         Permission::where('system', true)
             ->whereNotIn('name', $validPermissions)
             ->get()
