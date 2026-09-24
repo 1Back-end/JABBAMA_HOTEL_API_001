@@ -47,6 +47,7 @@
         .kpi-blue { background-color: #e7f1ff; border-color: #b6d4fe; }
         .kpi-red { background-color: #f8d7da; border-color: #f5c2c7; }
         .kpi-green { background-color: #d1e7dd; border-color: #badbcc; }
+        .kpi-bar { background-color: #fcf3e6;border-color: #f3d4a8 !important;}
     </style>
 </head>
 
@@ -67,7 +68,7 @@
 </div>
 <div class="row">
 
-    <div class="col-6">
+    <div class="col-4">
         <div class="kpi-card kpi-blue">
             <div class="d-flex justify-content-between align-items-center mb-2">
                 <span class="fw-bold text-uppercase" style="font-size: 2.2mm;">CHIFFRE D'AFFAIRE ANNUEL :</span>
@@ -85,7 +86,7 @@
     </div>
 
     <!-- Charges Annuelles -->
-    <div class="col-6">
+    <div class="col-4">
         <div class="kpi-card kpi-red">
             <div class="d-flex justify-content-between align-items-center mb-2">
                 <span class="fw-bold text-uppercase" style="font-size: 2.2mm;">Charges annuelles :</span>
@@ -97,17 +98,17 @@
             </div>
             <div class="d-flex justify-content-between align-items-center">
                 <span class="fw-bold text-uppercase" style="font-size: 2.2mm;">Taux de dépense :</span>
-                <span class="fw-bold {{ $taux_depense < 0 ? 'text-danger' : 'text-success' }}" style="font-size: 2.4mm;">{{ $taux_depense }} %</span>
+                <span class="fw-bold text-danger" style="font-size: 2.4mm;">{{ $taux_depense }} %</span>
             </div>
         </div>
     </div>
 
     <!-- Marge Brute -->
-    <div class="col-6">
+    <div class="col-4">
         <div class="kpi-card kpi-green">
             <div class="d-flex justify-content-between align-items-center mb-2">
                 <span class="fw-bold text-uppercase" style="font-size: 2.2mm;">Marge brute annuelle :</span>
-                <span class="fw-bold" style="font-size: 2.4mm;">{{ \App\Helpers\FormatPrice::format($marge_brute_annuelle) }}</span>
+                <span class="fw-bold {{ $marge_brute_annuelle < 0 ? 'text-danger' : 'text-success' }}" style="font-size: 2.4mm;">{{ \App\Helpers\FormatPrice::format($marge_brute_annuelle) }}</span>
             </div>
             <div class="d-flex justify-content-between align-items-center mb-2" style="visibility: hidden;">
                 <span style="font-size: 2.2mm;">-</span>
@@ -119,15 +120,31 @@
             </div>
         </div>
     </div>
-    <div class="col-6">
+    <div class="col-4">
         <div class="kpi-card kpi-blue">
             <div class="d-flex justify-content-between align-items-center mb-2" style="visibility: hidden;">
                 <span style="font-size: 2.2mm;">-</span>
                 <span style="font-size: 2.4mm;">-</span>
             </div>
             <div class="d-flex justify-content-between align-items-center mb-2">
-                <span class="fw-bold text-uppercase" style="font-size: 2.2mm;">Total des ventes :</span>
+                <span class="fw-bold text-uppercase" style="font-size: 2.2mm;">Total des ventes RESTO :</span>
                 <span class="fw-bold" style="font-size: 2.4mm;">{{ $totalVentes }}</span>
+            </div>
+            <div class="d-flex justify-content-between align-items-center" style="visibility: hidden;">
+                <span style="font-size: 2.2mm;">-</span>
+                <span style="font-size: 2.4mm;">-</span>
+            </div>
+        </div>
+    </div>
+    <div class="col-4">
+        <div class="kpi-card kpi-bar">
+            <div class="d-flex justify-content-between align-items-center mb-2" style="visibility: hidden;">
+                <span style="font-size: 2.2mm;">-</span>
+                <span style="font-size: 2.4mm;">-</span>
+            </div>
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="fw-bold text-uppercase" style="font-size: 2.2mm;">Total des ventes BAR :</span>
+                <span class="fw-bold" style="font-size: 2.4mm;">{{ $count_bar }}</span>
             </div>
             <div class="d-flex justify-content-between align-items-center" style="visibility: hidden;">
                 <span style="font-size: 2.2mm;">-</span>

@@ -17,9 +17,12 @@ use App\Enums\RestaurantExpenseSlug;
 use App\Enums\RestaurantRubricEnum;
 use App\Enums\RestaurantSummaryMode;
 use App\Enums\RestaurantSummaryResponse;
+use App\Models\CashReceiptFamily;
 use App\Models\ExpensePayment;
 use App\Models\OrderMenuRestaurant;
 use App\Models\OrderMenuRestaurantItem;
+use App\Models\OrderRestaurantDrink;
+use App\Models\OtherCashIn;
 use App\Models\PaymentLine;
 use App\Models\PaymentRegulation;
 use App\Models\RegulationMethod;
@@ -91,6 +94,9 @@ class PromoterReportController extends Controller
         ];
     }
 
+    /**
+     * Exporte le rapport du promoteur au format PDF pour une date donnée.
+     */
     public function exportPromoterReportPdf(Request $request)
     {
         $parsedDate = $request->filled('date')
@@ -100,13 +106,22 @@ class PromoterReportController extends Controller
         $startOfYear = $parsedDate->copy()->startOfYear()->toDateTimeString();
         $currentDateEnd = $parsedDate->copy()->endOfDay()->toDateTimeString();
 
+        $dayStart   = $parsedDate->copy()->startOfDay()->toDateTimeString();
+        $dayEnd     = $parsedDate->copy()->endOfDay()->toDateTimeString();
+
+        $monthStart = $parsedDate->copy()->startOfMonth()->toDateTimeString();
+        $monthEnd   = $dayEnd;
+
+        $yearStart  = $startOfYear;
+        $yearEnd    = $currentDateEnd;
+
         $orders = OrderMenuRestaurant::with([
             'salesCategory:uuid,name,code',
             'items.menu:uuid,is_generated_from_complement',
             'drinks'
         ])
             ->where('status', MenuOrderStatus::FACTURATE->value)
-            ->whereBetween('created_at', [$startOfYear, $currentDateEnd])
+            ->whereBetween('created_at', [$yearStart, $yearEnd])
             ->get();
 
         $categoriesTotals = $orders->groupBy(function ($order) {
@@ -168,15 +183,39 @@ class PromoterReportController extends Controller
             ? round(100 - $tauxDepense, 2)
             : 0;
 
-        $dayStart   = $parsedDate->copy()->startOfDay()->toDateTimeString();
-        $dayEnd     = $parsedDate->copy()->endOfDay()->toDateTimeString();
+        // Calcul des quantités de ventes (Restaurant & Bar) sur la période annuelle
+        $groupedOrders = $orders->groupBy(function ($order) {
+            return $order->salesCategory ? $order->salesCategory->name : 'AUTRES';
+        });
 
-        $monthStart = $parsedDate->copy()->startOfMonth()->toDateTimeString();
-        $monthEnd   = $dayEnd;
+        $categoriesCounts = $groupedOrders->map(function ($group) {
+            return (int) $group->sum(function ($order) {
+                return $order->items->filter(function ($item) {
+                    return $item->menu && !$item->menu->is_generated_from_complement;
+                })->sum('quantity_exactly');
+            });
+        });
 
-        $yearStart  = $parsedDate->copy()->startOfYear()->toDateTimeString();
-        $yearEnd    = $dayEnd;
+        $totalQuantityDivers = 0;
+        foreach ($orders as $order) {
+            $uniqueItems = $order->items->unique('uuid');
+            $validItems = $uniqueItems->filter(function ($item) {
+                return $item->menu && (bool) $item->menu->is_generated_from_complement === true;
+            });
+            $totalQuantityDivers += (int) $validItems->sum('quantity_exactly');
+        }
 
+        if ($totalQuantityDivers > 0) {
+            $categoriesCounts->put('DIVERS', $totalQuantityDivers);
+        }
+
+        $totalVentes = (int) $categoriesCounts->sum();
+
+        $countBar = (int) $orders->sum(function ($order) {
+            return $order->drinks->sum('quantity_exactly');
+        });
+
+        // Autres métriques périodiques
         $metricsJour  = $this->calculateMetricsForPeriod($dayStart, $dayEnd);
         $metricsMois  = $this->calculateMetricsForPeriod($monthStart, $monthEnd);
         $metricsAnnee = $this->calculateMetricsForPeriod($yearStart, $yearEnd);
@@ -198,47 +237,6 @@ class PromoterReportController extends Controller
             'depenses'     => $this->calculatePdgExpensesMetrics(PdgCategory::AUTRES_DEPENSES, $yearStart, $yearEnd),
         ];
         $caisseJour = $this->calculateCaisseSummaryForPeriod($dayStart, $dayEnd);
-
-        $orders = OrderMenuRestaurant::with([
-            'salesCategory:uuid,name,code',
-            'items.menu:uuid,is_generated_from_complement',
-            'drinks'
-        ])
-            ->where('status', MenuOrderStatus::FACTURATE->value)
-            ->whereBetween('created_at', [$dayStart, $dayEnd])
-            ->get();
-
-        $groupedOrders = $orders->groupBy(function ($order) {
-            return $order->salesCategory ? $order->salesCategory->name : 'AUTRES';
-        });
-
-        $categoriesCounts = $groupedOrders->map(function ($group) {
-            return (int) $group->sum(function ($order) {
-                return $order->items->filter(function ($item) {
-                    return $item->menu && !$item->menu->is_generated_from_complement;
-                })->sum('quantity_exactly');
-            });
-        });
-
-        $totalQuantityDivers = 0;
-        $totalAmountDivers = 0;
-
-        foreach ($orders as $order) {
-            $uniqueItems = $order->items->unique('uuid');
-            $validItems = $uniqueItems->filter(function ($item) {
-                return $item->menu && (bool) $item->menu->is_generated_from_complement === true;
-            });
-            $totalQuantityDivers += (int) $validItems->sum('quantity_exactly');
-            $totalAmountDivers += (float) $validItems->sum(function ($item) {
-                return $item->total_price ?? (($item->unit_price ?? 0) * ($item->quantity_exactly ?? 0));
-            });
-        }
-
-        if ($totalQuantityDivers > 0) {
-            $categoriesCounts->put('DIVERS', $totalQuantityDivers);
-        }
-
-        $totalVentes = (int) $categoriesCounts->sum();
 
         $formattedFolderDate = now()->format('d-m-Y');
         $fileName   = strtoupper('RAPPORT-DU-PROMOTEUR-N-’' . now()->format('YmdHis')) . '.pdf';
@@ -271,6 +269,8 @@ class PromoterReportController extends Controller
             'autresMois'             => $autresMois,
             'autresAnnee'            => $autresAnnee,
             'caisseJour'             => $caisseJour,
+            'total_bar'              => $totalBar,
+            'count_bar'              => $countBar,
         ];
 
         $footer = 'pdfs.reports.factures.footer';
@@ -300,6 +300,11 @@ class PromoterReportController extends Controller
             'filename' => $fileName,
         ], 200);
     }
+
+
+    /**
+     * Calcule et retourne les indicateurs clés de performance (KPI) annuels du résumé des caisses pour une date donnée.
+     */
     public function index(Request $request): JsonResponse
     {
         $parsedDate = $request->filled('date')
@@ -762,7 +767,6 @@ class PromoterReportController extends Controller
                 'amount' => $total
             ];
         }
-
         $totalAmountRoomService = (float) $orders->where('is_room_service', true)->sum(function ($order) {
             $price = (float) str_replace(',', '.', $order->price_for_room_service ?? 0);
             $quantity = (int) ($order->quantity_for_room_service ?? 0);
@@ -797,7 +801,7 @@ class PromoterReportController extends Controller
 
     public function getRestaurantCashReceiptItems(Request $request): JsonResponse
     {
-        $perPage = (int) $request->input('limit', 10);
+        $perPage = (int) $request->input('limit', 30);
         $page    = (int) $request->input('page', 1);
 
         $parsedDate = $request->filled('date')
@@ -877,12 +881,23 @@ class PromoterReportController extends Controller
 
             $orderCode = optional(optional($line->payment)->order)->code ?? '';
 
+            // Détermination du type d'opération (Encaissement ou Recouvrement)
+            $regulation = $line->payment_regulation;
+            $typeOperation = 'Encaissement';
+
+            if ($regulation) {
+                if (!empty($regulation->recouvrement_uuid) || $regulation->recouvrement()->exists()) {
+                    $typeOperation = 'Recouvrement';
+                }
+            }
+
             return [
-                'uuid'        => $line->uuid,
-                'code'        => $orderCode,
-                'description' => $description,
-                'amount'      => (float) $line->amount,
-                'method'      => optional($line->method)->name ?? '',
+                'uuid'           => $line->uuid,
+                'code'           => $orderCode,
+                'description'    => $description,
+                'amount'         => (float) $line->amount,
+                'method'         => optional($line->method)->name ?? '',
+                'type_operation' => $typeOperation,
             ];
         })->toArray();
     }
@@ -1074,6 +1089,106 @@ class PromoterReportController extends Controller
             ->values();
     }
 
+    private function fetchCollectionsByDateRange($startDate, $endDate, $createdBy, array $allowedSlugs)
+    {
+        $query = OtherCashIn::with([
+            'creator:id,nom_utilisateur',
+            'updater:id,nom_utilisateur',
+            'regulationMethod:uuid,name',
+        ])
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->whereNull('deleted_at')
+            ->whereNotNull('slug')
+            ->whereIn(DB::raw('UPPER(slug)'), $allowedSlugs);
+
+        if ($createdBy) {
+            $query->where('created_by', $createdBy);
+        }
+
+        return $query->orderByDesc('created_at')
+            ->get()
+            ->groupBy(function ($item) {
+                return strtoupper($item->slug ?? '');
+            })
+            ->map(function ($items, $slug) {
+                $firstItem = $items->first();
+
+                $tree = $this->buildCashInTreeIncome($items);
+
+                if (count($tree) === 1 && strtoupper($tree[0]['name']) === strtoupper($slug)) {
+                    $families = $tree[0]['children'];
+                } else {
+                    $families = $tree;
+                }
+
+                return [
+                    'expense_type' => null,
+                    'title'        => $slug, // Ou 'ENCAISSEMENTS ' . $slug selon votre préférence
+                    'total_amount' => (float) $items->sum('amount'),
+                    'families'     => $families,
+                    'isLoading'    => false,
+                ];
+            })
+            ->values();
+    }
+
+    /**
+     * Construit l'arbre hiérarchique des encaissements en se basant sur family_hierarchy_uuids
+     */
+    private function buildCashInTreeIncome($items)
+    {
+        $groupedByHierarchy = [];
+
+        foreach ($items as $cashIn) {
+            $hierarchyUuids = $cashIn->family_hierarchy_uuids ?? [];
+            $hierarchyNames = $cashIn->family_hierarchy_names ?? [];
+
+            if (empty($hierarchyUuids) || empty($hierarchyNames)) {
+                continue;
+            }
+
+            $currentLevel = &$groupedByHierarchy;
+
+            foreach ($hierarchyUuids as $index => $uuid) {
+                $name = $hierarchyNames[$index] ?? null;
+                if (!$name) {
+                    continue;
+                }
+
+                if (!isset($currentLevel[$uuid])) {
+                    $currentLevel[$uuid] = [
+                        'uuid'     => $uuid,
+                        'name'     => $name,
+                        'amount'   => 0.0,
+                        'children' => [],
+                        'items'    => [],
+                    ];
+                }
+                if ($index === count($hierarchyUuids) - 1) {
+                    $currentLevel[$uuid]['amount'] += (float) $cashIn->amount;
+                    $currentLevel[$uuid]['items'][] = [
+                        'uuid'           => $cashIn->uuid,
+                        'name'           => $cashIn->name,
+                        'amount'         => (float) $cashIn->amount,
+                        'payment_method' => optional($cashIn->regulationMethod)->name,
+                    ];
+                } else {
+                    $currentLevel[$uuid]['amount'] += (float) $cashIn->amount;
+                    $currentLevel = &$currentLevel[$uuid]['children'];
+                }
+            }
+        }
+
+        $formatTree = function (array $nodes) use (&$formatTree) {
+            return collect($nodes)->map(function ($node) use ($formatTree) {
+                $node['children'] = !empty($node['children']) ? $formatTree($node['children']) : [];
+                $node['items'] = array_values($node['items']);
+                return $node;
+            })->values()->toArray();
+        };
+
+        return $formatTree($groupedByHierarchy);
+    }
     public function getSalesCategoriesSummary(Request $request)
     {
         $parsedDate = $request->filled('date')
@@ -1083,13 +1198,16 @@ class PromoterReportController extends Controller
         $dayStart   = $parsedDate->copy()->startOfDay()->toDateTimeString();
         $dayEnd     = $parsedDate->copy()->endOfDay()->toDateTimeString();
 
+        $yearStart  = $parsedDate->copy()->startOfYear()->toDateTimeString();
+        $yearEnd    = $dayEnd;
+
         $orders = OrderMenuRestaurant::with([
             'salesCategory:uuid,name,code',
             'items.menu:uuid,is_generated_from_complement',
             'drinks'
         ])
             ->where('status', MenuOrderStatus::FACTURATE->value)
-            ->whereBetween('created_at', [$dayStart, $dayEnd])
+            ->whereBetween('created_at', [$yearStart, $yearEnd])
             ->get();
 
         $groupedOrders = $orders->groupBy(function ($order) {
@@ -1124,11 +1242,18 @@ class PromoterReportController extends Controller
 
         $totalFinal = $categoriesCounts->sum();
 
+        $totalBar = (float) $orders->sum('total_drinks');
+        $countBar = (int) $orders->sum(function ($order) {
+            return $order->drinks->sum('quantity_exactly');
+        });
+
         return response()->json([
             'success'      => true,
             'date'         => $parsedDate->format('d-m-Y'),
             'data'         => $categoriesCounts,
-            'total_global' => $totalFinal
+            'total_global' => $totalFinal,
+            'total_bar'    => $totalBar,
+            'count_bar'    => $countBar,
         ]);
     }
 
@@ -1343,7 +1468,8 @@ class PromoterReportController extends Controller
             'method',
             'item.menu',
             'item.order.salesCategory',
-            'roomService'
+            'roomService',
+            'payment_regulation.recouvrement' // Ajout pour la détection des recouvrements
         ])
             ->whereDate('created_at', $date)
             ->where('slug', RestaurantExpenseSlug::RESTO->value)
@@ -1431,6 +1557,16 @@ class PromoterReportController extends Controller
 
             $orderCode = optional(optional($line->payment)->order)->code ?? '';
 
+            // Détermination du type d'opération
+            $regulation = $line->payment_regulation;
+            $typeOperation = 'Encaissement';
+
+            if ($regulation) {
+                if (!empty($regulation->recouvrement_uuid) || $regulation->recouvrement()->exists()) {
+                    $typeOperation = 'Recouvrement';
+                }
+            }
+
             return [
                 'uuid'                      => $line->uuid,
                 'code'                      => $orderCode,
@@ -1440,6 +1576,7 @@ class PromoterReportController extends Controller
                 'quantity_for_room_service' => $quantity,
                 'amount'                    => $amount,
                 'method'                    => optional($line->method)->name ?? '',
+                'type_operation'            => $typeOperation,
                 'created_at'                => $line->created_at->toDateTimeString(),
             ];
         })->values();
@@ -1453,5 +1590,749 @@ class PromoterReportController extends Controller
         ]);
     }
 
+    /**
+     * Renvoie toutes les commandes et boissons du bar pour une date spécifique.
+     * Paramètre attendu dans la requête : ?date=d-m-Y (ex: 22-09-2026)
+     */
+    public function getBarDetailsByDate(Request $request): JsonResponse
+    {
+        $parsedDate = $request->filled('date')
+            ? \Carbon\Carbon::createFromFormat('d-m-Y', $request->date)
+            : \Carbon\Carbon::yesterday();
+
+        $dayStart = $parsedDate->copy()->startOfDay()->toDateTimeString();
+        $dayEnd   = $parsedDate->copy()->endOfDay()->toDateTimeString();
+
+        $orders = OrderMenuRestaurant::with([
+            'drinks.drinkConfig.product',
+            'drinks'
+        ])
+            ->where('status', MenuOrderStatus::FACTURATE->value)
+            ->whereBetween('created_at', [$dayStart, $dayEnd])
+            ->whereHas('drinks')
+            ->get();
+
+        $totalCaBar = (float) $orders->sum('total_drinks');
+
+        $formattedOrders = $orders->map(function ($order) {
+            return [
+                'code' => $order->code,
+                'drinks' => $order->drinks->map(function ($drink) {
+                    return [
+                        'libelle' => $drink->drinkConfig?->product?->name ?? 'Boisson',
+                        'status_label' => PaymentOrderItemStatus::safeLabel($drink->regulation_status),
+                        'total_price' => $drink->total_price ?? 0,
+                    ];
+                })
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'date_filter' => $parsedDate->format('d/m/Y'),
+            'total_chiffre_affaire_bar' => $totalCaBar,
+            'total_orders' => $orders->count(),
+            'orders' => $formattedOrders,
+        ], 200);
+    }
+
+    public function getBarPaymentsByDate(Request $request): JsonResponse
+    {
+        $parsedDate = $request->filled('date')
+            ? \Carbon\Carbon::createFromFormat('d-m-Y', $request->date)
+            : \Carbon\Carbon::yesterday();
+
+        $dayStart = $parsedDate->copy()->startOfDay()->toDateTimeString();
+        $dayEnd   = $parsedDate->copy()->endOfDay()->toDateTimeString();
+
+        $paymentLines = PaymentLine::with([
+            'drink.drinkConfig.product',
+            'drink.order',
+            'roomService',
+            'method',
+            'creator',
+            'payment_regulation.recouvrement',
+            'payment_regulation.payment'
+        ])
+            ->whereBetween('created_at', [$dayStart, $dayEnd])
+            ->where('slug', RestaurantExpenseSlug::BAR->value)
+            ->whereIn('payable_type', [OrderRestaurantDrink::class, RoomService::class])
+            ->get();
+
+        $totalGeneral = (float) $paymentLines->sum('amount');
+
+        $formattedPayments = $paymentLines->map(function ($line) {
+            $libelle = 'Encaissement Bar';
+            if ($line->payable_type === OrderRestaurantDrink::class) {
+                $libelle = $line->drink?->drinkConfig?->product?->name ?? $line->drink?->drinkConfig?->drink_name ?? '';
+            } elseif ($line->payable_type === RoomService::class) {
+                $libelle = $line->roomService?->name ?? 'Room Service';
+            }
+
+            $regulation = $line->payment_regulation;
+            $typeOperation = 'Encaissement';
+
+            if ($regulation) {
+                if (!empty($regulation->recouvrement_uuid) || $regulation->recouvrement()->exists()) {
+                    $typeOperation = 'Recouvrement';
+                }
+            }
+
+            return [
+                'code' => $line->drink?->order?->code ?? $line->payment?->code ?? $line->reference ?? '',
+                'libelle' => $libelle,
+                'montant' => (float) ($line->amount ?? 0),
+                'methode' => $line->method?->name ?? 'Espèces',
+                'auteur' => $line->creator?->name ?? 'Inconnu',
+                'type_operation' => $typeOperation,
+                'created_at' => $line->created_at?->format('H:i'),
+            ];
+        })->sortBy('code')->values();
+
+        return response()->json([
+            'success' => true,
+            'date_filter' => $parsedDate->format('d/m/Y'),
+            'total_encaissements_bar' => $totalGeneral,
+            'total_lines' => $paymentLines->count(),
+            'payments' => $formattedPayments,
+        ], 200);
+    }
+    
+    /**
+     * Récupère les encaissements du restaurant groupés par catégorie (Déjeuner, Dîner, Room Service, etc.)
+     * pour le jour, le mois et l'année.
+     */
+    public function getRestaurantCashReceiptsGroupedByCategory(Request $request): JsonResponse
+    {
+        $parsedDate = $request->filled('date')
+            ? Carbon::createFromFormat('d-m-Y', $request->date)
+            : Carbon::yesterday();
+
+        $dayStart   = $parsedDate->copy()->startOfDay()->toDateTimeString();
+        $dayEnd     = $parsedDate->copy()->endOfDay()->toDateTimeString();
+
+        $monthStart = $parsedDate->copy()->startOfMonth()->toDateTimeString();
+        $monthEnd   = $dayEnd;
+
+        $yearStart  = $parsedDate->copy()->startOfYear()->toDateTimeString();
+        $yearEnd    = $dayEnd;
+
+        return response()->json([
+            'status' => 'success',
+            'jour'   => $this->calculateGroupedReceiptsForPeriod($dayStart, $dayEnd),
+            'mois'   => $this->calculateGroupedReceiptsForPeriod($monthStart, $monthEnd),
+            'annee'  => $this->calculateGroupedReceiptsForPeriod($yearStart, $yearEnd),
+        ]);
+    }
+
+    /**
+     * Calcule et groupe les montants encaissés par catégorie pour une période donnée.
+     */
+    private function calculateGroupedReceiptsForPeriod(string $startDate, string $endDate): array
+    {
+        $paymentLines = PaymentLine::with([
+            'item.order.salesCategory',
+            'item.menu:uuid,is_generated_from_complement',
+            'roomService'
+        ])
+            ->whereIn('payable_type', [
+                OrderMenuRestaurantItem::class,
+                RoomService::class,
+            ])
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->get();
+
+        $categoriesTotals = [];
+
+        $itemLines = $paymentLines->filter(function ($line) {
+            return $line->payable_type === OrderMenuRestaurantItem::class && $line->item && $line->item->order;
+        });
+
+        $groupedBySalesCategory = $itemLines->groupBy(function ($line) {
+            $category = $line->item->order->salesCategory;
+            return $category ? strtoupper(trim($category->name)) : 'AUTRES';
+        });
+
+        foreach ($groupedBySalesCategory as $name => $linesGroup) {
+            $uuid = optional($linesGroup->first()->item->order->salesCategory)->uuid;
+
+            $total = (float) $linesGroup->sum(function ($line) {
+                $item = $line->item;
+                if ($item && $item->menu && !$item->menu->is_generated_from_complement) {
+                    return (float) $line->amount;
+                }
+                return 0;
+            });
+
+            if ($total > 0) {
+                $categoriesTotals[$name] = [
+                    'uuid'   => $uuid,
+                    'amount' => $total
+                ];
+            }
+        }
+
+        $totalAmountRoomService = (float) $paymentLines->filter(function ($line) {
+            return $line->payable_type === RoomService::class;
+        })->sum('amount');
+
+        $totalAmountDivers = (float) $itemLines->sum(function ($line) {
+            $item = $line->item;
+            if ($item && $item->menu && (bool) $item->menu->is_generated_from_complement === true) {
+                return (float) $line->amount;
+            }
+            return 0;
+        });
+
+        $result = $categoriesTotals;
+
+        $result['ROOM SERVICE'] = [
+            'uuid'   => null,
+            'amount' => $totalAmountRoomService
+        ];
+
+        $result['DIVERS RESTAURANT'] = [
+            'uuid'   => null,
+            'amount' => $totalAmountDivers
+        ];
+
+        return $result;
+    }
+    /**
+     * Récupère un résumé des dépenses par famille avec les montants du jour, du mois et de l'année.
+     */
+    public function getExpensesSummaryByFamily(Request $request): JsonResponse
+    {
+        $parsedDate = $request->filled('date')
+            ? Carbon::createFromFormat('d-m-Y', $request->date)
+            : Carbon::yesterday();
+
+        $dayStart   = $parsedDate->copy()->startOfDay()->toDateTimeString();
+        $dayEnd     = $parsedDate->copy()->endOfDay()->toDateTimeString();
+        $monthStart = $parsedDate->copy()->startOfMonth()->toDateTimeString();
+        $yearStart  = $parsedDate->copy()->startOfYear()->toDateTimeString();
+
+        $allowedSlugs = [RestaurantExpenseSlug::RESTO->value];
+        $createdBy    = $request->input('created_by', null);
+
+        $datasets = [
+            'jour'  => $this->fetchExpensesByDateRange($dayStart, $dayEnd, $createdBy, $allowedSlugs),
+            'mois'  => $this->fetchExpensesByDateRange($monthStart, $dayEnd, $createdBy, $allowedSlugs),
+            'annee' => $this->fetchExpensesByDateRange($yearStart, $dayEnd, $createdBy, $allowedSlugs),
+        ];
+
+        $familiesSummary = [];
+
+        $mergeTreeNodes = function (array $sourceNodes, string $periodKey, array &$targetRef, bool $isFamilyLevel = true) use (&$mergeTreeNodes) {
+            foreach ($sourceNodes as $node) {
+                $uuid = $node['uuid'] ?? ('name_' . md5($node['name'] ?? 'unknown'));
+
+                if (!isset($targetRef[$uuid])) {
+                    $targetRef[$uuid] = [
+                        'uuid'     => $node['uuid'] ?? null,
+                        'name'     => $node['name'] ?? 'Autres',
+                        'jour'     => 0.0,
+                        'mois'     => 0.0,
+                        'annee'    => 0.0,
+                        'children' => [],
+                        'items'    => []
+                    ];
+                }
+
+                // Pour les familles/enfants, on cumule selon la période en cours
+                if ($isFamilyLevel || $periodKey === 'jour') {
+                    $targetRef[$uuid][$periodKey] += (float) ($node['amount'] ?? 0);
+                }
+
+                if (!empty($node['children'])) {
+                    $targetRef[$uuid]['children_indexed'] ??= [];
+                    $mergeTreeNodes($node['children'], $periodKey, $targetRef[$uuid]['children_indexed'], false);
+                }
+
+                if (!empty($node['items'])) {
+                    $targetRef[$uuid]['items_indexed'] ??= [];
+                    foreach ($node['items'] as $item) {
+                        $itemUuid = $item['uuid'] ?? ('item_' . md5($item['name'] ?? 'unknown'));
+
+                        $paymentMethodName = $item['payment_method']
+                            ?? optional($item['method'] ?? null)->name
+                            ?? null;
+
+                        $targetRef[$uuid]['items_indexed'][$itemUuid] ??= [
+                            'uuid'           => $item['uuid'] ?? null,
+                            'name'           => $item['name'] ?? 'Article',
+                            'jour'           => 0.0,
+                            'mois'           => 0.0,
+                            'annee'          => 0.0,
+                            'payment_method' => $paymentMethodName,
+                        ];
+
+                        $targetRef[$uuid]['items_indexed'][$itemUuid][$periodKey] += (float) ($item['amount'] ?? 0);
+                    }
+                }
+            }
+        };
+
+        foreach ($datasets as $periodKey => $datasetItems) {
+            foreach ($datasetItems as $group) {
+                if (!empty($group['families'])) {
+                    $mergeTreeNodes($group['families'], $periodKey, $familiesSummary, true);
+                }
+            }
+        }
+
+        $cleanTreeOutput = function (array $nodes) use (&$cleanTreeOutput) {
+            return collect($nodes)->map(function ($node) use ($cleanTreeOutput) {
+                $node['children'] = isset($node['children_indexed'])
+                    ? $cleanTreeOutput($node['children_indexed'])
+                    : [];
+                unset($node['children_indexed']);
+
+                $items = isset($node['items_indexed'])
+                    ? array_values($node['items_indexed'])
+                    : [];
+                unset($node['items_indexed']);
+
+                $node['items'] = array_values(array_filter($items, function ($item) {
+                    return isset($item['jour']) && $item['jour'] > 0;
+                }));
+
+                return $node;
+            })->values()->toArray();
+        };
+
+        return response()->json([
+            'status'   => 'success',
+            'families' => $cleanTreeOutput($familiesSummary),
+        ]);
+    }
+
+    public function getOtherExpensesSummaryByFamily(Request $request): JsonResponse
+    {
+        $parsedDate = $request->filled('date')
+            ? Carbon::createFromFormat('d-m-Y', $request->date)
+            : Carbon::yesterday();
+
+        $dayStart   = $parsedDate->copy()->startOfDay()->toDateTimeString();
+        $dayEnd     = $parsedDate->copy()->endOfDay()->toDateTimeString();
+        $monthStart = $parsedDate->copy()->startOfMonth()->toDateTimeString();
+        $yearStart  = $parsedDate->copy()->startOfYear()->toDateTimeString();
+
+        $allowedSlugs = [PdgCategory::AUTRES_DEPENSES->value];
+        $createdBy    = $request->input('created_by', null);
+
+        $datasets = [
+            'jour'  => $this->fetchExpensesByDateRange($dayStart, $dayEnd, $createdBy, $allowedSlugs),
+            'mois'  => $this->fetchExpensesByDateRange($monthStart, $dayEnd, $createdBy, $allowedSlugs),
+            'annee' => $this->fetchExpensesByDateRange($yearStart, $dayEnd, $createdBy, $allowedSlugs),
+        ];
+
+        $familiesSummary = [];
+
+        $mergeTreeNodes = function (array $sourceNodes, string $periodKey, array &$targetRef, bool $isFamilyLevel = true) use (&$mergeTreeNodes) {
+            foreach ($sourceNodes as $node) {
+                $uuid = $node['uuid'] ?? ('name_' . md5($node['name'] ?? 'unknown'));
+
+                if (!isset($targetRef[$uuid])) {
+                    $targetRef[$uuid] = [
+                        'uuid'     => $node['uuid'] ?? null,
+                        'name'     => $node['name'] ?? 'Autres',
+                        'jour'     => 0.0,
+                        'mois'     => 0.0,
+                        'annee'    => 0.0,
+                        'children' => [],
+                        'items'    => []
+                    ];
+                }
+
+                if ($isFamilyLevel || $periodKey === 'jour') {
+                    $targetRef[$uuid][$periodKey] += (float) ($node['amount'] ?? 0);
+                }
+
+                if (!empty($node['children'])) {
+                    $targetRef[$uuid]['children_indexed'] ??= [];
+                    $mergeTreeNodes($node['children'], $periodKey, $targetRef[$uuid]['children_indexed'], false);
+                }
+
+                if (!empty($node['items'])) {
+                    $targetRef[$uuid]['items_indexed'] ??= [];
+                    foreach ($node['items'] as $item) {
+                        $itemUuid = $item['uuid'] ?? ('item_' . md5($item['name'] ?? 'unknown'));
+
+                        $paymentMethodName = $item['payment_method']
+                            ?? optional($item['method'] ?? null)->name
+                            ?? null;
+
+                        $targetRef[$uuid]['items_indexed'][$itemUuid] ??= [
+                            'uuid'           => $item['uuid'] ?? null,
+                            'name'           => $item['name'] ?? 'Article',
+                            'jour'           => 0.0,
+                            'mois'           => 0.0,
+                            'annee'          => 0.0,
+                            'payment_method' => $paymentMethodName,
+                        ];
+                        $targetRef[$uuid]['items_indexed'][$itemUuid][$periodKey] += (float) ($item['amount'] ?? 0);
+                    }
+                }
+            }
+        };
+
+        foreach ($datasets as $periodKey => $datasetItems) {
+            foreach ($datasetItems as $group) {
+                if (!empty($group['families'])) {
+                    $mergeTreeNodes($group['families'], $periodKey, $familiesSummary, true);
+                }
+            }
+        }
+
+        $cleanTreeOutput = function (array $nodes) use (&$cleanTreeOutput) {
+            return collect($nodes)->map(function ($node) use ($cleanTreeOutput) {
+                $node['children'] = isset($node['children_indexed'])
+                    ? $cleanTreeOutput($node['children_indexed'])
+                    : [];
+                unset($node['children_indexed']);
+
+                $items = isset($node['items_indexed'])
+                    ? array_values($node['items_indexed'])
+                    : [];
+                unset($node['items_indexed']);
+                $node['items'] = array_values(array_filter($items, function ($item) {
+                    return isset($item['jour']) && $item['jour'] > 0;
+                }));
+
+                return $node;
+            })->values()->toArray();
+        };
+
+        return response()->json([
+            'status'   => 'success',
+            'families' => $cleanTreeOutput($familiesSummary),
+        ]);
+    }
+
+    /**
+     * Récupère et structure les autres dépenses pour le promoteur sur différentes périodes (jour, mois, année).
+     */
+    public function getOtherExpensesForPromoter(Request $request): JsonResponse
+    {
+        $parsedDate = $request->filled('date')
+            ? Carbon::createFromFormat('d-m-Y', $request->date)
+            : Carbon::yesterday();
+
+        $dayStart   = $parsedDate->copy()->startOfDay()->toDateTimeString();
+        $dayEnd     = $parsedDate->copy()->endOfDay()->toDateTimeString();
+        $monthStart = $parsedDate->copy()->startOfMonth()->toDateTimeString();
+        $yearStart  = $parsedDate->copy()->startOfYear()->toDateTimeString();
+
+        $allowedSlugs = [PdgCategory::AUTRES_DEPENSES->value];
+        $createdBy    = $request->input('created_by', null);
+
+        $datasets = [
+            'jour'  => $this->fetchExpensesByDateRange($dayStart, $dayEnd, $createdBy, $allowedSlugs),
+            'mois'  => $this->fetchExpensesByDateRange($monthStart, $dayEnd, $createdBy, $allowedSlugs),
+            'annee' => $this->fetchExpensesByDateRange($yearStart, $dayEnd, $createdBy, $allowedSlugs),
+        ];
+
+        $familiesSummary = [];
+
+        $mergeTreeNodes = function (array $sourceNodes, string $periodKey, array &$targetRef, bool $isFamilyLevel = true) use (&$mergeTreeNodes) {
+            foreach ($sourceNodes as $node) {
+                $uuid = $node['uuid'] ?? ('name_' . md5($node['name'] ?? 'unknown'));
+
+                if (!isset($targetRef[$uuid])) {
+                    $targetRef[$uuid] = [
+                        'uuid'     => $node['uuid'] ?? null,
+                        'name'     => $node['name'] ?? 'Autres',
+                        'jour'     => 0.0,
+                        'mois'     => 0.0,
+                        'annee'    => 0.0,
+                        'children' => [],
+                        'items'    => []
+                    ];
+                }
+
+                if ($isFamilyLevel || $periodKey === 'jour') {
+                    $targetRef[$uuid][$periodKey] += (float) ($node['amount'] ?? 0);
+                }
+
+                if (!empty($node['children'])) {
+                    $targetRef[$uuid]['children_indexed'] ??= [];
+                    $mergeTreeNodes($node['children'], $periodKey, $targetRef[$uuid]['children_indexed'], false);
+                }
+
+                if (!empty($node['items'])) {
+                    $targetRef[$uuid]['items_indexed'] ??= [];
+                    foreach ($node['items'] as $item) {
+                        $itemUuid = $item['uuid'] ?? ('item_' . md5($item['name'] ?? 'unknown'));
+
+                        $paymentMethodName = $item['payment_method']
+                            ?? optional($item['method'] ?? null)->name
+                            ?? null;
+
+                        $targetRef[$uuid]['items_indexed'][$itemUuid] ??= [
+                            'uuid'           => $item['uuid'] ?? null,
+                            'name'           => $item['name'] ?? 'Article',
+                            'jour'           => 0.0,
+                            'mois'           => 0.0,
+                            'annee'          => 0.0,
+                            'payment_method' => $paymentMethodName,
+                        ];
+
+                        $targetRef[$uuid]['items_indexed'][$itemUuid][$periodKey] += (float) ($item['amount'] ?? 0);
+                    }
+                }
+            }
+        };
+
+        foreach ($datasets as $periodKey => $datasetItems) {
+            foreach ($datasetItems as $group) {
+                if (!empty($group['families'])) {
+                    $mergeTreeNodes($group['families'], $periodKey, $familiesSummary, true);
+                }
+            }
+        }
+
+        $cleanTreeOutput = function (array $nodes) use (&$cleanTreeOutput) {
+            return collect($nodes)->map(function ($node) use ($cleanTreeOutput) {
+                $node['children'] = isset($node['children_indexed'])
+                    ? $cleanTreeOutput($node['children_indexed'])
+                    : [];
+                unset($node['children_indexed']);
+
+                $items = isset($node['items_indexed'])
+                    ? array_values($node['items_indexed'])
+                    : [];
+                unset($node['items_indexed']);
+
+                $node['items'] = array_values(array_filter($items, function ($item) {
+                    return isset($item['jour']) && $item['jour'] > 0;
+                }));
+
+                return $node;
+            })->values()->toArray();
+        };
+
+        return response()->json([
+            'status'   => 'success',
+            'families' => $cleanTreeOutput($familiesSummary),
+        ], 200);
+    }
+
+    /**
+     * Récupère et structure les autres encaissements pour le promoteur sur différentes périodes (jour, mois, année).
+     */
+    public function getOtherCollectionsForPromoter(Request $request): JsonResponse
+    {
+        $parsedDate = $request->filled('date')
+            ? Carbon::createFromFormat('d-m-Y', $request->date)
+            : Carbon::yesterday();
+
+        $dayStart   = $parsedDate->copy()->startOfDay()->toDateTimeString();
+        $dayEnd     = $parsedDate->copy()->endOfDay()->toDateTimeString();
+        $monthStart = $parsedDate->copy()->startOfMonth()->toDateTimeString();
+        $yearStart  = $parsedDate->copy()->startOfYear()->toDateTimeString();
+
+        $allowedSlugs = [PdgCategory::AUTRES_ENCAISSEMENTS->value];
+        $createdBy    = $request->input('created_by', null);
+
+        // Utilisation de la méthode dédiée aux encaissements OtherCashIn
+        $datasets = [
+            'jour'  => $this->fetchCollectionsByDateRange($dayStart, $dayEnd, $createdBy, $allowedSlugs),
+            'mois'  => $this->fetchCollectionsByDateRange($monthStart, $dayEnd, $createdBy, $allowedSlugs),
+            'annee' => $this->fetchCollectionsByDateRange($yearStart, $dayEnd, $createdBy, $allowedSlugs),
+        ];
+
+        $familiesSummary = [];
+
+        $mergeTreeNodes = function (array $sourceNodes, string $periodKey, array &$targetRef, bool $isFamilyLevel = true) use (&$mergeTreeNodes) {
+            foreach ($sourceNodes as $node) {
+                $uuid = $node['uuid'] ?? ('name_' . md5($node['name'] ?? 'unknown'));
+
+                if (!isset($targetRef[$uuid])) {
+                    $targetRef[$uuid] = [
+                        'uuid'     => $node['uuid'] ?? null,
+                        'name'     => $node['name'] ?? 'Autres',
+                        'jour'     => 0.0,
+                        'mois'     => 0.0,
+                        'annee'    => 0.0,
+                        'children' => [],
+                        'items'    => []
+                    ];
+                }
+
+                if ($isFamilyLevel || $periodKey === 'jour') {
+                    $targetRef[$uuid][$periodKey] += (float) ($node['amount'] ?? 0);
+                }
+
+                if (!empty($node['children'])) {
+                    $targetRef[$uuid]['children_indexed'] ??= [];
+                    $mergeTreeNodes($node['children'], $periodKey, $targetRef[$uuid]['children_indexed'], false);
+                }
+
+                if (!empty($node['items'])) {
+                    $targetRef[$uuid]['items_indexed'] ??= [];
+                    foreach ($node['items'] as $item) {
+                        $itemUuid = $item['uuid'] ?? ('item_' . md5($item['name'] ?? 'unknown'));
+
+                        $paymentMethodName = $item['payment_method']
+                            ?? optional($item['method'] ?? null)->name
+                            ?? null;
+
+                        $targetRef[$uuid]['items_indexed'][$itemUuid] ??= [
+                            'uuid'           => $item['uuid'] ?? null,
+                            'name'           => $item['name'] ?? 'Article',
+                            'jour'           => 0.0,
+                            'mois'           => 0.0,
+                            'annee'          => 0.0,
+                            'payment_method' => $paymentMethodName,
+                        ];
+
+                        $targetRef[$uuid]['items_indexed'][$itemUuid][$periodKey] += (float) ($item['amount'] ?? 0);
+                    }
+                }
+            }
+        };
+
+        foreach ($datasets as $periodKey => $datasetItems) {
+            foreach ($datasetItems as $group) {
+                if (!empty($group['families'])) {
+                    $mergeTreeNodes($group['families'], $periodKey, $familiesSummary, true);
+                }
+            }
+        }
+
+        $cleanTreeOutput = function (array $nodes) use (&$cleanTreeOutput) {
+            return collect($nodes)->map(function ($node) use ($cleanTreeOutput) {
+                $node['children'] = isset($node['children_indexed'])
+                    ? $cleanTreeOutput($node['children_indexed'])
+                    : [];
+                unset($node['children_indexed']);
+
+                $items = isset($node['items_indexed'])
+                    ? array_values($node['items_indexed'])
+                    : [];
+                unset($node['items_indexed']);
+
+                $node['items'] = array_values(array_filter($items, function ($item) {
+                    return isset($item['jour']) && $item['jour'] > 0;
+                }));
+
+                return $node;
+            })->values()->toArray();
+        };
+
+        return response()->json([
+            'status'   => 'success',
+            'families' => $cleanTreeOutput($familiesSummary),
+        ], 200);
+    }
+
+    /**
+     * Récupère et structure les encaissements du bar pour le promoteur sur différentes périodes (jour, mois, année).
+     */
+    public function getBarCollectionsForPromoter(Request $request): JsonResponse
+    {
+        $parsedDate = $request->filled('date')
+            ? Carbon::createFromFormat('d-m-Y', $request->date)
+            : Carbon::yesterday();
+
+        $dayStart   = $parsedDate->copy()->startOfDay()->toDateTimeString();
+        $dayEnd     = $parsedDate->copy()->endOfDay()->toDateTimeString();
+        $monthStart = $parsedDate->copy()->startOfMonth()->toDateTimeString();
+        $yearStart  = $parsedDate->copy()->startOfYear()->toDateTimeString();
+
+        $allowedSlugs = [RestaurantExpenseSlug::BAR->value];
+        $createdBy    = $request->input('created_by', null);
+
+        $datasets = [
+            'jour'  => $this->fetchExpensesByDateRange($dayStart, $dayEnd, $createdBy, $allowedSlugs),
+            'mois'  => $this->fetchExpensesByDateRange($monthStart, $dayEnd, $createdBy, $allowedSlugs),
+            'annee' => $this->fetchExpensesByDateRange($yearStart, $dayEnd, $createdBy, $allowedSlugs),
+        ];
+
+        $familiesSummary = [];
+
+        $mergeTreeNodes = function (array $sourceNodes, string $periodKey, array &$targetRef, bool $isFamilyLevel = true) use (&$mergeTreeNodes) {
+            foreach ($sourceNodes as $node) {
+                $uuid = $node['uuid'] ?? ('name_' . md5($node['name'] ?? 'unknown'));
+
+                if (!isset($targetRef[$uuid])) {
+                    $targetRef[$uuid] = [
+                        'uuid'     => $node['uuid'] ?? null,
+                        'name'     => $node['name'] ?? 'Autres',
+                        'jour'     => 0.0,
+                        'mois'     => 0.0,
+                        'annee'    => 0.0,
+                        'children' => [],
+                        'items'    => []
+                    ];
+                }
+
+                if ($isFamilyLevel || $periodKey === 'jour') {
+                    $targetRef[$uuid][$periodKey] += (float) ($node['amount'] ?? 0);
+                }
+
+                if (!empty($node['children'])) {
+                    $targetRef[$uuid]['children_indexed'] ??= [];
+                    $mergeTreeNodes($node['children'], $periodKey, $targetRef[$uuid]['children_indexed'], false);
+                }
+
+                if (!empty($node['items'])) {
+                    $targetRef[$uuid]['items_indexed'] ??= [];
+                    foreach ($node['items'] as $item) {
+                        $itemUuid = $item['uuid'] ?? ('item_' . md5($item['name'] ?? 'unknown'));
+
+                        $paymentMethodName = $item['payment_method']
+                            ?? optional($item['method'] ?? null)->name
+                            ?? null;
+
+                        $targetRef[$uuid]['items_indexed'][$itemUuid] ??= [
+                            'uuid'           => $item['uuid'] ?? null,
+                            'name'           => $item['name'] ?? 'Article',
+                            'jour'           => 0.0,
+                            'mois'           => 0.0,
+                            'annee'          => 0.0,
+                            'payment_method' => $paymentMethodName,
+                        ];
+
+                        $targetRef[$uuid]['items_indexed'][$itemUuid][$periodKey] += (float) ($item['amount'] ?? 0);
+                    }
+                }
+            }
+        };
+
+        foreach ($datasets as $periodKey => $datasetItems) {
+            foreach ($datasetItems as $group) {
+                if (!empty($group['families'])) {
+                    $mergeTreeNodes($group['families'], $periodKey, $familiesSummary, true);
+                }
+            }
+        }
+
+        $cleanTreeOutput = function (array $nodes) use (&$cleanTreeOutput) {
+            return collect($nodes)->map(function ($node) use ($cleanTreeOutput) {
+                $node['children'] = isset($node['children_indexed'])
+                    ? $cleanTreeOutput($node['children_indexed'])
+                    : [];
+                unset($node['children_indexed']);
+
+                $items = isset($node['items_indexed'])
+                    ? array_values($node['items_indexed'])
+                    : [];
+                unset($node['items_indexed']);
+
+                $node['items'] = array_values(array_filter($items, function ($item) {
+                    return isset($item['jour']) && $item['jour'] > 0;
+                }));
+
+                return $node;
+            })->values()->toArray();
+        };
+
+        return response()->json([
+            'status'   => 'success',
+            'families' => $cleanTreeOutput($familiesSummary),
+        ], 200);
+    }
 
 }

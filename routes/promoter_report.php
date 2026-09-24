@@ -18,3 +18,11 @@ Route::get('/promoter_turnover_details', [PromoterReportController::class, 'getT
 Route::get('/promoter_paid_detailed', [PromoterReportController::class, 'getPaidDetailedSalesSummary']);
 Route::get('/promoter_paid_detailed_items', [PromoterReportController::class, 'getTurnoverDetailsSalesPaid']);
 Route::get('promoter/pdf', [\App\Http\Controllers\PromoterReportController::class, 'exportPromoterReportPdf']);
+Route::get('/promoter_details_by_date', [PromoterReportController::class, 'getBarDetailsByDate']);
+Route::get('/promoter_bar_payments_by_date', [PromoterReportController::class, 'getBarPaymentsByDate']);
+Route::get('/promoter_expenses_day', [PromoterReportController::class, 'getOtherExpensesSummaryByFamily']);
+Route::get('/promoter_other_expenses', [PromoterReportController::class, 'getOtherExpensesForPromoter']);
+Route::get('/promoter_other_collections', [PromoterReportController::class, 'getOtherCollectionsForPromoter']);
+Route::get('/restaurant_paid_detailed_summary_items', [PromoterReportController::class, 'getRestaurantCashReceiptsGroupedByCategory']);
+Route::get('/restaurant_expenses_summary_by_family', [PromoterReportController::class, 'getExpensesSummaryByFamily']);
+Route::get('/promoter_bar_collections', [PromoterReportController::class, 'getBarCollectionsForPromoter']);
