@@ -1697,7 +1697,7 @@ class PromoterReportController extends Controller
             'payments' => $formattedPayments,
         ], 200);
     }
-    
+
     /**
      * Récupère les encaissements du restaurant groupés par catégorie (Déjeuner, Dîner, Room Service, etc.)
      * pour le jour, le mois et l'année.
