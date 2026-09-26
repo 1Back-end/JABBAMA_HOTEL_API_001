@@ -26,3 +26,6 @@ Route::get('/promoter_other_collections', [PromoterReportController::class, 'get
 Route::get('/restaurant_paid_detailed_summary_items', [PromoterReportController::class, 'getRestaurantCashReceiptsGroupedByCategory']);
 Route::get('/restaurant_expenses_summary_by_family', [PromoterReportController::class, 'getExpensesSummaryByFamily']);
 Route::get('/promoter_bar_collections', [PromoterReportController::class, 'getBarCollectionsForPromoter']);
+Route::get('/promoter_collections_summary', [PromoterReportController::class, 'getCollectionsSummary']);
+Route::get('/promoter_bar_collections_summary', [PromoterReportController::class, 'getBarCollectionsSummary']);
+Route::get('/restaurant_clients_breakdown_summary', [PromoterReportController::class, 'getClientsBreakdownSummary']);

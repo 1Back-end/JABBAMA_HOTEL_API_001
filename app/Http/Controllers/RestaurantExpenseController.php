@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\ExpenseTitleEnum;
 use App\Models\ExpensePayment;
 use App\Models\PaymentRegulation;
 use App\Models\RestaurantExpenseDetail;
@@ -120,8 +121,8 @@ class RestaurantExpenseController extends Controller
         DB::beginTransaction();
 
         try {
-            $expenseSlug = 'AUTRES DEPENSES';
-            $paymentSlug = 'AUTRES DEPENSES';
+            $expenseTitleEnum = ExpenseTitleEnum::AUTRES;
+            $expenseSlug = ExpenseTitleEnum::AUTRES->value;
 
             if ($request->filled('restaurant_expense_family_uuid')) {
                 $currentFamilyUuid = $request->restaurant_expense_family_uuid;
@@ -134,12 +135,14 @@ class RestaurantExpenseController extends Controller
                         break;
                     }
                     if (!empty($family->indexation)) {
-                        if ($family->indexation === 'Consommation Bar') {
-                            $expenseSlug = 'BAR';
-                            $paymentSlug = 'DEPENSES BAR';
-                        } elseif ($family->indexation === 'Consommation Restaurant') {
-                            $expenseSlug = 'RESTO';
-                            $paymentSlug = 'DEPENSES RESTO';
+                        if ($family->indexation === \App\Enums\CashReceiptType::CONSOMMATION_BAR->value) {
+                            $expenseTitleEnum = ExpenseTitleEnum::BAR;
+                            $expenseSlug = ExpenseTitleEnum::BAR->value;
+                            $paymentSlug = $expenseTitleEnum->getExpenseTitle('BAR');
+                        } elseif ($family->indexation === \App\Enums\CashReceiptType::CONSOMMATION_RESTAURANT->value) {
+                            $expenseTitleEnum = ExpenseTitleEnum::RESTO;
+                            $expenseSlug = ExpenseTitleEnum::RESTO->value;
+                            $paymentSlug = $expenseTitleEnum->getExpenseTitle('RESTO');
                         }
                         break;
                     }
@@ -277,8 +280,8 @@ class RestaurantExpenseController extends Controller
         DB::beginTransaction();
 
         try {
-            $expenseSlug = 'AUTRES DEPENSES';
-            $paymentSlug = 'AUTRES DEPENSES';
+            $expenseTitleEnum = ExpenseTitleEnum::AUTRES;
+            $expenseSlug = ExpenseTitleEnum::AUTRES->value;
 
             if ($request->filled('restaurant_expense_family_uuid')) {
                 $currentFamilyUuid = $request->restaurant_expense_family_uuid;
@@ -293,12 +296,14 @@ class RestaurantExpenseController extends Controller
                     }
 
                     if (!empty($family->indexation)) {
-                        if ($family->indexation === 'Consommation Bar') {
-                            $expenseSlug = 'BAR';
-                            $paymentSlug = 'DEPENSES BAR';
-                        } elseif ($family->indexation === 'Consommation Restaurant') {
-                            $expenseSlug = 'RESTO';
-                            $paymentSlug = 'DEPENSES RESTO';
+                        if ($family->indexation === \App\Enums\CashReceiptType::CONSOMMATION_BAR->value) {
+                            $expenseTitleEnum = ExpenseTitleEnum::BAR;
+                            $expenseSlug = ExpenseTitleEnum::BAR->value;
+                            $paymentSlug = $expenseTitleEnum->getExpenseTitle('BAR');
+                        } elseif ($family->indexation === \App\Enums\CashReceiptType::CONSOMMATION_RESTAURANT->value) {
+                            $expenseTitleEnum = ExpenseTitleEnum::RESTO;
+                            $expenseSlug = ExpenseTitleEnum::RESTO->value;
+                            $paymentSlug = $expenseTitleEnum->getExpenseTitle('RESTO');
                         }
                         break;
                     }
@@ -306,8 +311,6 @@ class RestaurantExpenseController extends Controller
                     $currentFamilyUuid = $family->parent_uuid;
                 }
             }
-            // -------------------------------------------------------------------
-
             $expense->update([
                 'restaurant_expense_type_uuid'   => $request->restaurant_expense_type_uuid,
                 'restaurant_expense_family_uuid' => $request->restaurant_expense_family_uuid,

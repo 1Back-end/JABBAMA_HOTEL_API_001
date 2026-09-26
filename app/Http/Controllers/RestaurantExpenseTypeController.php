@@ -65,7 +65,7 @@ class RestaurantExpenseTypeController extends Controller
         try {
             $type = RestaurantExpenseType::create([
                 'code' => Str::slug($validated['name'], '_'),
-                'name' => $validated['name'],
+                'name' => mb_strtoupper($validated['name'], 'UTF-8'),
                 'created_by' => auth()->id(),
                 'is_linked_to_activity' => $validated['is_linked_to_activity'],
             ]);
@@ -108,7 +108,7 @@ class RestaurantExpenseTypeController extends Controller
 
         $type->update([
             'code' => Str::slug($validated['name'], '_'),
-            'name' => $validated['name'],
+            'name' => mb_strtoupper($validated['name'], 'UTF-8'),
             'updated_by' => auth()->id(),
             'is_linked_to_activity' => $validated['is_linked_to_activity'],
         ]);

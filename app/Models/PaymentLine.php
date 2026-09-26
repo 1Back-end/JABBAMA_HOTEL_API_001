@@ -31,7 +31,8 @@ class PaymentLine extends Model
         'updated_by',
         'created_at',
         'updated_at',
-        'slug'
+        'slug',
+        'type'
     ];
 
     protected static function boot()

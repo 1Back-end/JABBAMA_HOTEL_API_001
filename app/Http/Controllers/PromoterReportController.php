@@ -17,6 +17,7 @@ use App\Enums\RestaurantExpenseSlug;
 use App\Enums\RestaurantRubricEnum;
 use App\Enums\RestaurantSummaryMode;
 use App\Enums\RestaurantSummaryResponse;
+use App\Enums\TypeClientsForPaiment;
 use App\Models\CashReceiptFamily;
 use App\Models\ExpensePayment;
 use App\Models\OrderMenuRestaurant;
@@ -491,6 +492,102 @@ class PromoterReportController extends Controller
         ];
     }
 
+    public function getCollectionsSummary(Request $request): JsonResponse
+    {
+        $parsedDate = $request->filled('date')
+            ? Carbon::createFromFormat('d-m-Y', $request->date)
+            : Carbon::yesterday();
+
+        $dayStart   = $parsedDate->copy()->startOfDay()->toDateTimeString();
+        $dayEnd     = $parsedDate->copy()->endOfDay()->toDateTimeString();
+
+        $monthStart = $parsedDate->copy()->startOfMonth()->toDateTimeString();
+        $monthEnd   = $dayEnd;
+
+        $yearStart  = $parsedDate->copy()->startOfYear()->toDateTimeString();
+        $yearEnd    = $dayEnd;
+
+        return response()->json([
+            'jour'  => $this->calculateCollectionsForPeriod($dayStart, $dayEnd),
+            'mois'  => $this->calculateCollectionsForPeriod($monthStart, $monthEnd),
+            'annee' => $this->calculateCollectionsForPeriod($yearStart, $yearEnd),
+        ]);
+    }
+
+    /**
+     * Calcule spécifiquement l'encaissement et le recouvrement pour une période donnée.
+     */
+    private function calculateCollectionsForPeriod(string $startDate, string $endDate): array
+    {
+        $encaissement = (float) PaymentRegulation::whereIn('slug', [
+            PaymentRegulationSlug::ENCAISSEMENT_RESTO->value,
+        ])
+            ->where('type', 'encaissement')
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->sum('amount');
+
+        $recouvrement = (float) PaymentRegulation::whereIn('slug', [
+            PaymentRegulationSlug::ENCAISSEMENT_RESTO->value,
+        ])
+            ->where('type', 'recouvrement')
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->sum('amount');
+
+        return [
+            'encaissement' => $encaissement,
+            'recouvrement' => $recouvrement,
+            'total'        => $encaissement + $recouvrement,
+        ];
+    }
+
+    public function getBarCollectionsSummary(Request $request): JsonResponse
+    {
+        $parsedDate = $request->filled('date')
+            ? Carbon::createFromFormat('d-m-Y', $request->date)
+            : Carbon::yesterday();
+
+        $dayStart   = $parsedDate->copy()->startOfDay()->toDateTimeString();
+        $dayEnd     = $parsedDate->copy()->endOfDay()->toDateTimeString();
+
+        $monthStart = $parsedDate->copy()->startOfMonth()->toDateTimeString();
+        $monthEnd   = $dayEnd;
+
+        $yearStart  = $parsedDate->copy()->startOfYear()->toDateTimeString();
+        $yearEnd    = $dayEnd;
+
+        return response()->json([
+            'jour'  => $this->calculateBarCollectionsForPeriod($dayStart, $dayEnd),
+            'mois'  => $this->calculateBarCollectionsForPeriod($monthStart, $monthEnd),
+            'annee' => $this->calculateBarCollectionsForPeriod($yearStart, $yearEnd),
+        ]);
+    }
+
+    /**
+     * Calcule spécifiquement l'encaissement et le recouvrement pour le bar sur une période donnée.
+     */
+    private function calculateBarCollectionsForPeriod(string $startDate, string $endDate): array
+    {
+        $encaissement = (float) PaymentRegulation::whereIn('slug', [
+            PaymentRegulationSlug::ENCAISSEMENT_BAR->value,
+        ])
+            ->where('type', 'encaissement')
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->sum('amount');
+
+        $recouvrement = (float) PaymentRegulation::whereIn('slug', [
+            PaymentRegulationSlug::ENCAISSEMENT_BAR->value,
+        ])
+            ->where('type', 'recouvrement')
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->sum('amount');
+
+        return [
+            'encaissement' => $encaissement,
+            'recouvrement' => $recouvrement,
+            'total'        => $encaissement + $recouvrement,
+        ];
+    }
+
     public function getBarSummary(Request $request): JsonResponse
     {
         $parsedDate = $request->filled('date')
@@ -803,6 +900,7 @@ class PromoterReportController extends Controller
     {
         $perPage = (int) $request->input('limit', 30);
         $page    = (int) $request->input('page', 1);
+        $type    = $request->input('type', 'encaissement');
 
         $parsedDate = $request->filled('date')
             ? Carbon::createFromFormat('d-m-Y', $request->date)
@@ -817,18 +915,29 @@ class PromoterReportController extends Controller
         $yearStart  = $parsedDate->copy()->startOfYear()->toDateTimeString();
         $yearEnd    = $dayEnd;
 
-        $paginatedLines = PaymentLine::with(['method', 'payment.order'])
+        $query = PaymentLine::with(['method', 'payment.order', 'payment_regulation'])
             ->whereIn('payable_type', [
                 \App\Models\OrderMenuRestaurantItem::class,
                 \App\Models\RoomService::class,
             ])
-            ->whereBetween('created_at', [$dayStart, $dayEnd])
-            ->latest()
-            ->paginate($perPage, ['*'], 'page', $page);
+            ->whereBetween('created_at', [$dayStart, $dayEnd]);
 
-        $monthTotal = $this->fetchTotalByDateRange($monthStart, $monthEnd);
+        if ($type === 'recouvrement') {
+            $query->whereHas('payment_regulation', function ($q) {
+                $q->whereNotNull('recouvrement_uuid');
+            });
+        } else {
+            $query->where(function ($q) {
+                $q->whereDoesntHave('payment_regulation')
+                    ->orWhereHas('payment_regulation', function ($subQ) {
+                        $subQ->whereNull('recouvrement_uuid');
+                    });
+            });
+        }
 
-        $yearTotal = $this->fetchTotalByDateRange($yearStart, $yearEnd);
+        $paginatedLines = $query->latest()->paginate($perPage, ['*'], 'page', $page);
+        $monthTotal = $this->fetchTotalByDateRange($monthStart, $monthEnd, $type);
+        $yearTotal  = $this->fetchTotalByDateRange($yearStart, $yearEnd, $type);
 
         return response()->json([
             'status' => 'success',
@@ -848,16 +957,30 @@ class PromoterReportController extends Controller
     }
 
     /**
-     * Fonction auxiliaire pour récupérer uniquement le total des montants sur une période
+     * Fonction auxiliaire mise à jour pour filtrer le total par période et par type
      */
-    protected function fetchTotalByDateRange(string $start, string $end): float
+    protected function fetchTotalByDateRange(string $start, string $end, string $type): float
     {
-        return (float) PaymentLine::whereIn('payable_type', [
+        $query = PaymentLine::whereIn('payable_type', [
             \App\Models\OrderMenuRestaurantItem::class,
             \App\Models\RoomService::class,
         ])
-            ->whereBetween('created_at', [$start, $end])
-            ->sum('amount');
+            ->whereBetween('created_at', [$start, $end]);
+
+        if ($type === 'recouvrement') {
+            $query->whereHas('payment_regulation', function ($q) {
+                $q->whereNotNull('recouvrement_uuid');
+            });
+        } else {
+            $query->where(function ($q) {
+                $q->whereDoesntHave('payment_regulation')
+                    ->orWhereHas('payment_regulation', function ($subQ) {
+                        $subQ->whereNull('recouvrement_uuid');
+                    });
+            });
+        }
+
+        return (float) $query->sum('amount');
     }
 
     /**
@@ -881,7 +1004,6 @@ class PromoterReportController extends Controller
 
             $orderCode = optional(optional($line->payment)->order)->code ?? '';
 
-            // Détermination du type d'opération (Encaissement ou Recouvrement)
             $regulation = $line->payment_regulation;
             $typeOperation = 'Encaissement';
 
@@ -1704,6 +1826,8 @@ class PromoterReportController extends Controller
      */
     public function getRestaurantCashReceiptsGroupedByCategory(Request $request): JsonResponse
     {
+        $type = $request->input('type', 'encaissement'); // Récupération du type (encaissement par défaut)
+
         $parsedDate = $request->filled('date')
             ? Carbon::createFromFormat('d-m-Y', $request->date)
             : Carbon::yesterday();
@@ -1719,28 +1843,44 @@ class PromoterReportController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'jour'   => $this->calculateGroupedReceiptsForPeriod($dayStart, $dayEnd),
-            'mois'   => $this->calculateGroupedReceiptsForPeriod($monthStart, $monthEnd),
-            'annee'  => $this->calculateGroupedReceiptsForPeriod($yearStart, $yearEnd),
+            'jour'   => $this->calculateGroupedReceiptsForPeriod($dayStart, $dayEnd, $type),
+            'mois'   => $this->calculateGroupedReceiptsForPeriod($monthStart, $monthEnd, $type),
+            'annee'  => $this->calculateGroupedReceiptsForPeriod($yearStart, $yearEnd, $type),
         ]);
     }
 
     /**
-     * Calcule et groupe les montants encaissés par catégorie pour une période donnée.
+     * Calcule et groupe les montants encaissés ou recouvrés par catégorie pour une période donnée.
      */
-    private function calculateGroupedReceiptsForPeriod(string $startDate, string $endDate): array
+    private function calculateGroupedReceiptsForPeriod(string $startDate, string $endDate, string $type): array
     {
-        $paymentLines = PaymentLine::with([
+        $query = PaymentLine::with([
             'item.order.salesCategory',
             'item.menu:uuid,is_generated_from_complement',
-            'roomService'
+            'roomService',
+            'payment_regulation'
         ])
             ->whereIn('payable_type', [
                 OrderMenuRestaurantItem::class,
                 RoomService::class,
             ])
-            ->whereBetween('created_at', [$startDate, $endDate])
-            ->get();
+            ->whereBetween('created_at', [$startDate, $endDate]);
+
+        // Filtrer selon s'il s'agit d'un recouvrement ou d'un encaissement direct
+        if ($type === 'recouvrement') {
+            $query->whereHas('payment_regulation', function ($q) {
+                $q->whereNotNull('recouvrement_uuid');
+            });
+        } else {
+            $query->where(function ($q) {
+                $q->whereDoesntHave('payment_regulation')
+                    ->orWhereHas('payment_regulation', function ($subQ) {
+                        $subQ->whereNull('recouvrement_uuid');
+                    });
+            });
+        }
+
+        $paymentLines = $query->get();
 
         $categoriesTotals = [];
 
@@ -2333,6 +2473,176 @@ class PromoterReportController extends Controller
             'status'   => 'success',
             'families' => $cleanTreeOutput($familiesSummary),
         ], 200);
+    }
+
+    /**
+     * Calcule la répartition des montants par type de client pour une période donnée.
+     */
+    public function getClientsBreakdownSummary(Request $request): JsonResponse
+    {
+        $parsedDate = $request->filled('date')
+            ? Carbon::createFromFormat('d-m-Y', $request->date)
+            : Carbon::yesterday();
+
+        $startDate = $parsedDate->copy()->startOfDay()->toDateTimeString();
+        $endDate   = $parsedDate->copy()->endOfDay()->toDateTimeString();
+
+        $breakdown = $this->calculateClientsBreakdownForPeriod($startDate, $endDate);
+
+        return response()->json([
+            'status' => 'success',
+            ...$breakdown,
+        ]);
+    }
+
+    /**
+     * Calcule la répartition et retourne les noms et détails pour une période donnée.
+     */
+    private function calculateClientsBreakdownForPeriod(string $startDate, string $endDate): array
+    {
+        $date = \Carbon\Carbon::parse($startDate)->format('Y-m-d');
+        $slug = request()->get('slug', \App\Enums\RestaurantExpenseSlug::RESTO->value);
+
+        $regulationsQuery = PaymentRegulation::with([
+            'creator:id,nom_utilisateur',
+            'updater:id,nom_utilisateur',
+            'recouvrement:uuid,name,code,slug',
+            'cashReceiptFamily:uuid,name',
+            'method:uuid,name', // Récupération du mode de règlement
+
+            'payment.order.items.menu:uuid,name',
+            'payment.order.partners_restaurant:uuid,full_name',
+            'payment.order.free_client_for_restaurant:uuid,full_name',
+
+            'paymentLines' => function ($lineQuery) use ($slug) {
+                if ($slug) {
+                    $lineQuery->where('slug', $slug);
+                }
+            },
+            'paymentLines.payable' => function ($morphTo) {
+                $morphTo->morphWith([
+                    \App\Models\OrderMenuRestaurantItem::class => ['menu:uuid,name'],
+                    \App\Models\RoomService::class => []
+                ]);
+            }
+        ])
+            ->where('type', 'recouvrement')
+            ->whereNotNull('recouvrement_uuid')
+            ->whereNotNull('slug')
+            ->whereDate('created_at', $date)
+            ->whereNull('deleted_at');
+
+        if ($slug) {
+            $regulationsQuery->where(function ($q) use ($slug) {
+                $q->where('slug', 'like', '% ' . $slug)
+                    ->orWhereHas('paymentLines', function ($lineQ) use ($slug) {
+                        $lineQ->where('slug', $slug);
+                    });
+            });
+        }
+
+        $regulations = $regulationsQuery->orderByDesc('created_at')
+            ->get()
+            ->map(function ($regulation) use ($slug) {
+                if ($slug) {
+                    $filteredLines = $regulation->paymentLines->where('slug', $slug);
+                    if ($filteredLines->isEmpty()) {
+                        return null;
+                    }
+                    $regulation->setRelation('paymentLines', $filteredLines);
+                    $regulation->amount = (float) $filteredLines->sum('amount');
+                }
+
+                $order = optional($regulation->payment)->order;
+                $clientName = 'Client de passage';
+                $clientTypeEnum = TypeClientsForPaiment::DEBTOR;
+
+                if ($order) {
+                    if ($order->partners_restaurant) {
+                        $clientName = $order->partners_restaurant->full_name;
+                        $clientTypeEnum = TypeClientsForPaiment::PARTNER;
+                    } elseif ($order->free_client_for_restaurant) {
+                        $clientName = $order->free_client_for_restaurant->full_name;
+                        $clientTypeEnum = TypeClientsForPaiment::FREE;
+                    } elseif (!empty($order->full_name)) {
+                        $clientName = $order->full_name;
+                        $clientTypeEnum = TypeClientsForPaiment::DEBTOR;
+                    }
+                }
+
+                $regulation->resolved_client_name = $clientName;
+                $regulation->resolved_client_type_key = $clientTypeEnum->value;
+                $regulation->resolved_client_type_label = $clientTypeEnum->label();
+
+                return $regulation;
+            })
+            ->filter();
+
+        $formatItems = function ($itemsCollection) {
+            $itemsDetails = [];
+            foreach ($itemsCollection as $reg) {
+                $methodName = optional($reg->method)->name;
+
+                foreach ($reg->paymentLines as $line) {
+                    $payable = $line->payable;
+                    if ($payable instanceof \App\Models\OrderMenuRestaurantItem && $payable->menu) {
+                        $itemName = $payable->menu->name;
+                        $uniqueKey = $itemName . '_' . ($methodName ?? 'N/A');
+                        $orderCode = optional($payable->order)->code;
+
+                        if (!isset($itemsDetails[$uniqueKey])) {
+                            $itemsDetails[$uniqueKey] = [
+                                'item_name'      => $itemName,
+                                'order_code'     => $orderCode,
+                                'quantity'       => 0,
+                                'total'          => 0.0,
+                                'payment_method' => $methodName,
+                            ];
+                        }
+                        $itemsDetails[$uniqueKey]['quantity'] += (int) ($payable->quantity_exactly ?? 1);
+                        $itemsDetails[$uniqueKey]['total']    += (float) ($line->amount ?? 0);
+                    }
+                }
+            }
+            return array_values($itemsDetails);
+        };
+
+        $buildClientList = function ($filteredRegulations) use ($formatItems) {
+            return $filteredRegulations->groupBy('resolved_client_name')->map(function ($clientRegs, $clientName) use ($formatItems) {
+                $firstReg = $clientRegs->first();
+                return [
+                    'client_name' => 'RECOUVREMENT ' . $clientName,
+                    'client_type'  => $firstReg->resolved_client_type_label,
+                    'total_amount' => (float) $clientRegs->sum('amount'),
+                    'count'        => $clientRegs->count(),
+                    'items'        => $formatItems($clientRegs),
+                ];
+            })->values();
+        };
+
+        $partnerRegs = $regulations->where('resolved_client_type_key', TypeClientsForPaiment::PARTNER->value);
+        $freeRegs    = $regulations->where('resolved_client_type_key', TypeClientsForPaiment::FREE->value);
+        $diversRegs  = $regulations->where('resolved_client_type_key', TypeClientsForPaiment::DEBTOR->value);
+
+        $partnerTotal = (float) $partnerRegs->sum('amount');
+        $freeTotal    = (float) $freeRegs->sum('amount');
+        $diversTotal  = (float) $diversRegs->sum('amount');
+
+        return [
+            'clients_partenaires' => [
+                'total'   => $partnerTotal,
+                'details' => $buildClientList($partnerRegs),
+            ],
+            'clients_gratuits' => [
+                'total'   => $freeTotal,
+                'details' => $buildClientList($freeRegs),
+            ],
+            'clients_divers' => [
+                'total'   => $diversTotal,
+                'details' => $buildClientList($diversRegs),
+            ],
+            'total_general' => $partnerTotal + $freeTotal + $diversTotal,
+        ];
     }
 
 }

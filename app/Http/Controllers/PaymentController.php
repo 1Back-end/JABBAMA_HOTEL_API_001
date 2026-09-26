@@ -3,17 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Enums\CashRegisterFilterType;
-use App\Enums\ExpenseTitleEnum;
 use App\Enums\MenuOrderStatus;
 use App\Enums\OrderMenuRestaurantItemStatus;
 use App\Enums\PaymentOrderItemStatus;
 use App\Enums\PaymentOrderMenusStatus;
 use App\Enums\PaymentRegulationSlug;
 use App\Enums\PaymentStatus;
-use App\Enums\PdgCategory;
 use App\Enums\RestaurantExpenseSlug;
-use App\Enums\RestaurantRubricEnum;
-use App\Enums\TypeClientsForPaiment;
 use App\Models\CashReceiptFamily;
 use App\Models\CashReceiptType;
 use App\Models\ExpensePayment;
@@ -321,6 +317,7 @@ class PaymentController extends Controller
                             'payable_uuid' => $line['uuid'],
                             'amount' => $line['amount'],
                             'slug' => RestaurantExpenseSlug::RESTO->value,
+                            'type' => \App\Enums\PaymentLineType::ENCAISSEMENT->value,
                             'regulation_method_uuid' => $method->uuid,
                             'phone_number' => $regulation['phone_number'] ?? null,
                             'reference' => $regulation['reference'] ?? null,
@@ -341,6 +338,7 @@ class PaymentController extends Controller
                                 'payable_uuid' => $line['uuid'],
                                 'amount' => $line['amount'],
                                 'slug' => RestaurantExpenseSlug::RESTO->value,
+                                'type' => \App\Enums\PaymentLineType::ENCAISSEMENT->value,
                                 'regulation_method_uuid' => $method->uuid,
                                 'phone_number' => $regulation['phone_number'] ?? null,
                                 'reference' => $regulation['reference'] ?? null,
@@ -362,7 +360,7 @@ class PaymentController extends Controller
                         'regulation_method_uuid' => $method->uuid,
                         'cash_receipt_families_uuid' => $barFamily?->uuid,
                         'cash_receipt_type_uuid' => $cashReceiptType?->uuid,
-                        'slug' => PaymentRegulationSlug::ENCAISSEMENT_RESTO->value,
+                        'slug' => PaymentRegulationSlug::ENCAISSEMENT_BAR->value,
                         'amount' => $drinksAmount,
                         'phone_number' => $regulation['phone_number'] ?? null,
                         'reference' => $regulation['reference'] ?? null,
@@ -381,6 +379,7 @@ class PaymentController extends Controller
                             'payable_uuid' => $line['uuid'],
                             'amount' => $line['amount'],
                             'slug' => RestaurantExpenseSlug::BAR->value,
+                            'type' => \App\Enums\PaymentLineType::ENCAISSEMENT->value,
                             'regulation_method_uuid' => $method->uuid,
                             'phone_number' => $regulation['phone_number'] ?? null,
                             'reference' => $regulation['reference'] ?? null,
@@ -401,6 +400,7 @@ class PaymentController extends Controller
                                 'payable_uuid' => $line['uuid'],
                                 'amount' => $line['amount'],
                                 'slug' => RestaurantExpenseSlug::BAR->value,
+                                'type' => \App\Enums\PaymentLineType::ENCAISSEMENT->value,
                                 'regulation_method_uuid' => $method->uuid,
                                 'phone_number' => $regulation['phone_number'] ?? null,
                                 'reference' => $regulation['reference'] ?? null,
@@ -1115,17 +1115,38 @@ class PaymentController extends Controller
         $filterType = $request->cash_register_filter_type;
         $createdBy = $request->filled('created_by') ? $request->created_by : null;
 
-        // Récupération sécurisée du slug (NULL si non envoyé)
         $slug = $request->filled('slug') ? strtoupper(trim($request->slug)) : null;
 
-        $creator = $createdBy ? \App\Models\User::select('id', 'nom_utilisateur')->find($createdBy) : null;
+        $creator = null;
+        if ($createdBy) {
+            $creator = \App\Models\User::select('id', 'nom_utilisateur')->find($createdBy);
+        }
 
-        $slugLabel         = $slug ? strtoupper($slug) : 'GLOBAL';
-        $titleEnum         = ExpenseTitleEnum::fromSlug($slug);
-        $expenseTitle      = $titleEnum->getExpenseTitle($slugLabel);
-        $otherCashInTitle  = $titleEnum->getOtherCashInTitle($slugLabel);
-        $receiptTitle      = $titleEnum->getReceiptTitle($slugLabel);
-        $recouvrementTitle = $titleEnum->getRecouvrementTitle($slugLabel);
+        $slug = $request->filled('slug') ? strtoupper(trim($request->slug)) : null;
+
+        $creator = null;
+        if ($createdBy) {
+            $creator = \App\Models\User::select('id', 'nom_utilisateur')->find($createdBy);
+        }
+
+        $slugLabel = $slug ? strtoupper($slug) : 'GLOBAL';
+
+        if (!$slug) {
+            $expenseTitle = 'DEPENSES GLOBAL';
+            $otherCashInTitle = 'AUTRES ENCAISSEMENTS';
+        } elseif (in_array($slug, ['BAR', 'RESTO'])) {
+            $expenseTitle = 'DEPENSES ' . $slugLabel;
+            $otherCashInTitle = 'AUTRES ENCAISSEMENTS ' . $slugLabel;
+        } elseif ($slug === 'AUTRES') {
+            $expenseTitle = 'AUTRES DEPENSES';
+            $otherCashInTitle = 'AUTRES ENCAISSEMENTS';
+        } else {
+            $expenseTitle = 'AUTRES DEPENSES';
+            $otherCashInTitle = 'AUTRES ENCAISSEMENTS ' . $slugLabel;
+        }
+
+        $receiptTitle = 'ENCAISSEMENT ' . $slugLabel;
+        $recouvrementTitle = 'RECOUVREMENTS ' . $slugLabel;
 
         $expenses = collect();
         $receipts = collect();
@@ -1144,7 +1165,6 @@ class PaymentController extends Controller
 
         $shouldFetchOtherCashIns = $filterType !== 'expense_type';
 
-        // 1. Dépenses
         if ($shouldFetchExpenses) {
             $expensesQuery = ExpensePayment::with([
                 'creator:id,nom_utilisateur',
@@ -1154,16 +1174,16 @@ class PaymentController extends Controller
                 'method:uuid,name',
             ])
                 ->where('status', 'paid')
-                ->when($date, fn($q) => $q->whereDate('paid_at', $date))
+                ->whereDate('paid_at', $date)
+                ->whereNotNull('slug')
                 ->whereNull('deleted_at');
 
-            // Filtrer par slug seulement s'il est présent
             if ($slug) {
-                if ($slug === ExpenseTitleEnum::AUTRE->value) {
+                if ($slug === 'AUTRES') {
                     $expensesQuery->where(function ($q) {
                         $q->whereNull('slug')
                             ->orWhere('slug', '')
-                            ->orWhere('slug', PdgCategory::AUTRES_DEPENSES->value);
+                            ->orWhere('slug', 'AUTRES DEPENSES');
                     });
                 } else {
                     $expensesQuery->where('slug', $slug);
@@ -1175,7 +1195,9 @@ class PaymentController extends Controller
             }
 
             if ($filterType === 'payment_method' && $request->filled('regulation_method_uuid')) {
-                $expensesQuery->whereHas('method', fn($q) => $q->where('uuid', $request->regulation_method_uuid));
+                $expensesQuery->whereHas('method', function ($query) use ($request) {
+                    $query->where('uuid', $request->regulation_method_uuid);
+                });
             }
 
             if ($filterType === 'cashier_agent' && $createdBy) {
@@ -1185,16 +1207,17 @@ class PaymentController extends Controller
             $expenses = $expensesQuery->orderByDesc('paid_at')
                 ->get()
                 ->groupBy('restaurant_expense_type_uuid')
-                ->map(fn($items) => [
-                    'expense_type' => $items->first()->expenseType,
-                    'title'        => $expenseTitle,
-                    'total_amount' => (float) $items->sum('amount'),
-                    'families'     => $this->buildExpenseTree($items),
-                ])
+                ->map(function ($items) use ($expenseTitle) {
+                    return [
+                        'expense_type' => $items->first()->expenseType,
+                        'title'        => $expenseTitle,
+                        'total_amount' => (float) $items->sum('amount'),
+                        'families'     => $this->buildExpenseTree($items),
+                    ];
+                })
                 ->values();
         }
 
-        // 2. Encaissements
         if ($shouldFetchReceipts) {
             $receiptsQuery = PaymentRegulation::with([
                 'creator:id,nom_utilisateur',
@@ -1202,26 +1225,34 @@ class PaymentController extends Controller
                 'cashReceiptType:uuid,name,slug',
                 'cashReceiptFamily:uuid,name',
                 'method:uuid,name',
-                'payment.order.salesCategory:uuid,name',
+                'payment.order',
                 'payment.order.items.menu:uuid,name',
-                'payment.order.items.order.salesCategory:uuid,name',
                 'payment.order.drinks.drinkConfig.product',
-                'paymentLines' => fn($lineQuery) => $slug ? $lineQuery->where('slug', $slug) : null,
-                'paymentLines.payable' => fn($morphTo) => $morphTo->morphWith([
-                    \App\Models\OrderMenuRestaurantItem::class => ['menu:uuid,name,is_generated_from_complement', 'order.salesCategory:uuid,name'],
-                    \App\Models\OrderRestaurantDrink::class => ['drinkConfig.product:uuid,name'],
-                    \App\Models\RoomService::class => []
-                ])
+                'paymentLines' => function ($lineQuery) use ($slug) {
+                    if ($slug) {
+                        $lineQuery->where('slug', $slug);
+                    }
+                },
+                'paymentLines.payable' => function ($morphTo) {
+                    $morphTo->morphWith([
+                        \App\Models\OrderMenuRestaurantItem::class => ['menu:uuid,name'],
+                        \App\Models\OrderRestaurantDrink::class => ['drinkConfig.product:uuid,name'],
+                        \App\Models\RoomService::class => []
+                    ]);
+                }
             ])
                 ->where('type', 'encaissement')
                 ->whereNotNull('cash_receipt_type_uuid')
-                ->when($date, fn($q) => $q->whereDate('created_at', $date))
+                ->whereNotNull('slug')
+                ->whereDate('created_at', $date)
                 ->whereNull('deleted_at');
 
             if ($slug) {
                 $receiptsQuery->where(function ($q) use ($slug) {
                     $q->where('slug', 'like', '% ' . $slug)
-                        ->orWhereHas('paymentLines', fn($lineQ) => $lineQ->where('slug', $slug));
+                        ->orWhereHas('paymentLines', function ($lineQ) use ($slug) {
+                            $lineQ->where('slug', $slug);
+                        });
                 });
             }
 
@@ -1252,16 +1283,16 @@ class PaymentController extends Controller
                 })
                 ->filter()
                 ->groupBy('cash_receipt_type_uuid')
-                ->map(fn($items) => [
-                    'receipt_type' => $items->first()->cashReceiptType,
-                    'title'        => $receiptTitle,
-                    'total_amount' => (float) $items->sum('amount'),
-                    'items'        => $this->formatRegulationItems($items, $slug),
-                ])
-                ->values();
+                ->map(function ($items) use ($receiptTitle, $slug) {
+                    return [
+                        'receipt_type' => $items->first()->cashReceiptType,
+                        'title'        => $receiptTitle,
+                        'total_amount' => (float) $items->sum('amount'),
+                        'items'        => $this->formatRegulationItems($items, $slug),
+                    ];
+                })->values();
         }
 
-        // 3. Recouvrements
         if ($shouldFetchRecouvrements) {
             $recouvrementsQuery = PaymentRegulation::with([
                 'creator:id,nom_utilisateur',
@@ -1269,28 +1300,37 @@ class PaymentController extends Controller
                 'recouvrement:uuid,name,code,slug',
                 'cashReceiptFamily:uuid,name',
                 'method:uuid,name',
-                'payment.order.salesCategory:uuid,name',
+
                 'payment.order.items.menu:uuid,name',
-                'payment.order.items.order.salesCategory:uuid,name',
                 'payment.order.drinks.drinkConfig.product',
                 'payment.order.partners_restaurant:uuid,full_name',
                 'payment.order.free_client_for_restaurant:uuid,full_name',
-                'paymentLines' => fn($lineQuery) => $slug ? $lineQuery->where('slug', $slug) : null,
-                'paymentLines.payable' => fn($morphTo) => $morphTo->morphWith([
-                    \App\Models\OrderMenuRestaurantItem::class => ['menu:uuid,name,is_generated_from_complement', 'order.salesCategory:uuid,name'],
-                    \App\Models\OrderRestaurantDrink::class => ['drinkConfig.product:uuid,name'],
-                    \App\Models\RoomService::class => []
-                ])
+
+                'paymentLines' => function ($lineQuery) use ($slug) {
+                    if ($slug) {
+                        $lineQuery->where('slug', $slug);
+                    }
+                },
+                'paymentLines.payable' => function ($morphTo) {
+                    $morphTo->morphWith([
+                        \App\Models\OrderMenuRestaurantItem::class => ['menu:uuid,name'],
+                        \App\Models\OrderRestaurantDrink::class => ['drinkConfig.product:uuid,name'],
+                        \App\Models\RoomService::class => []
+                    ]);
+                }
             ])
                 ->where('type', 'recouvrement')
                 ->whereNotNull('recouvrement_uuid')
-                ->when($date, fn($q) => $q->whereDate('created_at', $date))
+                ->whereNotNull('slug')
+                ->whereDate('created_at', $date)
                 ->whereNull('deleted_at');
 
             if ($slug) {
                 $recouvrementsQuery->where(function ($q) use ($slug) {
                     $q->where('slug', 'like', '% ' . $slug)
-                        ->orWhereHas('paymentLines', fn($lineQ) => $lineQ->where('slug', $slug));
+                        ->orWhereHas('paymentLines', function ($lineQ) use ($slug) {
+                            $lineQ->where('slug', $slug);
+                        });
                 });
             }
 
@@ -1320,43 +1360,48 @@ class PaymentController extends Controller
 
                     $order = optional($regulation->payment)->order;
                     $clientName = 'Client de passage';
-                    $clientType = null;
 
                     if ($order) {
                         if ($order->partners_restaurant) {
                             $clientName = $order->partners_restaurant->full_name;
-                            $clientType = TypeClientsForPaiment::PARTNER->label();
+                            $clientType = 'Client partenaire';
                         } elseif ($order->free_client_for_restaurant) {
                             $clientName = $order->free_client_for_restaurant->full_name;
-                            $clientType = TypeClientsForPaiment::FREE->label();
+                            $clientType = 'Client gratuit';
                         } elseif (!empty($order->full_name)) {
                             $clientName = $order->full_name;
-                            $clientType = TypeClientsForPaiment::DEBTOR->label();
+                            $clientType = 'Client débiteurs';
                         }
                     }
 
                     $regulation->resolved_client_name = $clientName;
                     $regulation->resolved_client_type = $clientType;
-                    $regulation->order_total_amount = $slug ? (float) $regulation->paymentLines->sum('amount') : ($order ? (float) $order->total_order : 0);
+
+                    $regulation->order_total_amount = $slug
+                        ? (float) $regulation->paymentLines->sum('amount')
+                        : ($order ? (float) $order->total_order : 0);
 
                     return $regulation;
                 })
                 ->filter()
                 ->groupBy('recouvrement_uuid')
-                ->map(fn($items) => [
-                    'recouvrement' => $items->first()->recouvrement,
-                    'title'        => $recouvrementTitle,
-                    'total_amount' => (float) $items->sum('amount'),
-
-                    'clients' => $this->groupRecouvrementClients(
-                        $items,
-                        $slug
-                    ),
-                ])
-                ->values();
+                ->map(function ($items) use ($recouvrementTitle, $slug) {
+                    return [
+                        'recouvrement' => $items->first()->recouvrement,
+                        'title'        => $recouvrementTitle,
+                        'total_amount' => (float) $items->sum('amount'),
+                        'clients'      => $items->groupBy('resolved_client_name')->map(function ($clientRegulations) use ($slug) {
+                            $firstReg = $clientRegulations->first();
+                            return [
+                                'client_name' => $clientRegulations->first()->resolved_client_name,
+                                'client_type' => $firstReg->resolved_client_type,
+                                'items'       => $this->formatRecouvrementClientItems($clientRegulations, $slug),
+                            ];
+                        })->values(),
+                    ];
+                })->values();
         }
 
-        // 4. Autres encaissements
         if ($shouldFetchOtherCashIns) {
             $otherCashInsQuery = \App\Models\OtherCashIn::with([
                 'creator:id,nom_utilisateur',
@@ -1365,7 +1410,8 @@ class PaymentController extends Controller
                 'medias',
             ])
                 ->where('status', 'validated')
-                ->when($date, fn($q) => $q->whereDate('created_at', $date))
+                ->whereDate('created_at', $date)
+                ->whereNotNull('slug')
                 ->whereNull('deleted_at');
 
             if ($slug) {
@@ -1373,7 +1419,7 @@ class PaymentController extends Controller
                     $otherCashInsQuery->where(function ($q) {
                         $q->whereNull('slug')
                             ->orWhere('slug', '')
-                            ->orWhere('slug', PdgCategory::AUTRES_ENCAISSEMENTS->value);
+                            ->orWhere('slug', 'AUTRES ENCAISSEMENTS');
                     });
                 } else {
                     $otherCashInsQuery->where('slug', $slug);
@@ -1390,12 +1436,18 @@ class PaymentController extends Controller
 
             $items = $otherCashInsQuery->orderByDesc('created_at')->get();
 
-            $otherCashIns = $items->isNotEmpty() ? collect([[
-                'cash_receipt_family' => null,
-                'title'               => $otherCashInTitle,
-                'total_amount'        => (float) $items->sum('amount'),
-                'families'            => $this->buildOtherCashInTree($items),
-            ]]) : collect([]);
+            if ($items->isNotEmpty()) {
+                $otherCashIns = collect([
+                    [
+                        'cash_receipt_family' => null,
+                        'title'               => $otherCashInTitle,
+                        'total_amount'        => (float) $items->sum('amount'),
+                        'families'            => $this->buildOtherCashInTree($items),
+                    ]
+                ]);
+            } else {
+                $otherCashIns = collect([]);
+            }
         }
 
         return response()->json([
@@ -1418,416 +1470,162 @@ class PaymentController extends Controller
      */
     private function formatRecouvrementClientItems($items, $slug = null)
     {
-        $formattedItems = $items->map(function ($regulation) use ($slug) {
-
+        return $items->map(function ($regulation) use ($slug) {
             $order = $regulation->payment?->order;
             $orderCode = $order?->code;
             $method = $regulation->method;
 
-            $lines = $regulation->paymentLines
-                ? $regulation->paymentLines->whereNull('deleted_at')
-                : collect();
+            $lines = $regulation->paymentLines ? $regulation->paymentLines->whereNull('deleted_at') : collect();
 
-            if ($slug) {
-                $lines = $lines->where('slug', $slug);
-            }
+            $formattedPlats = $lines->filter(function ($line) {
+                return $line->payable_type === 'App\Models\OrderMenuRestaurantItem'
+                    || str_contains($line->payable_type, 'Item');
+            })->map(function ($line) use ($orderCode, $method) {
+                $item = $line->payable;
+                if (!$item) return null;
+                $item->order_code = $orderCode;
+                $item->payment_method = $method;
+                return $item;
+            })->filter()->values();
 
-            $orderDetails = $this->extractOrderDetails(
-                $lines,
-                $orderCode,
-                $method,
-                $slug
-            );
+            $formattedBoissons = $lines->filter(function ($line) {
+                if ($line->payable_type === 'App\Models\OrderRestaurantDrink' || str_contains($line->payable_type, 'Drink')) {
+                    return true;
+                }
+                if ($line->payable_type === 'App\Models\RoomService' && $line->slug === 'BAR') {
+                    return true;
+                }
+                return false;
+            })->map(function ($line) use ($orderCode, $method) {
+                $item = $line->payable;
+                if (!$item) return null;
 
-            $filteredTotal = $slug
-                ? (float) $lines->sum('amount')
-                : ($order ? (float) $order->total_order : 0);
+                $item->order_code = $orderCode;
+                $item->payment_method = $method;
+
+                if ($line->payable_type === 'App\Models\RoomService') {
+                    $item->quantity_for_room_service = $line->quantity ?? 1;
+                    $item->price_for_room_service = $line->amount;
+                }
+
+                return $item;
+            })->filter()->values();
+
+            $roomServicePlats = $lines->filter(function ($line) {
+                return $line->payable_type === 'App\Models\RoomService' && $line->slug === 'RESTO';
+            })->map(function ($line) use ($orderCode, $method) {
+                $item = $line->payable;
+                if (!$item) return null;
+
+                $item->order_code = $orderCode;
+                $item->payment_method = $method;
+                $item->quantity_for_room_service = $line->quantity ?? 1;
+                $item->price_for_room_service = $line->amount;
+
+                return $item;
+            })->filter()->values();
+
+            $formattedPlats = $formattedPlats->concat($roomServicePlats)->values();
+
+            $filteredTotal = $slug ? (float) $lines->sum('amount') : ($order ? (float) $order->total_order : 0);
 
             return [
-                'uuid' => $regulation->uuid,
-                'amount' => (float) $regulation->amount,
-                'type' => $regulation->type,
-                'created_at' => $regulation->created_at,
-                'method' => $regulation->method,
+                'uuid'                => $regulation->uuid,
+                'amount'              => (float) $regulation->amount,
+                'type'                => $regulation->type,
+                'created_at'          => $regulation->created_at,
+                'method'              => $regulation->method,
                 'cash_receipt_family' => $regulation->cashReceiptFamily,
-                'recouvrement' => $regulation->recouvrement,
-                'creator' => $regulation->creator,
-                'order_code' => $orderCode,
-                'order_total_price' => $filteredTotal,
-
-                'order_details' => $orderDetails,
+                'recouvrement'        => $regulation->recouvrement,
+                'creator'             => $regulation->creator,
+                'order_code'          => $orderCode,
+                'order_total_price'   => $filteredTotal,
+                'order_details'       => [
+                    'plats'    => $formattedPlats,
+                    'boissons' => $formattedBoissons,
+                ]
             ];
         })->values();
-        return $this->regroupAllReceiptItems($formattedItems);
     }
-
 
     /**
-     * Helper standard pour formater les règlements
+     * Helper privé pour formater les éléments de règlement (encaissements)
      */
-    private function formatRegulationItems($items, $slug = null)
+    private function formatRegulationItems($items)
     {
-        $formattedItems = $items->map(function ($regulation) use ($slug) {
-
+        return $items->map(function ($regulation) {
             $order = $regulation->payment?->order;
             $orderCode = $order?->code;
             $method = $regulation->method;
 
-            $lines = $regulation->paymentLines
-                ? $regulation->paymentLines->whereNull('deleted_at')
-                : collect();
+            $lines = $regulation->paymentLines ?? collect();
 
-            if ($slug) {
-                $lines = $lines->where('slug', $slug);
-            }
-            $orderDetails = $this->extractOrderDetails(
-                $lines,
-                $orderCode,
-                $method,
-                $slug
-            );
+            $formattedPlats = $lines->filter(function ($line) {
+                return $line->payable_type === 'App\Models\OrderMenuRestaurantItem';
+            })->map(function ($line) use ($orderCode, $method) {
+                $item = $line->payable;
+                if (!$item) return null;
+                $item->order_code = $orderCode;
+                $item->payment_method = $method;
+                return $item;
+            })->filter()->values();
 
-            return [
-                'uuid' => $regulation->uuid,
-                'amount' => (float) $regulation->amount,
-                'type' => $regulation->type,
-                'created_at' => $regulation->created_at,
-                'method' => $regulation->method,
-                'cash_receipt_family' => $regulation->cashReceiptFamily,
-                'recouvrement' => $regulation->recouvrement,
-                'creator' => $regulation->creator,
-                'order_code' => $orderCode,
+            $formattedBoissons = $lines->filter(function ($line) {
+                if ($line->payable_type === 'App\Models\OrderRestaurantDrink' || str_contains($line->payable_type, 'Drink')) {
+                    return true;
+                }
+                if ($line->payable_type === 'App\Models\RoomService' && $line->slug === 'BAR') {
+                    return true;
+                }
+                return false;
+            })->map(function ($line) use ($orderCode, $method) {
+                $item = $line->payable;
+                if (!$item) return null;
 
-                'order_total_price' => $order
-                    ? (float) $order->total_order
-                    : 0,
+                $item->order_code = $orderCode;
+                $item->payment_method = $method;
 
-                'order_details' => $orderDetails,
-            ];
-        })->values();
-
-        return $this->regroupAllReceiptItems($formattedItems);
-    }
-
-    private function regroupAllReceiptItems($formattedItems)
-    {
-        $allPlats = $formattedItems
-            ->flatMap(function ($regulation) {
-
-                return collect(
-                    $regulation['order_details']['plats'] ?? []
-                );
-            })
-            ->values();
-        $groupedPlats = $allPlats
-            ->groupBy(function ($rubric) {
-
-                return strtoupper(
-                    trim($rubric['rubric_name'] ?? 'AUTRES')
-                );
-            })
-            ->map(function ($rubrics, $rubricName) {
-                $allItems = $rubrics
-                    ->flatMap(function ($rubric) {
-
-                        return collect(
-                            $rubric['items'] ?? []
-                        );
-                    })
-                    ->values();
-                $totalAmount = $allItems->sum(function ($item) {
-                    return (float) ($item['total_price'] ?? 0);
-                });
-
-                return [
-                    'rubric_name' => $rubricName,
-                    'total_amount' => (float) $totalAmount,
-                    'items' => $allItems,
-                ];
-            })
-            ->values();
-
-        $allBoissons = $formattedItems
-            ->flatMap(function ($regulation) {
-
-                return collect(
-                    $regulation['order_details']['boissons'] ?? []
-                );
-            })
-            ->values();
-
-        return [
-            'plats' => $groupedPlats,
-            'boissons' => $allBoissons,
-        ];
-    }
-
-    private function extractOrderDetails(
-        $lines,
-        $orderCode,
-        $method,
-        $slug = null
-    ) {
-        $formattedPlats = collect();
-
-        if ($slug !== 'BAR') {
-            $formattedPlats = $lines
-                ->filter(function ($line) {
-                    // On exclut les RoomService ici pour les traiter à part
-                    if ($line->payable_type === \App\Models\RoomService::class || str_contains($line->payable_type, 'RoomService')) {
-                        return false;
-                    }
-                    return $line->payable_type === \App\Models\OrderMenuRestaurantItem::class
-                        || str_contains($line->payable_type, 'Item');
-                })
-                ->map(function ($line) use ($orderCode, $method) {
-                    $item = $line->payable;
-                    if (!$item) {
-                        return null;
-                    }
-                    $item->order_code = $orderCode;
-                    $item->payment_method = $method;
-                    $item->is_room_service = false;
-
-                    if (optional($item->menu)->is_generated_from_complement) {
-                        $item->sales_category = RestaurantRubricEnum::DIVERS_RESTAURANT->value;
-                    } else {
-                        $rubricName = optional(optional($item->menu)->salesCategory)->name
-                            ?? optional($item->salesCategory)->name
-                            ?? optional(optional($item->order)?->salesCategory)->name
-                            ?? 'AUTRES';
-                        $item->sales_category = strtoupper(trim($rubricName));
-                    }
-                    return $item;
-                })
-                ->filter()
-                ->values();
-        }
-
-        $rawBoissons = collect();
-
-        if ($slug !== 'RESTO') {
-            $rawBoissons = $lines
-                ->filter(function ($line) use ($slug) {
-                    if (
-                        $line->payable_type === \App\Models\OrderRestaurantDrink::class
-                        || str_contains($line->payable_type, 'Drink')
-                    ) {
-                        return true;
-                    }
-                    // Room service destiné au BAR
-                    if (
-                        ($line->payable_type === \App\Models\RoomService::class || str_contains($line->payable_type, 'RoomService'))
-                        && (strtoupper($line->slug) === 'BAR' || $slug === 'BAR')
-                    ) {
-                        return true;
-                    }
-                    return false;
-                })
-                ->map(function ($line) use ($orderCode, $method) {
-                    $item = $line->payable;
-                    if (!$item) {
-                        return null;
-                    }
-                    $item->order_code = $orderCode;
-                    $item->payment_method = $method;
-
-                    if ($line->payable_type === \App\Models\RoomService::class || str_contains($line->payable_type, 'RoomService')) {
-                        $item->quantity_for_room_service = $line->quantity ?? 1;
-                        $item->price_for_room_service = (float) $line->amount;
-                        $item->is_room_service = true;
-                    } else {
-                        $item->is_room_service = false;
-                    }
-                    return $item;
-                })
-                ->filter()
-                ->values();
-        }
-
-        if ($slug !== 'BAR') {
-            // Extraction directe et sécurisée de TOUTES les lignes RoomService pour le RESTO ou globales
-            $roomServicePlats = $lines
-                ->filter(function ($line) use ($slug) {
-                    return ($line->payable_type === \App\Models\RoomService::class || str_contains($line->payable_type, 'RoomService'))
-                        && (strtoupper($line->slug) === 'RESTO' || empty($line->slug) || $slug === 'RESTO');
-                })
-                ->map(function ($line) use ($orderCode, $method) {
-                    $item = $line->payable;
-                    if (!$item) {
-                        // Si l'objet lié n'est pas chargé via morph, on crée un objet virtuel pour ne pas perdre le montant de la ligne
-                        $item = new \stdClass();
-                    }
-
-                    $item->order_code = $orderCode;
-                    $item->payment_method = $method;
+                if ($line->payable_type === 'App\Models\RoomService') {
                     $item->quantity_for_room_service = $line->quantity ?? 1;
-                    $item->price_for_room_service = (float) $line->amount;
-                    $item->is_room_service = true;
-                    $item->sales_category = 'ROOM SERVICE';
-                    $item->libelle = 'Room Service';
-
-                    return $item;
-                })
-                ->filter()
-                ->values();
-
-            $formattedPlats = $formattedPlats
-                ->concat($roomServicePlats)
-                ->values();
-        }
-
-        $groupedPlats = $formattedPlats
-            ->groupBy(function ($item) {
-                if (!empty($item->is_room_service)) {
-                    return 'ROOM SERVICE';
+                    $item->price_for_room_service = $line->amount;
                 }
-                return strtoupper(trim($item->sales_category ?? 'AUTRES'));
-            })
-            ->map(function ($platItems, $rubricName) {
-                $items = $platItems
-                    ->map(function ($item) {
-                        $quantity = $item->quantity_exactly
-                            ?? $item->quantity
-                            ?? $item->quantity_for_room_service
-                            ?? 1;
 
-                        $unitPrice = $item->unit_price
-                            ?? $item->price_for_room_service
-                            ?? 0;
+                return $item;
+            })->filter()->values();
 
-                        if (isset($item->total_price) && $item->total_price !== null) {
-                            $totalPrice = (float) $item->total_price;
-                        } elseif (isset($item->price_for_room_service) && $item->price_for_room_service !== null) {
-                            $totalPrice = (float) $item->price_for_room_service;
-                        } else {
-                            $totalPrice = (float) $quantity * (float) $unitPrice;
-                        }
+            $roomServicePlats = $lines->filter(function ($line) {
+                return $line->payable_type === 'App\Models\RoomService' && $line->slug === 'RESTO';
+            })->map(function ($line) use ($orderCode, $method) {
+                $item = $line->payable;
+                if (!$item) return null;
 
-                        if (!empty($item->is_room_service)) {
-                            $libelle = 'Room Service';
-                        } else {
-                            $libelle = $item->libelle ?? optional($item->menu)->name ?? 'Article';
-                        }
+                $item->order_code = $orderCode;
+                $item->payment_method = $method;
+                $item->quantity_for_room_service = $line->quantity ?? 1;
+                $item->price_for_room_service = $line->amount;
 
-                        return [
-                            'libelle' => $libelle,
-                            'order_code' => $item->order_code ?? null,
-                            'payment_method' => $item->payment_method ?? null,
-                            'quantity_exactly' => $quantity,
-                            'unit_price' => (float) $unitPrice,
-                            'total_price' => $totalPrice,
-                        ];
-                    })
-                    ->values();
+                return $item;
+            })->filter()->values();
 
-                return [
-                    'rubric_name' => $rubricName,
-                    'total_amount' => (float) $items->sum(fn($item) => (float) $item['total_price']),
-                    'items' => $items,
-                ];
-            })
-            ->values();
-
-        $formattedBoissons = $rawBoissons->map(function ($item) {
-            $quantity = $item->quantity_exactly
-                ?? $item->quantity
-                ?? $item->quantity_for_room_service
-                ?? 1;
-
-            $unitPrice = $item->unit_price
-                ?? $item->price_for_room_service
-                ?? 0;
-
-            if (isset($item->total_price) && $item->total_price !== null) {
-                $totalPrice = (float) $item->total_price;
-            } elseif (isset($item->price_for_room_service) && $item->price_for_room_service !== null) {
-                $totalPrice = (float) $item->price_for_room_service;
-            } else {
-                $totalPrice = (float) $quantity * (float) $unitPrice;
-            }
-
-            if (!empty($item->is_room_service)) {
-                $libelle = 'Room Service';
-            } else {
-                $libelle = $item->libelle
-                    ?? optional(optional($item->drinkConfig)->product)->name
-                    ?? $item->drink_name
-                    ?? 'Boisson';
-            }
+            $formattedPlats = $formattedPlats->concat($roomServicePlats)->values();
 
             return [
-                'libelle' => $libelle,
-                'order_code' => $item->order_code ?? null,
-                'payment_method' => $item->payment_method ?? null,
-                'quantity_exactly' => $quantity,
-                'unit_price' => (float) $unitPrice,
-                'total_price' => $totalPrice,
+                'uuid'                => $regulation->uuid,
+                'amount'              => (float) $regulation->amount,
+                'type'                => $regulation->type,
+                'created_at'          => $regulation->created_at,
+                'method'              => $regulation->method,
+                'cash_receipt_family' => $regulation->cashReceiptFamily,
+                'recouvrement'        => $regulation->recouvrement,
+                'creator'             => $regulation->creator,
+                'order_code'          => $orderCode,
+                'order_total_price'   => $order ? (float) $order->total_order : 0,
+                'order_details'       => [
+                    'plats'    => $formattedPlats,
+                    'boissons' => $formattedBoissons,
+                ]
             ];
         })->values();
-
-        return [
-            'plats' => $groupedPlats,
-            'boissons' => $formattedBoissons,
-        ];
-    }
-    private function groupRecouvrementClients($items, $slug = null)
-    {
-        return $items
-            ->groupBy(function ($regulation) {
-                $order = optional($regulation->payment)->order;
-
-                if (!$order || $order->free_client_for_restaurant || (empty($order->full_name) && !$order->partners_restaurant)) {
-                    return TypeClientsForPaiment::FREE->value;
-                }
-
-                if ($order->partners_restaurant) {
-                    return TypeClientsForPaiment::PARTNER->value;
-                }
-
-                if (!empty($order->full_name)) {
-                    return TypeClientsForPaiment::DEBTOR->value;
-                }
-
-                return TypeClientsForPaiment::FREE->value;
-            })
-            ->map(function ($clientRegulations, $clientTypeKey) use ($slug) {
-
-                $enumType = TypeClientsForPaiment::tryFrom($clientTypeKey) ?? TypeClientsForPaiment::FREE;
-                $clientTypeLabel = $enumType->label();
-
-                $namesOrCodes = $clientRegulations
-                    ->map(function ($regulation) use ($clientTypeKey) {
-                        $order = optional($regulation->payment)->order;
-
-                        if ($clientTypeKey === TypeClientsForPaiment::PARTNER->value) {
-                            return optional($order->partners_restaurant)->full_name;
-                        }
-                        if ($clientTypeKey === TypeClientsForPaiment::DEBTOR->value) {
-                            return $order->full_name ?? null;
-                        }
-                        return optional($order)->code;
-                    })
-                    ->filter()
-                    ->unique()
-                    ->values();
-
-                $clientName = $namesOrCodes->isNotEmpty()
-                    ? $namesOrCodes->implode(', ')
-                    : $clientTypeLabel;
-
-                $itemsFormatted = $this->formatRecouvrementClientItems(
-                    $clientRegulations,
-                    $slug
-                );
-
-                return [
-                    'client_type' => $clientTypeLabel,
-                    'client_name' => $clientName,
-                    'items'       => $itemsFormatted,
-                ];
-            })
-            ->values();
     }
 
 
@@ -2028,7 +1826,7 @@ class PaymentController extends Controller
                 }
 
                 if ($itemsAmount > 0) {
-                    $restoFamily = CashReceiptFamily::where('indexation', 'Consommation Restaurant')->first();
+                    $restoFamily = CashReceiptFamily::where('indexation', \App\Enums\CashReceiptType::CONSOMMATION_RESTAURANT->value)->first();
 
                     $regulationModelResto = PaymentRegulation::create([
                         'payment_uuid' => $payment->uuid,
@@ -2036,10 +1834,10 @@ class PaymentController extends Controller
                         'cash_receipt_families_uuid' => $restoFamily?->uuid,
                         'cash_receipt_type_uuid' => $cashReceiptType?->uuid,
                         'recouvrement_uuid' => $recouvrementRestoBar?->uuid,
-                        'slug' => 'ENCAISSEMENT RESTO',
+                        'slug' => RestaurantExpenseSlug::RESTO->value,
+                        'type' => \App\Enums\PaymentLineType::RECOUVREMENT->value,
                         'amount' => $itemsAmount,
                         'attachment' => $attachmentPath,
-                        'type' => 'recouvrement',
                         'phone_number' => $regulation['phone_number'] ?? null,
                         'reference' => $regulation['reference'] ?? null,
                         'detail' => $regulation['detail'] ?? null,
@@ -2056,7 +1854,8 @@ class PaymentController extends Controller
                             'payable_type' => get_class($order->items()->getModel()),
                             'payable_uuid' => $line['uuid'],
                             'amount' => $line['amount'],
-                            'slug' => 'RESTO',
+                            'slug' => RestaurantExpenseSlug::RESTO->value,
+                            'type' => \App\Enums\PaymentLineType::RECOUVREMENT->value,
                             'regulation_method_uuid' => $method->uuid,
                             'phone_number' => $regulation['phone_number'] ?? null,
                             'reference' => $regulation['reference'] ?? null,
@@ -2076,7 +1875,8 @@ class PaymentController extends Controller
                                 'payable_type' => RoomService::class,
                                 'payable_uuid' => $line['uuid'],
                                 'amount' => $line['amount'],
-                                'slug' => 'RESTO',
+                                'slug' => RestaurantExpenseSlug::RESTO->value,
+                                'type' => \App\Enums\PaymentLineType::RECOUVREMENT->value,
                                 'regulation_method_uuid' => $method->uuid,
                                 'phone_number' => $regulation['phone_number'] ?? null,
                                 'reference' => $regulation['reference'] ?? null,
@@ -2091,7 +1891,7 @@ class PaymentController extends Controller
                 }
 
                 if ($drinksAmount > 0) {
-                    $barFamily = CashReceiptFamily::where('indexation', 'Consommation Bar')->first();
+                    $barFamily = CashReceiptFamily::where('indexation', \App\Enums\CashReceiptType::CONSOMMATION_BAR->value)->first();
 
                     $regulationModelBar = PaymentRegulation::create([
                         'payment_uuid' => $payment->uuid,
@@ -2099,10 +1899,10 @@ class PaymentController extends Controller
                         'cash_receipt_families_uuid' => $barFamily?->uuid,
                         'cash_receipt_type_uuid' => $cashReceiptType?->uuid,
                         'recouvrement_uuid' => $recouvrementRestoBar?->uuid,
-                        'slug' => 'ENCAISSEMENT BAR',
+                        'slug' => PaymentRegulationSlug::ENCAISSEMENT_BAR->value,
+                        'type' => \App\Enums\PaymentLineType::RECOUVREMENT->value,
                         'amount' => $drinksAmount,
                         'attachment' => $attachmentPath,
-                        'type' => 'recouvrement',
                         'phone_number' => $regulation['phone_number'] ?? null,
                         'reference' => $regulation['reference'] ?? null,
                         'detail' => $regulation['detail'] ?? null,
@@ -2118,7 +1918,8 @@ class PaymentController extends Controller
                             'payable_type' => get_class($order->drinks()->getModel()),
                             'payable_uuid' => $line['uuid'],
                             'amount' => $line['amount'],
-                            'slug' => 'BAR',
+                            'slug' => RestaurantExpenseSlug::BAR->value,
+                            'type' => \App\Enums\PaymentLineType::RECOUVREMENT->value,
                             'regulation_method_uuid' => $method->uuid,
                             'phone_number' => $regulation['phone_number'] ?? null,
                             'reference' => $regulation['reference'] ?? null,
@@ -2138,7 +1939,8 @@ class PaymentController extends Controller
                                 'payable_type' => RoomService::class,
                                 'payable_uuid' => $line['uuid'],
                                 'amount' => $line['amount'],
-                                'slug' => 'BAR',
+                                'slug' => RestaurantExpenseSlug::BAR->value,
+                                'type' => \App\Enums\PaymentLineType::RECOUVREMENT->value,
                                 'regulation_method_uuid' => $method->uuid,
                                 'phone_number' => $regulation['phone_number'] ?? null,
                                 'reference' => $regulation['reference'] ?? null,
