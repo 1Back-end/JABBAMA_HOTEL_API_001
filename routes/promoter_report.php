@@ -29,3 +29,4 @@ Route::get('/promoter_bar_collections', [PromoterReportController::class, 'getBa
 Route::get('/promoter_collections_summary', [PromoterReportController::class, 'getCollectionsSummary']);
 Route::get('/promoter_bar_collections_summary', [PromoterReportController::class, 'getBarCollectionsSummary']);
 Route::get('/restaurant_clients_breakdown_summary', [PromoterReportController::class, 'getClientsBreakdownSummary']);
+Route::get('/promoter_bar_clients_breakdown_summary', [PromoterReportController::class, 'getBarClientsBreakdownSummary']);

@@ -627,6 +627,11 @@ class PromoterReportController extends Controller
             ->whereBetween('created_at', [$startDate, $endDate])
             ->sum('amount');
 
+        $encaissementII = (float) PaymentRegulation::where('slug', PaymentRegulationSlug::ENCAISSEMENT_BAR->value)
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->where('type', \App\Enums\PaymentLineType::ENCAISSEMENT->value)
+            ->sum('amount');
+
         $depenses = (float) PaymentRegulation::where('slug', ExpenseSlug::DepensesBar->value)
             ->whereBetween('created_at', [$startDate, $endDate])
             ->sum('amount');
@@ -636,10 +641,12 @@ class PromoterReportController extends Controller
         return [
             'chiffre_affaire' => $chiffreAffaireBar,
             'encaissement'    => $encaissement,
+            'encaissement_2'    => $encaissementII,
             'depenses'        => $depenses,
             'solde'           => $solde,
         ];
     }
+
 
     /**
      * Récupère le résumé des AUTRES ENCAISSEMENTS PDG pour la journée, le mois et l'année.
@@ -1781,23 +1788,24 @@ class PromoterReportController extends Controller
             ->whereIn('payable_type', [OrderRestaurantDrink::class, RoomService::class])
             ->get();
 
-        $totalGeneral = (float) $paymentLines->sum('amount');
+        $filteredLines = $paymentLines->filter(function ($line) {
+            $regulation = $line->payment_regulation;
+            if ($regulation) {
+                if (!empty($regulation->recouvrement_uuid) || $regulation->recouvrement()->exists()) {
+                    return false;
+                }
+            }
+            return true;
+        });
 
-        $formattedPayments = $paymentLines->map(function ($line) {
+        $totalGeneral = (float) $filteredLines->sum('amount');
+
+        $formattedPayments = $filteredLines->map(function ($line) {
             $libelle = 'Encaissement Bar';
             if ($line->payable_type === OrderRestaurantDrink::class) {
                 $libelle = $line->drink?->drinkConfig?->product?->name ?? $line->drink?->drinkConfig?->drink_name ?? '';
             } elseif ($line->payable_type === RoomService::class) {
                 $libelle = $line->roomService?->name ?? 'Room Service';
-            }
-
-            $regulation = $line->payment_regulation;
-            $typeOperation = 'Encaissement';
-
-            if ($regulation) {
-                if (!empty($regulation->recouvrement_uuid) || $regulation->recouvrement()->exists()) {
-                    $typeOperation = 'Recouvrement';
-                }
             }
 
             return [
@@ -1806,7 +1814,7 @@ class PromoterReportController extends Controller
                 'montant' => (float) ($line->amount ?? 0),
                 'methode' => $line->method?->name ?? 'Espèces',
                 'auteur' => $line->creator?->name ?? 'Inconnu',
-                'type_operation' => $typeOperation,
+                'type_operation' => 'Encaissement',
                 'created_at' => $line->created_at?->format('H:i'),
             ];
         })->sortBy('code')->values();
@@ -1815,7 +1823,7 @@ class PromoterReportController extends Controller
             'success' => true,
             'date_filter' => $parsedDate->format('d/m/Y'),
             'total_encaissements_bar' => $totalGeneral,
-            'total_lines' => $paymentLines->count(),
+            'total_lines' => $filteredLines->count(),
             'payments' => $formattedPayments,
         ], 200);
     }
@@ -1978,8 +1986,6 @@ class PromoterReportController extends Controller
                         'items'    => []
                     ];
                 }
-
-                // Pour les familles/enfants, on cumule selon la période en cours
                 if ($isFamilyLevel || $periodKey === 'jour') {
                     $targetRef[$uuid][$periodKey] += (float) ($node['amount'] ?? 0);
                 }
@@ -2587,6 +2593,174 @@ class PromoterReportController extends Controller
                     $payable = $line->payable;
                     if ($payable instanceof \App\Models\OrderMenuRestaurantItem && $payable->menu) {
                         $itemName = $payable->menu->name;
+                        $uniqueKey = $itemName . '_' . ($methodName ?? 'N/A');
+                        $orderCode = optional($payable->order)->code;
+
+                        if (!isset($itemsDetails[$uniqueKey])) {
+                            $itemsDetails[$uniqueKey] = [
+                                'item_name'      => $itemName,
+                                'order_code'     => $orderCode,
+                                'quantity'       => 0,
+                                'total'          => 0.0,
+                                'payment_method' => $methodName,
+                            ];
+                        }
+                        $itemsDetails[$uniqueKey]['quantity'] += (int) ($payable->quantity_exactly ?? 1);
+                        $itemsDetails[$uniqueKey]['total']    += (float) ($line->amount ?? 0);
+                    }
+                }
+            }
+            return array_values($itemsDetails);
+        };
+
+        $buildClientList = function ($filteredRegulations) use ($formatItems) {
+            return $filteredRegulations->groupBy('resolved_client_name')->map(function ($clientRegs, $clientName) use ($formatItems) {
+                $firstReg = $clientRegs->first();
+                return [
+                    'client_name' => 'RECOUVREMENT ' . $clientName,
+                    'client_type'  => $firstReg->resolved_client_type_label,
+                    'total_amount' => (float) $clientRegs->sum('amount'),
+                    'count'        => $clientRegs->count(),
+                    'items'        => $formatItems($clientRegs),
+                ];
+            })->values();
+        };
+
+        $partnerRegs = $regulations->where('resolved_client_type_key', TypeClientsForPaiment::PARTNER->value);
+        $freeRegs    = $regulations->where('resolved_client_type_key', TypeClientsForPaiment::FREE->value);
+        $diversRegs  = $regulations->where('resolved_client_type_key', TypeClientsForPaiment::DEBTOR->value);
+
+        $partnerTotal = (float) $partnerRegs->sum('amount');
+        $freeTotal    = (float) $freeRegs->sum('amount');
+        $diversTotal  = (float) $diversRegs->sum('amount');
+
+        return [
+            'clients_partenaires' => [
+                'total'   => $partnerTotal,
+                'details' => $buildClientList($partnerRegs),
+            ],
+            'clients_gratuits' => [
+                'total'   => $freeTotal,
+                'details' => $buildClientList($freeRegs),
+            ],
+            'clients_divers' => [
+                'total'   => $diversTotal,
+                'details' => $buildClientList($diversRegs),
+            ],
+            'total_general' => $partnerTotal + $freeTotal + $diversTotal,
+        ];
+    }
+
+
+    public function getBarClientsBreakdownSummary(Request $request): JsonResponse
+    {
+        $parsedDate = $request->filled('date')
+            ? Carbon::createFromFormat('d-m-Y', $request->date)
+            : Carbon::yesterday();
+
+        $startDate = $parsedDate->copy()->startOfDay()->toDateTimeString();
+        $endDate   = $parsedDate->copy()->endOfDay()->toDateTimeString();
+
+        $breakdown = $this->calculateBarClientsBreakdownForPeriod($startDate, $endDate);
+
+        return response()->json([
+            'status' => 'success',
+            ...$breakdown,
+        ]);
+    }
+
+    /**
+     * Calcule la répartition et retourne les noms et détails pour une période donnée (Bar).
+     */
+    private function calculateBarClientsBreakdownForPeriod(string $startDate, string $endDate): array
+    {
+        $date = \Carbon\Carbon::parse($startDate)->format('Y-m-d');
+        $slug = \App\Enums\RestaurantExpenseSlug::BAR->value; // Forcé sur le slug du bar
+
+        $regulationsQuery = PaymentRegulation::with([
+            'creator:id,nom_utilisateur',
+            'updater:id,nom_utilisateur',
+            'recouvrement:uuid,name,code,slug',
+            'cashReceiptFamily:uuid,name',
+            'method:uuid,name',
+
+            'payment.order.drinks.drinkConfig.product',
+            'payment.order.partners_restaurant:uuid,full_name',
+            'payment.order.free_client_for_restaurant:uuid,full_name',
+
+            'paymentLines' => function ($lineQuery) use ($slug) {
+                if ($slug) {
+                    $lineQuery->where('slug', $slug);
+                }
+            },
+            'paymentLines.payable' => function ($morphTo) {
+                $morphTo->morphWith([
+                    \App\Models\OrderRestaurantDrink::class => ['drinkConfig.product'],
+                    \App\Models\RoomService::class => []
+                ]);
+            }
+        ])
+            ->where('type', 'recouvrement')
+            ->whereNotNull('recouvrement_uuid')
+            ->whereNotNull('slug')
+            ->whereDate('created_at', $date)
+            ->whereNull('deleted_at');
+
+        if ($slug) {
+            $regulationsQuery->where(function ($q) use ($slug) {
+                $q->where('slug', 'like', '% ' . $slug)
+                    ->orWhereHas('paymentLines', function ($lineQ) use ($slug) {
+                        $lineQ->where('slug', $slug);
+                    });
+            });
+        }
+
+        $regulations = $regulationsQuery->orderByDesc('created_at')
+            ->get()
+            ->map(function ($regulation) use ($slug) {
+                if ($slug) {
+                    $filteredLines = $regulation->paymentLines->where('slug', $slug);
+                    if ($filteredLines->isEmpty()) {
+                        return null;
+                    }
+                    $regulation->setRelation('paymentLines', $filteredLines);
+                    $regulation->amount = (float) $filteredLines->sum('amount');
+                }
+
+                $order = optional($regulation->payment)->order;
+                $clientName = 'Client de passage';
+                $clientTypeEnum = TypeClientsForPaiment::DEBTOR;
+
+                if ($order) {
+                    if ($order->partners_restaurant) {
+                        $clientName = $order->partners_restaurant->full_name;
+                        $clientTypeEnum = TypeClientsForPaiment::PARTNER;
+                    } elseif ($order->free_client_for_restaurant) {
+                        $clientName = $order->free_client_for_restaurant->full_name;
+                        $clientTypeEnum = TypeClientsForPaiment::FREE;
+                    } elseif (!empty($order->full_name)) {
+                        $clientName = $order->full_name;
+                        $clientTypeEnum = TypeClientsForPaiment::DEBTOR;
+                    }
+                }
+
+                $regulation->resolved_client_name = $clientName;
+                $regulation->resolved_client_type_key = $clientTypeEnum->value;
+                $regulation->resolved_client_type_label = $clientTypeEnum->label();
+
+                return $regulation;
+            })
+            ->filter();
+
+        $formatItems = function ($itemsCollection) {
+            $itemsDetails = [];
+            foreach ($itemsCollection as $reg) {
+                $methodName = optional($reg->method)->name;
+
+                foreach ($reg->paymentLines as $line) {
+                    $payable = $line->payable;
+                    if ($payable instanceof \App\Models\OrderRestaurantDrink) {
+                        $itemName = $payable->drinkConfig?->product?->name ?? $payable->drinkConfig?->drink_name ?? 'Boisson';
                         $uniqueKey = $itemName . '_' . ($methodName ?? 'N/A');
                         $orderCode = optional($payable->order)->code;
 
