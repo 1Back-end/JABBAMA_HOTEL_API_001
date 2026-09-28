@@ -634,6 +634,16 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des encaissements',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],
+        'view_calendar_basic' => [
+            'description' => 'Afficher le calendrier basique dans le rapport promoteur',
+            'category' => 'Gestion des encaissements',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'view_calendar_advanced' => [
+            'description' => 'Afficher le calendrier avancé dans le rapport promoteur',
+            'category' => 'Gestion des encaissements',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
 
     ];
 
