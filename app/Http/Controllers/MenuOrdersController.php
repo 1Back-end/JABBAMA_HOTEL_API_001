@@ -76,14 +76,14 @@ class MenuOrdersController extends Controller
         DB::beginTransaction();
 
         try {
-
             $validated = $request->validate([
                 'warehouse_uuid'        => 'nullable|exists:warehouses,uuid',
-                'items'                 => 'nullable|array', // 🟢 Changé de required|min:1 à nullable|array
+                'items'                 => 'nullable|array',
                 'items.*.uuid'          => 'nullable|exists:menu_order_items,uuid',
                 'items.*.product_uuid'  => 'required_with:items|exists:produits,uuid',
                 'items.*.quantity_used' => 'required_with:items|numeric|min:1',
                 'description'           => 'nullable|string',
+                'additional_cost'       => 'nullable|numeric|min:0',
             ]);
 
             $warehouseUuid = $validated['warehouse_uuid'] ?? Warehouse::where('is_used_for_restaurant', true)->firstOrFail()->uuid;
@@ -135,16 +135,21 @@ class MenuOrdersController extends Controller
             $menuOrder->items()->whereNotIn('uuid', $submittedItemUuids)->delete();
 
             $hasItemsNow = count($submittedItemUuids) > 0;
-            $menu_restaurant->update(['is_confectioned' => $hasItemsNow]);
+            $menu_restaurant->update([
+                'is_confectioned' => $hasItemsNow,
+                'additional_cost' => $validated['additional_cost'] ?? $menu_restaurant->additional_cost,
+                'production_cost' => $validated['additional_cost'] ?? $menu_restaurant->additional_cost,
+            ]);
 
             if ($menu_restaurant->is_generated_from_complement) {
                 ConfigurationsComplement::where('uuid', $menu_restaurant->uuid)
                     ->update([
                         'is_confectioned' => $hasItemsNow,
+                        'additional_cost' => $validated['additional_cost'] ?? $menu_restaurant->additional_cost,
+                        'production_cost' => $validated['additional_cost'] ?? $menu_restaurant->additional_cost,
                         'updated_by'      => $auth->id,
                     ]);
             }
-
             DB::commit();
 
             return response()->json([

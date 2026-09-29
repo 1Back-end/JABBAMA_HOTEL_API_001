@@ -447,18 +447,17 @@ class ConfigurationsComplementController extends Controller
      */
     public function upsert(Request $request, string $commplements_restaurant_uuid)
     {
-        // 🟢 LA CORRECTION EST ICI : Changement des règles pour rendre 'items' facultatif
         $request->validate([
             'warehouse_uuid'        => 'required|uuid',
-            'items'                 => 'nullable|array', // Accepte null ou un tableau vide []
-            'items.*.product_uuid'  => 'required_with:items|uuid', // Requis SEULEMENT si des items sont fournis
+            'items'                 => 'nullable|array',
+            'items.*.product_uuid'  => 'required_with:items|uuid',
             'items.*.quantity_used' => 'required_with:items|numeric|min:0',
             'items.*.is_optional'   => 'nullable|boolean',
+            'additional_cost'       => 'nullable|numeric|min:0',
         ]);
 
         $auth = auth()->user();
 
-        // 🟢 Sécurité : On s'assure d'avoir un tableau propre pour éviter que les boucles crash si items est absent
         $items = $request->items ?? [];
         $hasItemsNow = count($items) > 0;
 
@@ -479,16 +478,15 @@ class ConfigurationsComplementController extends Controller
 
             $complement = ConfigurationsComplement::where('uuid', $commplements_restaurant_uuid)->firstOrFail();
 
-            // 🟢 Mis à jour dynamiquement : passe à false si le tableau est vide
             $complement->update([
                 'is_confectioned' => $hasItemsNow,
                 'updated_by'      => $auth->id,
+                'production_cost' => $request->additional_cost ?? $complement->additional_cost,
+                'additional_cost' => $request->additional_cost ?? $complement->additional_cost,
             ]);
 
-            // Nettoyage systématique des anciens articles du complément
             ComplementCompositionItem::where('complement_uuid', $composition->uuid)->delete();
 
-            // Ajout des nouveaux articles (s'il y en a)
             foreach ($items as $item) {
                 ComplementCompositionItem::create([
                     'complement_uuid' => $composition->uuid,
@@ -562,14 +560,14 @@ class ConfigurationsComplementController extends Controller
                         }
                     }
 
-                    // 🟢 S'il n'y a plus aucun item, cette requête va supprimer tous les anciens enregistrements liés
                     $menuOrder->items()
                         ->whereNotIn('uuid', $submittedItemUuids)
                         ->delete();
 
-                    // 🟢 Idem ici : mis à jour selon l'état réel des articles
                     $menu_restaurant->update([
-                        'is_confectioned' => $hasItemsNow
+                        'is_confectioned' => $hasItemsNow,
+                        'production_cost' => $request->production_cost ?? $menu_restaurant->production_cost,
+                        'additional_cost' => $request->additional_cost ?? $menu_restaurant->additional_cost,
                     ]);
                 }
             }

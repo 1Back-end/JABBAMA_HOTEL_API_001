@@ -45,6 +45,8 @@ class MenuRestaurant extends Model
         'is_generated_from_complement',
         'is_menu',
         'is_drinks',
+        'production_cost',
+        'additional_cost'
     ];
 
     protected $casts = [

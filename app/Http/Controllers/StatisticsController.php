@@ -676,7 +676,6 @@ class StatisticsController extends Controller
      * @permission StatisticsController::get_statictic_by_variation_supply_price
      * @permission_desc Statistiques sur la variation sur les prix unitaires
      */
-
     public function get_statictic_by_variation_supply_price(Request $request, string $productUuid)
     {
         $request->validate([
@@ -691,12 +690,11 @@ class StatisticsController extends Controller
             ->where('uuid', $productUuid)
             ->value('name') ?? 'Inconnu';
 
-        // 🔹 Récupérer uniquement les lignes avec unit_price non null
         $items = DB::table('supply_items as si')
             ->join('supplies as s', 's.uuid', '=', 'si.supply_uuid')
             ->join('purchase_orders as po', 'po.uuid', '=', 's.purchase_order_uuid')
             ->where('si.product_uuid', $productUuid)
-            ->whereNotNull('si.unit_price') // ✅ filtrer null
+            ->whereNotNull('si.unit_price')
             ->whereNull('si.deleted_at')
             ->whereIn('s.status', [
                 SupplyStatus::VALIDATED->value,
@@ -710,20 +708,6 @@ class StatisticsController extends Controller
             )
             ->get();
 
-        // 🔹 Filtrer uniquement le jour voulu pour le log (exemple 31/12/2025)
-        $debugDate = '2025-12-31';
-        $dayItems = $items->filter(function($i) use ($debugDate) {
-            return Carbon::parse($i->supply_date)->format('Y-m-d') === $debugDate;
-        });
-
-        Log::info("Supply items for {$debugDate}: " . $dayItems->map(function($i) {
-                return [
-                    'unit_price' => $i->unit_price,
-                    'quantity_supplied' => $i->quantity_supplied,
-                ];
-            })->toJson());
-
-        // 🔹 Calcul du prix moyen pondéré par jour
         $grouped = $items->groupBy(function ($item) {
             return Carbon::parse($item->supply_date)->format('Y-m-d');
         })->map(function ($dayItems, $day) {
@@ -733,7 +717,6 @@ class StatisticsController extends Controller
             return number_format($averagePrice, 2, '.', '');
         });
 
-        // 🔹 Générer toutes les dates entre startDate et endDate
         $period = [];
         for ($date = $startDate->copy(); $date->lte($endDate); $date->addDay()) {
             $dayStr = $date->format('Y-m-d');

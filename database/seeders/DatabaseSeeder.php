@@ -21,6 +21,7 @@ class DatabaseSeeder extends Seeder
             CountriesTableSeeder::class,
             AddDefaultParametersSeeder::class,
             RecouvrementSeeder::class,
+           DatabaseTablesMetadataSeeder::class,
 
         ]);
     }
