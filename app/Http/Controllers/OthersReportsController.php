@@ -6,6 +6,7 @@ use App\Models\OrderMenuRestaurantItem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class OthersReportsController extends Controller
 {
@@ -25,57 +26,24 @@ class OthersReportsController extends Controller
             $startDate = Carbon::createFromFormat('d-m-Y', $startDateInput)->startOfDay()->toDateTimeString();
             $endDate = Carbon::createFromFormat('d-m-Y', $endDateInput)->endOfDay()->toDateTimeString();
 
-            $menuOrder = \App\Models\MenuOrder::where('menus_restaurant_uuid', $menuRestaurantUuid)
-                ->with('items.product')
-                ->first();
-
-            $compositionItemsCost = 0;
-            $compositionDetails = [];
-
-            if ($menuOrder && $menuOrder->items) {
-                foreach ($menuOrder->items as $compItem) {
-                    $productUuid = $compItem->product_uuid;
-                    $quantityUsed = $compItem->quantity_used ?? 0;
-
-                    $supplyItems = DB::table('supply_items as si')
-                        ->join('supplies as s', 's.uuid', '=', 'si.supply_uuid')
-                        ->where('si.product_uuid', $productUuid)
-                        ->whereNotNull('si.unit_price')
-                        ->whereNull('si.deleted_at')
-                        ->whereIn('s.status', [
-                            \App\Enums\SupplyStatus::VALIDATED->value,
-                            \App\Enums\SupplyStatus::PARTIALLY_VALIDATED->value
-                        ])
-                        ->where('s.supply_date', '<=', $endDate)
-                        ->where('si.quantity_supplied', '>', 0)
-                        ->select('si.unit_price', 'si.quantity_supplied')
-                        ->get();
-
-                    $totalValue = $supplyItems->sum(fn($s) => floatval($s->unit_price) * floatval($s->quantity_supplied));
-                    $totalQtySupplied = $supplyItems->sum(fn($s) => floatval($s->quantity_supplied));
-
-                    $averageUnitPrice = $totalQtySupplied > 0 ? ($totalValue / $totalQtySupplied) : ($compItem->product->purchase_cost ?? 0);
-
-                    $lineComponentCost = $quantityUsed * $averageUnitPrice;
-                    $compositionItemsCost += $lineComponentCost;
-
-                    $compositionDetails[] = [
-                        'product_uuid'       => $productUuid,
-                        'product_name'       => $compItem->product->name ?? 'Inconnu',
-                        'quantity_used'      => $quantityUsed,
-                        'average_unit_price' => round($averageUnitPrice, 2),
-                        'total_cost'         => round($lineComponentCost, 2),
-                    ];
-                }
-            }
+            Log::info('[Menu Cost Analysis] Début de l’analyse', [
+                'menu_uuid'  => $menuRestaurantUuid,
+                'start_date' => $startDate,
+                'end_date'   => $endDate,
+            ]);
 
             $items = OrderMenuRestaurantItem::with(['order', 'menu', 'complements.complement'])
                 ->where('menus_restaurant_uuid', $menuRestaurantUuid)
+                ->where('status', \App\Enums\OrderMenuRestaurantItemStatus::DELIVERED->value)
                 ->whereHas('order', function ($query) use ($startDate, $endDate) {
-                    $query->whereBetween('created_at', [$startDate, $endDate])
-                        ->where('status', '!=', \App\Enums\MenuOrderStatus::CANCELLED->value);
+                    $query->whereBetween('order_menu_restaurant_date', [$startDate, $endDate])
+                        ->where('status', \App\Enums\MenuOrderStatus::FACTURATE->value);
                 })
                 ->get();
+
+            Log::info('[Menu Cost Analysis] Nombre d’items trouvés avec les filtres', [
+                'count' => $items->count()
+            ]);
 
             $totalNumerator = 0;
             $totalDenominatorWeightedSum = 0;
@@ -86,19 +54,30 @@ class OthersReportsController extends Controller
 
             foreach ($items as $item) {
                 $quantitySold = $item->quantity_exactly ?? $item->quantity ?? 0;
+                $unitSellingPrice = $item->unit_price ?? 0;
 
-                if ($quantitySold <= 0) {
+                Log::info('[Menu Cost Analysis] Examen d’un item', [
+                    'item_uuid'          => $item->uuid ?? null,
+                    'quantity_sold'      => $quantitySold,
+                    'unit_selling_price' => $unitSellingPrice,
+                    'order_status'       => $item->order->status ?? 'inconnu',
+                    'order_date'         => $item->order->order_menu_restaurant_date ?? 'inconnu',
+                ]);
+
+                if ($quantitySold <= 0 || $unitSellingPrice <= 0) {
+                    Log::warning('[Menu Cost Analysis] Item ignoré (quantité ou prix <= 0)', [
+                        'item_uuid' => $item->uuid ?? null,
+                    ]);
                     continue;
                 }
 
-                $additionalCost = $item->menu->additional_cost ?? 0;
-                $menuProductionCost = $additionalCost + $compositionItemsCost;
+                $additionalCost             = $item->snapshot_additional_cost ?? 0;
+                $menuProductionCost         = $item->snapshot_composition_cost ?? 0;
+                $complementsProductionCost  = $item->snapshot_complements_cost ?? 0;
 
-                $complementsProductionCost = 0;
                 $complementsList = [];
                 foreach ($item->complements as $itemComplement) {
                     $compCost = $itemComplement->complement->additional_cost ?? $itemComplement->complement->production_cost ?? 0;
-                    $complementsProductionCost += $compCost;
                     $complementsList[] = [
                         'complement_uuid' => $itemComplement->complement->uuid ?? null,
                         'name'            => $itemComplement->complement->name ?? '',
@@ -110,14 +89,13 @@ class OthersReportsController extends Controller
                 $lineNumerator = $quantitySold * $unitProductionCost;
                 $totalNumerator += $lineNumerator;
 
-                $unitSellingPrice = $item->unit_price ?? 0;
                 $lineDenominator = $quantitySold * $unitSellingPrice;
                 $totalDenominatorWeightedSum += $lineDenominator;
                 $totalQuantity += $quantitySold;
 
                 $orderCode = $item->order->code ?? '';
                 $compNames = collect($complementsList)->pluck('name')->implode(', ');
-                $numeratorPartsText[] = "{$quantitySold}x [{$menuProductionCost} (coût menu: additionnel {$additionalCost} + composants {$compositionItemsCost}) + {$complementsProductionCost} (compléments additionnels: {$compNames})] (fact#{$orderCode})";
+                $numeratorPartsText[] = "{$quantitySold}x [{$menuProductionCost} (coût menu snapshot) + {$complementsProductionCost} (compléments: {$compNames})] (fact#{$orderCode})";
                 $salesPartsText[] = "{$unitSellingPrice}x{$quantitySold}";
 
                 $itemsDetails[] = [
@@ -126,7 +104,7 @@ class OthersReportsController extends Controller
                     'quantity_sold'               => $quantitySold,
                     'menu_production_cost'        => $menuProductionCost,
                     'additional_cost'             => $additionalCost,
-                    'composition_items_cost'      => $compositionItemsCost,
+                    'composition_items_cost'      => $menuProductionCost - $additionalCost,
                     'complements_production_cost' => $complementsProductionCost,
                     'complements_details'         => $complementsList,
                     'unit_production_cost'        => $unitProductionCost,
@@ -135,6 +113,12 @@ class OthersReportsController extends Controller
                     'total_line_sales'            => $lineDenominator,
                 ];
             }
+
+            Log::info('[Menu Cost Analysis] Résultats finaux avant calcul des ratios', [
+                'total_quantity'               => $totalQuantity,
+                'total_numerator'              => $totalNumerator,
+                'total_weighted_denominator'   => $totalDenominatorWeightedSum,
+            ]);
 
             if ($totalQuantity <= 0 || $totalDenominatorWeightedSum <= 0) {
                 return response()->json([
@@ -148,9 +132,10 @@ class OthersReportsController extends Controller
                         'total_production_cost_numerator'  => 0,
                         'total_weighted_sales_denominator' => 0,
                         'total_quantity_sold'              => 0,
+                        'total_margin_amount'              => 0,
                         'production_cost_percentage'       => 0,
                         'margin_percentage'                => 0,
-                        'menu_composition_items'           => $compositionDetails,
+                        'menu_composition_items'           => [],
                         'items_details'                    => [],
                         'formula_breakdown'                => null,
                     ],
@@ -162,6 +147,7 @@ class OthersReportsController extends Controller
 
             $productionCostRatio = ($totalNumerator / $denominatorFinal) * 100;
             $marginRatio = 100 - $productionCostRatio;
+            $totalMarginAmount = $denominatorFinal - $totalNumerator;
 
             $numeratorString = '{' . implode(' + ', $numeratorPartsText) . '}';
             $salesString = implode(' + ', $salesPartsText);
@@ -178,20 +164,26 @@ class OthersReportsController extends Controller
                     'total_production_cost_numerator'  => $totalNumerator,
                     'total_weighted_sales_denominator' => $denominatorFinal,
                     'total_quantity_sold'              => $totalQuantity,
+                    'total_margin_amount'              => $totalMarginAmount,
                     'production_cost_percentage'       => round($productionCostRatio, 2),
                     'margin_percentage'                => round($marginRatio, 2),
-                    'menu_composition_items'           => $compositionDetails,
+                    'menu_composition_items'           => [],
                     'items_details'                    => $itemsDetails,
                     'formula_breakdown'                => $formulaFormatted,
                 ]
             ]);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
+            Log::error('[Menu Cost Analysis] Erreur de validation', ['errors' => $e->errors()]);
             return response()->json([
                 'status' => 'validation_error',
                 'errors' => $e->errors(),
             ], 422);
         } catch (\Exception $e) {
+            Log::error('[Menu Cost Analysis] Erreur critique inattendue', [
+                'message' => $e->getMessage(),
+                'trace'   => $e->getTraceAsString(),
+            ]);
             return response()->json([
                 'status'  => 'error',
                 'message' => 'Une erreur est survenue lors du calcul.',

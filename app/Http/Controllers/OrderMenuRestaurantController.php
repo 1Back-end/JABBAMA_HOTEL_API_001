@@ -2638,6 +2638,60 @@ class OrderMenuRestaurantController extends Controller
         ]);
     }
 
+    private function calculateMenuCostSnapshot($menu, array $mInput, \Carbon\Carbon $orderDate): array
+    {
+        $compositionItemsCost = 0;
+
+        $menuItems = \App\Models\MenuOrderItem::with('product')
+            ->where('menus_restaurant_uuid', $menu->uuid)
+            ->get();
+
+        foreach ($menuItems as $compItem) {
+            $productUuid = $compItem->product_uuid;
+            $quantityUsed = $compItem->quantity_used ?? 0;
+
+            $supplyItems = DB::table('supply_items as si')
+                ->join('supplies as s', 's.uuid', '=', 'si.supply_uuid')
+                ->where('si.product_uuid', $productUuid)
+                ->whereNotNull('si.unit_price')
+                ->whereNull('si.deleted_at')
+                ->whereIn('s.status', [
+                    \App\Enums\SupplyStatus::VALIDATED->value,
+                    \App\Enums\SupplyStatus::PARTIALLY_VALIDATED->value
+                ])
+                ->where('s.supply_date', '<=', $orderDate->toDateTimeString())
+                ->where('si.quantity_supplied', '>', 0)
+                ->select('si.unit_price', 'si.quantity_supplied')
+                ->get();
+
+            $totalValue = $supplyItems->sum(fn($s) => floatval($s->unit_price) * floatval($s->quantity_supplied));
+            $totalQtySupplied = $supplyItems->sum(fn($s) => floatval($s->quantity_supplied));
+
+            $averageUnitPrice = $totalQtySupplied > 0 ? ($totalValue / $totalQtySupplied) : ($compItem->product->purchase_cost ?? 0);
+
+            $compositionItemsCost += ($quantityUsed * $averageUnitPrice);
+        }
+
+        $menuProductionCost = $menu->production_cost ?? $menu->additional_cost ?? 0;
+        $snapshotCompositionCost = $compositionItemsCost + $menuProductionCost;
+
+        $snapshotAdditionalCost = $menu->additional_cost ?? 0;
+        $snapshotComplementsCost = 0;
+
+        if (!empty($mInput['complements']) && is_array($mInput['complements'])) {
+            foreach ($mInput['complements'] as $compInput) {
+                $complementModel = \App\Models\ConfigurationsComplement::where('uuid', $compInput['complement_uuid'])->first();
+                $compCost = $complementModel->additional_cost ?? $complementModel->production_cost ?? 0;
+                $snapshotComplementsCost += $compCost;
+            }
+        }
+        return [
+            'snapshot_additional_cost'  => $snapshotAdditionalCost,
+            'snapshot_composition_cost' => $snapshotCompositionCost,
+            'snapshot_complements_cost' => $snapshotComplementsCost,
+        ];
+    }
+
 
     /**
      * Display a listing of the resource.
@@ -2844,9 +2898,9 @@ class OrderMenuRestaurantController extends Controller
                     $menu = MenuRestaurant::where('uuid', $mInput['menus_restaurant_uuid'])->first();
 
                     if (!$menu) continue;
-
                     $isFree = $validated['type_clients_for_payment'] === TypeClientsForPaiment::FREE->value;
                     $unitPrice = $mInput['unit_price'] ?? $menu->price ?? 0;
+                    $costs = $this->calculateMenuCostSnapshot($menu, $mInput, $orderDate);
 
                     $orderItem = OrderMenuRestaurantItem::create([
                         'order_menu_restaurant_uuid' => $order->uuid,
@@ -2854,6 +2908,9 @@ class OrderMenuRestaurantController extends Controller
                         'menus_restaurant_uuid'      => $menu->uuid,
                         'quantity'                   => $mInput['quantity'],
                         'quantity_exactly'           => $mInput['quantity'],
+                        'snapshot_additional_cost'   => $costs['snapshot_additional_cost'],
+                        'snapshot_composition_cost'  => $costs['snapshot_composition_cost'],
+                        'snapshot_complements_cost'  => $costs['snapshot_complements_cost'],
                         'unit_price'                 => $unitPrice,
                         'is_free'                    => $isFree,
                         'status'                     => \App\Enums\OrderMenuRestaurantItemStatus::TRANSFERRED->value,
@@ -3540,6 +3597,7 @@ class OrderMenuRestaurantController extends Controller
             $isRoomService = isset($validated['room_service_type']) && $validated['room_service_type'] === \App\Enums\RoomServiceEnum::YES->value;
             $orderDate = $validated['order_menu_restaurant_date'] ?? now();
             $formattedOrderDate = \Carbon\Carbon::createFromFormat('d-m-Y', $orderDate)->format('Y-m-d H:i:s');
+            $carbonOrderDate = \Carbon\Carbon::parse($orderDate);
             $order->update([
                 'regulation_status' => \App\Enums\MenuOrderStatus::TRANSFERRED->value,
                 'type_clients_for_payment' => $validated['type_clients_for_payment'],
@@ -3619,12 +3677,19 @@ class OrderMenuRestaurantController extends Controller
                     $unitPrice = $m['unit_price'] ?? $menu->price ?? 0;
                     $existingItem = $existingItems[$menu->uuid] ?? null;
                     $orderItem = null;
+                    $costs = $this->calculateMenuCostSnapshot($menu, $m,$carbonOrderDate);
 
                     if ($existingItem) {
 
                         $newQty = $m['quantity'];
                         $oldQty = $existingItem->quantity_exactly;
                         $orderItem = $existingItem;
+
+                        $orderItem->update([
+                            'snapshot_additional_cost'  => $costs['snapshot_additional_cost'],
+                            'snapshot_composition_cost' => $costs['snapshot_composition_cost'],
+                            'snapshot_complements_cost' => $costs['snapshot_complements_cost'],
+                        ]);
 
                         $isRejectedGroup = in_array($existingItem->status, [
                             OrderMenuRestaurantItemStatus::REJECTED->value,
@@ -4993,6 +5058,8 @@ class OrderMenuRestaurantController extends Controller
         return $item;
     }
     private function createNewMenuItem(array $m, MenuRestaurant $menu, OrderMenuRestaurant $order, float $unitPrice, $auth) {
+        $orderDate = $order->order_menu_restaurant_date ? \Carbon\Carbon::parse($order->order_menu_restaurant_date) : now();
+        $costs = $this->calculateMenuCostSnapshot($menu, $m, $orderDate);
         $item = OrderMenuRestaurantItem::create([
             'order_menu_restaurant_uuid' => $order->uuid,
             'menus_restaurant_uuid' => $menu->uuid,
@@ -5000,6 +5067,9 @@ class OrderMenuRestaurantController extends Controller
             'quantity_exactly' => $m['quantity'],
             'unit_price' => $unitPrice,
             'total_price' => $unitPrice * $m['quantity'],
+            'snapshot_additional_cost'   => $costs['snapshot_additional_cost'],
+            'snapshot_composition_cost'  => $costs['snapshot_composition_cost'],
+            'snapshot_complements_cost'  => $costs['snapshot_complements_cost'],
             'status' => OrderMenuRestaurantItemStatus::TRANSFERRED->value,
             'created_by' => $auth->id,
             'updated_by' => $auth->id,
