@@ -2648,9 +2648,7 @@ class OrderMenuRestaurantController extends Controller
 
         foreach ($menuItems as $compItem) {
             $productUuid = $compItem->product_uuid;
-            $quantityUsed = $compItem->quantity_used ?? 0;
-
-            $supplyItems = DB::table('supply_items as si')
+            $latestSupplyItem = DB::table('supply_items as si')
                 ->join('supplies as s', 's.uuid', '=', 'si.supply_uuid')
                 ->where('si.product_uuid', $productUuid)
                 ->whereNotNull('si.unit_price')
@@ -2659,32 +2657,34 @@ class OrderMenuRestaurantController extends Controller
                     \App\Enums\SupplyStatus::VALIDATED->value,
                     \App\Enums\SupplyStatus::PARTIALLY_VALIDATED->value
                 ])
-                ->where('s.supply_date', '<=', $orderDate->toDateTimeString())
                 ->where('si.quantity_supplied', '>', 0)
-                ->select('si.unit_price', 'si.quantity_supplied')
-                ->get();
+                ->orderBy('s.supply_date', 'desc')
+                ->orderBy('s.created_at', 'desc')
+                ->select('si.unit_price', 'si.quantity_supplied', 's.supply_date')
+                ->first();
 
-            $totalValue = $supplyItems->sum(fn($s) => floatval($s->unit_price) * floatval($s->quantity_supplied));
-            $totalQtySupplied = $supplyItems->sum(fn($s) => floatval($s->quantity_supplied));
+            $supplyDate = null;
+            if ($latestSupplyItem) {
+                $unitPrice = floatval($latestSupplyItem->unit_price);
+            } else {
+                $unitPrice = floatval($compItem->product->purchase_cost ?? 0);
+            }
 
-            $averageUnitPrice = $totalQtySupplied > 0 ? ($totalValue / $totalQtySupplied) : ($compItem->product->purchase_cost ?? 0);
-
-            $compositionItemsCost += ($quantityUsed * $averageUnitPrice);
+            $compositionItemsCost += $unitPrice;
         }
 
-        $menuProductionCost = $menu->production_cost ?? $menu->additional_cost ?? 0;
-        $snapshotCompositionCost = $compositionItemsCost + $menuProductionCost;
-
-        $snapshotAdditionalCost = $menu->additional_cost ?? 0;
+        $snapshotAdditionalCost = floatval($menu->additional_cost ?? 0);
+        $snapshotCompositionCost = $snapshotAdditionalCost + $compositionItemsCost;
         $snapshotComplementsCost = 0;
 
         if (!empty($mInput['complements']) && is_array($mInput['complements'])) {
             foreach ($mInput['complements'] as $compInput) {
                 $complementModel = \App\Models\ConfigurationsComplement::where('uuid', $compInput['complement_uuid'])->first();
-                $compCost = $complementModel->additional_cost ?? $complementModel->production_cost ?? 0;
+                $compCost = floatval($complementModel->additional_cost ?? $complementModel->production_cost ?? 0);
                 $snapshotComplementsCost += $compCost;
             }
         }
+
         return [
             'snapshot_additional_cost'  => $snapshotAdditionalCost,
             'snapshot_composition_cost' => $snapshotCompositionCost,
@@ -4529,10 +4529,10 @@ class OrderMenuRestaurantController extends Controller
         $newTotalQty = (int) $data['quantity'];
         $oldTotalQty = (int) $drink->quantity_exactly;
 
-        if ($newQty === $oldQty && ((float)$drink->unit_price !== (float)$unitPrice)) {
+        if ($newTotalQty === $oldTotalQty && ((float)$drink->unit_price !== (float)$unitPrice)) {
             $drink->update([
                 'unit_price'  => $unitPrice,
-                'total_price' => $unitPrice * $newQty,
+                'total_price' => $unitPrice * $newTotalQty,
                 'updated_by'  => $auth->id,
             ]);
         }

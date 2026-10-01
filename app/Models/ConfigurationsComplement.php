@@ -36,7 +36,8 @@ class ConfigurationsComplement extends Model
         'is_sellable_directly',
         'is_menu_and_complement',
         'production_cost',
-        'additional_cost'
+        'additional_cost',
+        'production_cost_final'
     ];
 
     protected $casts = [

@@ -843,10 +843,14 @@ class PassationController extends Controller
                 ], 422);
             }
 
-            $start_date = \Illuminate\Support\Carbon::parse($request->input('start_date'))->startOfDay();
-            $end_date = \Illuminate\Support\Carbon::parse($request->input('end_date'))->endOfDay();
+            $start_date = $request->filled('start_date')
+                ? \Illuminate\Support\Carbon::createFromFormat('d-m-Y', $request->input('start_date'))->startOfDay()
+                : now()->startOfDay();
 
-            // Récupérer uniquement les items "in_discuss" liés à l'agent et à la période
+            $end_date = $request->filled('end_date')
+                ? \Illuminate\Support\Carbon::createFromFormat('d-m-Y', $request->input('end_date'))->endOfDay()
+                : now()->endOfDay();
+
             $items = PassationItem::with('product')
                 ->where('status', 'in_discuss')
                 ->whereHas('passation', function($q) use ($agentFromId, $start_date, $end_date) {
@@ -861,26 +865,19 @@ class PassationController extends Controller
                 ], 404);
             }
 
-            // Grouper par produit et faire le cumul
             $cumulativeItems = $items->groupBy('product_uuid')->map(function($group) {
                 return [
                     'product' => $group->first()->product,
                     'quantity_sent' => $group->sum('quantity_sent'),
                     'quantity_counted' => $group->sum('quantity_counted'),
                     'difference' => $group->sum('difference'),
-                    'status' => 'in_discuss', // forcer le statut pour l’affichage
+                    'status' => 'in_discuss',
                 ];
             });
 
 
             $manager = User::find($agentFromId);
 
-            \Log::info('Données cumulées pour PDF passations : ', [
-                'manager' => $manager,
-                'cumulativeItems' => $cumulativeItems->toArray(), // convertir en tableau pour bien loguer
-                'start_date' => $start_date->format('d/m/Y'),
-                'end_date' => $end_date->format('d/m/Y'),
-            ]);
 
             $fileName = 'ECARTS-PASSATIONS-' . strtoupper($manager->nom_utilisateur) . '-' . now()->format('YmdHis') . '.pdf';
             $folderPath = 'storage/passations-managers/' . $agentFromId;

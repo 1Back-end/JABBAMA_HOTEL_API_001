@@ -108,8 +108,29 @@ class MenuOrdersController extends Controller
             $existingItems = $menuOrder->items()->pluck('uuid')->toArray();
             $submittedItemUuids = [];
 
+            $totalCalculatedProductionCost = 0;
             $items = $validated['items'] ?? [];
+
             foreach ($items as $item) {
+                // 1. Récupérer le prix unitaire du DERNIER approvisionnement validé pour ce produit
+                $latestSupplyItem = DB::table('supply_items as si')
+                    ->join('supplies as s', 's.uuid', '=', 'si.supply_uuid')
+                    ->where('si.product_uuid', $item['product_uuid'])
+                    ->whereNotNull('si.unit_price')
+                    ->whereNull('si.deleted_at')
+                    ->whereIn('s.status', [
+                        \App\Enums\SupplyStatus::VALIDATED->value,
+                        \App\Enums\SupplyStatus::PARTIALLY_VALIDATED->value
+                    ])
+                    ->orderBy('s.supply_date', 'desc')
+                    ->orderBy('s.created_at', 'desc')
+                    ->select('si.unit_price')
+                    ->first();
+
+                $unitPrice = $latestSupplyItem ? floatval($latestSupplyItem->unit_price) : 0;
+
+                $totalCalculatedProductionCost += ($unitPrice * floatval($item['quantity_used']));
+
                 if (!empty($item['uuid']) && in_array($item['uuid'], $existingItems)) {
                     $menuOrderItem = MenuOrderItem::find($item['uuid']);
                     $menuOrderItem->update([
@@ -135,21 +156,25 @@ class MenuOrdersController extends Controller
             $menuOrder->items()->whereNotIn('uuid', $submittedItemUuids)->delete();
 
             $hasItemsNow = count($submittedItemUuids) > 0;
+            $additionalCost = $validated['additional_cost'] ?? $menu_restaurant->additional_cost;
+
+
             $menu_restaurant->update([
                 'is_confectioned' => $hasItemsNow,
-                'additional_cost' => $validated['additional_cost'] ?? $menu_restaurant->additional_cost,
-                'production_cost' => $validated['additional_cost'] ?? $menu_restaurant->additional_cost,
+                'additional_cost' => $additionalCost,
+                'production_cost' => $totalCalculatedProductionCost + $additionalCost,
             ]);
 
             if ($menu_restaurant->is_generated_from_complement) {
                 ConfigurationsComplement::where('uuid', $menu_restaurant->uuid)
                     ->update([
                         'is_confectioned' => $hasItemsNow,
-                        'additional_cost' => $validated['additional_cost'] ?? $menu_restaurant->additional_cost,
-                        'production_cost' => $validated['additional_cost'] ?? $menu_restaurant->additional_cost,
+                        'additional_cost' => $additionalCost,
+                        'production_cost' => $totalCalculatedProductionCost,
                         'updated_by'      => $auth->id,
                     ]);
             }
+
             DB::commit();
 
             return response()->json([
@@ -359,6 +384,42 @@ class MenuOrdersController extends Controller
         }
 
 
+    }
+
+
+    public function getMultipleLatestPrices(Request $request)
+    {
+        $request->validate([
+            'product_uuids' => 'required|array',
+            'product_uuids.*' => 'exists:produits,uuid', // Adaptez 'produits' et 'uuid' selon votre base
+        ]);
+
+        $prices = [];
+
+        foreach ($request->product_uuids as $productUuid) {$latestSupplyItem = DB::table('supply_items as si')
+            ->join('supplies as s', 's.uuid', '=', 'si.supply_uuid')
+            ->where('si.product_uuid', $productUuid)
+            ->whereNotNull('si.unit_price')
+            ->whereNull('si.deleted_at')
+            ->whereIn('s.status', [
+                \App\Enums\SupplyStatus::VALIDATED->value,
+                \App\Enums\SupplyStatus::PARTIALLY_VALIDATED->value
+            ])
+            ->orderBy('s.supply_date', 'desc')
+            ->orderBy('s.created_at', 'desc')
+            ->select('si.unit_price', 's.supply_date')
+            ->first();
+
+            $prices[$productUuid] = [
+                'unit_price'  => $latestSupplyItem ? floatval($latestSupplyItem->unit_price) : 0,
+                'supply_date' => $latestSupplyItem ? $latestSupplyItem->supply_date : null,
+            ];
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'data'   => $prices
+        ]);
     }
 
 

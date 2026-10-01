@@ -49,8 +49,12 @@ class OthersReportsController extends Controller
             $totalDenominatorWeightedSum = 0;
             $totalQuantity = 0;
             $itemsDetails = [];
+
+            // Nouveaux tableaux pour stocker les parties exactes de la formule
             $numeratorPartsText = [];
             $salesPartsText = [];
+            $qtyPartsText = [];
+            $intermediateNumeratorParts = [];
 
             foreach ($items as $item) {
                 $quantitySold = $item->quantity_exactly ?? $item->quantity ?? 0;
@@ -94,9 +98,19 @@ class OthersReportsController extends Controller
                 $totalQuantity += $quantitySold;
 
                 $orderCode = $item->order->code ?? '';
+                $menuName = $item->menu->name ?? 'Menu Inconnu';
                 $compNames = collect($complementsList)->pluck('name')->implode(', ');
-                $numeratorPartsText[] = "{$quantitySold}x [{$menuProductionCost} (coût menu snapshot) + {$complementsProductionCost} (compléments: {$compNames})] (fact#{$orderCode})";
+
+                // Construction textuelle pour les compléments
+                $compText = $complementsProductionCost > 0
+                    ? "+ {$complementsProductionCost} (prix de production du complement {$compNames})"
+                    : "";
+
+                // --- Enregistrement des éléments pour la formule ---
+                $numeratorPartsText[] = "{$quantitySold}x [{$menuProductionCost} (prix de production du menu {$menuName}){$compText}](fact#{$orderCode})";
                 $salesPartsText[] = "{$unitSellingPrice}x{$quantitySold}";
+                $qtyPartsText[] = $quantitySold;
+                $intermediateNumeratorParts[] = $lineNumerator;
 
                 $itemsDetails[] = [
                     'order_code'                  => $orderCode,
@@ -149,9 +163,17 @@ class OthersReportsController extends Controller
             $marginRatio = 100 - $productionCostRatio;
             $totalMarginAmount = $denominatorFinal - $totalNumerator;
 
+            // --- Construction finale de la formule breakdown exacte ---
             $numeratorString = '{' . implode(' + ', $numeratorPartsText) . '}';
-            $salesString = implode(' + ', $salesPartsText);
-            $formulaFormatted = "{$numeratorString} / { [{$totalQuantity}] (quantité respective vendue) X {[{$salesString}] (somme des prix de vente respectifs X les pondérations respectives)} x 100% = {$totalNumerator} / {$denominatorFinal} x 100% = " . round($productionCostRatio, 2) . "%";
+            $qtyString = '[' . implode('+', $qtyPartsText) . ']';
+            $salesString = '[' . implode(' +', $salesPartsText) . ']';
+            $intermediateNumeratorString = '{' . implode('+ ', $intermediateNumeratorParts) . '}';
+
+            $formulaFormatted = "{$numeratorString}\n"
+                . "/ { {$qtyString} (quantité respective vendu) X {{$salesString} (somme des prix de vente de vente respectif X les ponderations respective de chaque vente)\n"
+                . "/{$qtyString} (somme ponderations respective de chaque vente)}} x 100%\n\n"
+                . "= {$intermediateNumeratorString}/ {{$totalQuantity}X ({$totalDenominatorWeightedSum}/{$totalQuantity})} x 100%\n"
+                . "={$totalNumerator}/{$denominatorFinal} x 100%";
 
             return response()->json([
                 'status' => 'success',
@@ -169,7 +191,7 @@ class OthersReportsController extends Controller
                     'margin_percentage'                => round($marginRatio, 2),
                     'menu_composition_items'           => [],
                     'items_details'                    => $itemsDetails,
-                    'formula_breakdown'                => $formulaFormatted,
+                    'formula_breakdown'                => $formulaFormatted, // La nouvelle formule est intégrée ici
                 ]
             ]);
 

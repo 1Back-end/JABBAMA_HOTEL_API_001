@@ -34,7 +34,15 @@ class StatisticsController extends Controller
         $start_date = $request->input('start_date');
         $end_date   = $request->input('end_date');
 
-        // 🔹 Base query : seulement les commandes externes
+        if ($start_date) {
+            $start_date = date('Y-m-d 00:00:00', strtotime($start_date));
+        }
+
+        if ($end_date) {
+            $end_date = date('Y-m-d 23:59:59', strtotime($end_date));
+        }
+
+
         $products = \App\Models\SupplyItem::query()
             ->join('supplies as s', 'supply_items.supply_uuid', '=', 's.uuid')
             ->join('purchase_orders as po', 's.purchase_order_uuid', '=', 'po.uuid')
@@ -53,26 +61,21 @@ class StatisticsController extends Controller
             ->groupBy('p.uuid')
             ->get();
 
-        // 🔹 Ajouter l'URL de l'image
         $products->transform(function ($p) {
             $productModel = \App\Models\Product::find($p->uuid);
             $p->image_url = $productModel?->getProductImageAttribute();
             return $p;
         });
 
-        // 🔥 Classement GLOBAL + rank réel
         $rankedProducts = $products
             ->sortByDesc('frequency')
             ->values()
             ->map(function ($item, $index) {
-                $item->rank = $index + 1; // rang réel en base
+                $item->rank = $index + 1;
                 return $item;
             });
 
-        // 🔝 Top 3
         $top = $rankedProducts->take(3)->values();
-
-        // 🔻 Bottom 3 (les derniers du classement global)
         $bottom = $rankedProducts
             ->reverse()
             ->take(3)
@@ -683,8 +686,13 @@ class StatisticsController extends Controller
             'end_date'   => 'nullable|date',
         ]);
 
-        $startDate = $request->start_date ? Carbon::parse($request->start_date)->startOfDay() : now()->startOfDay();
-        $endDate   = $request->end_date   ? Carbon::parse($request->end_date)->endOfDay()   : now()->endOfDay();
+        $startDate = $request->start_date
+            ? Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay()
+            : now()->startOfDay();
+
+        $endDate   = $request->end_date
+            ? Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay()
+            : now()->endOfDay();
 
         $productName = DB::table('produits')
             ->where('uuid', $productUuid)
@@ -751,16 +759,14 @@ class StatisticsController extends Controller
             'warehouse_uuid' => 'nullable|exists:warehouses,uuid',
         ]);
 
-        // 📅 Période
-        $endDate = $request->end_date
-            ? Carbon::parse($request->end_date)->endOfDay()
+        $startDate = $request->start_date
+            ? Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay()
+            : now()->startOfDay();
+
+        $endDate   = $request->end_date
+            ? Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay()
             : now()->endOfDay();
 
-        $startDate = $request->start_date
-            ? Carbon::parse($request->start_date)->startOfDay()
-            : $endDate->copy()->subMonth()->startOfDay();
-
-        // 🏷️ Produit
         $productName = DB::table('produits')
             ->where('uuid', $productUuid)
             ->value('name') ?? 'Inconnu';
@@ -768,30 +774,20 @@ class StatisticsController extends Controller
         $warehouseUuid = $request->warehouse_uuid;
         $warehouseName = 'Tous';
         $points = collect();
-
-        /**
-         * ==========================================
-         * 🔹 CAS 1 : AUCUN ENTREPÔT
-         * → déductions de tous les entrepôts
-         *   SAUF l’entrepôt principal
-         * ==========================================
-         */
         if (!$warehouseUuid) {
 
-            // 🔴 Déductions de stock (entrepôts secondaires)
             $deductions = DB::table('stocks_deductions_items as sdi')
                 ->join('stocks_deductions as sd', 'sd.uuid', '=', 'sdi.stocks_deduction_uuid')
                 ->join('warehouses as w', 'w.uuid', '=', 'sd.warehouse_uuid')
                 ->where('sdi.product_uuid', $productUuid)
                 ->where('sd.status', 'validated')
                 ->where('w.is_primary', false)
-                ->whereNull('sdi.deleted_at') // exclut les items supprimés
+                ->whereNull('sdi.deleted_at')
                 ->whereBetween('sd.created_at', [$startDate, $endDate])
                 ->selectRaw('DATE(sd.created_at) as day, SUM(sdi.quantity) as value')
                 ->groupByRaw('DATE(sd.created_at)')
-                ->pluck('value', 'day'); // [jour => valeur]
+                ->pluck('value', 'day');
 
-            // 🔴 Régularisations (AVARIE uniquement)
             $adjustments = DB::table('stock_adjustments_items as sai')
                 ->join('stock_adjustments as sa', 'sa.uuid', '=', 'sai.stock_adjustment_uuid')
                 ->join('warehouses as w', 'w.uuid', '=', 'sa.warehouse_uuid')
@@ -799,15 +795,13 @@ class StatisticsController extends Controller
                 ->where('sa.action', 1)
                 ->where('sa.status', 'validated')
                 ->where('w.is_primary', false)
-                ->whereNull('sai.deleted_at') // exclut les items supprimés
+                ->whereNull('sai.deleted_at')
                 ->whereBetween('sa.created_at', [$startDate, $endDate])
                 ->selectRaw('DATE(sa.created_at) as day, SUM(sai.quantity) as value')
                 ->groupByRaw('DATE(sa.created_at)')
-                ->pluck('value', 'day'); // [jour => valeur]
-
-        // 🔹 Fusionner + sommer par jour
+                ->pluck('value', 'day');
             $points = collect($deductions)
-                ->union($adjustments) // fusion des clés uniques
+                ->union($adjustments)
                 ->mapWithKeys(function ($value, $day) use ($deductions, $adjustments) {
                     $deductionValue = $deductions[$day] ?? 0;
                     $adjustmentValue = $adjustments[$day] ?? 0;
@@ -817,17 +811,11 @@ class StatisticsController extends Controller
                 ->values();
 
         }
-        /**
-         * ==========================================
-         * 🔹 CAS 2 : ENTREPÔT SPÉCIFIQUE
-         * ==========================================
-         */
         else {
 
             $warehouse = DB::table('warehouses')->where('uuid', $warehouseUuid)->first();
             $warehouseName = $warehouse->name ?? 'Inconnu';
 
-            // 🟢 ENTREPÔT PRINCIPAL → approvisionnements
             if ($warehouse && $warehouse->is_primary) {
 
                 $points = DB::table('supply_items as si')
@@ -855,7 +843,6 @@ class StatisticsController extends Controller
                     ]);
             }
 
-            // 🔴 ENTREPÔT SECONDAIRE → déductions
             else {
 
                 $deductions = DB::table('stocks_deductions_items as sdi')
@@ -863,29 +850,27 @@ class StatisticsController extends Controller
                     ->where('sdi.product_uuid', $productUuid)
                     ->where('sd.warehouse_uuid', $warehouseUuid)
                     ->where('sd.status', 'validated')
-                    ->whereNull('sdi.deleted_at') // <-- ici, on exclut les items supprimés
+                    ->whereNull('sdi.deleted_at')
                     ->whereBetween('sd.created_at', [$startDate, $endDate])
                     ->selectRaw('DATE(sd.created_at) as day, SUM(sdi.quantity) as value')
                     ->groupByRaw('DATE(sd.created_at)')
-                    ->pluck('value', 'day'); // retourne [jour => valeur]
+                    ->pluck('value', 'day');
 
-                // 🔴 Avaries (régularisations) par jour
                 $adjustments = DB::table('stock_adjustments_items as sai')
                     ->join('stock_adjustments as sa', 'sa.uuid', '=', 'sai.stock_adjustment_uuid')
                     ->where('sai.product_uuid', $productUuid)
                     ->where('sa.warehouse_uuid', $warehouseUuid)
-                    ->where('sa.action', 1)  // 1 = AVARIE
+                    ->where('sa.action', 1)
                     ->whereNull('sai.deleted_at')
                     ->where('sa.status', 'validated')
                     ->whereBetween('sa.created_at', [$startDate, $endDate])
                     ->selectRaw('DATE(sa.created_at) as day, SUM(sai.quantity) as value')
                     ->groupByRaw('DATE(sa.created_at)')
-                    ->pluck('value', 'day'); // retourne [jour => valeur]
+                    ->pluck('value', 'day');
 
-                // 🔹 Fusionner les deux sources et sommer par jour
                 $points = collect($deductions)
-                    ->merge($adjustments) // fusionne, si même clé (jour) override
-                    ->union($deductions)  // s'assure de récupérer toutes les dates
+                    ->merge($adjustments)
+                    ->union($deductions)
                     ->map(fn ($v, $day) => [
                         'period' => $day,
                         'value'  => (int) (

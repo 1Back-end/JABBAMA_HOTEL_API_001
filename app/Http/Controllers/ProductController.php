@@ -556,15 +556,12 @@ class ProductController extends Controller
                 $folderPath = 'storage/inventory-warehouse/' . $warehouse->uuid;
             }
 
-            // ==========================
-            // ✅ CAS 2 : TOUS LES ENTREPÔTS
-            // ==========================
             else {
 
                 $product_points = ProductPoint::select(
                     'produit_uuid',
                     DB::raw('SUM(quantity) as quantity'),
-                    DB::raw('MAX(stocks_minimal) as stocks_minimal') // ⚠️ PAS DE SUM
+                    DB::raw('MAX(stocks_minimal) as stocks_minimal')
                 )
                     ->with([
                         'product.unitMeasure',
@@ -587,20 +584,14 @@ class ProductController extends Controller
                 $folderPath = 'storage/inventory-warehouse/all';
             }
 
-            // ==========================
-            // ✅ DOSSIER
-            // ==========================
             if (!is_dir($folderPath)) {
                 mkdir($folderPath, 0755, true);
             }
 
             $filePath = $folderPath . '/' . $fileName;
 
-            // ==========================
-            // ✅ PDF
-            // ==========================
             $data = [
-                'warehouse'      => $warehouse, // null si tous
+                'warehouse'      => $warehouse,
                 'product_points' => $product_points,
             ];
 
@@ -645,7 +636,7 @@ class ProductController extends Controller
             $warehouse_uuid = $warehouse_uuid ?? $request->query('warehouse_uuid');
 
             $end_date = $request->filled('end_date')
-                ? Carbon::parse($request->end_date)->endOfDay()
+                ? Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay()
                 : now()->endOfDay();
 
             $warehouse_uuids = $warehouse_uuid === 'all'
@@ -658,7 +649,6 @@ class ProductController extends Controller
 
             $warehouses = Warehouse::whereIn('uuid', $warehouse_uuids)->get();
 
-            // 1. Approvisionnements Externes (Achats / Fournisseurs) JUSQU'À la date de fin
             $supplies = SupplyItem::whereHas('supply', function($q) use ($end_date, $warehouse_uuids) {
                 $q->whereIn('status', [SupplyStatus::VALIDATED, SupplyStatus::PARTIALLY_VALIDATED])
                     ->where('supply_date', '<=', $end_date)
@@ -669,7 +659,6 @@ class ProductController extends Controller
                 ->groupBy('product_uuid')
                 ->pluck('total', 'product_uuid');
 
-            // 2. Ajustements de stock JUSQU'À la date de fin
             $adjustments = StockAdjustmentItem::whereHas('adjustment', function($q) use ($warehouse_uuids, $end_date) {
                 $q->whereIn('warehouse_uuid', $warehouse_uuids)
                     ->where('status', StocksAdjustmentStatus::VALIDATED->value)
@@ -681,7 +670,6 @@ class ProductController extends Controller
                 ->get()
                 ->groupBy('product_uuid');
 
-            // 3. Déductions de stock JUSQU'À la date de fin
             $deductions = StockDeductionItem::whereHas('stockDeduction', function($q) use ($warehouse_uuids, $end_date) {
                 $q->whereIn('warehouse_uuid', $warehouse_uuids)
                     ->where('status', StocksDeductionsStatus::VALIDATED->value)
@@ -691,7 +679,6 @@ class ProductController extends Controller
                 ->groupBy('product_uuid')
                 ->pluck('total', 'product_uuid');
 
-            // 4. Ventes JUSQU'À la date de fin
             $sales = VirtualOrderMenuRestaurant::whereIn('warehouse_uuid', $warehouse_uuids)
                 ->where('status', MenuOrderStatus::DELIVERED->value)
                 ->where('created_at', '<=', $end_date)
@@ -699,7 +686,6 @@ class ProductController extends Controller
                 ->groupBy('product_uuid')
                 ->pluck('total', 'product_uuid');
 
-            // 5. Compléments JUSQU'À la date de fin
             $complements = ComplementVirtualTemp::whereIn('warehouse_uuid', $warehouse_uuids)
                 ->where('status', MenuOrderStatus::DELIVERED->value)
                 ->where('created_at', '<=', $end_date)
@@ -707,7 +693,6 @@ class ProductController extends Controller
                 ->groupBy('product_uuid')
                 ->pluck('total', 'product_uuid');
 
-            // 6. Transferts internes JUSQU'À la date de fin
             $internalTransfersOut = SupplyItem::whereHas('supply', function($q) use ($end_date, $warehouse_uuids) {
                 $q->whereIn('status', [SupplyStatus::VALIDATED, SupplyStatus::PARTIALLY_VALIDATED])
                     ->where('supply_date', '<=', $end_date)
@@ -745,58 +730,6 @@ class ProductController extends Controller
                 $totalOut = $prodAdjMinus + $prodAvaries + $prodDeducted + $prodSales + $prodComplements;
 
                 $finalQuantity = $totalIn - $totalOut;
-
-                // Traçabilité détaillée avec UUIDs et Codes
-                if ($uuid === '097e016d-5817-4c0e-b763-b535deb7da73') {
-                    \Log::info("==================================================");
-                    \Log::info("🎯 RAPPORT DÉTAILLÉ DU PRODUIT : {$product->name} ({$uuid})");
-                    \Log::info("--------------------------------------------------");
-                    \Log::info("📥 ENTRÉES TOTALES : {$totalIn} (Entrepôt Principal : " . ($isPrimary ? 'OUI' : 'NON') . ")");
-                    \Log::info("   - Approvisionnements Externes : {$prodExternalSupplies}");
-                    \Log::info("   - Approvisionnements Internes : {$prodTransOut}");
-                    \Log::info("   - Ajustements Plus (+): {$prodAdjPlus}");
-                    \Log::info("--------------------------------------------------");
-                    \Log::info("📤 SORTIES TOTALES : {$totalOut}");
-
-                    // --- DÉTAILS DES VENTES ---
-                    \Log::info("   - Ventes (Total : {$prodSales}) :");
-                    $saleDetails = VirtualOrderMenuRestaurant::whereIn('warehouse_uuid', $warehouse_uuids)
-                        ->where('product_uuid', $uuid)
-                        ->where('status', MenuOrderStatus::DELIVERED->value)
-                        ->where('created_at', '<=', $end_date)
-                        ->get();
-
-                    if ($saleDetails->isEmpty()) {
-                        \Log::info("     -> Aucune vente enregistrée.");
-                    } else {
-                        foreach ($saleDetails as $sale) {
-                            \Log::info("       * Vente UUID: {$sale->uuid} | Commande ID/UUID: {$sale->orders_menu_restaurant_uuid} | Qté: {$sale->quantity_reserved} | Date: {$sale->created_at}");
-                        }
-                    }
-
-                    // --- DÉTAILS DES COMPLÉMENTS ---
-                    \Log::info("   - Compléments (Total : {$prodComplements}) :");
-                    $complementDetails = ComplementVirtualTemp::whereIn('warehouse_uuid', $warehouse_uuids)
-                        ->where('product_uuid', $uuid)
-                        ->where('status', 'delivered')
-                        ->where('created_at', '<=', $end_date)
-                        ->get();
-
-                    if ($complementDetails->isEmpty()) {
-                        \Log::info("     -> Aucun complément enregistré.");
-                    } else {
-                        foreach ($complementDetails as $comp) {
-                            \Log::info("       * Complément UUID: {$comp->uuid} | Code: {$comp->code} | Commande Menu UUID: {$comp->order_menu_restaurant_uuid} | Réservation UUID: {$comp->reservation_uuid} | Qté: {$comp->quantity_used} | Date: {$comp->created_at}");
-                        }
-                    }
-
-                    \Log::info("   - Avaries : {$prodAvaries}");
-                    \Log::info("   - Ajustements Moins (-): {$prodAdjMinus}");
-                    \Log::info("   - Déductions de stock : {$prodDeducted}");
-                    \Log::info("--------------------------------------------------");
-                    \Log::info("📦 STOCK FINAL CALCULÉ : {$finalQuantity}");
-                    \Log::info("==================================================");
-                }
 
                 return (object)[
                     'produit_uuid' => $uuid,
