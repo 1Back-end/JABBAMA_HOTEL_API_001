@@ -2669,8 +2669,9 @@ class OrderMenuRestaurantController extends Controller
             } else {
                 $unitPrice = floatval($compItem->product->purchase_cost ?? 0);
             }
+            $quantityUsed = floatval($compItem->quantity_used ?? 0);
 
-            $compositionItemsCost += $unitPrice;
+            $compositionItemsCost += ($unitPrice * $quantityUsed);
         }
 
         $snapshotAdditionalCost = floatval($menu->additional_cost ?? 0);

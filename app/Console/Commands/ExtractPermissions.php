@@ -649,6 +649,16 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des encaissements',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],
+        'view_access_for_reports_restaurant' => [
+            'description' => 'Accéder au menu des rapports des rapports et statistiques du restaurant',
+            'category' => 'Permissions supplémentaires',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
+        'view_access_for_setting_restaurant' => [
+                'description' => 'Accéder au menu du paramétrage de la fiche de caisse du restaurant',
+            'category' => 'Permissions supplémentaires',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
 
     ];
 

@@ -413,7 +413,7 @@ class ConfigurationsComplementController extends Controller
     }
 
 
-    public function getCompositionByComplementUuid(string $commplements_restaurant_uuid)
+    public function   getCompositionByComplementUuid(string $commplements_restaurant_uuid)
     {
         $composition = ComplementComposition::with([
             'complement',
@@ -443,7 +443,7 @@ class ConfigurationsComplementController extends Controller
     /**
      * Display a listing of the resource.
      * @permission ConfigurationsComplementController::upsert
-     * @permission_desc Effectuer la confection des compléments
+     * @permission_desc Effectuer la confection des compléments et boissons
      */
     public function upsert(Request $request, string $commplements_restaurant_uuid)
     {
@@ -454,9 +454,17 @@ class ConfigurationsComplementController extends Controller
             'items.*.quantity_used' => 'required_with:items|numeric|min:0',
             'items.*.is_optional'   => 'nullable|boolean',
             'additional_cost'       => 'nullable|numeric|min:0',
+            'password'              => 'required|string',
         ]);
 
         $auth = auth()->user();
+
+        if (!\Illuminate\Support\Facades\Hash::check($request->password, $auth->password)) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Le mot de passe fourni est incorrect.',
+            ], 422);
+        }
 
         $items = $request->items ?? [];
         $hasItemsNow = count($items) > 0;
