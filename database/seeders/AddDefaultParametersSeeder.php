@@ -18,20 +18,24 @@ class AddDefaultParametersSeeder extends Seeder
                 'description' => "Durée (en minutes) avant déconnexion automatique d'un utilisateur sur l'interface de facturation",
                 'value' => '15',
             ],
+            [
+                'key' => 'show_decisional_notifications',
+                'description' => "Activer ou désactiver l'affichage des notifications décisionnelles (true/false)",
+                'value' => 'false',
+            ],
         ];
 
-        $userId = User::first()?->id; // Utilisateur par défaut
+        $userId = User::first()?->id;
 
         foreach ($defaultSettings as $setting) {
             SettingRestaurant::updateOrCreate(
-                ['key' => $setting['key']], // clé unique
+                ['key' => $setting['key']],
                 [
                     'description' => $setting['description'],
                     'value' => $setting['value'],
                     'is_active' => true,
                     'created_by' => $userId,
                     'updated_by' => $userId,
-                    // code sera généré automatiquement via le boot() du modèle
                 ]
             );
         }
