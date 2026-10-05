@@ -23,7 +23,7 @@ enum TableCategoryEnum: string
             self::CONFIGURATION => 'Configuration et Paramétrage',
             self::CATALOG => 'Catalogue & Articles',
             self::SALES => 'Ventes et commandes restaurant',
-            self::STOCK => 'Stock et Approvisionnement',
+            self::STOCK => 'Stocks et Approvisionnements',
             self::FINANCE => 'Finances',
             self::AUDIT => 'Audit & Traçabilité',
             self::UNCATEGORIZED => 'Non catégorisé',

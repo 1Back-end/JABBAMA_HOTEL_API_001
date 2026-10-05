@@ -11,7 +11,6 @@ class AddDefaultParametersSeeder extends Seeder
 {
     public function run(): void
     {
-        // 🔹 Paramètres par défaut
         $defaultSettings = [
             [
                 'key' => 'logout_period',

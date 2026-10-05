@@ -5,6 +5,9 @@ namespace App\Http\Controllers;
 use App\Enums\TableCategoryEnum;
 use App\Models\DatabaseTableMetadata;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
 
 class DatabaseTableMetadataController extends Controller
 {
@@ -54,7 +57,54 @@ class DatabaseTableMetadataController extends Controller
      */
     public function store(Request $request)
     {
-        //
+        $request->validate([
+            'password' => ['required', 'string'],
+        ]);
+
+        $user = $request->user();
+        if (!Hash::check($request->password, $user->password)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Mot de passe incorrect. Action non autorisée.',
+            ], 403);
+        }
+
+        try {
+            DB::beginTransaction();
+            $tables = Schema::getTables();
+
+            foreach ($tables as $table) {
+                $tableName = $table['name'] ?? $table;
+
+                if (in_array($tableName, ['migrations', 'database_table_metadata'])) {
+                    continue;
+                }
+
+                DatabaseTableMetadata::firstOrCreate(
+                    ['table_name' => $tableName],
+                    [
+                        'category' => TableCategoryEnum::UNCATEGORIZED->value,
+                        'display_name' => ucfirst(str_replace('_', ' ', $tableName)),
+                        'description' => 'Description par défaut pour ' . $tableName,
+                    ]
+                );
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Registre des tables synchronisé avec succès sous Laravel 13.',
+            ], 200);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Une erreur est survenue lors de la synchronisation : ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     /**

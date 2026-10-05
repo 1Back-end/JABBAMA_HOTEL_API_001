@@ -62,6 +62,16 @@ class DatabaseTablesMetadataSeeder extends Seeder
                 'display_name' => 'Jetons d’Accès (API & Sessions)',
                 'description' => 'Jetons d’authentification sécurisés (Sanctum).',
             ],
+            'jobs' => [
+                'category' => TableCategoryEnum::SYSTEM,
+                'display_name' => 'Tâches Asynchrones (Jobs)',
+                'description' => 'Gère la file d\'attente et le suivi des tâches de fond et des traitements asynchrones de l\'application.',
+            ],
+            'countries' => [
+                'category' => TableCategoryEnum::SYSTEM,
+                'display_name' => 'Pays',
+                'description' => 'Gère la liste de référence des pays et leurs informations géographiques ou administratives associées.',
+            ],
             'units' => [
                 'category' => TableCategoryEnum::CONFIGURATION,
                 'display_name' => 'Unités de Mesure',
@@ -197,6 +207,11 @@ class DatabaseTablesMetadataSeeder extends Seeder
                 'display_name' => 'Éléments de Confection de Boissons',
                 'description' => 'Gère les articles inclus dans la confection de boissons.',
             ],
+            'medias' => [
+                'category' => TableCategoryEnum::CONFIGURATION,
+                'display_name' => 'Fichiers Multimédias',
+                'description' => 'Gère le stockage, le lien et la traçabilité des fichiers multimédias, images et pièces jointes.',
+            ],
             'complement_virtual_temps' => [
                 'category' => TableCategoryEnum::SALES,
                 'display_name' => 'Réservation Virtuelle de Compléments',
@@ -211,6 +226,21 @@ class DatabaseTablesMetadataSeeder extends Seeder
                 'category' => TableCategoryEnum::SALES,
                 'display_name' => 'Réservation Virtuelle de Boissons',
                 'description' => 'Gère la réservation temporaire des boissons aux commandes du restaurant.',
+            ],
+            'last_status_items_menus_restaurants' => [
+                'category' => TableCategoryEnum::SALES,
+                'display_name' => 'Dernier Statut des Menus (Restaurants)',
+                'description' => 'Gère le suivi et l\'état du dernier statut de chaque élément de menu pour les commandes en restaurant.',
+            ],
+            'last_status_drinks_menus_restaurants' => [
+                'category' => TableCategoryEnum::SALES,
+                'display_name' => 'Dernier Statut des Boissons (Restaurants)',
+                'description' => 'Gère le suivi et l\'état du dernier statut des boissons pour chaque commande de restaurant.',
+            ],
+            'client_allocations' => [
+                'category' => TableCategoryEnum::SALES,
+                'display_name' => 'Allocation des Arrhes (Clients)',
+                'description' => 'Gère le regroupement, l\'affectation et le suivi des arrhes et acomptes versés par les clients.',
             ],
             'menu_restaurant_complements' => [
                 'category' => TableCategoryEnum::SALES,
@@ -272,10 +302,126 @@ class DatabaseTablesMetadataSeeder extends Seeder
                 'display_name' => 'Boissons des Commandes',
                 'description' => 'Gère les boissons associées à chaque commande du restaurant.',
             ],
+            'virtual_orders_menu_restaurants' => [
+                'category' => TableCategoryEnum::SALES,
+                'display_name' => 'Commandes Virtuelles & Menus (Restaurants)',
+                'description' => 'Gère les menus et les commandes virtuelles liés aux restaurants ou points de restauration.',
+            ],
+            'statistics_orders_status_menus_restaurants' => [
+                'category' => TableCategoryEnum::SALES,
+                'display_name' => 'Statistiques des Commandes & Menus (Restaurants)',
+                'description' => 'Gère les statistiques et le suivi du traitement des menus de chaque commande dans les restaurants.',
+            ],
+            'statistics_orders_status_drinks' => [
+                'category' => TableCategoryEnum::SALES,
+                'display_name' => 'Statistiques des Commandes & Boissons',
+                'description' => 'Gère les statistiques et le suivi du traitement des boissons pour chaque commande.',
+            ],
+            'refund_histories' => [
+                'category' => TableCategoryEnum::SALES,
+                'display_name' => 'Historique des Remboursements (Arrhes)',
+                'description' => 'Gère l\'historique et le suivi des remboursements d\'arrhes et d\'acomptes.',
+            ],
+
             'purchase_orders' => [
                 'category' => TableCategoryEnum::STOCK,
                 'display_name' => 'Commandes d\'Achat',
                 'description' => 'Gère les commandes d\'achat pour la gestion des stocks et des approvisionnements.',
+            ],
+            'nature_warehouse' => [
+                'category' => TableCategoryEnum::STOCK,
+                'display_name' => 'Nature des Entrepôts',
+                'description' => 'Gère les différents types et classifications des entrepôts et points de stockage.',
+            ],
+            'purchase_orders_decisional_notifications' => [
+                'category' => TableCategoryEnum::STOCK,
+                'display_name' => 'Notifications Décisionnelles - Commandes d\'Achat',
+                'description' => 'Gère les notifications décisionnelles liées aux commandes d\'achat.',
+            ],
+            'purchase_orders_notifications' => [
+                'category' => TableCategoryEnum::STOCK,
+                'display_name' => 'Notifications - Commandes d\'Achat',
+                'description' => 'Gère les notifications relatives aux commandes d\'achat pour le poste opérationnel.',
+            ],
+            'purchase_order_items' => [
+                'category' => TableCategoryEnum::STOCK,
+                'display_name' => 'Lignes de Commandes d\'Achat',
+                'description' => 'Gère les articles et les détails des lignes composant les commandes d\'achat.',
+            ],
+            'supplies' => [
+                'category' => TableCategoryEnum::STOCK,
+                'display_name' => 'Approvisionnements',
+                'description' => 'Gère les approvisionnements et les entrées de stock.',
+            ],
+            'supply_invoices' => [
+                'category' => TableCategoryEnum::STOCK,
+                'display_name' => 'Factures d\'Approvisionnement',
+                'description' => 'Gère les factures liées aux approvisionnements et aux commandes d\'achat.',
+            ],
+            'supply_items' => [
+                'category' => TableCategoryEnum::STOCK,
+                'display_name' => 'Lignes d\'Approvisionnement',
+                'description' => 'Gère les articles, quantités et détails composant chaque approvisionnement.',
+            ],
+            'suppliers' => [
+                'category' => TableCategoryEnum::STOCK,
+                'display_name' => 'Fournisseurs',
+                'description' => 'Gère la liste des fournisseurs et leurs informations de contact.',
+            ],
+            'stocks_deductions' => [
+                'category' => TableCategoryEnum::STOCK,
+                'display_name' => 'Déductions de Stocks',
+                'description' => 'Gère les déductions et sorties de stocks.',
+            ],
+            'stocks_deductions_items' => [
+                'category' => TableCategoryEnum::STOCK,
+                'display_name' => 'Lignes de Déductions de Stocks',
+                'description' => 'Gère les articles, quantités et détails composant chaque déduction ou sortie de stock.',
+            ],
+            'stock_adjustments' => [
+                'category' => TableCategoryEnum::STOCK,
+                'display_name' => 'Régularisations de Stocks',
+                'description' => 'Gère les régularisations, corrections et ajustements d\'inventaire des stocks.',
+            ],
+            'stock_adjustments_items' => [
+                'category' => TableCategoryEnum::STOCK,
+                'display_name' => 'Lignes de Régularisations de Stocks',
+                'description' => 'Gère les articles, quantités et détails composant chaque régularisation ou ajustement d\'inventaire.',
+            ],
+            'passations' => [
+                'category' => TableCategoryEnum::STOCK,
+                'display_name' => 'Passations de Stocks',
+                'description' => 'Gère les passations et transferts de stocks entre entités ou services.',
+            ],
+            'passation_items' => [
+                'category' => TableCategoryEnum::STOCK,
+                'display_name' => 'Lignes de Passations de Stocks',
+                'description' => 'Gère les articles, quantités et détails composant chaque passation ou transfert de stock.',
+            ],
+            'passation_managers' => [
+                'category' => TableCategoryEnum::STOCK,
+                'display_name' => 'Gestionnaires de Passations',
+                'description' => 'Gère les responsables et validateurs associés aux passations et transferts de stocks.',
+            ],
+            'produits' => [
+                'category' => TableCategoryEnum::STOCK,
+                'display_name' => 'Produits',
+                'description' => 'Gère la liste des produits, articles et leur catalogue pour la gestion des stocks.',
+            ],
+            'produit_point' => [
+                'category' => TableCategoryEnum::STOCK,
+                'display_name' => 'Produits par Entrepôt / Point',
+                'description' => 'Gère les stocks et la disponibilité des produits pour chaque entrepôt ou point de vente.',
+            ],
+            'warehouses' => [
+                'category' => TableCategoryEnum::STOCK,
+                'display_name' => 'Entrepôts',
+                'description' => 'Gère la liste des entrepôts et des différents points de stockage.',
+            ],
+            'swarehouse_managers' => [
+                'category' => TableCategoryEnum::STOCK,
+                'display_name' => 'Gestionnaires d\'Entrepôts',
+                'description' => 'Gère les responsables et gestionnaires associés aux différents entrepôts et points de stockage.',
             ],
             'payments' => [
                 'category' => TableCategoryEnum::FINANCE,

@@ -81,7 +81,8 @@ class OrderMenuRestaurant extends Model
         'price_for_room_service',
         'is_room_service',
         'quantity_for_room_service',
-        'room_service_type'
+        'room_service_type',
+        'is_used_restaurant_rooms'
     ];
 
     /**
