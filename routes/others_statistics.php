@@ -1,3 +1,5 @@
 <?php
 use Illuminate\Support\Facades\Route;
-Route::apiResource('others_statistics', \App\Http\Controllers\OthersStatisticsController::class);
+Route::get('/restaurant/statistics/menus', [\App\Http\Controllers\OthersStatisticsController::class, 'menusIndex']);
+Route::get('/restaurant/statistics/drinks', [\App\Http\Controllers\OthersStatisticsController::class, 'drinksIndex']);
+Route::get('/restaurant/menus/top_selling', [\App\Http\Controllers\OthersStatisticsController::class, 'topSellingItemsIndex']);

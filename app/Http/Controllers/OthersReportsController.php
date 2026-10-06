@@ -26,12 +26,6 @@ class OthersReportsController extends Controller
             $startDate = Carbon::createFromFormat('d-m-Y', $startDateInput)->startOfDay()->toDateTimeString();
             $endDate = Carbon::createFromFormat('d-m-Y', $endDateInput)->endOfDay()->toDateTimeString();
 
-            Log::info('[Menu Cost Analysis] Début de l’analyse', [
-                'menu_uuid'  => $menuRestaurantUuid,
-                'start_date' => $startDate,
-                'end_date'   => $endDate,
-            ]);
-
             $items = OrderMenuRestaurantItem::with(['order', 'menu', 'complements.complement'])
                 ->where('menus_restaurant_uuid', $menuRestaurantUuid)
                 ->where('status', \App\Enums\OrderMenuRestaurantItemStatus::DELIVERED->value)
@@ -41,16 +35,11 @@ class OthersReportsController extends Controller
                 })
                 ->get();
 
-            Log::info('[Menu Cost Analysis] Nombre d’items trouvés avec les filtres', [
-                'count' => $items->count()
-            ]);
-
             $totalNumerator = 0;
             $totalDenominatorWeightedSum = 0;
             $totalQuantity = 0;
             $itemsDetails = [];
 
-            // Nouveaux tableaux pour stocker les parties exactes de la formule
             $numeratorPartsText = [];
             $salesPartsText = [];
             $qtyPartsText = [];
@@ -59,14 +48,6 @@ class OthersReportsController extends Controller
             foreach ($items as $item) {
                 $quantitySold = $item->quantity_exactly ?? $item->quantity ?? 0;
                 $unitSellingPrice = $item->unit_price ?? 0;
-
-                Log::info('[Menu Cost Analysis] Examen d’un item', [
-                    'item_uuid'          => $item->uuid ?? null,
-                    'quantity_sold'      => $quantitySold,
-                    'unit_selling_price' => $unitSellingPrice,
-                    'order_status'       => $item->order->status ?? 'inconnu',
-                    'order_date'         => $item->order->order_menu_restaurant_date ?? 'inconnu',
-                ]);
 
                 if ($quantitySold <= 0 || $unitSellingPrice <= 0) {
                     Log::warning('[Menu Cost Analysis] Item ignoré (quantité ou prix <= 0)', [
@@ -101,12 +82,10 @@ class OthersReportsController extends Controller
                 $menuName = $item->menu->name ?? 'Menu Inconnu';
                 $compNames = collect($complementsList)->pluck('name')->implode(', ');
 
-                // Construction textuelle pour les compléments
                 $compText = $complementsProductionCost > 0
                     ? "+ {$complementsProductionCost} (prix de production du complement {$compNames})"
                     : "";
 
-                // --- Enregistrement des éléments pour la formule ---
                 $numeratorPartsText[] = "{$quantitySold}x [{$menuProductionCost} (prix de production du menu {$menuName}){$compText}](fact#{$orderCode})";
                 $salesPartsText[] = "{$unitSellingPrice}x{$quantitySold}";
                 $qtyPartsText[] = $quantitySold;
@@ -128,11 +107,6 @@ class OthersReportsController extends Controller
                 ];
             }
 
-            Log::info('[Menu Cost Analysis] Résultats finaux avant calcul des ratios', [
-                'total_quantity'               => $totalQuantity,
-                'total_numerator'              => $totalNumerator,
-                'total_weighted_denominator'   => $totalDenominatorWeightedSum,
-            ]);
 
             if ($totalQuantity <= 0 || $totalDenominatorWeightedSum <= 0) {
                 return response()->json([
@@ -191,7 +165,7 @@ class OthersReportsController extends Controller
                     'margin_percentage'                => round($marginRatio, 2),
                     'menu_composition_items'           => [],
                     'items_details'                    => $itemsDetails,
-                    'formula_breakdown'                => $formulaFormatted, // La nouvelle formule est intégrée ici
+                    'formula_breakdown'                => $formulaFormatted,
                 ]
             ]);
 
