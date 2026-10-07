@@ -118,7 +118,7 @@ class DataController extends Controller
                     ]);
 
                 $formattedDrinks = $order->drinks->map(fn($drink) => [
-                    'menu' => $drink->drinkConfig?->product?->name ?? 'Boisson',
+                    'menu' => $drink->drinkConfig?->display_name ?? 'Boisson',
                     'quantity' => $drink->quantity_exactly,
                     'unit_price' => $drink->unit_price,
                     'total_price' => $drink->total_price,
@@ -323,7 +323,7 @@ class DataController extends Controller
 
                 $formattedDrinks = $order->drinks->map(function ($drink) {
                     return [
-                        'menu' => $drink->drinkConfig && $drink->drinkConfig->product ? $drink->drinkConfig->product->name : 'Boisson',
+                        'menu' => $drink->drinkConfig?->display_name ?? 'Boisson',
                         'quantity' => $drink->quantity_exactly,
                         'unit_price' => $drink->unit_price,
                         'total_price' => $drink->total_price,

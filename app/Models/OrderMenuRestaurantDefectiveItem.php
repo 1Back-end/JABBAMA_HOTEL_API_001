@@ -14,7 +14,7 @@ class OrderMenuRestaurantDefectiveItem extends Model
 
     protected $primaryKey = 'uuid';
     public $incrementing = false;
-    protected $keyType = 'string';
+    protected$keyType = 'string';
 
     protected $fillable = [
         'uuid',
@@ -41,12 +41,12 @@ class OrderMenuRestaurantDefectiveItem extends Model
 
     public function item()
     {
-        return $this->belongsTo(OrderMenuRestaurantItem::class, 'order_menu_restaurant_item_uuid');
+        return $this->belongsTo(OrderMenuRestaurantItem::class, 'order_menu_restaurant_item_uuid', 'uuid');
     }
 
     public function order()
     {
-        return $this->belongsTo(OrderMenuRestaurant::class, 'order_menu_restaurant_uuid');
+        return $this->belongsTo(OrderMenuRestaurant::class, 'order_menu_restaurant_uuid', 'uuid');
     }
 
     public function creator()

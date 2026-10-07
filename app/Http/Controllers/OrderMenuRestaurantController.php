@@ -6078,6 +6078,18 @@ class OrderMenuRestaurantController extends Controller
         if ($request->filled('menu_restaurant_uuid')) {
             $query->where('menu_restaurant_uuid', $request->menu_restaurant_uuid);
         }
+        if ($request->filled('hosted_client')) {
+            if ($request->hosted_client === 'yes') {
+                $query->where('is_used_restaurant_rooms', true)
+                    ->whereNotNull('restaurant_room_uuid');
+            } elseif ($request->hosted_client === 'no') {
+                $query->where(function($q) {
+                    $q->where('is_used_restaurant_rooms', false)
+                        ->orWhereNull('restaurant_room_uuid');
+                });
+            }
+        }
+
         if ($request->filled('restaurant_room_uuid')) {
             $query->where('restaurant_room_uuid', $request->restaurant_room_uuid);
         }
@@ -6199,6 +6211,7 @@ class OrderMenuRestaurantController extends Controller
                 'updater:id,nom_utilisateur',
                 'validator:id,nom_utilisateur',
                 'cancelor:id,nom_utilisateur',
+                'restaurant_room:uuid,code,rooms_number',
                 'partners_restaurant:uuid,code,full_name,amount_allocated,amount_allocated_total',
                 'restaurant_room:uuid,code,type,rooms_number',
                 'menu_restaurant:uuid,code,name',

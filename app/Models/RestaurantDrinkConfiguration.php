@@ -39,7 +39,7 @@ class RestaurantDrinkConfiguration extends Model
         'quantity'
     ];
 
-    protected $appends = ['product_image'];
+    protected $appends = ['product_image','display_name'];
 
     protected $casts = [
         'prices_for_clients_debtor' => 'array',
@@ -51,6 +51,11 @@ class RestaurantDrinkConfiguration extends Model
         'is_finished_product' => 'boolean',
         'is_transformable_product' => 'boolean',
     ];
+
+    public function getDisplayNameAttribute(): string
+    {
+        return $this->product?->name ?? $this->drink_name ?? 'Boisson';
+    }
 
     public static function generateCode(): string
     {
