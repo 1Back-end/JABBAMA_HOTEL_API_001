@@ -659,6 +659,11 @@ class ExtractPermissions extends Command
             'category' => 'Permissions supplémentaires',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],
+        'view_access_for_sales_restaurant' => [
+            'description' => 'Accéder au menu de facturation du restaurant',
+            'category' => 'Permissions supplémentaires',
+            'modules' => ['Gestion du restaurant', 'Autres Modules'],
+        ],
 
     ];
 
