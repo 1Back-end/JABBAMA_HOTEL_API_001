@@ -8,9 +8,11 @@ use App\Models\ConfigurationsComplement;
 use App\Models\OrderMenuRestaurant;
 use App\Models\OrderMenuRestaurantDefectiveItem;
 use App\Models\OrderMenuRestaurantItem;
+use App\Models\OrderMenuRestaurantItemComplement;
 use App\Models\OrderRestaurantDrink;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class OthersStatisticsController extends Controller
 {
@@ -236,7 +238,7 @@ class OthersStatisticsController extends Controller
             ->sortByDesc('total_quantity')
             ->values();
 
-        // 2. Boissons classiques (filtrées par type de client de la commande parente)
+        // 2. Boissons classiques
         $allTopDrinks = OrderRestaurantDrink::whereBetween('created_at', [$startDate, $endDate])
             ->whereNotNull('drink_restaurant_uuid')
             ->whereHas('order', function ($query) {
@@ -266,7 +268,7 @@ class OthersStatisticsController extends Controller
             ->sortByDesc('total_quantity')
             ->values();
 
-        // 3. Compléments et Boissons issus des compléments
+        // 3. Compléments et Boissons issus des compléments (via OrderMenuRestaurantItem)
         $complementItems = OrderMenuRestaurantItem::whereBetween('created_at', [$startDate, $endDate])
             ->whereNotNull('menus_restaurant_uuid')
             ->whereHas('menu', function ($query) {
@@ -312,8 +314,50 @@ class OthersStatisticsController extends Controller
             }
         }
 
+        // 4. Compléments issus de la table orders_items_complements (basé sur configuration_complement_uuid)
+        $tableComplements = OrderMenuRestaurantItemComplement::whereBetween('created_at', [$startDate, $endDate])
+            ->whereNotNull('configuration_complement_uuid')
+            ->whereHas('order', function ($query) {
+                $query->whereIn('type_clients_for_payment', [
+                    TypeClientsForPaiment::DEBTOR->value,
+                    TypeClientsForPaiment::PARTNER->value
+                ]);
+            })
+            ->with(['complement'])
+            ->get()
+            ->groupBy('configuration_complement_uuid');
+
+        foreach ($tableComplements as $configUuid => $complements) {
+            $firstComp = $complements->first();
+            $complementConfig = $firstComp->complement; // Instance de ConfigurationsComplement
+
+            $totalQuantity = (int) $complements->sum('quantity');
+            $totalRevenue = 0.0; // Ajustez si un calcul de prix unitaire est nécessaire
+
+            if ($totalQuantity > 0) {
+                $complementsList->push([
+                    'uuid' => $configUuid,
+                    'name' => $complementConfig ? $complementConfig->name : '',
+                    'code' => $complementConfig ? $complementConfig->code : null,
+                    'total_quantity' => $totalQuantity,
+                    'total_revenue' => $totalRevenue,
+                ]);
+            }
+        }
+
+        // Fusion et nettoyage final des doublons potentiels sur top_complements
         $allTopComplements = $complementsList
-            ->filter(fn($item) => $item['total_quantity'] > 0 && $item['total_revenue'] > 0)
+            ->groupBy('uuid')
+            ->map(function ($group) {
+                return [
+                    'uuid' => $group->first()['uuid'],
+                    'name' => $group->first()['name'],
+                    'code' => $group->first()['code'],
+                    'total_quantity' => $group->sum('total_quantity'),
+                    'total_revenue' => $group->sum('total_revenue'),
+                ];
+            })
+            ->filter(fn($item) => $item['total_quantity'] > 0)
             ->sortByDesc('total_quantity')
             ->values();
 
@@ -343,31 +387,95 @@ class OthersStatisticsController extends Controller
             ? Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay()
             : now()->endOfDay();
 
-        $defectiveItems = OrderMenuRestaurantDefectiveItem::with(['item.menu'])
+        $defectiveItemsQuery = OrderMenuRestaurantDefectiveItem::with([
+            'item' => function ($query) {
+                $query->withTrashed();
+            },
+            'item.menu'
+        ])
             ->whereBetween('created_at', [$startDate, $endDate])
-            ->get()
-            ->filter(function ($defective) {
-                return $defective->item !== null && $defective->item->menu !== null;
+            ->when($request->filled('created_by'), function ($query) use ($request) {
+                $query->where('created_by', $request->input('created_by'));
+            })
+            ->when($request->filled('user_id'), function ($query) use ($request) {
+                $query->where('created_by', $request->input('user_id'));
             });
+
+        $defectiveItems = $defectiveItemsQuery->get()->filter(function ($defective) {
+            return $defective->item !== null && $defective->item->menu !== null;
+        });
+
+        if ($defectiveItems->isEmpty()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Statistiques des pertes (menus défectueux) récupérées avec succès.',
+                'data' => [
+                    'start_date' => $startDate->format('d-m-Y'),
+                    'end_date' => $endDate->format('d-m-Y'),
+                    'top_defective_menus' => []
+                ]
+            ]);
+        }
+
+        $menuUuids = $defectiveItems->map(function ($defective) {
+            return $defective->item->menus_restaurant_uuid;
+        })->unique()->filter()->values();
+
+        $orderedQuery = OrderMenuRestaurantItem::withTrashed()
+            ->whereIn('menus_restaurant_uuid', $menuUuids)
+            ->whereBetween('created_at', [$startDate, $endDate]);
+
+        if ($request->filled('created_by')) {
+            $orderedQuery->where('created_by', $request->input('created_by'));
+        }
+        if ($request->filled('user_id')) {
+            $orderedQuery->where('created_by', $request->input('user_id'));
+        }
+
+        $orderStatsPerMenu = $orderedQuery
+            ->select(
+                'menus_restaurant_uuid',
+                DB::raw('COUNT(*) as total_orders_count'),
+                DB::raw('SUM(quantity_exactly) as total_ordered_quantity')
+            )
+            ->groupBy('menus_restaurant_uuid')
+            ->get()
+            ->keyBy('menus_restaurant_uuid');
 
         $defectiveMenus = $defectiveItems->groupBy(function ($defective) {
             return $defective->item->menus_restaurant_uuid;
-        })->map(function ($group) {
+        })->map(function ($group) use ($orderStatsPerMenu) {
             $first = $group->first();
+            $menuUuid = $first->item->menus_restaurant_uuid;
             $menu = $first->item->menu;
 
-            $totalQuantity = $group->sum('quantity');
-            $totalRevenue = $group->sum(function ($defective) {
-                return $defective->quantity * $defective->item->unit_price;
+            $totalDefectiveQuantity = $group->sum('quantity');
+
+            $totalRevenue = $group->sum(function ($def) {
+                return $def->quantity * ($def->item->unit_price ?? 0);
             });
 
+            $orderStats = $orderStatsPerMenu[$menuUuid] ?? null;
+            $totalTimesOrdered = $orderStats ? (int) $orderStats->total_orders_count : 0;
+
+
+            $currentOrderedQty = $orderStats ? (int) $orderStats->total_ordered_quantity : 0;
+            $totalOrderedQuantity = $currentOrderedQty + $totalDefectiveQuantity;
+
+            $defectiveRatio = $totalOrderedQuantity > 0
+                ? round(($totalDefectiveQuantity / $totalOrderedQuantity) * 100, 2)
+                : 0;
+
             return [
-                'menu_uuid' => $first->item->menus_restaurant_uuid,
+                'menu_uuid' => $menuUuid,
                 'name' => $menu->name,
-                'total_quantity' => $totalQuantity,
-                'total_revenue' => $totalRevenue,
+                'total_times_ordered' => $totalTimesOrdered,
+                'total_ordered_quantity' => $totalOrderedQuantity,
+                'total_defective_quantity' => (int) $totalDefectiveQuantity,
+                'defective_ratio_percentage' => $defectiveRatio . '%',
+                'total_revenue_loss' => $totalRevenue,
             ];
-        })->values()->sortByDesc('total_quantity')->values();
+        })->values()->sortByDesc('total_defective_quantity')->values();
 
         return response()->json([
             'success' => true,

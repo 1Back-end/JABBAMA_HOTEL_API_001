@@ -26,6 +26,7 @@ class OrderMenuRestaurantDefectiveItem extends Model
         'type',
         'created_by',
         'updated_by',
+        'is_deleted'
     ];
 
     protected static function boot()

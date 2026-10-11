@@ -33,19 +33,16 @@ class UserController extends Controller
     public function index(Request $request): JsonResponse
     {
         $users = User::query()
-            // Filtre par rôles si fourni
             ->when($request->input('roles'), function ($query) use ($request) {
                 $query->whereHas('roles', function ($q) use ($request) {
                     $q->whereIn('id', $request->input('roles'));
                 });
             })
-            // Filtre par permissions si fourni
             ->when($request->input('permissions'), function ($query) use ($request) {
                 $query->whereHas('permissions', function ($q) use ($request) {
                     $q->whereIn('id', $request->input('permissions'));
                 });
             })
-            // Filtre par recherche texte
             ->when($request->input('search'), function ($query) use ($request) {
                 $search = $request->input('search');
                 $query->where(function ($q) use ($search) {
@@ -55,11 +52,9 @@ class UserController extends Controller
                         ->orWhere('prenom', 'like', "%{$search}%");
                 });
             })
-            // Filtre par statut si fourni (boolean)
             ->when($request->has('status'), function ($query) use ($request) {
                 $query->where('status', $request->boolean('status'));
             })
-            // Exclure SYSTEM
             ->whereNot('login', ['SYSTEM', 'admin'])
             ->with([
                 'roles:id,name',

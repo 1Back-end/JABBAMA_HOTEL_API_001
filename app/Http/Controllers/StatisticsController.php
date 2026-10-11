@@ -20,7 +20,6 @@ use Illuminate\Support\Facades\DB;
 /**
  * @permission_category Gestion des statistiques
  * @permission_module Gestion des stocks
- * @permission_module Gestion du restaurant
  */
 class StatisticsController extends Controller
 {
@@ -92,7 +91,6 @@ class StatisticsController extends Controller
 
     public function get_statistics_by_products(Request $request)
     {
-        // Récupérer le total des articles ajustés
         $totalItems = StockAdjustmentItem::count();
 
         if ($totalItems === 0) {
@@ -101,14 +99,11 @@ class StatisticsController extends Controller
                 'data' => []
             ]);
         }
-
-        // Récupérer le nombre d'articles par type d'action
         $stats = StockAdjustmentItem::select('adjustments.action', DB::raw('COUNT(*) as total'))
             ->join('stock_adjustments as adjustments', 'adjustments.uuid', '=', 'stock_adjustments_items.stock_adjustment_uuid')
             ->groupBy('adjustments.action')
             ->get();
 
-        // Calculer le pourcentage par type
         $result = [];
         foreach ($stats as $stat) {
             $result[] = [
@@ -117,8 +112,6 @@ class StatisticsController extends Controller
                 'percentage' => round(($stat->total / $totalItems) * 100, 2) . '%',
             ];
         }
-
-        // Ajouter éventuellement les actions qui n'ont aucun item (0%)
         foreach (StockAdjustmentAction::TO_ARRAY() as $value => $label) {
             if (!collect($result)->pluck('action')->contains(StockAdjustmentAction::LABEL($value))) {
                 $result[] = [
@@ -155,14 +148,12 @@ class StatisticsController extends Controller
     public function suppliesOrders(Request $request)
     {
         try {
-            // 🔹 Validation
             $request->validate([
                 'start_date' => 'nullable|date',
                 'end_date'   => 'nullable|date',
                 'status'     => 'nullable|string',
             ]);
 
-            // 🔹 Dates par défaut = aujourd’hui (par jour)
             $start = $request->start_date
                 ? \Carbon\Carbon::parse($request->start_date)->startOfDay()
                 : now()->startOfDay();
@@ -173,7 +164,6 @@ class StatisticsController extends Controller
 
             $statusFilter = $request->status;
 
-            // 🔹 Requête principale
             $query = PurchaseOrder::whereBetween('created_at', [$start, $end]);
 
             if ($statusFilter && strtolower($statusFilter) !== 'all') {
@@ -182,10 +172,8 @@ class StatisticsController extends Controller
 
             $orders = $query->get();
 
-            // 🔹 Tous les statuts possibles
             $allStatuses = PurchaseOrdersStatus::cases();
 
-            // 🔹 Initialisation avec 0
             $totals = collect($allStatuses)->mapWithKeys(function ($status) {
                 return [
                     $status->value => [
@@ -196,8 +184,6 @@ class StatisticsController extends Controller
                     ]
                 ];
             });
-
-            // 🔹 Injection des vraies données
             foreach ($orders->groupBy('status') as $status => $group) {
                 $totals[$status] = [
                     'total'      => $group->count(),
@@ -209,7 +195,7 @@ class StatisticsController extends Controller
 
             return response()->json([
                 'status'  => 'success',
-                'data'    => $totals->values(), // frontend-friendly
+                'data'    => $totals->values(),
                 'summary' => [
                     'total_orders' => $orders->count(),
                     'from'         => $start->toDateString(),
@@ -245,14 +231,12 @@ class StatisticsController extends Controller
     public function suppliesJournal(Request $request)
     {
         try {
-            // 🔹 Validation (dates optionnelles)
             $request->validate([
                 'start_date' => 'nullable|date',
                 'end_date'   => 'nullable|date',
                 'status'     => 'nullable|string',
             ]);
 
-            // 🔹 Dates par défaut = aujourd’hui
             $start = $request->start_date
                 ? Carbon::parse($request->start_date)->startOfDay()
                 : now()->startOfDay();
@@ -263,7 +247,6 @@ class StatisticsController extends Controller
 
             $statusFilter = $request->status ?? 'all';
 
-            // 🔹 Requête principale
             $query = Supply::whereBetween('created_at', [$start, $end]);
 
             if (strtolower($statusFilter) !== 'all') {
@@ -272,10 +255,9 @@ class StatisticsController extends Controller
 
             $supplies = $query->get();
 
-            // 🔹 Tous les statuts possibles
+
             $allStatuses = SupplyStatus::cases();
 
-            // 🔹 Initialisation avec 0
             $totals = collect($allStatuses)->mapWithKeys(function ($status) {
                 return [
                     $status->value => [
@@ -297,7 +279,7 @@ class StatisticsController extends Controller
 
             return response()->json([
                 'status'  => 'success',
-                'data'    => $totals->values(), // frontend-friendly
+                'data'    => $totals->values(),
                 'summary' => [
                     'total_supplies' => $supplies->count(),
                     'from'           => $start->toDateString(),

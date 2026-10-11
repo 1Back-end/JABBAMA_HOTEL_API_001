@@ -5860,7 +5860,6 @@ class OrderMenuRestaurantController extends Controller
                 ], 404);
             }
 
-            // 🔴 Déjà servi ?
             if ($item->quantity_final_used > 0) {
                 DB::rollBack();
                 return response()->json([
@@ -5886,7 +5885,6 @@ class OrderMenuRestaurantController extends Controller
 
             $cartLineUuid = $item->cart_line_uuid;
 
-            // 🔥 DELETE RELATED DATA
             $item->virtuals()->delete();
             $item->complements()->delete();
 
@@ -9236,6 +9234,7 @@ class OrderMenuRestaurantController extends Controller
                         'reason' => $reason,
                         'type' => 'menu',
                         'created_by' => $auth->id,
+                        'is_deleted' => false,
                     ]);
 
                     /**
@@ -9974,6 +9973,9 @@ class OrderMenuRestaurantController extends Controller
                         'quantity_accumulated' => DB::raw("GREATEST(quantity_accumulated - {$qty}, 0)"),
                         'updated_by' => $auth->id,
                     ]);
+
+                \App\Models\OrderMenuRestaurantDefectiveItem::where('order_menu_restaurant_item_uuid', $item->uuid)
+                    ->update(['is_deleted' => true]);
 
                 $defective->delete();
 
@@ -11021,18 +11023,35 @@ class OrderMenuRestaurantController extends Controller
     {
         $auth = auth()->user();
 
-        $date = $request->filled('date')
-            ? Carbon::createFromFormat('d-m-Y', $request->date)->toDateString()
-            : now()->toDateString();
-
         $perPage = (int) $request->input('limit', 25);
         $page = (int) $request->input('page', 1);
 
-        $dateFilter = function ($subQuery) use ($request, $date) {
-            $targetDate = $request->filled('date')
-                ? Carbon::createFromFormat('d-m-Y', $request->date)->toDateString()
-                : $date;
-            $subQuery->whereDate('created_at', $targetDate);
+        $startDate = null;
+        $endDate = null;
+
+        if ($request->filled('start_date') && $request->filled('end_date')) {
+            $startDate = Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay()->toDateTimeString();
+            $endDate = Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay()->toDateTimeString();
+        } elseif ($request->filled('date')) {
+            $startDate = Carbon::createFromFormat('d-m-Y', $request->date)->startOfDay()->toDateTimeString();
+            $endDate = Carbon::createFromFormat('d-m-Y', $request->date)->endOfDay()->toDateTimeString();
+        } else {
+            $startDate = now()->startOfDay()->toDateTimeString();
+            $endDate = now()->endOfDay()->toDateTimeString();
+        }
+
+        $dateFilter = function ($subQuery) use ($request, $startDate, $endDate) {
+            if ($request->filled('start_date') && $request->filled('end_date')) {
+                $subQuery->whereBetween('created_at', [
+                    Carbon::createFromFormat('d-m-Y', $request->start_date)->toDateString(),
+                    Carbon::createFromFormat('d-m-Y', $request->end_date)->toDateString()
+                ]);
+            } elseif ($request->filled('date')) {
+                $targetDate = Carbon::createFromFormat('d-m-Y', $request->date)->toDateString();
+                $subQuery->whereDate('created_at', $targetDate);
+            } else {
+                $subQuery->whereDate('created_at', now()->toDateString());
+            }
         };
 
         $query = OrderMenuRestaurant::with([
@@ -11049,7 +11068,8 @@ class OrderMenuRestaurantController extends Controller
             'free_client_for_restaurant:uuid,code,full_name,cni_number_file,amount_allocated,amount_allocated_total',
             'payment.regulations.method'
         ]);
-        $query->whereDate('created_at', $date);
+
+        $query->whereBetween('created_at', [$startDate, $endDate]);
 
         if ($request->filled('client_type')) {
             $clientType = $request->client_type;
