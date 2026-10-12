@@ -78,7 +78,6 @@ class Product extends Model
             ->withTimestamps();
     }
 
-    // Plusieurs points de dépôt
     public function points()
     {
         return $this->belongsToMany(
@@ -94,9 +93,6 @@ class Product extends Model
             ->withTimestamps();
     }
 
-    /** ===========================
-     *  EVENTS
-     *  =========================== */
     protected static function boot()
     {
         parent::boot();

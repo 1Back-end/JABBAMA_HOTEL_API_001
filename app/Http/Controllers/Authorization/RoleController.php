@@ -30,7 +30,7 @@ class RoleController extends Controller
     public function index(Request $request): JsonResponse
     {
         $auth = auth()->user();
-        $perPage = $request->input('limit', 5);
+        $perPage = $request->input('limit', 25);
         $page = $request->input('page', 1);
 
         $query = Role::with([

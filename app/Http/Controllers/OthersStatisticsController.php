@@ -4,8 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Enums\MenuOrderStatus;
 use App\Enums\TypeClientsForPaiment;
+use App\Enums\TypeMenu;
 use App\Models\ConfigurationsComplement;
+use App\Models\MenuRestaurant;
 use App\Models\OrderMenuRestaurant;
+use App\Models\OrderMenuRestaurantDefectiveDrink;
 use App\Models\OrderMenuRestaurantDefectiveItem;
 use App\Models\OrderMenuRestaurantItem;
 use App\Models\OrderMenuRestaurantItemComplement;
@@ -26,7 +29,6 @@ class OthersStatisticsController extends Controller
             ? Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay()
             : now()->endOfDay();
 
-        // 1. Clients hébergés (Débiteurs + Partenaires)
         $ordersHosted = OrderMenuRestaurant::where('is_used_restaurant_rooms', true)
             ->whereIn('type_clients_for_payment', [
                 TypeClientsForPaiment::DEBTOR->value,
@@ -40,7 +42,6 @@ class OthersStatisticsController extends Controller
         $sumHosted = $ordersHosted->sum(fn($o) => $o->total_items);
         $countHosted = $ordersHosted->count();
 
-        // 2. Clients non hébergés (Débiteurs + Partenaires)
         $ordersNonHostedAll = OrderMenuRestaurant::where('is_used_restaurant_rooms', false)
             ->whereIn('type_clients_for_payment', [
                 TypeClientsForPaiment::DEBTOR->value,
@@ -54,7 +55,6 @@ class OthersStatisticsController extends Controller
         $sumNonHostedAll = $ordersNonHostedAll->sum(fn($o) => $o->total_items);
         $countNonHostedAll = $ordersNonHostedAll->count();
 
-        // Somme totale combinée (Hébergés + Non hébergés globaux)
         $sumTotalOrders = $sumHosted + $sumNonHostedAll;
         $countTotalOrders = $countHosted + $countNonHostedAll;
 
@@ -71,7 +71,6 @@ class OthersStatisticsController extends Controller
         $sumNonHostedDiverse = $ordersNonHostedDiverse->sum(fn($o) => $o->total_items);
         $countNonHostedDiverse = $ordersNonHostedDiverse->count();
 
-        // 4. Commandes Partenaires (Tous confondus)
         $ordersPartner = OrderMenuRestaurant::where('type_clients_for_payment', TypeClientsForPaiment::PARTNER->value)
             ->whereBetween('created_at', [$startDate, $endDate])
             ->has('items')
@@ -122,7 +121,6 @@ class OthersStatisticsController extends Controller
             ? Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay()
             : now()->endOfDay();
 
-        // 1. Clients hébergés (Débiteurs + Partenaires)
         $ordersHosted = OrderMenuRestaurant::where('is_used_restaurant_rooms', true)
             ->whereIn('type_clients_for_payment', [
                 TypeClientsForPaiment::DEBTOR->value,
@@ -136,7 +134,6 @@ class OthersStatisticsController extends Controller
         $sumHosted = $ordersHosted->sum(fn($o) => $o->total_drinks ?? $o->total_items);
         $countHosted = $ordersHosted->count();
 
-        // 2. Clients non hébergés divers (Débiteurs uniquement)
         $ordersNonHostedDiverse = OrderMenuRestaurant::where('is_used_restaurant_rooms', false)
             ->whereIn('type_clients_for_payment', [
                 TypeClientsForPaiment::DEBTOR->value,
@@ -149,11 +146,9 @@ class OthersStatisticsController extends Controller
         $sumNonHosted = $ordersNonHostedDiverse->sum(fn($o) => $o->total_drinks ?? $o->total_items);
         $countNonHosted = $ordersNonHostedDiverse->count();
 
-        // Somme totale combinée (Hébergés + Non hébergés divers) pour le ticket croisé
         $sumTotalOrders = $sumHosted + $sumNonHosted;
         $countTotalOrders = $countHosted + $countNonHosted;
 
-        // 3. Commandes Partenaires (Tous confondus)
         $ordersPartner = OrderMenuRestaurant::where('type_clients_for_payment', TypeClientsForPaiment::PARTNER->value)
             ->whereBetween('created_at', [$startDate, $endDate])
             ->has('drinks')
@@ -204,165 +199,127 @@ class OthersStatisticsController extends Controller
             ? Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay()
             : now()->endOfDay();
 
-        // 1. Menus classiques
+        $paymentTypes = [
+            TypeClientsForPaiment::DEBTOR->value,
+            TypeClientsForPaiment::PARTNER->value
+        ];
+
         $allTopMenus = OrderMenuRestaurantItem::whereBetween('created_at', [$startDate, $endDate])
             ->whereNotNull('menus_restaurant_uuid')
-            ->whereHas('menu', function ($query) {
-                $query->where('is_generated_from_complement', false);
-            })
-            ->whereHas('order', function ($query) {
-                $query->whereIn('type_clients_for_payment', [
-                    TypeClientsForPaiment::DEBTOR->value,
-                    TypeClientsForPaiment::PARTNER->value
-                ]);
-            })
+            ->whereHas('menu', fn($q) => $q->where('type_menu', TypeMenu::MENU->value))
+            ->whereHas('order', fn($q) => $q->whereIn('type_clients_for_payment', $paymentTypes))
             ->with(['menu'])
             ->get()
             ->groupBy('menus_restaurant_uuid')
             ->map(function ($items) {
-                $firstItem = $items->first();
-                $menu = $firstItem->menu;
-
-                $totalQuantity = (int) $items->sum('quantity_exactly');
-                $totalRevenue = (float) $items->sum(fn($item) => ($item->unit_price ?? 0) * ($item->quantity_exactly ?? 0));
-
+                $first = $items->first();
+                $menu = $first->menu;
                 return [
-                    'uuid' => $firstItem->menus_restaurant_uuid,
-                    'name' => $menu ? $menu->name : '',
-                    'code' => $menu ? $menu->code : null,
-                    'total_quantity' => $totalQuantity,
-                    'total_revenue' => $totalRevenue,
+                    'uuid' => $first->menus_restaurant_uuid,
+                    'name' => $menu?->name ?? '',
+                    'code' => $menu?->code ?? null,
+                    'total_quantity' => (int) $items->sum('quantity_exactly'),
+                    'total_revenue' => (float) $items->sum(fn($i) => ($i->unit_price ?? 0) * ($i->quantity_exactly ?? 0)),
                 ];
             })
             ->filter(fn($item) => $item['total_quantity'] > 0 && $item['total_revenue'] > 0)
             ->sortByDesc('total_quantity')
             ->values();
 
-        // 2. Boissons classiques
         $allTopDrinks = OrderRestaurantDrink::whereBetween('created_at', [$startDate, $endDate])
             ->whereNotNull('drink_restaurant_uuid')
-            ->whereHas('order', function ($query) {
-                $query->whereIn('type_clients_for_payment', [
-                    TypeClientsForPaiment::DEBTOR->value,
-                    TypeClientsForPaiment::PARTNER->value
-                ]);
-            })
+            ->whereHas('order', fn($q) => $q->whereIn('type_clients_for_payment', $paymentTypes))
             ->with(['drinkConfig.product'])
             ->get()
             ->groupBy('drink_restaurant_uuid')
             ->map(function ($drinks) {
-                $firstDrink = $drinks->first();
-                $config = $firstDrink->drinkConfig;
-
-                $totalQuantity = (int) $drinks->sum('quantity_exactly');
-                $totalRevenue = (float) $drinks->sum(fn($drink) => ($drink->unit_price ?? 0) * ($drink->quantity_exactly ?? 0));
-
+                $first = $drinks->first();
+                $config = $first->drinkConfig;
                 return [
-                    'uuid' => $firstDrink->drink_restaurant_uuid,
+                    'uuid' => $first->drink_restaurant_uuid,
                     'name' => $config?->product?->name ?? '',
-                    'total_quantity' => $totalQuantity,
-                    'total_revenue' => $totalRevenue,
+                    'total_quantity' => (int) $drinks->sum('quantity_exactly'),
+                    'total_revenue' => (float) $drinks->sum(fn($d) => ($d->unit_price ?? 0) * ($d->quantity_exactly ?? 0)),
                 ];
             })
             ->filter(fn($drink) => $drink['total_quantity'] > 0 && $drink['total_revenue'] > 0)
             ->sortByDesc('total_quantity')
             ->values();
 
-        // 3. Compléments et Boissons issus des compléments (via OrderMenuRestaurantItem)
+        $complementsList = collect();
+        $drinksFromComplementsList = collect();
+
         $complementItems = OrderMenuRestaurantItem::whereBetween('created_at', [$startDate, $endDate])
             ->whereNotNull('menus_restaurant_uuid')
-            ->whereHas('menu', function ($query) {
-                $query->where('is_generated_from_complement', true);
-            })
-            ->whereHas('order', function ($query) {
-                $query->whereIn('type_clients_for_payment', [
-                    TypeClientsForPaiment::DEBTOR->value,
-                    TypeClientsForPaiment::PARTNER->value
-                ]);
-            })
+            ->whereHas('menu', fn($q) => $q->whereIn('type_menu', [TypeMenu::COMPLEMENT->value, TypeMenu::HOT_DRINK->value]))
+            ->whereHas('order', fn($q) => $q->whereIn('type_clients_for_payment', $paymentTypes))
             ->with(['menu'])
             ->get()
             ->groupBy('menus_restaurant_uuid');
 
-        $complementsList = collect();
-        $drinksFromComplementsList = collect();
-
         foreach ($complementItems as $uuid => $items) {
-            $firstItem = $items->first();
-            $menu = $firstItem->menu;
+            $first = $items->first();
+            $menu = $first->menu;
+            $qty = (int) $items->sum('quantity_exactly');
+            $rev = (float) $items->sum(fn($i) => ($i->unit_price ?? 0) * ($i->quantity_exactly ?? 0));
 
-            $complementConfig = ConfigurationsComplement::where('uuid', $uuid)->first();
-            $complementType = $complementConfig ? strtolower(trim($complementConfig->menus_complement_type)) : null;
-
-            $totalQuantity = (int) $items->sum('quantity_exactly');
-            $totalRevenue = (float) $items->sum(fn($item) => ($item->unit_price ?? 0) * ($item->quantity_exactly ?? 0));
-
-            if ($totalQuantity > 0 && $totalRevenue > 0) {
-                $formattedItem = [
+            if ($qty > 0) {
+                $formatted = [
                     'uuid' => $uuid,
-                    'name' => $menu ? $menu->name : '',
-                    'code' => $menu ? $menu->code : null,
-                    'total_quantity' => $totalQuantity,
-                    'total_revenue' => $totalRevenue,
+                    'name' => $menu?->name ?? '',
+                    'code' => $menu?->code ?? null,
+                    'total_quantity' => $qty,
+                    'total_revenue' => $rev,
                 ];
 
-                if ($complementType === 'boisson' || $complementType === 'boisson4') {
-                    $drinksFromComplementsList->push($formattedItem);
-                } elseif ($complementType === 'complement') {
-                    $complementsList->push($formattedItem);
+                if ($menu?->type_menu === TypeMenu::HOT_DRINK->value) {
+                    $drinksFromComplementsList->push($formatted);
+                } else {
+                    $complementsList->push($formatted);
                 }
             }
         }
 
-        // 4. Compléments issus de la table orders_items_complements (basé sur configuration_complement_uuid)
         $tableComplements = OrderMenuRestaurantItemComplement::whereBetween('created_at', [$startDate, $endDate])
             ->whereNotNull('configuration_complement_uuid')
-            ->whereHas('order', function ($query) {
-                $query->whereIn('type_clients_for_payment', [
-                    TypeClientsForPaiment::DEBTOR->value,
-                    TypeClientsForPaiment::PARTNER->value
-                ]);
-            })
+            ->whereHas('order', fn($q) => $q->whereIn('type_clients_for_payment', $paymentTypes))
             ->with(['complement'])
             ->get()
             ->groupBy('configuration_complement_uuid');
 
         foreach ($tableComplements as $configUuid => $complements) {
-            $firstComp = $complements->first();
-            $complementConfig = $firstComp->complement; // Instance de ConfigurationsComplement
+            $first = $complements->first();
+            $config = $first->complement;
+            $qty = (int) $complements->sum('quantity');
+            $rev = (float) $complements->sum(fn($c) => ($c->unit_price ?? 0) * ($c->quantity ?? 0));
 
-            $totalQuantity = (int) $complements->sum('quantity');
-            $totalRevenue = 0.0; // Ajustez si un calcul de prix unitaire est nécessaire
-
-            if ($totalQuantity > 0) {
-                $complementsList->push([
+            if ($qty > 0) {
+                $formatted = [
                     'uuid' => $configUuid,
-                    'name' => $complementConfig ? $complementConfig->name : '',
-                    'code' => $complementConfig ? $complementConfig->code : null,
-                    'total_quantity' => $totalQuantity,
-                    'total_revenue' => $totalRevenue,
-                ]);
+                    'name' => $config?->name ?? '',
+                    'code' => $config?->code ?? null,
+                    'total_quantity' => $qty,
+                    'total_revenue' => $rev,
+                ];
+
+                if ($config?->menus_complement_type === 'boisson') {
+                    $drinksFromComplementsList->push($formatted);
+                } else {
+                    $complementsList->push($formatted);
+                }
             }
         }
 
-        // Fusion et nettoyage final des doublons potentiels sur top_complements
-        $allTopComplements = $complementsList
+        $formatGrouped = fn($collection) => $collection
             ->groupBy('uuid')
-            ->map(function ($group) {
-                return [
-                    'uuid' => $group->first()['uuid'],
-                    'name' => $group->first()['name'],
-                    'code' => $group->first()['code'],
-                    'total_quantity' => $group->sum('total_quantity'),
-                    'total_revenue' => $group->sum('total_revenue'),
-                ];
-            })
+            ->map(fn($group) => [
+                'uuid' => $group->first()['uuid'],
+                'name' => $group->first()['name'],
+                'code' => $group->first()['code'],
+                'total_quantity' => $group->sum('total_quantity'),
+                'total_revenue' => $group->sum('total_revenue'),
+            ])
             ->filter(fn($item) => $item['total_quantity'] > 0)
-            ->sortByDesc('total_quantity')
-            ->values();
-
-        $allTopDrinksFromComplements = $drinksFromComplementsList
-            ->filter(fn($item) => $item['total_quantity'] > 0 && $item['total_revenue'] > 0)
             ->sortByDesc('total_quantity')
             ->values();
 
@@ -371,8 +328,8 @@ class OthersStatisticsController extends Controller
             'data' => [
                 'top_menus' => $allTopMenus,
                 'top_drinks' => $allTopDrinks,
-                'top_complements' => $allTopComplements,
-                'top_drinks_from_complements' => $allTopDrinksFromComplements,
+                'top_complements' => $formatGrouped($complementsList),
+                'top_drinks_from_complements' => $formatGrouped($drinksFromComplementsList),
             ]
         ]);
     }
@@ -387,103 +344,139 @@ class OthersStatisticsController extends Controller
             ? Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay()
             : now()->endOfDay();
 
-        $defectiveItemsQuery = OrderMenuRestaurantDefectiveItem::with([
-            'item' => function ($query) {
-                $query->withTrashed();
-            },
+        $userId = $request->input('created_by') ?? $request->input('user_id');
+
+
+        $defectiveItems = OrderMenuRestaurantDefectiveItem::with([
+            'item' => fn($query) => $query->withTrashed(),
             'item.menu'
         ])
             ->whereBetween('created_at', [$startDate, $endDate])
-            ->when($request->filled('created_by'), function ($query) use ($request) {
-                $query->where('created_by', $request->input('created_by'));
-            })
-            ->when($request->filled('user_id'), function ($query) use ($request) {
-                $query->where('created_by', $request->input('user_id'));
-            });
-
-        $defectiveItems = $defectiveItemsQuery->get()->filter(function ($defective) {
-            return $defective->item !== null && $defective->item->menu !== null;
-        });
-
-        if ($defectiveItems->isEmpty()) {
-            return response()->json([
-                'success' => true,
-                'message' => 'Statistiques des pertes (menus défectueux) récupérées avec succès.',
-                'data' => [
-                    'start_date' => $startDate->format('d-m-Y'),
-                    'end_date' => $endDate->format('d-m-Y'),
-                    'top_defective_menus' => []
-                ]
-            ]);
-        }
-
-        $menuUuids = $defectiveItems->map(function ($defective) {
-            return $defective->item->menus_restaurant_uuid;
-        })->unique()->filter()->values();
-
-        $orderedQuery = OrderMenuRestaurantItem::withTrashed()
-            ->whereIn('menus_restaurant_uuid', $menuUuids)
-            ->whereBetween('created_at', [$startDate, $endDate]);
-
-        if ($request->filled('created_by')) {
-            $orderedQuery->where('created_by', $request->input('created_by'));
-        }
-        if ($request->filled('user_id')) {
-            $orderedQuery->where('created_by', $request->input('user_id'));
-        }
-
-        $orderStatsPerMenu = $orderedQuery
-            ->select(
-                'menus_restaurant_uuid',
-                DB::raw('COUNT(*) as total_orders_count'),
-                DB::raw('SUM(quantity_exactly) as total_ordered_quantity')
-            )
-            ->groupBy('menus_restaurant_uuid')
+            ->where('is_deleted', true)
+            ->when($userId, fn($query) => $query->where('created_by', $userId))
             ->get()
-            ->keyBy('menus_restaurant_uuid');
+            ->filter(fn($defective) => $defective->item?->menu !== null);
 
-        $defectiveMenus = $defectiveItems->groupBy(function ($defective) {
-            return $defective->item->menus_restaurant_uuid;
-        })->map(function ($group) use ($orderStatsPerMenu) {
-            $first = $group->first();
-            $menuUuid = $first->item->menus_restaurant_uuid;
-            $menu = $first->item->menu;
+        $processedMenus = collect();
 
-            $totalDefectiveQuantity = $group->sum('quantity');
+        if ($defectiveItems->isNotEmpty()) {
+            $menuUuids = $defectiveItems->map(fn($d) => $d->item->menus_restaurant_uuid)->unique()->filter()->values();
 
-            $totalRevenue = $group->sum(function ($def) {
-                return $def->quantity * ($def->item->unit_price ?? 0);
+            $orderStatsPerMenu = OrderMenuRestaurantItem::withTrashed()
+                ->whereIn('menus_restaurant_uuid', $menuUuids)
+                ->whereBetween('created_at', [$startDate, $endDate])
+                ->select(
+                    'menus_restaurant_uuid',
+                    DB::raw('COUNT(*) as total_orders_count'),
+                    DB::raw('SUM(quantity_exactly) as total_ordered_quantity')
+                )
+                ->groupBy('menus_restaurant_uuid')
+                ->get()
+                ->keyBy('menus_restaurant_uuid');
+
+            $processedMenus = $defectiveItems->groupBy(fn($d) => $d->item->menus_restaurant_uuid)->map(function ($group) use ($orderStatsPerMenu) {
+                $first = $group->first();
+                $menuUuid = $first->item->menus_restaurant_uuid;
+                $menu = $first->item->menu;
+
+                $totalDefectiveQuantity = (int) $group->sum('quantity');
+                $totalRevenue = (float) $group->sum(fn($def) => $def->quantity * ($def->item->unit_price ?? 0));
+
+                $orderStats = $orderStatsPerMenu[$menuUuid] ?? null;
+                $totalTimesOrdered = $orderStats ? (int) $orderStats->total_orders_count : 0;
+                $currentOrderedQty = $orderStats ? (int) $orderStats->total_ordered_quantity : 0;
+                $totalOrderedQuantity = $currentOrderedQty + $totalDefectiveQuantity;
+
+                $defectiveRatio = $totalOrderedQuantity > 0
+                    ? round(($totalDefectiveQuantity / $totalOrderedQuantity) * 100, 2)
+                    : 0;
+
+                return [
+                    'uuid' => $menuUuid,
+                    'name' => $menu->name,
+                    'code' => $menu->code,
+                    'type_menu' => $menu->type_menu,
+                    'total_times_ordered' => $totalTimesOrdered,
+                    'total_ordered_quantity' => $totalOrderedQuantity,
+                    'total_defective_quantity' => $totalDefectiveQuantity,
+                    'defective_ratio_percentage' => $defectiveRatio . '%',
+                    'total_revenue_loss' => $totalRevenue,
+                ];
             });
+        }
 
-            $orderStats = $orderStatsPerMenu[$menuUuid] ?? null;
-            $totalTimesOrdered = $orderStats ? (int) $orderStats->total_orders_count : 0;
+        $topMenus = $processedMenus->filter(fn($item) => $item['type_menu'] === \App\Enums\TypeMenu::MENU->value)->sortByDesc('total_defective_quantity')->values();
+        $topComplements = $processedMenus->filter(fn($item) => $item['type_menu'] === \App\Enums\TypeMenu::COMPLEMENT->value)->sortByDesc('total_defective_quantity')->values();
+        $topDrinks = $processedMenus->filter(fn($item) => $item['type_menu'] === \App\Enums\TypeMenu::HOT_DRINK->value)->sortByDesc('total_defective_quantity')->values();
 
 
-            $currentOrderedQty = $orderStats ? (int) $orderStats->total_ordered_quantity : 0;
-            $totalOrderedQuantity = $currentOrderedQty + $totalDefectiveQuantity;
+        $rawDefectiveDrinks = OrderMenuRestaurantDefectiveDrink::with([
+            'drink' => fn($query) => $query->withTrashed(),
+            'drink.drinkConfig'
+        ])
+            ->where('is_deleted', true)
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->when($userId, fn($query) => $query->where('created_by', $userId))
+            ->get();
 
-            $defectiveRatio = $totalOrderedQuantity > 0
-                ? round(($totalDefectiveQuantity / $totalOrderedQuantity) * 100, 2)
-                : 0;
+        $defectiveDrinksItems = $rawDefectiveDrinks->filter(fn($def) => $def->drink?->drinkConfig !== null);
+        $topOthersMenu = collect();
 
-            return [
-                'menu_uuid' => $menuUuid,
-                'name' => $menu->name,
-                'total_times_ordered' => $totalTimesOrdered,
-                'total_ordered_quantity' => $totalOrderedQuantity,
-                'total_defective_quantity' => (int) $totalDefectiveQuantity,
-                'defective_ratio_percentage' => $defectiveRatio . '%',
-                'total_revenue_loss' => $totalRevenue,
-            ];
-        })->values()->sortByDesc('total_defective_quantity')->values();
+        if ($defectiveDrinksItems->isNotEmpty()) {
+            $drinkConfigUuids = $defectiveDrinksItems->map(fn($def) => $def->drink->drink_restaurant_uuid)->unique()->filter()->values();
+
+            $drinkOrderStats = OrderRestaurantDrink::withTrashed()
+                ->whereIn('drink_restaurant_uuid', $drinkConfigUuids)
+                ->whereBetween('created_at', [$startDate, $endDate])
+                ->select(
+                    'drink_restaurant_uuid',
+                    DB::raw('COUNT(*) as total_orders_count'),
+                    DB::raw('SUM(quantity_exactly) as total_ordered_quantity')
+                )
+                ->groupBy('drink_restaurant_uuid')
+                ->get()
+                ->keyBy('drink_restaurant_uuid');
+
+            $topOthersMenu = $defectiveDrinksItems->groupBy(fn($def) => $def->drink->drink_restaurant_uuid)->map(function ($group) use ($drinkOrderStats) {
+                $first = $group->first();
+                $drinkUuid = $first->drink->drink_restaurant_uuid;
+                $drinkConfig = $first->drink->drinkConfig;
+
+                $totalDefectiveQuantity = (int) $group->sum('quantity');
+                $totalRevenue = (float) $group->sum(fn($def) => $def->quantity * ($def->drink->unit_price ?? 0));
+
+                $stats = $drinkOrderStats[$drinkUuid] ?? null;
+                $totalTimesOrdered = $stats ? (int) $stats->total_orders_count : 0;
+                $currentOrderedQty = $stats ? (int) $stats->total_ordered_quantity : 0;
+                $totalOrderedQuantity = $currentOrderedQty + $totalDefectiveQuantity;
+
+                $defectiveRatio = $totalOrderedQuantity > 0
+                    ? round(($totalDefectiveQuantity / $totalOrderedQuantity) * 100, 2)
+                    : 0;
+
+                return [
+                    'uuid' => $drinkUuid,
+                    'name' => $drinkConfig->display_name,
+                    'code' => null,
+                    'total_times_ordered' => $totalTimesOrdered,
+                    'total_ordered_quantity' => $totalOrderedQuantity,
+                    'total_defective_quantity' => $totalDefectiveQuantity,
+                    'defective_ratio_percentage' => $defectiveRatio . '%',
+                    'total_revenue_loss' => $totalRevenue,
+                ];
+            })->sortByDesc('total_defective_quantity')->values();
+        }
 
         return response()->json([
             'success' => true,
-            'message' => 'Statistiques des pertes (menus défectueux) récupérées avec succès.',
+            'message' => 'Statistiques des pertes récupérées avec succès.',
             'data' => [
                 'start_date' => $startDate->format('d-m-Y'),
                 'end_date' => $endDate->format('d-m-Y'),
-                'top_defective_menus' => $defectiveMenus
+                'top_defective_menus' => $topMenus,
+                'top_defective_complements' => $topComplements,
+                'top_defective_drinks' => $topDrinks,
+                'top_defective_others_drinks' => $topOthersMenu,
             ]
         ]);
     }

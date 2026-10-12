@@ -134,6 +134,12 @@ class ConfigurationsComplementController extends Controller
 
             $config = ConfigurationsComplement::create($validated);
 
+            $typeMenu = match ($config->menus_complement_type) {
+                'complement' => \App\Enums\TypeMenu::COMPLEMENT->value,
+                'boisson' => \App\Enums\TypeMenu::HOT_DRINK->value,
+                default => \App\Enums\TypeMenu::MENU->value,
+            };
+
             $category = MenuCategory::first();
             MenuRestaurant::updateOrCreate(
                 [
@@ -158,6 +164,7 @@ class ConfigurationsComplementController extends Controller
 
                     'is_menu' => $config->menus_complement_type === 'complement',
                     'is_drinks' => $config->menus_complement_type === 'boisson',
+                    'type_menu' => $typeMenu,
                 ]
             );
 
@@ -355,6 +362,11 @@ class ConfigurationsComplementController extends Controller
             $validated['updated_by'] = $auth->id;
 
             $config->update($validated);
+            $typeMenu = match ($config->menus_complement_type) {
+                'complement' => \App\Enums\TypeMenu::COMPLEMENT->value,
+                'boisson' => \App\Enums\TypeMenu::HOT_DRINK->value,
+                default => \App\Enums\TypeMenu::MENU->value,
+            };
             MenuRestaurant::updateOrCreate(
                 [
                     'uuid' => $config->uuid,
@@ -378,6 +390,7 @@ class ConfigurationsComplementController extends Controller
 
                     'is_menu' => $config->menus_complement_type === 'complement',
                     'is_drinks' => $config->menus_complement_type === 'boisson',
+                    'type_menu' => $typeMenu,
                 ]
             );
 

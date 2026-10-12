@@ -20,6 +20,7 @@ class OrderMenuRestaurantDefectiveDrink extends Model
         'uuid',
         'order_menu_restaurant_uuid',
         'order_restaurant_drink_uuid',
+        'order_menu_restaurant_drink_uuid',
         'product_uuid',
         'status',
         'quantity',
@@ -27,6 +28,7 @@ class OrderMenuRestaurantDefectiveDrink extends Model
         'type',
         'created_by',
         'updated_by',
+        'is_deleted'
     ];
 
 
@@ -51,7 +53,6 @@ class OrderMenuRestaurantDefectiveDrink extends Model
         return $this->belongsTo(Product::class, 'product_uuid', 'uuid');
     }
 
-    // Creator
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');

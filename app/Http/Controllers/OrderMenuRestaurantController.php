@@ -5949,59 +5949,82 @@ class OrderMenuRestaurantController extends Controller
 
         try {
             $order = OrderMenuRestaurant::where('uuid', $order_uuid)->firstOrFail();
-            $drink = OrderRestaurantDrink::where('uuid', $drink_uuid)
-                ->where('order_menu_restaurant_uuid', $order->uuid)
-                ->with(['virtuals', 'statuses','drinkConfig'])->first();
 
-            if (!$drink) {
+            $drinks = OrderRestaurantDrink::where('uuid', $drink_uuid)
+                ->where('order_menu_restaurant_uuid', $order->uuid)
+                ->with(['virtuals', 'statuses'])
+                ->get();
+
+            if ($drinks->isEmpty()) {
+                DB::rollBack();
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Boisson introuvable.'
                 ], 404);
             }
 
-            if ($drink->quantity_final_used > 0) {
-                DB::rollBack();
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'La suppression est impossible car une quantité a déjà été servie.'
-                ], 403);
+            foreach ($drinks as $drink) {
+                if ($drink->quantity_final_used > 0) {
+                    DB::rollBack();
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'La suppression est impossible car une quantité a déjà été servie.'
+                    ], 403);
+                }
+
+                $statuses = $drink->statuses->pluck('quantity', 'status');
+                $totalQty = array_sum($statuses->toArray());
+                \Log::info('Debug Delete Drink', [
+                    'drink_uuid' => $drink->uuid,
+                    'statuses_array' => $statuses->toArray(),
+                    'totalQty' => $totalQty
+                ]);
+                $rejectedQty = $statuses[OrderMenuRestaurantItemStatus::REJECTED->value] ?? 0;
+                $transferredQty = $statuses[OrderMenuRestaurantItemStatus::TRANSFERRED->value] ?? 0;
+                $defectiveQty = $statuses[OrderMenuRestaurantItemStatus::DEFECTIVE->value] ?? 0;
+                $inPreparationQty = $statuses[OrderMenuRestaurantItemStatus::IN_PREPARATION->value] ?? 0;
+
+                $allowedQty = $rejectedQty + $transferredQty + $defectiveQty + $inPreparationQty;
+
+                if ($totalQty > 0 && $allowedQty !== $totalQty) {
+                    DB::rollBack();
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Suppression impossible : certaines quantités sont encore actives.'
+                    ], 403);
+                }
+
+                if ($totalQty > 0 && $allowedQty !== $totalQty) {
+                    DB::rollBack();
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Suppression impossible : certaines quantités sont encore actives.'
+                    ], 403);
+                }
+
+                $drink->virtuals()->delete();
+
+                DrinksVirtualTemp::where('order_menu_restaurant_uuid', $order_uuid)
+                    ->where('drink_restaurant_uuid', $drink->drink_restaurant_uuid)
+                    ->delete();
+
+                $drink->statuses()->delete();
+                $drink->statistics()->delete();
+                $drink->delete();
             }
-
-            $statuses = $drink->statuses()->pluck('quantity', 'status');
-            $totalQty = $statuses->sum();
-
-            $rejectedQty = $statuses[OrderMenuRestaurantItemStatus::REJECTED->value] ?? 0;
-            $transferredQty = $statuses[OrderMenuRestaurantItemStatus::TRANSFERRED->value] ?? 0;
-
-            $allowedQty = $rejectedQty + $transferredQty;
-
-            if ($totalQty > 0 && $allowedQty !== $totalQty) {
-                DB::rollBack();
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Suppression impossible : certaines quantités sont encore actives (en attente ou validées).'
-                ], 403);
-            }
-
-            $drink->virtuals()->delete();
-            DrinksVirtualTemp::where('drink_restaurant_uuid', $drink_uuid)->where('order_menu_restaurant_uuid', $order_uuid)->delete();
-            $drink->statuses()->delete();
-            $drink->statistics()->delete();
-            $drink->delete();
-
 
             $remainingDrinks = OrderRestaurantDrink::where('order_menu_restaurant_uuid', $order_uuid)->count();
             $remainingMenus = OrderMenuRestaurantItem::where('order_menu_restaurant_uuid', $order_uuid)->count();
 
             if ($remainingDrinks === 0 && $remainingMenus === 0) {
-                VirtualOrderMenuRestaurant::where('orders_menu_restaurant_uuid', $order->uuid)->delete();
+                VirtualOrderMenuRestaurant::where('orders_menu_restaurant_uuid', $order_uuid)->delete();
                 $order->delete();
 
                 DB::commit();
+
                 return response()->json([
                     'status' => 'success',
-                    'message' => 'L\'élément a été supprimé et la commande a été clôturée (dernier élément).'
+                    'message' => 'Boisson supprimée et commande supprimée (dernier élément).'
                 ]);
             }
 
@@ -6019,7 +6042,7 @@ class OrderMenuRestaurantController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
 
-            \Log::error('Delete item error', [
+            \Log::error('Delete drink error', [
                 'message' => $e->getMessage(),
                 'order_uuid' => $order_uuid,
                 'drink_uuid' => $drink_uuid
@@ -6028,7 +6051,7 @@ class OrderMenuRestaurantController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => 'Erreur lors de la suppression.',
-                'debug' => $e->getMessage() // À retirer en production
+                'error' => $e->getMessage()
             ], 500);
         }
     }
@@ -9393,13 +9416,10 @@ class OrderMenuRestaurantController extends Controller
                     throw new \Exception("Quantité DEFECTIVE insuffisante pour {$drinkConfig->drink_name}.");
                 }
 
-                /*
-                |--------------------------------------------------------------------------
-                | 📌 RÉCUPÉRATION DE L'HISTORIQUE DES PERTES
-                |--------------------------------------------------------------------------
-                */
+
                 $defectHistories = OrderMenuRestaurantDefectiveDrink::where('order_restaurant_drink_uuid', $drink->uuid)
                     ->where('type', 'drink')
+                    ->where('is_deleted', false)
                     ->orderByDesc('created_at')
                     ->get();
 
@@ -9408,10 +9428,8 @@ class OrderMenuRestaurantController extends Controller
                 foreach ($defectHistories as $history) {
                     if ($remainingToRestore <= 0) break;
 
-                    // Calcul du facteur de conversion (Volume par boisson)
                     $factor = $this->getConversionFactor($drinkConfig, $history->product_uuid);
 
-                    // On calcule combien d'unités de boissons complètes on peut tirer de cette ligne d'historique
                     $canRestoreFromHistory = floor($history->quantity / $factor);
 
                     if ($canRestoreFromHistory <= 0) continue;
@@ -9429,12 +9447,15 @@ class OrderMenuRestaurantController extends Controller
                         ]
                     );
                     $statusRow->increment('quantity', $takeDrinks);
+                    $history->update([
+                        'is_deleted' => false,
+                        'updated_by' => $auth->id,
+                    ]);
                     $defectiveRow->decrement('quantity', $takeDrinks);
                     $this->syncVirtualStockAndHistory($order, $drink, $history, $takeDrinks, $auth);
                     $remainingToRestore -= $takeDrinks;
                 }
 
-                // 2. Mise à jour de la ligne principale (Statut global)
                 $drink->update([
                     'status' => $this->resolveDrinkStatusFromStatuses($drink->fresh()),
                     'updated_by' => $auth->id,
@@ -9598,11 +9619,6 @@ class OrderMenuRestaurantController extends Controller
                 $drinkConfig = $drink->drinkConfig;
                 $qtyDrinksToDefect = (int) $data['quantity_to_deliver'];
 
-                /*
-                |--------------------------------------------------------------------------
-                | 📌 CHECK AVAILABLE QTY
-                |--------------------------------------------------------------------------
-                */
                 $availableQty = $drink->statuses()
                     ->whereIn('status', $priorityStatuses)
                     ->sum('quantity');
@@ -9725,11 +9741,6 @@ class OrderMenuRestaurantController extends Controller
 
         $ingredients = [];
 
-        /*
-        |--------------------------------------------------------------------------
-        | 📌 COMPOSED DRINK
-        |--------------------------------------------------------------------------
-        */
         if ($drinkConfig->is_transformable_product) {
 
             $composition = DrinkComposition::where(
@@ -9757,11 +9768,6 @@ class OrderMenuRestaurantController extends Controller
 
         } else {
 
-            /*
-            |--------------------------------------------------------------------------
-            | 📌 SIMPLE DRINK
-            |--------------------------------------------------------------------------
-            */
             if (!$drinkConfig->product_uuid) {
                 return;
             }
@@ -9772,18 +9778,8 @@ class OrderMenuRestaurantController extends Controller
             ];
         }
 
-        /*
-        |--------------------------------------------------------------------------
-        | 📌 SAVE HISTORY + UPDATE VIRTUAL
-        |--------------------------------------------------------------------------
-        */
         foreach ($ingredients as $ing) {
 
-            /*
-            |--------------------------------------------------------------------------
-            | 📌 HISTORY
-            |--------------------------------------------------------------------------
-            */
             OrderMenuRestaurantDefectiveDrink::create([
                 'order_restaurant_drink_uuid' => $drink->uuid,
                 'order_menu_restaurant_uuid' => $order->uuid,
@@ -10136,12 +10132,6 @@ class OrderMenuRestaurantController extends Controller
                     if ($toDeduct <= 0) {
                         continue;
                     }
-                    logger()->info('STOCK DEDUCTION DEBUG', [
-                        'virtual_id' => $v->uuid,
-                        'product_uuid' => $v->product_uuid,
-                        'quantity_in_defective' => $toDeduct,
-                        'quantity_to_remove' => $toDeductExactly,
-                    ]);
 
                     $productPoint = ProductPoint::where('produit_uuid', $v->product_uuid)->where('point_uuid', $warehouse->uuid)->lockForUpdate()->first();
                     if (!$productPoint) {
@@ -10231,13 +10221,14 @@ class OrderMenuRestaurantController extends Controller
                         'updated_by' => $auth->id,
                     ]);
 
-                $defective->delete();
-
                 StatisticsOrderStatusDrink::where(['order_restaurant_drink_uuid' => $drink->uuid,
                     'status' => OrderMenuRestaurantItemStatus::DEFECTIVE->value])->delete();
 
-
-                OrderMenuRestaurantDefectiveDrink::where('order_restaurant_drink_uuid', $drink->uuid)->delete();
+                OrderMenuRestaurantDefectiveDrink::where('order_restaurant_drink_uuid', $drink->uuid)
+                    ->update([
+                        'is_deleted' => true,
+                        'updated_by' => $auth->id,
+                    ]);
 
                 $hasRemaining = $drink->statuses()->where('status', '!=', OrderMenuRestaurantItemStatus::DEFECTIVE->value)
                     ->exists();
@@ -10934,7 +10925,7 @@ class OrderMenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::addAllocation
-     * @permission_desc Enregistrer le montant des arrhes pour les clients divers
+     * @permission_desc Enregistrer le montant des arrhes pour chaque facture
      */
     public function addAllocation(Request $request)
     {

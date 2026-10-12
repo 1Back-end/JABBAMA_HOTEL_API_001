@@ -77,10 +77,8 @@ class MenuRestaurantController extends Controller
             });
         }
 
-        // 🔹 Pagination
         $data = $query->latest()->paginate($perPage, ['*'], 'page', $page);
 
-        Log::info($data);
 
         return response()->json([
             'data'         => $data->items(),
@@ -102,7 +100,6 @@ class MenuRestaurantController extends Controller
         DB::beginTransaction();
 
         try {
-            // Décodage des tableaux JSON légitimes
             if ($request->has('unit_price')) {
                 $request->merge([
                     'unit_price' => json_decode($request->unit_price, true),
@@ -152,6 +149,7 @@ class MenuRestaurantController extends Controller
                 'complements' => 'nullable|array',
                 'complements.*' => 'exists:configurations_complements,uuid',
             ]);
+            $validated['type_menu'] = \App\Enums\TypeMenu::MENU->value;
 
             $validated['created_by'] = $auth->id;
             $haveComplements = false;
@@ -182,7 +180,6 @@ class MenuRestaurantController extends Controller
                 $menu->complements()->attach($pivotData);
             }
 
-            // Traitement de l'image
             if ($request->hasFile('image_file')) {
                 $file = $request->file('image_file');
                 $path = $file->store('menus_restaurants', 'public');
@@ -286,7 +283,7 @@ class MenuRestaurantController extends Controller
                 'complements'   => 'nullable|array',
                 'complements.*' => 'exists:configurations_complements,uuid',
             ]);
-
+            $validated['type_menu'] = $menu->type_menu ?? \App\Enums\TypeMenu::MENU->value;
             $validated['updated_by'] = $auth->id;
             $haveComplements = false;
             $haveDrinks = false;

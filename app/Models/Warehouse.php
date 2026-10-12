@@ -66,13 +66,10 @@ class Warehouse extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    // Dernière modification
     public function updater() {
         return $this->belongsTo(User::class, 'updated_by');
     }
 
-    // Managers associés (plusieurs managers possible)
-    // Managers associés (plusieurs managers possible)
     public function managers()
     {
         return $this->belongsToMany(
@@ -87,14 +84,13 @@ class Warehouse extends Model
             ->whereNull('warehouse_managers.deleted_at');
     }
 
-    // Natures associées (plusieurs natures possible)
     public function natures()
     {
         return $this->belongsToMany(
             NatureEntrepot::class,
-            'nature_warehouse',   // table pivot pour natures
-            'warehouse_uuid',     // clé étrangère vers Warehouse
-            'nature_uuid'         // clé étrangère vers NatureEntrepot
+            'nature_warehouse',
+            'warehouse_uuid',
+            'nature_uuid'
         )
             ->withPivot(['is_active', 'created_by', 'updated_by'])
             ->withTimestamps()
@@ -108,13 +104,13 @@ class Warehouse extends Model
     {
         return $this->belongsToMany(
             Product::class,
-            'produit_point', // table pivot entre produits et entrepôts
-            'point_uuid',    // clé étrangère vers Warehouse dans pivot
-            'produit_uuid'   // clé étrangère vers Product dans pivot
+            'produit_point',
+            'point_uuid',
+            'produit_uuid'
         )
             ->withPivot('uuid', 'quantity', 'is_active')
             ->withTimestamps()
-            ->using(ProductPoint::class); // pivot personnalisé
+            ->using(ProductPoint::class);
     }
     public function getTotalStockAttribute()
     {
