@@ -27,53 +27,25 @@ class AgentStockFlowController extends Controller
 
         $agentIdsQuery = OrderMenuRestaurantItem::whereBetween('created_at', [$startDate, $endDate])
             ->whereHas('order', fn($q) => $q->where('status', MenuOrderStatus::FACTURATE->value))
-            ->whereNotNull('created_by');
+            ->whereNotNull('updated_by');
 
         if ($agentId) {
-            $agentIdsQuery->where('created_by', $agentId);
+            $agentIdsQuery->where('updated_by', $agentId);
         }
 
-        $agentIds = $agentIdsQuery->distinct()->pluck('created_by');
-
+        $agentIds = $agentIdsQuery->distinct()->pluck('updated_by');
         $agents = User::whereIn('id', $agentIds)->get();
 
         $restaurantWarehouse = Warehouse::where('is_used_for_restaurant', true)->first();
-
         $nomEntrepotMax = $restaurantWarehouse ? $restaurantWarehouse->name : 'N/A';
 
-        $plusGrosStockInitial = 0;
-        $nomProduitMax = 'N/A';
-
-        if ($restaurantWarehouse) {
-            $topProductPivot = $restaurantWarehouse->products()
-                ->where('produit_point.is_active', true)
-                ->orderByPivot('quantity', 'desc')
-                ->first();
-
-            if ($topProductPivot) {
-                $plusGrosStockInitial = (float) $topProductPivot->pivot->quantity;
-                $nomProduitMax = $topProductPivot->name;
-            }
-        } else {
-            $topProductPoint = ProductPoint::where('is_active', true)
-                ->orderBy('quantity', 'desc')
-                ->with('product')
-                ->first();
-
-            if ($topProductPoint) {
-                $plusGrosStockInitial = (float) $topProductPoint->quantity;
-                $nomProduitMax = $topProductPoint->product ? $topProductPoint->product->name : 'N/A';
-            }
-        }
-
-        $productPoints = ProductPoint::pluck('quantity', 'produit_uuid')->toArray();
-        $fallbackStock = Product::pluck('stock_quantity', 'uuid')->toArray();
-
         $report = [];
+        $globalNomProduitMax = 'N/A';
+        $globalPlafondMax = 0;
 
         foreach ($agents as $agent) {
-            $listeVentes = OrderMenuRestaurantItem::with(['menu.compositionItems.product'])
-                ->where('created_by', $agent->id)
+            $listeVentes = OrderMenuRestaurantItem::with(['menu.compositionItems.product', 'menu'])
+                ->where('updated_by', $agent->id)
                 ->whereBetween('created_at', [$startDate, $endDate])
                 ->whereHas('order', fn($q) => $q->where('status', MenuOrderStatus::FACTURATE->value))
                 ->get();
@@ -86,6 +58,8 @@ class AgentStockFlowController extends Controller
                     'points_reels' => 0,
                     'points_max' => 0,
                     'taux_ecoulement' => 'N/A',
+                    'commande' => 'Aucune vente',
+                    'details_calcul' => null,
                     'statut' => 'Bar uniquement: Pas de vente de restauration sur ce service'
                 ];
                 continue;
@@ -93,31 +67,82 @@ class AgentStockFlowController extends Controller
 
             $pointsReelsAgent = 0;
             $pointsMaximumPossibles = 0;
-
             $totalPlatsVendus = (int) $listeVentes->count();
+            $compositionDetails = [];
+            $commandesNoms = [];
+            $stockReferenceArticles = [];
+            $strNumeratorParts = [];
+            $strDenominatorParts = [];
 
             foreach ($listeVentes as $vente) {
                 $quantiteVendue = (float) $vente->quantity_exactly;
                 $menu = $vente->menu;
+                if ($menu) {
+                    $commandesNoms[] = $quantiteVendue . ' ' . ($menu->name ?? 'plat');
+                }
 
                 if (!$menu || $menu->compositionItems->isEmpty()) {
                     continue;
                 }
 
+                $saleDate = Carbon::parse($vente->created_at)->toDateString();
+
+                $topSnapshotGlobal = \App\Models\StockSnapshot::where('snapshot_date', $saleDate)
+                    ->orderBy('initial_quantity', 'desc')
+                    ->with('product')
+                    ->first();
+
+                $plusGrosStockInitialGlobal = $topSnapshotGlobal ? (float) $topSnapshotGlobal->initial_quantity : 1;
+                $nomProduitMax = ($topSnapshotGlobal && $topSnapshotGlobal->product) ? $topSnapshotGlobal->product->name : 'N/A';
+
+                $globalPlafondMax = max($globalPlafondMax, $plusGrosStockInitialGlobal);
+                if ($nomProduitMax !== 'N/A') {
+                    $globalNomProduitMax = $nomProduitMax;
+                }
+
+                if ($plusGrosStockInitialGlobal <= 0) {
+                    $plusGrosStockInitialGlobal = 1;
+                }
+
                 foreach ($menu->compositionItems as $item) {
                     $qteDansRecette = (float) $item->quantity_used;
                     $productUuid = $item->product_uuid;
-                    $stockInitialArt = (float) ($productPoints[$productUuid] ?? ($fallbackStock[$productUuid] ?? 0));
+                    $nomProduit = $item->product ? $item->product->name : '';
 
-                    $pointsReelsAgent += ($quantiteVendue * $qteDansRecette * $stockInitialArt);
+                    $snapshot = \App\Models\StockSnapshot::where('snapshot_date', $saleDate)
+                        ->where('product_uuid', $productUuid)
+                        ->first();
+
+                    $stockInitialArt = $snapshot
+                        ? (float) $snapshot->initial_quantity
+                        : (float) ProductPoint::where('produit_uuid', $productUuid)->value('quantity');
+
+                    $stockReferenceArticles[strtolower($nomProduit)] = $stockInitialArt;
+
+                    $calculPointArt = ($quantiteVendue * $qteDansRecette * $stockInitialArt);
+                    $pointsReelsAgent += $calculPointArt;
+
+                    $calculPointMax = ($quantiteVendue * $qteDansRecette * $plusGrosStockInitialGlobal);
+                    $pointsMaximumPossibles += $calculPointMax;
+
+                    $strNumeratorParts[] = "({$quantiteVendue}*{$qteDansRecette}*{$stockInitialArt})";
+                    $strDenominatorParts[] = "({$quantiteVendue}*{$qteDansRecette}*{$plusGrosStockInitialGlobal})";
+
+                    $compositionDetails[] = [
+                        'ingredient' => strtolower($nomProduit),
+                        'quantite_vendue' => $quantiteVendue,
+                        'quantite_recette' => $qteDansRecette,
+                        'stock_article' => $stockInitialArt,
+                        'calcul_point' => round($calculPointArt, 2)
+                    ];
                 }
-
-                $pointsMaximumPossibles += ($quantiteVendue * $plusGrosStockInitial);
             }
 
             $tauxEcoulementGlobal = $pointsMaximumPossibles > 0
                 ? round(($pointsReelsAgent / $pointsMaximumPossibles) * 100, 2)
                 : 0;
+
+            $formuleString = "[(" . implode(' + ', $strNumeratorParts) . ") / (" . implode(' + ', $strDenominatorParts) . ")] * 100%";
 
             $report[] = [
                 'agent_id' => $agent->id,
@@ -126,17 +151,26 @@ class AgentStockFlowController extends Controller
                 'points_reels' => round($pointsReelsAgent, 2),
                 'points_max' => round($pointsMaximumPossibles, 2),
                 'taux_ecoulement' => $tauxEcoulementGlobal . '%',
+                'commande' => implode(', ', $commandesNoms),
+                'stock_reference_articles' => $stockReferenceArticles,
+                'details_calcul' => [
+                    'composition_plat' => $compositionDetails,
+                    'points_reels' => round($pointsReelsAgent, 2),
+                    'points_max' => round($pointsMaximumPossibles, 2),
+                    'formule_appliquee' => $formuleString,
+                    'taux_ecoulement' => $tauxEcoulementGlobal . '%'
+                ],
                 'statut' => $this->evaluatePerformance($tauxEcoulementGlobal)
             ];
         }
 
         return response()->json([
             'success' => true,
-            'message' => 'Rapport du taux d\'écoulement des stocks par agent généré avec succès.',
+            'message' => 'Rapport détaillé du taux d\'écoulement basé sur les snapshots.',
             'info_stock_global' => [
                 'entrepot_cuisine' => $nomEntrepotMax,
-                'produit_le_plus_eleve' => $nomProduitMax,
-                'plafond_valeur_max' => $plusGrosStockInitial
+                'produit_le_plus_eleve' => $globalNomProduitMax,
+                'plafond_valeur_max' => $globalPlafondMax
             ],
             'data' => [
                 'start_date' => $startDate->format('d-m-Y'),

@@ -6900,6 +6900,23 @@ class OrderMenuRestaurantController extends Controller
                 throw new \Exception("Configuration des entrepôts incomplète");
             }
 
+            $today = now()->toDateString();
+
+            $ensureSnapshotExists = function (string $productUuid, float $currentQuantity) use ($today, $auth) {
+                $exists = \App\Models\StockSnapshot::where('snapshot_date', $today)
+                    ->where('product_uuid', $productUuid)
+                    ->exists();
+
+                if (!$exists) {
+                    \App\Models\StockSnapshot::create([
+                        'snapshot_date'    => $today,
+                        'product_uuid'     => $productUuid,
+                        'initial_quantity' => $currentQuantity,
+                        'created_by'       => $auth->id,
+                    ]);
+                }
+            };
+
             foreach ($order->items as $item) {
                 $isFree = ((float) $item->total_price) === 0.0;
                 $itemRegulationStatus = $isFree ? PaymentOrderMenusStatus::PAID->value : PaymentOrderMenusStatus::NOT_PAID->value;
@@ -6930,6 +6947,8 @@ class OrderMenuRestaurantController extends Controller
                     if ($stock->quantity < $qty) {
                         throw new \Exception("Stock RESTAURANT insuffisant produit {$virtual->product_uuid}");
                     }
+
+                    $ensureSnapshotExists($virtual->product_uuid, (float) $stock->quantity);
 
                     $stock->update([
                         'quantity'   => $stock->quantity - $qty,
@@ -6982,6 +7001,8 @@ class OrderMenuRestaurantController extends Controller
                             "Stock insuffisant pour l'ingrédient du complément {$vComp->product_uuid}"
                         );
                     }
+
+                    $ensureSnapshotExists($vComp->product_uuid, (float) $productPointComp->quantity);
 
                     $productPointComp->update([
                         'quantity'   => $productPointComp->quantity - $qtyComp,
@@ -7045,6 +7066,8 @@ class OrderMenuRestaurantController extends Controller
                         throw new \Exception("Stock {$warehouseName} insuffisant produit {$virtual->product_uuid}");
                     }
 
+                    $ensureSnapshotExists($virtual->product_uuid, (float) $stock->quantity);
+
                     $stock->update([
                         'quantity'   => $stock->quantity - $qty,
                         'updated_by' => $auth->id
@@ -7084,7 +7107,6 @@ class OrderMenuRestaurantController extends Controller
                 $orderRegulationStatus = PaymentOrderItemStatus::NOT_PAID->value;
             }
 
-            // Envoi ou rafraîchissement de la notification de facture
             \App\Models\OrderNotification::createOrUpdateNotification(
                 $order->uuid,
                 MenuOrderStatus::FACTURATE->value,
@@ -7093,7 +7115,6 @@ class OrderMenuRestaurantController extends Controller
                 'all'
             );
 
-            // Enregistrement final des statuts sur la commande
             $order->update([
                 'status'            => MenuOrderStatus::FACTURATE->value,
                 'regulation_status' => $orderRegulationStatus,
