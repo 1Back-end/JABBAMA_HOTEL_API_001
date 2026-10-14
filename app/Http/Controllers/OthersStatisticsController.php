@@ -206,7 +206,7 @@ class OthersStatisticsController extends Controller
 
         $allTopMenus = OrderMenuRestaurantItem::whereBetween('created_at', [$startDate, $endDate])
             ->whereNotNull('menus_restaurant_uuid')
-            ->whereHas('menu', fn($q) => $q->where('type_menu', TypeMenu::MENU->value))
+            ->whereHas('menu', fn($q) => $q->where('type_menu', [TypeMenu::MENU->value,TypeMenu::HOT_DRINK->value]))
             ->whereHas('order', fn($q) => $q->whereIn('type_clients_for_payment', $paymentTypes))
             ->with(['menu'])
             ->get()
@@ -271,7 +271,6 @@ class OthersStatisticsController extends Controller
                     'total_quantity' => $qty,
                     'total_revenue' => $rev,
                 ];
-
                 if ($menu?->type_menu === TypeMenu::HOT_DRINK->value) {
                     $drinksFromComplementsList->push($formatted);
                 } else {

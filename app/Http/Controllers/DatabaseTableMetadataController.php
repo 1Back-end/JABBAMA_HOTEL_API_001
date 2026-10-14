@@ -7,6 +7,7 @@ use App\Models\DatabaseTableMetadata;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 class DatabaseTableMetadataController extends Controller
@@ -59,6 +60,7 @@ class DatabaseTableMetadataController extends Controller
     {
         $request->validate([
             'password' => ['required', 'string'],
+            'tables' => ['nullable', 'array'],
         ]);
 
         $user = $request->user();
@@ -69,40 +71,49 @@ class DatabaseTableMetadataController extends Controller
             ], 403);
         }
 
+        $tableUuids = $request->input('tables', []);
+
+        $query = DatabaseTableMetadata::query();
+
+        if (!empty($tableUuids)) {
+            $query->whereIn('uuid', $tableUuids);
+        }
+
+        $metadataTables = $query->pluck('table_name')->toArray();
+
+        if (empty($metadataTables)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Aucune table valide sélectionnée pour la réinitialisation.',
+            ], 400);
+        }
+
         try {
-            DB::beginTransaction();
-            $tables = Schema::getTables();
+            Schema::disableForeignKeyConstraints();
 
-            foreach ($tables as $table) {
-                $tableName = $table['name'] ?? $table;
-
+            foreach ($metadataTables as $tableName) {
                 if (in_array($tableName, ['migrations', 'database_table_metadata'])) {
                     continue;
                 }
 
-                DatabaseTableMetadata::firstOrCreate(
-                    ['table_name' => $tableName],
-                    [
-                        'category' => TableCategoryEnum::UNCATEGORIZED->value,
-                        'display_name' => ucfirst(str_replace('_', ' ', $tableName)),
-                        'description' => 'Description par défaut pour ' . $tableName,
-                    ]
-                );
+                if (Schema::hasTable($tableName)) {
+                    DB::table($tableName)->truncate();
+                }
             }
 
-            DB::commit();
+            Schema::enableForeignKeyConstraints();
 
             return response()->json([
                 'success' => true,
-                'message' => 'Registre des tables synchronisé avec succès sous Laravel 13.',
+                'message' => 'Les données des tables sélectionnées ont été vidées avec succès.',
             ], 200);
 
         } catch (\Exception $e) {
-            DB::rollBack();
+            Schema::enableForeignKeyConstraints();
 
             return response()->json([
                 'success' => false,
-                'message' => 'Une erreur est survenue lors de la synchronisation : ' . $e->getMessage(),
+                'message' => 'Une erreur est survenue lors du vidage : ' . $e->getMessage(),
             ], 500);
         }
     }

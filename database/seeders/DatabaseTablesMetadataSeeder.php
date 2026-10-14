@@ -418,10 +418,15 @@ class DatabaseTablesMetadataSeeder extends Seeder
                 'display_name' => 'Entrepôts',
                 'description' => 'Gère la liste des entrepôts et des différents points de stockage.',
             ],
-            'swarehouse_managers' => [
+            'warehouse_managers' => [
                 'category' => TableCategoryEnum::STOCK,
                 'display_name' => 'Gestionnaires d\'Entrepôts',
                 'description' => 'Gère les responsables et gestionnaires associés aux différents entrepôts et points de stockage.',
+            ],
+            'stock_snapshots' => [
+                'category' => TableCategoryEnum::STOCK,
+                'display_name' => 'Instantanés de Stock',
+                'description' => 'Gère les instantanés et l\'historique des états de stock des entrepôts et points de stockage.',
             ],
             'payments' => [
                 'category' => TableCategoryEnum::FINANCE,
