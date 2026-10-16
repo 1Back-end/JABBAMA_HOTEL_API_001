@@ -56,7 +56,6 @@ class PurchaseOrderController extends Controller
         $start_date = Carbon::parse($request->input('start_date'))->startOfDay();
         $end_date = Carbon::parse($request->input('end_date'))->endOfDay();
 
-
         $query = PurchaseOrder::with([
             'items.product',
             'warehouseTo.managers',
@@ -68,7 +67,6 @@ class PurchaseOrderController extends Controller
             'parent'
         ]);
 
-        // 🔹 Filtrage par type et statut
         if ($request->filled('type')) {
             $query->where('type', $request->type);
         }

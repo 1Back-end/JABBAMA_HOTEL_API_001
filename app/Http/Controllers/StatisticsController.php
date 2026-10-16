@@ -155,11 +155,11 @@ class StatisticsController extends Controller
             ]);
 
             $start = $request->start_date
-                ? \Carbon\Carbon::parse($request->start_date)->startOfDay()
+                ? \Carbon\Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay()
                 : now()->startOfDay();
 
             $end = $request->end_date
-                ? \Carbon\Carbon::parse($request->end_date)->endOfDay()
+                ? \Carbon\Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay()
                 : now()->endOfDay();
 
             $statusFilter = $request->status;
@@ -238,11 +238,11 @@ class StatisticsController extends Controller
             ]);
 
             $start = $request->start_date
-                ? Carbon::parse($request->start_date)->startOfDay()
+                ? \Carbon\Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay()
                 : now()->startOfDay();
 
             $end = $request->end_date
-                ? Carbon::parse($request->end_date)->endOfDay()
+                ? \Carbon\Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay()
                 : now()->endOfDay();
 
             $statusFilter = $request->status ?? 'all';
@@ -268,7 +268,6 @@ class StatisticsController extends Controller
                 ];
             });
 
-            // 🔹 Injection des vraies données
             foreach ($supplies->groupBy('status') as $status => $group) {
                 $totals[$status] = [
                     'total'      => $group->count(),
@@ -312,37 +311,32 @@ class StatisticsController extends Controller
     public function StockAdjustmentsJournal(Request $request)
     {
         try {
-            // 🔹 Validation (dates optionnelles)
             $request->validate([
                 'start_date' => 'nullable|date',
                 'end_date'   => 'nullable|date',
-                'action'     => 'nullable|string', // 'all' ou action spécifique
+                'action'     => 'nullable|string',
             ]);
 
-            // 🔹 Dates par défaut = aujourd’hui
             $start = $request->start_date
-                ? \Carbon\Carbon::parse($request->start_date)->startOfDay()
+                ? \Carbon\Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay()
                 : now()->startOfDay();
 
             $end = $request->end_date
-                ? \Carbon\Carbon::parse($request->end_date)->endOfDay()
+                ? \Carbon\Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay()
                 : now()->endOfDay();
 
             $actionFilter = $request->action ?? 'all';
 
-            // 🔹 Requête de base
             $query = StockAdjustment::whereBetween('created_at', [$start, $end]);
 
             if (strtolower($actionFilter) !== 'all') {
-                $query->where('action', (int) $actionFilter); // forcer l'entier
+                $query->where('action', (int) $actionFilter);
             }
 
             $adjustments = $query->get();
 
-            // 🔹 Tous les types d'action possibles
             $allActions = \App\Enums\StockAdjustmentAction::TO_ARRAY();
 
-            // 🔹 Initialiser tous les types avec total = 0
             $data = collect($allActions)->mapWithKeys(function ($label, $action) {
                 return [
                     $action => [
@@ -355,7 +349,6 @@ class StatisticsController extends Controller
                 ];
             });
 
-            // 🔹 Injecter les vraies données si présentes
             foreach ($adjustments->groupBy('action') as $action => $group) {
                 $label = \App\Enums\StockAdjustmentAction::LABEL((int)$action);
                 $data[$action] = [
@@ -369,7 +362,7 @@ class StatisticsController extends Controller
 
             return response()->json([
                 'status'  => 'success',
-                'data'    => $data, // clé = action
+                'data'    => $data,
                 'summary' => [
                     'total_adjustments' => $adjustments->count(),
                     'from'    => $start->toDateString(),
@@ -412,13 +405,12 @@ class StatisticsController extends Controller
                 'status'     => 'nullable|string',
             ]);
 
-            $start = \Illuminate\Support\Carbon::parse($request->start_date)->startOfDay();
-            $end   = \Illuminate\Support\Carbon::parse($request->end_date)->endOfDay();
+            $start = \Illuminate\Support\Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay();
+            $end   = \Illuminate\Support\Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay();
             $statusFilter = $request->status;
 
             DB::beginTransaction();
 
-            // 🔹 Récupérer toutes les commandes selon dates et statut
             $query = PurchaseOrder::with([
                 'items.product',
                 'creator',
@@ -444,7 +436,6 @@ class StatisticsController extends Controller
                 ], 404);
             }
 
-            // 🔹 Définir le chemin et le nom du PDF
             $fileName   = strtoupper('LISTE-DES-COMMANDES-' . $start->format('dmy') . '-' . $end->format('dmy') . '.pdf');
             $folderPath = 'storage/orders-list';
             $filePath   = $folderPath . '/' . $fileName;
@@ -461,7 +452,6 @@ class StatisticsController extends Controller
 
             $footer = 'pdfs.reports.factures.footer';
 
-            // 🔹 Générer le PDF (utiliser ton helper)
             save_browser_shot_pdf(
                 view: 'pdfs.orders-list.orders-list',
                 data: $data,
@@ -471,7 +461,6 @@ class StatisticsController extends Controller
                 footer: $footer
             );
 
-            // 🔹 Créer ou mettre à jour l'enregistrement PDF
             $pdf = PdfDocument::updateOrCreate(
                 [
                     'name' => 'ORDERS-LIST',
@@ -536,13 +525,12 @@ class StatisticsController extends Controller
                 'status'     => 'nullable|string',
             ]);
 
-            $start = \Illuminate\Support\Carbon::parse($request->start_date)->startOfDay();
-            $end   = \Illuminate\Support\Carbon::parse($request->end_date)->endOfDay();
+            $start = \Illuminate\Support\Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay();
+            $end   = \Illuminate\Support\Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay();
             $statusFilter = $request->status;
 
             DB::beginTransaction();
 
-            // 🔹 Récupérer tous les approvisionnements selon dates et statut
             $query = Supply::with([
                 'items.product',
                 'items.supplier',
@@ -888,21 +876,18 @@ class StatisticsController extends Controller
             'end_date'   => 'nullable|date',
         ]);
 
-        // 🔹 Dates par défaut
         $endDate = $request->end_date
-            ? Carbon::parse($request->end_date)->endOfDay()
+            ? \Carbon\Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay()
             : now()->endOfDay();
 
         $startDate = $request->start_date
-            ? Carbon::parse($request->start_date)->startOfDay()
+            ? \Carbon\Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay()
             : $endDate->copy()->subMonth()->startOfDay();
 
-        // 🔹 Nom du produit
         $productName = DB::table('produits')
             ->where('uuid', $productUuid)
             ->value('name') ?? 'Inconnu';
 
-        // 🔹 Total approvisionné (EXTERNAL uniquement, sans entrepôt)
         $totalSupplied = DB::table('supply_items as si')
             ->join('supplies as s', 's.uuid', '=', 'si.supply_uuid')
             ->join('purchase_orders as po', 'po.uuid', '=', 's.purchase_order_uuid')
@@ -916,7 +901,6 @@ class StatisticsController extends Controller
             ])
             ->sum('si.quantity_supplied');
 
-        // 🔹 Total des avaries (tous entrepôts confondus)
         $totalAvaries = DB::table('stock_adjustments_items as sai')
             ->join('stock_adjustments as sa', 'sa.uuid', '=', 'sai.stock_adjustment_uuid')
             ->where('sai.product_uuid', $productUuid)
@@ -924,12 +908,10 @@ class StatisticsController extends Controller
             ->whereBetween('sa.created_at', [$startDate, $endDate])
             ->sum('sai.quantity');
 
-        // 🔹 Pourcentage d’avaries
         $percentAvaries = $totalSupplied > 0
             ? round(($totalAvaries / $totalSupplied) * 100, 2)
             : 0;
 
-        // 🔹 Données pour le camembert
         $data = [
             ['label' => 'Avaries', 'value' => $percentAvaries],
             ['label' => 'Quantité intacte', 'value' => round(100 - $percentAvaries, 2)],
@@ -954,22 +936,19 @@ class StatisticsController extends Controller
     public function print_all_data_for_dashboard(Request $request)
     {
         try {
-            // 🔹 Validation
             $request->validate([
                 'start_date' => 'nullable|date',
                 'end_date'   => 'nullable|date',
             ]);
 
-            // 🔹 Dates par défaut
             $start = $request->start_date
-                ? Carbon::parse($request->start_date)->startOfDay()
+                ? \Carbon\Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay()
                 : now()->startOfDay();
 
             $end = $request->end_date
-                ? Carbon::parse($request->end_date)->endOfDay()
+                ? \Carbon\Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay()
                 : now()->endOfDay();
 
-            // 🔹 Préparer les données (ton code existant ici)...
             $adjustments = StockAdjustment::whereBetween('created_at', [$start, $end])->get();
             $adjustmentsData = collect(\App\Enums\StockAdjustmentAction::TO_ARRAY())
                 ->mapWithKeys(function ($label, $action) use ($adjustments) {

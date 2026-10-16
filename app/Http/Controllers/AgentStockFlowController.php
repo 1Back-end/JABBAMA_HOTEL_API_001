@@ -6,6 +6,7 @@ use App\Enums\MenuOrderStatus;
 use App\Models\OrderMenuRestaurantItem;
 use App\Models\Product;
 use App\Models\ProductPoint;
+use App\Models\StockPerformanceCriterion;
 use App\Models\User;
 use App\Models\Warehouse;
 use Illuminate\Http\Request;
@@ -36,12 +37,31 @@ class AgentStockFlowController extends Controller
         $agentIds = $agentIdsQuery->distinct()->pluck('updated_by');
         $agents = User::whereIn('id', $agentIds)->get();
 
+        // 1. Récupération de l'entrepôt cuisine
         $restaurantWarehouse = Warehouse::where('is_used_for_restaurant', true)->first();
         $nomEntrepotMax = $restaurantWarehouse ? $restaurantWarehouse->name : 'N/A';
+        $restaurantWarehouseUuid = $restaurantWarehouse ? $restaurantWarehouse->uuid : null;
 
         $report = [];
         $globalNomProduitMax = 'N/A';
         $globalPlafondMax = 0;
+
+        // 2. Recherche globale du produit avec le stock le plus élevé DANS CET ENTREPÔT CUISINE
+        if ($restaurantWarehouseUuid) {
+            $topProductPointGlobal = \App\Models\ProductPoint::with('product')
+                ->where('point_uuid', $restaurantWarehouseUuid)
+                ->orderBy('quantity', 'desc')
+                ->first();
+
+            if ($topProductPointGlobal) {
+                $globalPlafondMax = (float) $topProductPointGlobal->quantity;
+                $globalNomProduitMax = $topProductPointGlobal->product ? $topProductPointGlobal->product->name : 'N/A';
+            }
+        }
+
+        if ($globalPlafondMax <= 0) {
+            $globalPlafondMax = 1;
+        }
 
         foreach ($agents as $agent) {
             $listeVentes = OrderMenuRestaurantItem::with(['menu.compositionItems.product', 'menu'])
@@ -60,7 +80,8 @@ class AgentStockFlowController extends Controller
                     'taux_ecoulement' => 'N/A',
                     'commande' => 'Aucune vente',
                     'details_calcul' => null,
-                    'statut' => 'Bar uniquement: Pas de vente de restauration sur ce service'
+                    'statut' => 'Bar uniquement: Pas de vente de restauration sur ce service',
+                    'badge_color' => 'secondary'
                 ];
                 continue;
             }
@@ -85,48 +106,30 @@ class AgentStockFlowController extends Controller
                     continue;
                 }
 
-                $saleDate = Carbon::parse($vente->created_at)->toDateString();
-
-                $topSnapshotGlobal = \App\Models\StockSnapshot::where('snapshot_date', $saleDate)
-                    ->orderBy('initial_quantity', 'desc')
-                    ->with('product')
-                    ->first();
-
-                $plusGrosStockInitialGlobal = $topSnapshotGlobal ? (float) $topSnapshotGlobal->initial_quantity : 1;
-                $nomProduitMax = ($topSnapshotGlobal && $topSnapshotGlobal->product) ? $topSnapshotGlobal->product->name : 'N/A';
-
-                $globalPlafondMax = max($globalPlafondMax, $plusGrosStockInitialGlobal);
-                if ($nomProduitMax !== 'N/A') {
-                    $globalNomProduitMax = $nomProduitMax;
-                }
-
-                if ($plusGrosStockInitialGlobal <= 0) {
-                    $plusGrosStockInitialGlobal = 1;
-                }
-
                 foreach ($menu->compositionItems as $item) {
                     $qteDansRecette = (float) $item->quantity_used;
                     $productUuid = $item->product_uuid;
                     $nomProduit = $item->product ? $item->product->name : '';
 
-                    $snapshot = \App\Models\StockSnapshot::where('snapshot_date', $saleDate)
-                        ->where('product_uuid', $productUuid)
-                        ->first();
-
-                    $stockInitialArt = $snapshot
-                        ? (float) $snapshot->initial_quantity
-                        : (float) ProductPoint::where('produit_uuid', $productUuid)->value('quantity');
+                    // Récupération du stock de l'article STRICTEMENT DANS L'ENTREPÔT CUISINE
+                    $stockInitialArt = 0;
+                    if ($restaurantWarehouseUuid) {
+                        $stockInitialArt = (float) \App\Models\ProductPoint::where('point_uuid', $restaurantWarehouseUuid)
+                            ->where('produit_uuid', $productUuid)
+                            ->value('quantity') ?? 0;
+                    }
 
                     $stockReferenceArticles[strtolower($nomProduit)] = $stockInitialArt;
 
-                    $calculPointArt = ($quantiteVendue * $qteDansRecette * $stockInitialArt);
+                    // Calculs réels et maximums avec les opérateurs de multiplication corrects (*)
+                    $calculPointArt = $quantiteVendue * $qteDansRecette * $stockInitialArt;
                     $pointsReelsAgent += $calculPointArt;
 
-                    $calculPointMax = ($quantiteVendue * $qteDansRecette * $plusGrosStockInitialGlobal);
+                    $calculPointMax = $quantiteVendue * $qteDansRecette * $globalPlafondMax;
                     $pointsMaximumPossibles += $calculPointMax;
 
-                    $strNumeratorParts[] = "({$quantiteVendue}*{$qteDansRecette}*{$stockInitialArt})";
-                    $strDenominatorParts[] = "({$quantiteVendue}*{$qteDansRecette}*{$plusGrosStockInitialGlobal})";
+                    $strNumeratorParts[] = "({$quantiteVendue} * {$qteDansRecette} * {$stockInitialArt})";
+                    $strDenominatorParts[] = "({$quantiteVendue} * {$qteDansRecette} * {$globalPlafondMax})";
 
                     $compositionDetails[] = [
                         'ingredient' => strtolower($nomProduit),
@@ -144,6 +147,8 @@ class AgentStockFlowController extends Controller
 
             $formuleString = "[(" . implode(' + ', $strNumeratorParts) . ") / (" . implode(' + ', $strDenominatorParts) . ")] * 100%";
 
+            $evaluation = $this->evaluatePerformance($tauxEcoulementGlobal);
+
             $report[] = [
                 'agent_id' => $agent->id,
                 'agent_name' => $agent->nom_utilisateur ?? $agent->email,
@@ -160,13 +165,14 @@ class AgentStockFlowController extends Controller
                     'formule_appliquee' => $formuleString,
                     'taux_ecoulement' => $tauxEcoulementGlobal . '%'
                 ],
-                'statut' => $this->evaluatePerformance($tauxEcoulementGlobal)
+                'statut' => $evaluation['message'],
+                'badge_color' => $evaluation['badge_color']
             ];
         }
 
         return response()->json([
             'success' => true,
-            'message' => 'Rapport détaillé du taux d\'écoulement basé sur les snapshots.',
+            'message' => 'Rapport détaillé du taux d\'écoulement basé sur l\'entrepôt cuisine.',
             'info_stock_global' => [
                 'entrepot_cuisine' => $nomEntrepotMax,
                 'produit_le_plus_eleve' => $globalNomProduitMax,
@@ -181,14 +187,26 @@ class AgentStockFlowController extends Controller
         ]);
     }
 
-    private function evaluatePerformance(float $taux): string
+    private function evaluatePerformance(float $taux): array
     {
-        if ($taux >= 80) {
-            $tauxText = rtrim(rtrim(number_format($taux, 1), '0'), '.');
-            return "Excellent: A orienté {$tauxText}% de ses ventes vers le plus gros surstock.";
-        } elseif ($taux >= 40) {
-            return "Standard: Fait du volume, mais a vendu autant de petits stocks que de gros stocks.";
+        $criterion = StockPerformanceCriterion::where('is_active', true)
+            ->where('min_rate', '<=', $taux)
+            ->where('max_rate', '>=', $taux)
+            ->first()
+            ?? StockPerformanceCriterion::where('is_active', true)
+                ->orderByRaw('ABS(min_rate - ?)', [$taux])
+                ->first();
+
+        if (!$criterion) {
+            return [
+                'message' => "Performance non évaluée pour un taux de {$taux}%.",
+                'badge_color' => 'danger'
+            ];
         }
-        return "À améliorer: Ventes orientées vers des stocks non critiques.";
+
+        return [
+            'message' => $criterion->description_template,
+            'badge_color' => $criterion->badge_color ?? 'success'
+        ];
     }
 }

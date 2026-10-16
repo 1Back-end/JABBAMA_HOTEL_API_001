@@ -11,6 +11,9 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Supprime la table si elle existe déjà pour éviter l'erreur 1050
+        Schema::dropIfExists('stock_snapshots');
+
         Schema::create('stock_snapshots', function (Blueprint $table) {
             $table->uuid('uuid')->primary();
 
