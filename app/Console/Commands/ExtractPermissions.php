@@ -135,6 +135,11 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des entrepôts',
             'modules' => ['Gestion du restaurant','Autres Modules','Gestion des stocks'],
         ],
+        'definied_warehouses_is_used_for_stock_flow' => [
+            'description' => 'Définir l\'entrepôt utilisé pour l\'écoulement des stocks',
+            'category' => 'Gestion des entrepôts',
+            'modules' => ['Gestion du restaurant', 'Autres Modules', 'Gestion des stocks'],
+        ],
         'definied_warehouses_is_bar_warehouse' => [
             'description' => 'Définir l\'entrepôt bar utilisé pour le restaurant' ,
             'category' => 'Gestion des entrepôts',

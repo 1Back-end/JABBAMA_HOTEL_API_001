@@ -120,4 +120,12 @@ class RestaurantDrinkConfiguration extends Model
         }
         return null;
     }
+    public function composition()
+    {
+        return $this->hasOne(
+            DrinkComposition::class,
+            'drinks_restaurant_uuid',
+            'uuid'
+        );
+    }
 }

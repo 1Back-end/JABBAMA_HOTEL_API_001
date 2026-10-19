@@ -19,11 +19,11 @@ enum TableCategoryEnum: string
     public function label(): string
     {
         return match($this) {
-            self::SYSTEM => 'Système et Sécurité',
-            self::CONFIGURATION => 'Configuration et Paramétrage',
+            self::SYSTEM => 'Paramètre systèmes',
+            self::CONFIGURATION => 'Libellées/variable Reutilisable',
             self::CATALOG => 'Catalogue & Articles',
             self::SALES => 'Ventes et commandes restaurant',
-            self::STOCK => 'Stocks et Approvisionnements',
+            self::STOCK => 'Données utilisées',
             self::FINANCE => 'Finances',
             self::AUDIT => 'Audit & Traçabilité',
             self::UNCATEGORIZED => 'Non catégorisé',

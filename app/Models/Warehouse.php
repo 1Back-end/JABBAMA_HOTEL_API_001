@@ -29,7 +29,8 @@ class Warehouse extends Model
         'is_primary',
         'is_used_for_restaurant',
         'is_bar_warehouse',
-        'is_used_for_drinks_transformation'
+        'is_used_for_drinks_transformation',
+        'is_used_for_stock_flow'
     ];
 
     protected $appends = ['total_stock'];

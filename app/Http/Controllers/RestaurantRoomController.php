@@ -242,7 +242,7 @@ class RestaurantRoomController extends Controller
     {
         $auth = auth()->user();
         $roleIds = $auth->roles->pluck('id');
-        $perPage = $request->input('limit', 5);
+        $perPage = $request->input('limit', 25);
         $page = $request->input('page', 1);
 
         $query = RestaurantRoom::with([

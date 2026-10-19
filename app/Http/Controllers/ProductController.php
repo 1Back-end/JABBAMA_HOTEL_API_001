@@ -100,7 +100,11 @@ class ProductController extends Controller
             });
         }
 
-        $products = $query->latest()->paginate($perPage, ['*'], 'page', $page);
+        $products = $query->orderBy('name', 'asc')
+            ->paginate(
+                perPage: $perPage,
+                page: $page
+            );
 
         return response()->json([
             'data'         => $products->items(),

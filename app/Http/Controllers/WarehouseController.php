@@ -109,7 +109,8 @@ class WarehouseController extends Controller
             'natures.*'   => 'required|exists:nature_entrepots,uuid',
             'is_used_for_restaurant' => 'nullable|boolean',
             'is_bar_warehouse'  => 'nullable|boolean',
-            'is_used_for_drinks_transformation' => 'nullable|boolean'
+            'is_used_for_drinks_transformation' => 'nullable|boolean',
+            'is_used_for_stock_flow' => 'nullable|boolean' // 🔹 Ajout ici
         ]);
 
         /**
@@ -176,13 +177,21 @@ class WarehouseController extends Controller
             }
         }
 
-        // Ajout created_by
+        if (!empty($validated['is_used_for_stock_flow']) && $validated['is_used_for_stock_flow']) {
+            $existsStockFlow = Warehouse::where('is_used_for_stock_flow', true)->exists();
+            if ($existsStockFlow) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Il existe déjà un entrepôt pour l'écoulement des stocks.",
+                ], 422);
+            }
+        }
+
         $validated['created_by'] = $auth->id;
 
-        // 🔥 Création de l'entrepôt
         $warehouse = Warehouse::create($validated);
 
-        // 🔥 Association des natures
+
         $natures = collect($validated['natures'])->mapWithKeys(fn($uuid) => [
             $uuid => [
                 'is_active'  => true,
@@ -192,7 +201,6 @@ class WarehouseController extends Controller
         ]);
         $warehouse->natures()->sync($natures);
 
-        // 🔥 Association des managers
         $managers = collect($validated['managers'])->mapWithKeys(fn($managerId) => [
             $managerId => [
                 'created_by' => $auth->id,
@@ -243,7 +251,6 @@ class WarehouseController extends Controller
         $auth = auth()->user();
         $warehouse = Warehouse::where('uuid', $uuid)->firstOrFail();
 
-        // 🔹 Validation
         $validated = $request->validate([
             'name'        => 'required|string|max:255|unique:warehouses,name,' . $warehouse->uuid . ',uuid',
             'stock_type'  => 'required|string|max:255',
@@ -256,10 +263,10 @@ class WarehouseController extends Controller
             'natures.*'   => 'required|exists:nature_entrepots,uuid',
             'is_used_for_restaurant' => 'nullable|boolean',
             'is_bar_warehouse'  => 'nullable|boolean',
-            'is_used_for_drinks_transformation' => 'nullable|boolean'
+            'is_used_for_drinks_transformation' => 'nullable|boolean',
+            'is_used_for_stock_flow' => 'nullable|boolean'
         ]);
 
-        // 🔹 Règle entrepôt principal = 1 seul manager
         if ($validated['is_primary'] && count($validated['managers']) !== 1) {
             return response()->json([
                 'success' => false,
@@ -267,7 +274,6 @@ class WarehouseController extends Controller
             ], 422);
         }
 
-        // 🔹 Vérification qu’il n’y a qu’un seul entrepôt principal
         if ($validated['is_primary']) {
             $alreadyPrimary = Warehouse::where('uuid', '!=', $warehouse->uuid)
                 ->where('is_primary', true)
@@ -281,7 +287,6 @@ class WarehouseController extends Controller
             }
         }
 
-        // 🔹 Vérification : un seul entrepôt cuisine
         if (!empty($validated['is_used_for_restaurant']) && $validated['is_used_for_restaurant']) {
 
             $existsKitchen = Warehouse::where('is_used_for_restaurant', true)
@@ -296,7 +301,6 @@ class WarehouseController extends Controller
             }
         }
 
-        // 🔹 Vérification : un seul entrepôt bar
         if (!empty($validated['is_bar_warehouse']) && $validated['is_bar_warehouse']) {
 
             $existsBar = Warehouse::where('is_bar_warehouse', true)
@@ -325,21 +329,31 @@ class WarehouseController extends Controller
             }
         }
 
-        // 🔹 Mise à jour de l'entrepôt
+        if (!empty($validated['is_used_for_stock_flow']) && $validated['is_used_for_stock_flow']) {
+
+            $existsStockFlow = Warehouse::where('is_used_for_stock_flow', true)
+                ->where('uuid', '!=', $warehouse->uuid)
+                ->exists();
+
+            if ($existsStockFlow) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Il existe déjà un entrepôt pour l'écoulement des stocks.",
+                ], 422);
+            }
+        }
+
         $validated['updated_by'] = $auth->id;
         $warehouse->update($validated);
 
-        // 🔹 Suppression définitive des anciens pivots natures
         \Illuminate\Support\Facades\DB::table('nature_warehouse')
             ->where('warehouse_uuid', $warehouse->uuid)
             ->delete();
 
-        // 🔹 Suppression définitive des anciens pivots managers
         \Illuminate\Support\Facades\DB::table('warehouse_managers')
             ->where('warehouse_uuid', $warehouse->uuid)
             ->delete();
 
-        // 🔹 Préparer les nouvelles natures
         $natures = collect($validated['natures'])->mapWithKeys(fn($uuid) => [
             $uuid => [
                 'is_active'  => true,
@@ -348,7 +362,6 @@ class WarehouseController extends Controller
             ],
         ]);
 
-        // 🔹 Préparer les nouveaux managers
         $managers = collect($validated['managers'])->mapWithKeys(fn($managerId) => [
             $managerId => [
                 'created_by' => $auth->id,
@@ -356,11 +369,9 @@ class WarehouseController extends Controller
             ],
         ]);
 
-        // 🔹 Synchronisation
         $warehouse->natures()->sync($natures);
         $warehouse->managers()->sync($managers);
 
-        // 🔹 Réponse finale
         return response()->json([
             'success' => true,
             'message' => "L'entrepôt a été mis à jour avec succès.",

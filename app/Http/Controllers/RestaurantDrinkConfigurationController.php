@@ -35,7 +35,6 @@ class RestaurantDrinkConfigurationController extends Controller
             'product'
         ])
 
-            // 🔹 Filtre actif / inactif
             ->when($request->has('is_active'), function ($query) use ($request) {
 
                 $query->where(
@@ -48,7 +47,6 @@ class RestaurantDrinkConfigurationController extends Controller
 
             })
 
-            // 🔹 Filtre type de boisson
             ->when(!empty($status), function ($query) use ($status) {
 
                 switch ($status) {
@@ -66,7 +64,6 @@ class RestaurantDrinkConfigurationController extends Controller
 
             })
 
-            // 🔍 Recherche
             ->when(!empty($search), function ($query) use ($search) {
 
                 $query->where(function ($q) use ($search) {
@@ -202,33 +199,45 @@ class RestaurantDrinkConfigurationController extends Controller
         DB::beginTransaction();
 
         try {
-
-            // 🔹 Validation (default_price retiré)
             $validated = $request->validate([
-                'product_uuid' => ['required', 'uuid', 'exists:produits,uuid'],
+                'product_uuid' => ['nullable', 'uuid', 'exists:produits,uuid', 'required_without:drink_name'],
+                'drink_name' => ['nullable', 'string', 'required_without:product_uuid'],
                 'prices_for_clients_debtor' => ['nullable', 'array'],
                 'prices_for_clients_partner' => ['nullable', 'array'],
                 'prices_for_clients_free' => ['nullable', 'array'],
                 'description' => ['nullable', 'string'],
                 'is_active' => ['nullable', 'boolean'],
                 'quantity' => ['nullable', 'integer', 'min:0'],
-                'is_finished_product' => ['nullable', 'boolean'],
-                'is_transformable_product' => ['nullable', 'boolean'],
             ]);
 
-            $existingConfig = RestaurantDrinkConfiguration::where(
-                'product_uuid',
-                $validated['product_uuid']
-            )->first();
-
-            if ($existingConfig) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Cette boisson a déjà une configuration de prix.'
-                ], 400);
+            // Vérification de l'existence d'une configuration existante
+            if (!empty($validated['product_uuid'])) {
+                $existingConfig = RestaurantDrinkConfiguration::where('product_uuid', $validated['product_uuid'])->first();
+                if ($existingConfig) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Cette boisson a déjà une configuration de prix.'
+                    ], 400);
+                }
+            } elseif (!empty($validated['drink_name'])) {
+                $existingConfig = RestaurantDrinkConfiguration::where('drink_name', $validated['drink_name'])->first();
+                if ($existingConfig) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Cette boisson a déjà une configuration de prix.'
+                    ], 400);
+                }
             }
 
-            // 🔁 Nettoyage des tableaux de prix (uniquement les valeurs du front, sans null, sans doublon)
+            // Gestion automatique des types de produits (Transformable vs Fini)
+            if (!empty($validated['drink_name'])) {
+                $validated['is_transformable_product'] = true;
+                $validated['is_finished_product'] = false;
+            } else {
+                $validated['is_transformable_product'] = false;
+                $validated['is_finished_product'] = true;
+            }
+
             $validated['prices_for_clients_debtor'] = array_values(
                 array_unique(
                     array_filter(
@@ -256,11 +265,9 @@ class RestaurantDrinkConfigurationController extends Controller
                 )
             );
 
-            // 🔹 Métadonnées
             $validated['created_by'] = $auth->id;
             $validated['has_prices'] = true;
 
-            // 💾 Enregistrement
             $config = RestaurantDrinkConfiguration::create($validated);
 
             DB::commit();
@@ -301,29 +308,54 @@ class RestaurantDrinkConfigurationController extends Controller
         DB::beginTransaction();
 
         try {
-
             $config = RestaurantDrinkConfiguration::where('uuid', $uuid)->firstOrFail();
 
             $validated = $request->validate([
-                'product_uuid' => ['required', 'uuid', 'exists:produits,uuid'],
+                'product_uuid' => ['nullable', 'uuid', 'exists:produits,uuid', 'required_without:drink_name'],
+                'drink_name' => ['nullable', 'string', 'required_without:product_uuid'],
                 'prices_for_clients_debtor' => ['nullable', 'array'],
                 'prices_for_clients_partner' => ['nullable', 'array'],
                 'prices_for_clients_free' => ['nullable', 'array'],
                 'description' => ['nullable', 'string'],
                 'is_active' => ['nullable', 'boolean'],
-                'is_finished_product' => ['nullable', 'boolean'],
-                'is_transformable_product' => ['nullable', 'boolean'],
             ]);
 
-            $exists = RestaurantDrinkConfiguration::where('product_uuid', $validated['product_uuid'])
-                ->where('uuid', '!=', $uuid)
-                ->exists();
+            // Vérification de doublon (produit ou nom de boisson)
+            if (!empty($validated['product_uuid'])) {
+                $exists = RestaurantDrinkConfiguration::where('product_uuid', $validated['product_uuid'])
+                    ->where('uuid', '!=', $uuid)
+                    ->exists();
 
-            if ($exists) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Ce produit possède déjà une configuration de prix.'
-                ], 400);
+                if ($exists) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Ce produit possède déjà une configuration de prix.'
+                    ], 400);
+                }
+                // Si on passe à un product_uuid, on nettoie drink_name
+                $validated['drink_name'] = null;
+            } elseif (!empty($validated['drink_name'])) {
+                $exists = RestaurantDrinkConfiguration::where('drink_name', $validated['drink_name'])
+                    ->where('uuid', '!=', $uuid)
+                    ->exists();
+
+                if ($exists) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Cette boisson possède déjà une configuration de prix.'
+                    ], 400);
+                }
+                // Si on passe à un drink_name, on nettoie product_uuid
+                $validated['product_uuid'] = null;
+            }
+
+            // Attribution automatique des drapeaux selon le champ présent
+            if (!empty($validated['drink_name'])) {
+                $validated['is_transformable_product'] = true;
+                $validated['is_finished_product'] = false;
+            } else {
+                $validated['is_transformable_product'] = false;
+                $validated['is_finished_product'] = true;
             }
 
             $validated['prices_for_clients_debtor'] = array_values(
@@ -385,7 +417,7 @@ class RestaurantDrinkConfigurationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantDrinkConfigurationController::update_status
-     * @permission_desc Activer/Désactiver les prix des boissons clients
+     * @permission_desc Activer/Désactiver les prix des boissons du bar
      */
     public function update_status(Request $request, string $uuid)
     {

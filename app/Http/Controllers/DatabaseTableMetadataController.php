@@ -88,10 +88,40 @@ class DatabaseTableMetadataController extends Controller
             ], 400);
         }
 
+        $allTables = DatabaseTableMetadata::pluck('table_name')->toArray();
+        $tablesToTruncate = $metadataTables;
+
+        $hasNewDependencies = true;
+
+        while ($hasNewDependencies) {
+            $hasNewDependencies = false;
+
+            foreach ($tablesToTruncate as $parentTable) {
+                if (!Schema::hasTable($parentTable)) {
+                    continue;
+                }
+
+                foreach ($allTables as $potentialChildTable) {
+                    if (in_array($potentialChildTable, $tablesToTruncate) || !Schema::hasTable($potentialChildTable)) {
+                        continue;
+                    }
+
+                    $foreignKeys = Schema::getForeignKeys($potentialChildTable);
+                    foreach ($foreignKeys as $foreignKey) {
+                        if ($foreignKey['foreign_table'] === $parentTable) {
+                            $tablesToTruncate[] = $potentialChildTable;
+                            $hasNewDependencies = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
         try {
             Schema::disableForeignKeyConstraints();
 
-            foreach ($metadataTables as $tableName) {
+            foreach ($tablesToTruncate as $tableName) {
                 if (in_array($tableName, ['migrations', 'database_table_metadata'])) {
                     continue;
                 }
@@ -105,7 +135,7 @@ class DatabaseTableMetadataController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Les données des tables sélectionnées ont été vidées avec succès.',
+                'message' => 'Les tables sélectionnées ainsi que toutes leurs dépendances directes et indirectes ont été réinitialisées avec succès.',
             ], 200);
 
         } catch (\Exception $e) {
