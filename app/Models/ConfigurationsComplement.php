@@ -47,7 +47,7 @@ class ConfigurationsComplement extends Model
         'is_active' => 'boolean',
     ];
 
-    protected $appends = ['status_label'];
+    protected $appends = ['status_label','calculated_production_cost'];
 
     public function getStatusLabelAttribute(): string
     {
@@ -95,5 +95,54 @@ class ConfigurationsComplement extends Model
     public function updater()
     {
         return $this->belongsTo(User::class, 'updated_by');
+    }
+    public function composition()
+    {
+        return $this->hasOne(ComplementComposition::class, 'commplements_restaurant_uuid', 'uuid');
+    }
+
+    public function compositionItems()
+    {
+        return $this->hasManyThrough(
+            ComplementCompositionItem::class,
+            ComplementComposition::class,
+            'commplements_restaurant_uuid',
+            'complement_uuid',
+            'uuid',
+            'uuid'
+        );
+    }
+    public function getCalculatedProductionCostAttribute(): float
+    {
+        $totalCalculatedProductionCost = 0;
+
+        $items = $this->compositionItems;
+        foreach ($items as $index => $item) {
+            $quantityUsed = floatval($item->quantity_used ?? 0);
+            $query = \Illuminate\Support\Facades\DB::table('supply_items as si')
+                ->join('supplies as s', 's.uuid', '=', 'si.supply_uuid')
+                ->where('si.product_uuid', $item->product_uuid)
+                ->whereNotNull('si.unit_price')
+                ->whereNull('si.deleted_at')
+                ->whereIn('s.status', [
+                    \App\Enums\SupplyStatus::VALIDATED->value,
+                    \App\Enums\SupplyStatus::PARTIALLY_VALIDATED->value
+                ])
+                ->orderBy('s.supply_date', 'desc')
+                ->orderBy('s.created_at', 'desc')
+                ->select('si.unit_price', 's.supply_date', 's.status');
+
+            $latestSupplyItem = $query->first();
+
+            $unitPrice = $latestSupplyItem ? floatval($latestSupplyItem->unit_price) : 0;
+
+            $itemTotal = $unitPrice * $quantityUsed;
+            $totalCalculatedProductionCost += $itemTotal;
+        }
+
+        $additionalCost = floatval($this->additional_cost ?? 0);
+        $totalCalculatedProductionCost += $additionalCost;
+
+        return round($totalCalculatedProductionCost, 2);
     }
 }

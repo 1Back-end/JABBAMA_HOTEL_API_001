@@ -6903,18 +6903,18 @@ class OrderMenuRestaurantController extends Controller
             $today = now()->toDateString();
 
             $ensureSnapshotExists = function (string $productUuid, float $currentQuantity) use ($today, $auth) {
-                $exists = \App\Models\StockSnapshot::where('snapshot_date', $today)
-                    ->where('product_uuid', $productUuid)
-                    ->exists();
-
-                if (!$exists) {
-                    \App\Models\StockSnapshot::create([
-                        'snapshot_date'    => $today,
-                        'product_uuid'     => $productUuid,
+                $snapshot = \App\Models\StockSnapshot::firstOrCreate(
+                    [
+                        'snapshot_date' => $today,
+                        'product_uuid'  => $productUuid,
+                    ],
+                    [
                         'initial_quantity' => $currentQuantity,
                         'created_by'       => $auth->id,
-                    ]);
-                }
+                    ]
+                );
+
+                \Log::info("Snapshot pour {$productUuid} : " . ($snapshot->wasRecentlyCreated ? 'CRÉÉ' : 'DÉJÀ EXISTANT'));
             };
 
             foreach ($order->items as $item) {
