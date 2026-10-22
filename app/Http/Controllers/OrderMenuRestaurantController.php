@@ -6900,23 +6900,13 @@ class OrderMenuRestaurantController extends Controller
                 throw new \Exception("Configuration des entrepôts incomplète");
             }
 
-            $today = now()->toDateString();
+            // Récupérer le plafond global max actuel de la cuisine juste avant la déduction
+            $topProductGlobal = ProductPoint::where('point_uuid', $warehouseRestaurant->uuid)
+                ->orderBy('quantity', 'desc')
+                ->first();
+            $currentGlobalPlafond = $topProductGlobal ? (float) $topProductGlobal->quantity : 1;
 
-            $ensureSnapshotExists = function (string $productUuid, float $currentQuantity) use ($today, $auth) {
-                $snapshot = \App\Models\StockSnapshot::firstOrCreate(
-                    [
-                        'snapshot_date' => $today,
-                        'product_uuid'  => $productUuid,
-                    ],
-                    [
-                        'initial_quantity' => $currentQuantity,
-                        'created_by'       => $auth->id,
-                    ]
-                );
-
-                \Log::info("Snapshot pour {$productUuid} : " . ($snapshot->wasRecentlyCreated ? 'CRÉÉ' : 'DÉJÀ EXISTANT'));
-            };
-
+            // --- 1. TRAITEMENT DES PLATS / ITEMS RESTAURANT ---
             foreach ($order->items as $item) {
                 $isFree = ((float) $item->total_price) === 0.0;
                 $itemRegulationStatus = $isFree ? PaymentOrderMenusStatus::PAID->value : PaymentOrderMenusStatus::NOT_PAID->value;
@@ -6948,7 +6938,7 @@ class OrderMenuRestaurantController extends Controller
                         throw new \Exception("Stock RESTAURANT insuffisant produit {$virtual->product_uuid}");
                     }
 
-                    $ensureSnapshotExists($virtual->product_uuid, (float) $stock->quantity);
+                    $stockAuMomentFacture = (float) $stock->quantity;
 
                     $stock->update([
                         'quantity'   => $stock->quantity - $qty,
@@ -6956,8 +6946,10 @@ class OrderMenuRestaurantController extends Controller
                     ]);
 
                     $virtual->update([
-                        'status'     => OrderMenuRestaurantItemStatus::DELIVERED->value,
-                        'updated_by' => $auth->id
+                        'status'             => OrderMenuRestaurantItemStatus::DELIVERED->value,
+                        'stock_at_billing'   => $stockAuMomentFacture,
+                        'plafond_at_billing' => $currentGlobalPlafond,
+                        'updated_by'         => $auth->id
                     ]);
 
                     MenuVirtualTemp::where('order_menu_restaurant_uuid', $order->uuid)
@@ -6970,6 +6962,7 @@ class OrderMenuRestaurantController extends Controller
                         ]);
                 }
 
+                // GESTION DES COMPLÉMENTS
                 $virtualComplements = ComplementVirtualTemp::where('order_menu_restaurant_uuid', $order->uuid)
                     ->where('type', 'initial')
                     ->where('status', 'pending')
@@ -6978,11 +6971,9 @@ class OrderMenuRestaurantController extends Controller
                     ->get();
 
                 foreach ($virtualComplements as $vComp) {
-
                     $qtyComp = (float) $vComp->quantity_used;
 
                     $composition = ComplementComposition::where('commplements_restaurant_uuid', $vComp->complement_uuid)->first();
-
                     $targetWarehouseUuid = $composition ? $composition->warehouse_uuid : $warehouseRestaurant->uuid;
 
                     $productPointComp = ProductPoint::where('produit_uuid', $vComp->product_uuid)
@@ -7001,8 +6992,6 @@ class OrderMenuRestaurantController extends Controller
                             "Stock insuffisant pour l'ingrédient du complément {$vComp->product_uuid}"
                         );
                     }
-
-                    $ensureSnapshotExists($vComp->product_uuid, (float) $productPointComp->quantity);
 
                     $productPointComp->update([
                         'quantity'   => $productPointComp->quantity - $qtyComp,
@@ -7027,6 +7016,7 @@ class OrderMenuRestaurantController extends Controller
                 ]);
             }
 
+            // --- 2. TRAITEMENT DES BOISSONS / DRINKS ---
             foreach ($order->drinks as $drink) {
                 $isFree = ((float) $drink->total_price) === 0.0;
                 $drinkRegulationStatus = $isFree ? PaymentOrderMenusStatus::PAID->value : PaymentOrderMenusStatus::NOT_PAID->value;
@@ -7053,6 +7043,7 @@ class OrderMenuRestaurantController extends Controller
                     if ($qty <= 0) {
                         continue;
                     }
+
                     $stock = ProductPoint::where('point_uuid', $warehouseUsed->uuid)
                         ->where('produit_uuid', $virtual->product_uuid)
                         ->lockForUpdate()
@@ -7066,7 +7057,7 @@ class OrderMenuRestaurantController extends Controller
                         throw new \Exception("Stock {$warehouseName} insuffisant produit {$virtual->product_uuid}");
                     }
 
-                    $ensureSnapshotExists($virtual->product_uuid, (float) $stock->quantity);
+                    $stockDrinkAuMomentFacture = (float) $stock->quantity;
 
                     $stock->update([
                         'quantity'   => $stock->quantity - $qty,
@@ -7074,8 +7065,10 @@ class OrderMenuRestaurantController extends Controller
                     ]);
 
                     $virtual->update([
-                        'status'     => OrderMenuRestaurantItemStatus::DELIVERED->value,
-                        'updated_by' => $auth->id
+                        'status'             => OrderMenuRestaurantItemStatus::DELIVERED->value,
+                        'stock_at_billing'   => $stockDrinkAuMomentFacture,
+                        'plafond_at_billing' => $currentGlobalPlafond,
+                        'updated_by'         => $auth->id
                     ]);
 
                     DrinksVirtualTemp::where('order_menu_restaurant_uuid', $order->uuid)
@@ -7094,6 +7087,7 @@ class OrderMenuRestaurantController extends Controller
                 ]);
             }
 
+            // --- 3. STATUTS ET NOTIFICATIONS ---
             $paidCount = $order->items()->where('regulation_status', PaymentOrderItemStatus::PAID->value)->count();
             $paidCount += $order->drinks()->where('regulation_status', PaymentOrderItemStatus::PAID->value)->count();
 
@@ -7123,7 +7117,7 @@ class OrderMenuRestaurantController extends Controller
 
             return response()->json([
                 'status'  => 'success',
-                'message' => 'Facture validée avec succès (items + drinks + stocks synchronisés)'
+                'message' => 'Facture validée avec succès (stocks et plafonds figés)'
             ]);
         });
     }

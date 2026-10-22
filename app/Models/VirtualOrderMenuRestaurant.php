@@ -36,7 +36,9 @@ class VirtualOrderMenuRestaurant extends Model
         'quantity',
         'quantity_to_remove',
         'virtual_uuid',
-        'warehouse_uuid'
+        'warehouse_uuid',
+        'stock_at_billing',
+        'plafond_at_billing'
     ];
 
     protected static function boot()

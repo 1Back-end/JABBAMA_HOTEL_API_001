@@ -43,6 +43,7 @@ class DatabaseTablesMetadataSeeder extends Seeder
                 'category' => TableCategoryEnum::CONFIGURATION,
                 'display_name' => 'Liste des Entrepôts',
                 'description' => 'Liste des entrepôts.',
+                'is_dangerous' => true,
             ],
             'produits' => [
                 'category' => TableCategoryEnum::CONFIGURATION,
@@ -150,6 +151,7 @@ class DatabaseTablesMetadataSeeder extends Seeder
                 'category' => TableCategoryEnum::STOCK,
                 'display_name' => 'Quantité d\'articles dans tous les stocks.',
                 'description' => 'Gère les stocks et la disponibilité des produits pour chaque entrepôt ou point de vente.',
+                'is_sensitive_data' => true,
             ],
             'purchase_orders' => [
                 'category' => TableCategoryEnum::STOCK,
@@ -211,10 +213,14 @@ class DatabaseTablesMetadataSeeder extends Seeder
                 $category = $manualDefinitions[$tableName]['category']->value;
                 $displayName = $manualDefinitions[$tableName]['display_name'];
                 $description = $manualDefinitions[$tableName]['description'];
+                $isSensitive = $manualDefinitions[$tableName]['is_sensitive_data'] ?? false;
+                $isDangerous  = $manualDefinitions[$tableName]['is_dangerous'] ?? false; // Ajout ici
             } else {
                 $category = TableCategoryEnum::UNCATEGORIZED->value;
                 $displayName = Str::title(str_replace('_', ' ', $tableName));
                 $description = 'Description à définir...';
+                $isSensitive = false;
+                $isDangerous  = false;
             }
 
             DB::table('database_tables_metadata')->updateOrInsert(
@@ -227,6 +233,8 @@ class DatabaseTablesMetadataSeeder extends Seeder
                     'created_by' => $firstUserId,
                     'created_at' => now(),
                     'updated_at' => now(),
+                    'is_sensitive_data' => $isSensitive,
+                    'is_dangerous'      => $isDangerous,
                 ]
             );
         }

@@ -34,22 +34,39 @@ class DatabaseTableMetadataController extends Controller
             });
         }
 
-        $metadata = $query->orderBy('category', 'asc')->get();
+        $metadata = $query->get();
+        $categoryOrder = [
+            TableCategoryEnum::STOCK->value,
+            TableCategoryEnum::CONFIGURATION->value,
+            TableCategoryEnum::SYSTEM->value,
+        ];
 
-        $groupedData = $metadata->groupBy('category')->map(function ($items, $categoryKey) {
+        $groupedData = $metadata->groupBy('category')->map(function ($items, $categoryKey) use ($categoryOrder) {
             $enumCase = TableCategoryEnum::tryFrom($categoryKey);
             $label = $enumCase ? $enumCase->label() : ucfirst($categoryKey);
 
+            $priority = array_search($categoryKey, $categoryOrder);
+            if ($priority === false) {
+                $priority = 999;
+            }
+
             return [
-                'category_key' => $categoryKey,
+                'priority'       => $priority,
+                'category_key'   => $categoryKey,
                 'category_label' => $label,
-                'tables' => $items->values()
+                'tables'         => $items->values()
             ];
-        })->values();
+        })
+            ->sortBy('priority')
+            ->map(function ($group) {
+                unset($group['priority']);
+                return $group;
+            })
+            ->values();
 
         return response()->json([
             'success' => true,
-            'data' => $groupedData
+            'data'    => $groupedData
         ], 200);
     }
 
@@ -60,7 +77,7 @@ class DatabaseTableMetadataController extends Controller
     {
         $request->validate([
             'password' => ['required', 'string'],
-            'tables' => ['nullable', 'array'],
+            'tables'   => ['nullable', 'array'],
         ]);
 
         $user = $request->user();
@@ -79,71 +96,91 @@ class DatabaseTableMetadataController extends Controller
             $query->whereIn('uuid', $tableUuids);
         }
 
-        $metadataTables = $query->pluck('table_name')->toArray();
+        $selectedTables = $query->pluck('table_name')->toArray();
 
-        if (empty($metadataTables)) {
+        if (empty($selectedTables)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Aucune table valide sélectionnée pour la réinitialisation.',
             ], 400);
         }
 
-        $allTables = DatabaseTableMetadata::pluck('table_name')->toArray();
-        $tablesToTruncate = $metadataTables;
+        try {
+            $allTablesToProcess = $selectedTables;
+            $databaseName = DB::getDatabaseName();
 
-        $hasNewDependencies = true;
+            $added = true;
+            while ($added) {
+                $added = false;
 
-        while ($hasNewDependencies) {
-            $hasNewDependencies = false;
+                $childTables = DB::table('information_schema.key_column_usage')
+                    ->select(DB::raw('TABLE_NAME as table_name'))
+                    ->whereIn(DB::raw('REFERENCED_TABLE_NAME'), $allTablesToProcess)
+                    ->where('TABLE_SCHEMA', $databaseName)
+                    ->whereNotNull('REFERENCED_TABLE_NAME')
+                    ->distinct()
+                    ->pluck('table_name')
+                    ->toArray();
 
-            foreach ($tablesToTruncate as $parentTable) {
-                if (!Schema::hasTable($parentTable)) {
-                    continue;
-                }
-
-                foreach ($allTables as $potentialChildTable) {
-                    if (in_array($potentialChildTable, $tablesToTruncate) || !Schema::hasTable($potentialChildTable)) {
-                        continue;
-                    }
-
-                    $foreignKeys = Schema::getForeignKeys($potentialChildTable);
-                    foreach ($foreignKeys as $foreignKey) {
-                        if ($foreignKey['foreign_table'] === $parentTable) {
-                            $tablesToTruncate[] = $potentialChildTable;
-                            $hasNewDependencies = true;
-                            break;
-                        }
+                foreach ($childTables as $child) {
+                    if (!in_array($child, $allTablesToProcess)) {
+                        $allTablesToProcess[] = $child;
+                        $added = true;
                     }
                 }
             }
-        }
 
-        try {
-            Schema::disableForeignKeyConstraints();
+            DB::statement('SET FOREIGN_KEY_CHECKS=0;');
 
-            foreach ($tablesToTruncate as $tableName) {
-                if (in_array($tableName, ['migrations', 'database_table_metadata'])) {
+            DB::beginTransaction();
+
+            $sensitiveTables = DatabaseTableMetadata::where('is_sensitive_data', true)
+                ->pluck('table_name')
+                ->toArray();
+
+            $allTablesToProcess = array_reverse(array_unique($allTablesToProcess));
+
+            foreach ($allTablesToProcess as $tableName) {
+                if (in_array($tableName, ['migrations', 'database_table_metadata', 'database_tables_metadata'])) {
                     continue;
                 }
 
                 if (Schema::hasTable($tableName)) {
-                    DB::table($tableName)->truncate();
+                    if ($tableName === 'warehouses') {
+                        if (Schema::hasTable('produit_point')) {
+                            DB::table('produit_point')->update(['point_uuid' => null]);
+                        }
+                        DB::table($tableName)->delete();
+                    }
+                    elseif (in_array($tableName, $sensitiveTables)) {
+                        DB::table($tableName)->update([
+                            'quantity'       => 0,
+                            'stocks_minimal' => 0,
+                        ]);
+                    }
+                    else {
+                        DB::table($tableName)->delete();
+                    }
                 }
             }
 
-            Schema::enableForeignKeyConstraints();
+            DB::commit();
+
+            DB::statement('SET FOREIGN_KEY_CHECKS=1;');
 
             return response()->json([
                 'success' => true,
-                'message' => 'Les tables sélectionnées ainsi que toutes leurs dépendances directes et indirectes ont été réinitialisées avec succès.',
+                'message' => 'Les tables sélectionnées et leurs dépendances ont été réinitialisées avec succès.',
             ], 200);
 
         } catch (\Exception $e) {
-            Schema::enableForeignKeyConstraints();
+            DB::rollBack();
+
+            DB::statement('SET FOREIGN_KEY_CHECKS=1;');
 
             return response()->json([
                 'success' => false,
-                'message' => 'Une erreur est survenue lors du vidage : ' . $e->getMessage(),
+                'message' => 'Une erreur est survenue lors du traitement : ' . $e->getMessage(),
             ], 500);
         }
     }

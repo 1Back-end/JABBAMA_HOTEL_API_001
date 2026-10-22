@@ -26,7 +26,6 @@ class AgentStockFlowController extends Controller
             : now()->endOfDay();
 
         $agentId = $request->input('agent_id');
-        $today = now()->toDateString();
 
         $agentIdsQuery = OrderMenuRestaurantItem::whereBetween('created_at', [$startDate, $endDate])
             ->whereHas('order', fn($q) => $q->where('status', MenuOrderStatus::FACTURATE->value))
@@ -47,21 +46,13 @@ class AgentStockFlowController extends Controller
         $globalNomProduitMax = 'N/A';
         $globalPlafondMax = 0;
         $stocksCuisine = [];
-        $snapshotsToday = [];
 
         if ($restaurantWarehouseUuid) {
-            // Optimisation : Chargement groupé de tous les snapshots du jour en une seule fois
-            $snapshotsToday = \App\Models\StockSnapshot::where('snapshot_date', $today)
-                ->pluck('initial_quantity', 'product_uuid')
-                ->toArray();
-
-            // Récupération de tous les stocks de l'entrepôt cuisine
             $stocksCuisine = \App\Models\ProductPoint::with('product')
                 ->where('point_uuid', $restaurantWarehouseUuid)
                 ->pluck('quantity', 'produit_uuid')
                 ->toArray();
 
-            // Recherche du produit au stock le plus élevé (en privilégiant le snapshot si disponible)
             $topProductPointGlobal = \App\Models\ProductPoint::with('product')
                 ->where('point_uuid', $restaurantWarehouseUuid)
                 ->orderBy('quantity', 'desc')
@@ -69,12 +60,7 @@ class AgentStockFlowController extends Controller
 
             if ($topProductPointGlobal) {
                 $globalNomProduitMax = $topProductPointGlobal->product ? $topProductPointGlobal->product->name : 'N/A';
-                $globalProductUuid = $topProductPointGlobal->produit_uuid;
-
-                // Application de la logique Snapshot ou Stock Actuel pour le plafond
-                $globalPlafondMax = isset($snapshotsToday[$globalProductUuid])
-                    ? (float) $snapshotsToday[$globalProductUuid]
-                    : (float) $topProductPointGlobal->quantity;
+                $globalPlafondMax = (float) $topProductPointGlobal->quantity;
             }
         }
 
@@ -83,7 +69,7 @@ class AgentStockFlowController extends Controller
         }
 
         foreach ($agents as $agent) {
-            $listeVentes = OrderMenuRestaurantItem::with(['menu.compositionItems.product', 'menu'])
+            $listeVentes = OrderMenuRestaurantItem::with(['menu.compositionItems.product', 'menu', 'virtuals'])
                 ->where('updated_by', $agent->id)
                 ->whereBetween('created_at', [$startDate, $endDate])
                 ->whereHas('order', fn($q) => $q->where('status', MenuOrderStatus::FACTURATE->value))
@@ -130,27 +116,33 @@ class AgentStockFlowController extends Controller
                     $productUuid = $item->product_uuid;
                     $nomProduit = $item->product ? $item->product->name : '';
 
-                    // Récupération instantanée via le tableau chargé en mémoire (Snapshot ou ProductPoint)
-                    $stockInitialArt = isset($snapshotsToday[$productUuid])
-                        ? (float) $snapshotsToday[$productUuid]
+                    $matchingVirtual = $vente->virtuals->where('product_uuid', $productUuid)->first();
+                    $stockInitialArt = ($matchingVirtual && isset($matchingVirtual->stock_at_billing))
+                        ? (float) $matchingVirtual->stock_at_billing
                         : (float) ($stocksCuisine[$productUuid] ?? 0);
+
+                    $plafondArticle = ($matchingVirtual && isset($matchingVirtual->plafond_at_billing))
+                        ? (float) $matchingVirtual->plafond_at_billing
+                        : $globalPlafondMax;
 
                     $stockReferenceArticles[strtolower($nomProduit)] = $stockInitialArt;
 
+                    // Correction des calculs avec l'opérateur de multiplication (*) strict
                     $calculPointArt = $quantiteVendue * $qteDansRecette * $stockInitialArt;
                     $pointsReelsAgent += $calculPointArt;
 
-                    $calculPointMax = $quantiteVendue * $qteDansRecette * $globalPlafondMax;
+                    $calculPointMax = $quantiteVendue * $qteDansRecette * $plafondArticle;
                     $pointsMaximumPossibles += $calculPointMax;
 
                     $strNumeratorParts[] = "({$quantiteVendue} * {$qteDansRecette} * {$stockInitialArt})";
-                    $strDenominatorParts[] = "({$quantiteVendue} * {$qteDansRecette} * {$globalPlafondMax})";
+                    $strDenominatorParts[] = "({$quantiteVendue} * {$qteDansRecette} * {$plafondArticle})";
 
                     $compositionDetails[] = [
                         'ingredient' => strtolower($nomProduit),
                         'quantite_vendue' => $quantiteVendue,
                         'quantite_recette' => $qteDansRecette,
                         'stock_article' => $stockInitialArt,
+                        'plafond_reference' => $plafondArticle,
                         'calcul_point' => round($calculPointArt, 2)
                     ];
                 }
@@ -187,7 +179,7 @@ class AgentStockFlowController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Rapport détaillé du taux d\'écoulement basé sur l\'entrepôt cuisine.',
+            'message' => 'Rapport détaillé du taux d\'écoulement basé sur l\'historique des transactions.',
             'info_stock_global' => [
                 'entrepot_cuisine' => $nomEntrepotMax,
                 'produit_le_plus_eleve' => $globalNomProduitMax,
@@ -212,7 +204,7 @@ class AgentStockFlowController extends Controller
             : now()->endOfDay();
 
         $agentId = $request->input('agent_id');
-        $today = now()->toDateString(); // Date du jour pour les snapshots
+        $today = now()->toDateString();
 
         $warehouse = Warehouse::where('is_bar_warehouse', true)->first();
         $warehouseUuid = $warehouse?->uuid;
@@ -222,7 +214,6 @@ class AgentStockFlowController extends Controller
         $snapshotsToday = [];
 
         if ($warehouseUuid) {
-            // Chargement groupé de tous les snapshots du jour en mémoire
             $snapshotsToday = \App\Models\StockSnapshot::where('snapshot_date', $today)
                 ->pluck('initial_quantity', 'product_uuid')
                 ->toArray();
@@ -236,7 +227,6 @@ class AgentStockFlowController extends Controller
                 $globalNomProduitMax = $topDist->product?->name ?? 'N/A';
                 $globalProductUuid = $topDist->produit_uuid ?? $topDist->product_uuid;
 
-                // Logique Snapshot ou Stock Actuel pour le plafond max du bar
                 $valeurPlafond = isset($snapshotsToday[$globalProductUuid])
                     ? (float) $snapshotsToday[$globalProductUuid]
                     : (float) $topDist->quantity;
@@ -274,7 +264,7 @@ class AgentStockFlowController extends Controller
 
         $agents = User::whereIn('id', $agentIds)->get();
 
-        $salesByAgent = OrderRestaurantDrink::with(['drinkConfig.product', 'drinkConfig', 'order'])
+        $salesByAgent = OrderRestaurantDrink::with(['drinkConfig.product', 'drinkConfig', 'order', 'virtuals'])
             ->whereIn('updated_by', $agentIds)
             ->whereBetween('created_at', [$startDate, $endDate])
             ->whereHas('order', fn($q) => $q->where('status', MenuOrderStatus::FACTURATE->value))
@@ -328,28 +318,38 @@ class AgentStockFlowController extends Controller
                 $productUuid = $drinkConfig->product_uuid ?? $drinkConfig->uuid;
                 $qteDansRecette = 1;
 
-                // LOGIQUE SNAPSHOT : Si le snapshot existe pour aujourd'hui, on le prend, sinon ProductPoint
-                $stockInitialArt = isset($snapshotsToday[$productUuid])
-                    ? (float) $snapshotsToday[$productUuid]
-                    : (float) ($stockPoints[$productUuid] ?? ($stockPoints[$drinkConfig->uuid] ?? 0));
+                $matchingVirtual = $vente->virtuals->where('product_uuid', $productUuid)->first();
+
+                if ($matchingVirtual && isset($matchingVirtual->stock_at_billing)) {
+                    $stockInitialArt = (float) $matchingVirtual->stock_at_billing;
+                } elseif (isset($snapshotsToday[$productUuid])) {
+                    $stockInitialArt = (float) $snapshotsToday[$productUuid];
+                } else {
+                    $stockInitialArt = (float) ($stockPoints[$productUuid] ?? ($stockPoints[$drinkConfig->uuid] ?? 0));
+                }
+
+                $plafondArticle = ($matchingVirtual && isset($matchingVirtual->plafond_at_billing))
+                    ? (float) $matchingVirtual->plafond_at_billing
+                    : $globalPlafondMax;
 
                 $stockReferenceArticles[strtolower($nomProduit)] = $stockInitialArt;
 
-                // Calculs corrigés avec l'opérateur de multiplication (*)
+                // CALCULS CORRIGÉS AVEC OPÉRATEURS STRICTS (*)
                 $calculPointArt = $quantiteVendue * $qteDansRecette * $stockInitialArt;
                 $pointsReelsAgent += $calculPointArt;
 
-                $calculPointMax = $quantiteVendue * $qteDansRecette * $globalPlafondMax;
+                $calculPointMax = $quantiteVendue * $qteDansRecette * $plafondArticle;
                 $pointsMaximumPossibles += $calculPointMax;
 
                 $strNumeratorParts[] = "({$quantiteVendue} * {$qteDansRecette} * {$stockInitialArt})";
-                $strDenominatorParts[] = "({$quantiteVendue} * {$qteDansRecette} * {$globalPlafondMax})";
+                $strDenominatorParts[] = "({$quantiteVendue} * {$qteDansRecette} * {$plafondArticle})";
 
                 $compositionDetails[] = [
                     'boisson' => strtolower($nomProduit),
                     'code_commande' => $codeCommande,
                     'quantite_vendue' => $quantiteVendue,
                     'stock_article' => $stockInitialArt,
+                    'plafond_reference' => $plafondArticle,
                     'calcul_point' => round($calculPointArt, 2)
                 ];
             }
@@ -419,7 +419,6 @@ class AgentStockFlowController extends Controller
         $snapshotsToday = [];
 
         if ($warehouseUuid) {
-            // Chargement groupé de tous les snapshots de la journée en mémoire
             $snapshotsToday = \App\Models\StockSnapshot::where('snapshot_date', $today)
                 ->pluck('initial_quantity', 'product_uuid')
                 ->toArray();
@@ -433,7 +432,6 @@ class AgentStockFlowController extends Controller
                 $globalNomProduitMax = $topTrans->product?->name ?? 'N/A';
                 $globalProductUuid = $topTrans->produit_uuid ?? $topTrans->product_uuid;
 
-                // Logique Snapshot ou Stock Actuel pour le plafond max de transformation
                 $valeurPlafond = isset($snapshotsToday[$globalProductUuid])
                     ? (float) $snapshotsToday[$globalProductUuid]
                     : (float) $topTrans->quantity;
@@ -474,7 +472,8 @@ class AgentStockFlowController extends Controller
         $salesByAgent = OrderRestaurantDrink::with([
             'drinkConfig.product',
             'drinkConfig.composition.items.product',
-            'order'
+            'order',
+            'virtuals'
         ])
             ->whereIn('updated_by', $agentIds)
             ->whereBetween('created_at', [$startDate, $endDate])
@@ -539,27 +538,38 @@ class AgentStockFlowController extends Controller
                     $productUuid = $drinkConfig->product_uuid ?? $drinkConfig->uuid;
                     $qteDansRecette = 1;
 
-                    // Logique Snapshot ou ProductPoint
-                    $stockInitialArt = isset($snapshotsToday[$productUuid])
-                        ? (float) $snapshotsToday[$productUuid]
-                        : (float) ($stockPoints[$productUuid] ?? ($stockPoints[$drinkConfig->uuid] ?? 0));
+                    // Récupération des valeurs figées de la transaction (virtuals -> snapshots -> stock actuel)
+                    $matchingVirtual = $vente->virtuals->where('product_uuid', $productUuid)->first();
+
+                    if ($matchingVirtual && isset($matchingVirtual->stock_at_billing)) {
+                        $stockInitialArt = (float) $matchingVirtual->stock_at_billing;
+                    } elseif (isset($snapshotsToday[$productUuid])) {
+                        $stockInitialArt = (float) $snapshotsToday[$productUuid];
+                    } else {
+                        $stockInitialArt = (float) ($stockPoints[$productUuid] ?? ($stockPoints[$drinkConfig->uuid] ?? 0));
+                    }
+
+                    $plafondArticle = ($matchingVirtual && isset($matchingVirtual->plafond_at_billing))
+                        ? (float) $matchingVirtual->plafond_at_billing
+                        : $globalPlafondMax;
 
                     $stockReferenceArticles[strtolower($nomBoisson)] = $stockInitialArt;
 
                     $calculPointArt = $quantiteVendue * $qteDansRecette * $stockInitialArt;
                     $pointsReelsAgent += $calculPointArt;
 
-                    $calculPointMax = $quantiteVendue * $qteDansRecette * $globalPlafondMax;
+                    $calculPointMax = $quantiteVendue * $qteDansRecette * $plafondArticle;
                     $pointsMaximumPossibles += $calculPointMax;
 
                     $strNumeratorParts[] = "({$quantiteVendue} * {$qteDansRecette} * {$stockInitialArt})";
-                    $strDenominatorParts[] = "({$quantiteVendue} * {$qteDansRecette} * {$globalPlafondMax})";
+                    $strDenominatorParts[] = "({$quantiteVendue} * {$qteDansRecette} * {$plafondArticle})";
 
                     $compositionDetails[] = [
                         'boisson' => strtolower($nomBoisson),
                         'code_commande' => $codeCommande,
                         'quantite_vendue' => $quantiteVendue,
                         'stock_article' => $stockInitialArt,
+                        'plafond_reference' => $plafondArticle,
                         'calcul_point' => round($calculPointArt, 2)
                     ];
                 } else {
@@ -568,21 +578,30 @@ class AgentStockFlowController extends Controller
                         $productUuid = $item->product_uuid;
                         $nomIngredient = $item->product?->name ?? 'Ingrédient';
 
-                        // Logique Snapshot ou ProductPoint pour les ingrédients de transformation
-                        $stockInitialArt = isset($snapshotsToday[$productUuid])
-                            ? (float) $snapshotsToday[$productUuid]
-                            : (float) ($stockPoints[$productUuid] ?? 0);
+                        $matchingVirtual = $vente->virtuals->where('product_uuid', $productUuid)->first();
+
+                        if ($matchingVirtual && isset($matchingVirtual->stock_at_billing)) {
+                            $stockInitialArt = (float) $matchingVirtual->stock_at_billing;
+                        } elseif (isset($snapshotsToday[$productUuid])) {
+                            $stockInitialArt = (float) $snapshotsToday[$productUuid];
+                        } else {
+                            $stockInitialArt = (float) ($stockPoints[$productUuid] ?? 0);
+                        }
+
+                        $plafondArticle = ($matchingVirtual && isset($matchingVirtual->plafond_at_billing))
+                            ? (float) $matchingVirtual->plafond_at_billing
+                            : $globalPlafondMax;
 
                         $stockReferenceArticles[strtolower($nomIngredient)] = $stockInitialArt;
 
                         $calculPointArt = $quantiteVendue * $qteDansRecette * $stockInitialArt;
                         $pointsReelsAgent += $calculPointArt;
 
-                        $calculPointMax = $quantiteVendue * $qteDansRecette * $globalPlafondMax;
+                        $calculPointMax = $quantiteVendue * $qteDansRecette * $plafondArticle;
                         $pointsMaximumPossibles += $calculPointMax;
 
                         $strNumeratorParts[] = "({$quantiteVendue} * {$qteDansRecette} * {$stockInitialArt})";
-                        $strDenominatorParts[] = "({$quantiteVendue} * {$qteDansRecette} * {$globalPlafondMax})";
+                        $strDenominatorParts[] = "({$quantiteVendue} * {$qteDansRecette} * {$plafondArticle})";
 
                         $compositionDetails[] = [
                             'boisson' => strtolower($nomBoisson),
@@ -591,6 +610,7 @@ class AgentStockFlowController extends Controller
                             'quantite_vendue' => $quantiteVendue,
                             'quantite_recette' => $qteDansRecette,
                             'stock_article' => $stockInitialArt,
+                            'plafond_reference' => $plafondArticle,
                             'calcul_point' => round($calculPointArt, 2)
                         ];
                     }
