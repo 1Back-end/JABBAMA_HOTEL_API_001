@@ -29,6 +29,8 @@ class PurchaseOrderNotification extends Model
         'read_at',
         'created_by',
         'updated_by',
+        'is_for_orders',
+        'is_for_approvisionnements'
     ];
 
     protected $appends = ['status_label'];

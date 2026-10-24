@@ -202,6 +202,7 @@ class SupplyController extends Controller
             'is_read' => false,
             'created_by' => $auth ? $auth->id : null,
             'updated_by' => $auth ? $auth->id : null,
+            'is_for_approvisionnements' => true
         ]);
 
         DecisionalNotification::create([
@@ -213,6 +214,7 @@ class SupplyController extends Controller
             'is_read' => false,
             'created_by' => $auth ? $auth->id : null,
             'updated_by' => $auth ? $auth->id : null,
+            'is_for_approvisionnements' => true
         ]);
 
         // TODO (Optionnel) : Si vous utilisez Laravel Reverb / Pusher pour le temps réel,

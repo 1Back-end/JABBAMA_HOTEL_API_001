@@ -298,6 +298,7 @@ class PurchaseOrderController extends Controller
             'is_read' => false,
             'created_by' => $auth ? $auth->id : null,
             'updated_by' => $auth ? $auth->id : null,
+            'is_for_orders' => true
         ]);
 
         DecisionalNotification::create([
@@ -309,6 +310,7 @@ class PurchaseOrderController extends Controller
             'is_read' => false,
             'created_by' => $auth ? $auth->id : null,
             'updated_by' => $auth ? $auth->id : null,
+            'is_for_orders' => true
         ]);
 
         // TODO (Optionnel) : Si vous utilisez Laravel Reverb / Pusher pour le temps réel,

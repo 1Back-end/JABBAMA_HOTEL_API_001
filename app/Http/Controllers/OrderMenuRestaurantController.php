@@ -6865,7 +6865,7 @@ class OrderMenuRestaurantController extends Controller
 
         if (!Hash::check($request->password, $auth->password)) {
             return response()->json([
-                'status' => 'error',
+                'status'  => 'error',
                 'message' => 'Mot de passe incorrect'
             ], 403);
         }
@@ -6879,7 +6879,7 @@ class OrderMenuRestaurantController extends Controller
 
             if ($order->status === MenuOrderStatus::FACTURATE->value) {
                 return response()->json([
-                    'status' => 'error',
+                    'status'  => 'error',
                     'message' => 'Cette commande a déjà été facturée.'
                 ], 403);
             }
@@ -6900,13 +6900,22 @@ class OrderMenuRestaurantController extends Controller
                 throw new \Exception("Configuration des entrepôts incomplète");
             }
 
-            // Récupérer le plafond global max actuel de la cuisine juste avant la déduction
-            $topProductGlobal = ProductPoint::where('point_uuid', $warehouseRestaurant->uuid)
+            $topRestaurant = ProductPoint::where('point_uuid', $warehouseRestaurant->uuid)
                 ->orderBy('quantity', 'desc')
                 ->first();
-            $currentGlobalPlafond = $topProductGlobal ? (float) $topProductGlobal->quantity : 1;
+            $currentPlafondRestaurant = $topRestaurant ? max((float) $topRestaurant->quantity, 1) : 1;
 
-            // --- 1. TRAITEMENT DES PLATS / ITEMS RESTAURANT ---
+            $topBar = ProductPoint::where('point_uuid', $warehouseBar->uuid)
+                ->orderBy('quantity', 'desc')
+                ->first();
+            $currentPlafondBar = $topBar ? max((float) $topBar->quantity, 1) : 1;
+
+            $topTransformation = ProductPoint::where('point_uuid', $warehouseTransformation->uuid)
+                ->orderBy('quantity', 'desc')
+                ->first();
+            $currentPlafondTransformation = $topTransformation ? max((float) $topTransformation->quantity, 1) : 1;
+
+
             foreach ($order->items as $item) {
                 $isFree = ((float) $item->total_price) === 0.0;
                 $itemRegulationStatus = $isFree ? PaymentOrderMenusStatus::PAID->value : PaymentOrderMenusStatus::NOT_PAID->value;
@@ -6948,7 +6957,7 @@ class OrderMenuRestaurantController extends Controller
                     $virtual->update([
                         'status'             => OrderMenuRestaurantItemStatus::DELIVERED->value,
                         'stock_at_billing'   => $stockAuMomentFacture,
-                        'plafond_at_billing' => $currentGlobalPlafond,
+                        'plafond_at_billing' => $currentPlafondRestaurant,
                         'updated_by'         => $auth->id
                     ]);
 
@@ -6962,7 +6971,6 @@ class OrderMenuRestaurantController extends Controller
                         ]);
                 }
 
-                // GESTION DES COMPLÉMENTS
                 $virtualComplements = ComplementVirtualTemp::where('order_menu_restaurant_uuid', $order->uuid)
                     ->where('type', 'initial')
                     ->where('status', 'pending')
@@ -7016,7 +7024,6 @@ class OrderMenuRestaurantController extends Controller
                 ]);
             }
 
-            // --- 2. TRAITEMENT DES BOISSONS / DRINKS ---
             foreach ($order->drinks as $drink) {
                 $isFree = ((float) $drink->total_price) === 0.0;
                 $drinkRegulationStatus = $isFree ? PaymentOrderMenusStatus::PAID->value : PaymentOrderMenusStatus::NOT_PAID->value;
@@ -7030,13 +7037,12 @@ class OrderMenuRestaurantController extends Controller
                     continue;
                 }
 
-                $warehouseUsed = ($drink->drinkConfig && $drink->drinkConfig->is_transformable_product)
-                    ? $warehouseTransformation
-                    : $warehouseBar;
+                $isTransformation = ($drink->drinkConfig && $drink->drinkConfig->is_transformable_product);
 
-                $warehouseName = ($drink->drinkConfig && $drink->drinkConfig->is_transformable_product)
-                    ? 'TRANSFORMATION'
-                    : 'BAR';
+                $warehouseUsed = $isTransformation ? $warehouseTransformation : $warehouseBar;
+                $warehouseName = $isTransformation ? 'TRANSFORMATION' : 'BAR';
+
+                $currentDrinkPlafond = $isTransformation ? $currentPlafondTransformation : $currentPlafondBar;
 
                 foreach ($drink->virtuals as $virtual) {
                     $qty = (float) $virtual->quantity_reserved;
@@ -7067,7 +7073,7 @@ class OrderMenuRestaurantController extends Controller
                     $virtual->update([
                         'status'             => OrderMenuRestaurantItemStatus::DELIVERED->value,
                         'stock_at_billing'   => $stockDrinkAuMomentFacture,
-                        'plafond_at_billing' => $currentGlobalPlafond,
+                        'plafond_at_billing' => $currentDrinkPlafond,
                         'updated_by'         => $auth->id
                     ]);
 
@@ -7087,7 +7093,6 @@ class OrderMenuRestaurantController extends Controller
                 ]);
             }
 
-            // --- 3. STATUTS ET NOTIFICATIONS ---
             $paidCount = $order->items()->where('regulation_status', PaymentOrderItemStatus::PAID->value)->count();
             $paidCount += $order->drinks()->where('regulation_status', PaymentOrderItemStatus::PAID->value)->count();
 
@@ -7117,7 +7122,7 @@ class OrderMenuRestaurantController extends Controller
 
             return response()->json([
                 'status'  => 'success',
-                'message' => 'Facture validée avec succès (stocks et plafonds figés)'
+                'message' => 'Facture validée avec succès (stocks et plafonds figés par entrepôt)'
             ]);
         });
     }

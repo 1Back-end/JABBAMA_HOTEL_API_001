@@ -29,6 +29,8 @@ class DecisionalNotification extends Model
         'read_at',
         'created_by',
         'updated_by',
+        'is_for_orders',
+        'is_for_approvisionnements'
     ];
 
     protected $casts = [

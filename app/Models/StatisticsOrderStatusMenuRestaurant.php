@@ -22,10 +22,8 @@ class StatisticsOrderStatusMenuRestaurant extends Model
         'order_menu_restaurant_uuid',
         'status',
         'quantity',
-
         'created_by',
         'updated_by',
-
         'pending_at',
         'make_pending_by',
         'rejected_at',
@@ -93,11 +91,11 @@ class StatisticsOrderStatusMenuRestaurant extends Model
     {
         return $this->belongsTo(User::class, 'make_transferred_by');
     }
-    public function make_cancel_for_new_update_by()
+    public function agentCancelForNewUpdate()
     {
         return $this->belongsTo(User::class, 'make_cancel_for_new_update_by');
     }
-    public function make_in_preparation_by()
+    public function agentInPreparation()
     {
         return $this->belongsTo(User::class, 'make_in_preparation_by');
     }
@@ -109,11 +107,11 @@ class StatisticsOrderStatusMenuRestaurant extends Model
     {
         return $this->belongsTo(User::class, 'make_pending_by');
     }
-    public function make_rejected_by()
+    public function agentReject()
     {
         return $this->belongsTo(User::class, 'make_rejected_by');
     }
-    public function make_delivered_by()
+    public function agentServed()
     {
         return $this->belongsTo(User::class, 'make_delivered_by');
     }

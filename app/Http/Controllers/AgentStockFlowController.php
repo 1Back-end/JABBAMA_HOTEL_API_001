@@ -231,7 +231,7 @@ class AgentStockFlowController extends Controller
                     ? (float) $snapshotsToday[$globalProductUuid]
                     : (float) $topDist->quantity;
 
-                $globalPlafondMax = max($valeurPlafond, 1);
+                $globalPlafondMax = $valeurPlafond > 0 ? $valeurPlafond : 1;
             }
         }
 
@@ -334,7 +334,7 @@ class AgentStockFlowController extends Controller
 
                 $stockReferenceArticles[strtolower($nomProduit)] = $stockInitialArt;
 
-                // CALCULS CORRIGÉS AVEC OPÉRATEURS STRICTS (*)
+                // --- CALCULS CORRIGÉS AVEC DES OPÉRATEURS DE MULTIPLICATION VALIDES (*) ---
                 $calculPointArt = $quantiteVendue * $qteDansRecette * $stockInitialArt;
                 $pointsReelsAgent += $calculPointArt;
 
@@ -409,7 +409,7 @@ class AgentStockFlowController extends Controller
             : now()->endOfDay();
 
         $agentId = $request->input('agent_id');
-        $today = now()->toDateString(); // Date du jour pour les snapshots
+        $today = now()->toDateString();
 
         $warehouse = Warehouse::where('is_used_for_drinks_transformation', true)->first();
         $warehouseUuid = $warehouse?->uuid;
