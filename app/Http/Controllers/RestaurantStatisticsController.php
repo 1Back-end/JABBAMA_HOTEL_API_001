@@ -34,7 +34,6 @@ class RestaurantStatisticsController extends Controller
             $query->where(function($q) use ($agentId) {
                 $q->where('make_in_preparation_by', $agentId)
                     ->orWhere('make_delivered_by', $agentId)
-                    ->orWhere('rejected_by', $agentId)
                     ->orWhere('make_rejected_by', $agentId)
                     ->orWhere('make_cancel_for_new_update_by', $agentId);
             });
