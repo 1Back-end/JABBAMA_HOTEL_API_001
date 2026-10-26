@@ -17,13 +17,22 @@ class AgentStockFlowController extends Controller
 {
     public function index(Request $request)
     {
-        $startDate = $request->input('start_date')
-            ? Carbon::createFromFormat('d-m-Y', $request->input('start_date'))->startOfDay()
-            : now()->startOfDay();
+        // 1. Gestion de la date de début (Début de l'app si non renseigné)
+        if ($request->filled('start_date')) {
+            $startDate = Carbon::createFromFormat('d-m-Y', $request->input('start_date'))->startOfDay();
+        } else {
+            $firstOrderDate = OrderMenuRestaurantItem::min('created_at');
+            $startDate = $firstOrderDate
+                ? Carbon::parse($firstOrderDate)->startOfDay()
+                : now()->startOfDay();
+        }
 
-        $endDate = $request->input('end_date')
-            ? Carbon::createFromFormat('d-m-Y', $request->input('end_date'))->endOfDay()
-            : now()->endOfDay();
+        // 2. Gestion de la date de fin (Fin de la journée d'hier / journée n-1 si non renseigné)
+        if ($request->filled('end_date')) {
+            $endDate = Carbon::createFromFormat('d-m-Y', $request->input('end_date'))->endOfDay();
+        } else {
+            $endDate = now()->subDay()->endOfDay();
+        }
 
         $agentId = $request->input('agent_id');
 
@@ -67,6 +76,13 @@ class AgentStockFlowController extends Controller
         if ($globalPlafondMax <= 0) {
             $globalPlafondMax = 1;
         }
+
+        // Variables globales pour cumuler les données et la formule de tous les agents
+        $sumTotalPlatsVendus = 0;
+        $sumTotalPointsReels = 0;
+        $sumTotalPointsMax = 0;
+        $globalNumeratorParts = [];
+        $globalDenominatorParts = [];
 
         foreach ($agents as $agent) {
             $listeVentes = OrderMenuRestaurantItem::with(['menu.compositionItems.product', 'menu', 'virtuals'])
@@ -127,15 +143,22 @@ class AgentStockFlowController extends Controller
 
                     $stockReferenceArticles[strtolower($nomProduit)] = $stockInitialArt;
 
-                    // Correction des calculs avec l'opérateur de multiplication (*) strict
                     $calculPointArt = $quantiteVendue * $qteDansRecette * $stockInitialArt;
                     $pointsReelsAgent += $calculPointArt;
 
                     $calculPointMax = $quantiteVendue * $qteDansRecette * $plafondArticle;
                     $pointsMaximumPossibles += $calculPointMax;
 
-                    $strNumeratorParts[] = "({$quantiteVendue} * {$qteDansRecette} * {$stockInitialArt})";
-                    $strDenominatorParts[] = "({$quantiteVendue} * {$qteDansRecette} * {$plafondArticle})";
+                    // Morceaux pour l'agent
+                    $partNum = "({$quantiteVendue} * {$qteDansRecette} * {$stockInitialArt})";
+                    $partDen = "({$quantiteVendue} * {$qteDansRecette} * {$plafondArticle})";
+
+                    $strNumeratorParts[] = $partNum;
+                    $strDenominatorParts[] = $partDen;
+
+                    // Morceaux cumulés pour la formule globale de tous les agents
+                    $globalNumeratorParts[] = $partNum;
+                    $globalDenominatorParts[] = $partDen;
 
                     $compositionDetails[] = [
                         'ingredient' => strtolower($nomProduit),
@@ -155,6 +178,11 @@ class AgentStockFlowController extends Controller
             $formuleString = "[(" . implode(' + ', $strNumeratorParts) . ") / (" . implode(' + ', $strDenominatorParts) . ")] * 100%";
 
             $evaluation = $this->evaluatePerformance($tauxEcoulementGlobal);
+
+            // Cumul pour la moyenne générale
+            $sumTotalPlatsVendus += $totalPlatsVendus;
+            $sumTotalPointsReels += $pointsReelsAgent;
+            $sumTotalPointsMax += $pointsMaximumPossibles;
 
             $report[] = [
                 'agent_id' => $agent->id,
@@ -177,6 +205,27 @@ class AgentStockFlowController extends Controller
             ];
         }
 
+        // Calcul de la ligne globale / moyenne générale de tous les agents
+        $globalTauxEcoulement = $sumTotalPointsMax > 0
+            ? round(($sumTotalPointsReels / $sumTotalPointsMax) * 100, 2)
+            : 0;
+        $globalEvaluation = $this->evaluatePerformance($globalTauxEcoulement);
+
+        // Construction de la formule globale combinant toutes les transactions de tous les agents
+        $globalFormuleString = !empty($globalNumeratorParts)
+            ? "[(" . implode(' + ', $globalNumeratorParts) . ") / (" . implode(' + ', $globalDenominatorParts) . ")] * 100%"
+            : "N/A";
+
+        $generalAverageSummary = [
+            'total_plats_vendus' => $sumTotalPlatsVendus,
+            'total_points_reels' => round($sumTotalPointsReels, 2),
+            'total_points_max' => round($sumTotalPointsMax, 2),
+            'taux_ecoulement_global' => $globalTauxEcoulement . '%',
+            'formule_appliquee' => $globalFormuleString, // Ajout de la formule globale
+            'statut' => $globalEvaluation['message'],
+            'badge_color' => $globalEvaluation['badge_color']
+        ];
+
         return response()->json([
             'success' => true,
             'message' => 'Rapport détaillé du taux d\'écoulement basé sur l\'historique des transactions.',
@@ -189,19 +238,29 @@ class AgentStockFlowController extends Controller
                 'start_date' => $startDate->format('d-m-Y'),
                 'end_date' => $endDate->format('d-m-Y'),
                 'filtered_by_agent_id' => $agentId ?? 'Tous les agents',
-                'agents_performance' => $report
+                'agents_performance' => $report,
+                'general_average' => $generalAverageSummary
             ]
         ]);
     }
     public function indexBarDistribution(Request $request)
     {
-        $startDate = $request->input('start_date')
-            ? Carbon::createFromFormat('d-m-Y', $request->input('start_date'))->startOfDay()
-            : now()->startOfDay();
+        // 1. Gestion de la date de début (Début de l'app si non renseigné)
+        if ($request->filled('start_date')) {
+            $startDate = Carbon::createFromFormat('d-m-Y', $request->input('start_date'))->startOfDay();
+        } else {
+            $firstOrderDate = OrderRestaurantDrink::min('created_at');
+            $startDate = $firstOrderDate
+                ? Carbon::parse($firstOrderDate)->startOfDay()
+                : now()->startOfDay();
+        }
 
-        $endDate = $request->input('end_date')
-            ? Carbon::createFromFormat('d-m-Y', $request->input('end_date'))->endOfDay()
-            : now()->endOfDay();
+        // 2. Gestion de la date de fin (Fin de la journée d'hier / journée n-1 si non renseigné)
+        if ($request->filled('end_date')) {
+            $endDate = Carbon::createFromFormat('d-m-Y', $request->input('end_date'))->endOfDay();
+        } else {
+            $endDate = now()->subDay()->endOfDay();
+        }
 
         $agentId = $request->input('agent_id');
         $today = now()->toDateString();
@@ -257,7 +316,8 @@ class AgentStockFlowController extends Controller
                 'data' => [
                     'start_date' => $startDate->format('d-m-Y'),
                     'end_date' => $endDate->format('d-m-Y'),
-                    'agents_performance' => []
+                    'agents_performance' => [],
+                    'general_average' => null
                 ]
             ]);
         }
@@ -291,6 +351,13 @@ class AgentStockFlowController extends Controller
         }
 
         $report = [];
+
+        // Variables pour le calcul de la moyenne générale
+        $sumTotalBoissonsVendues = 0;
+        $sumTotalPointsReels = 0;
+        $sumTotalPointsMax = 0;
+        $globalNumeratorParts = [];
+        $globalDenominatorParts = [];
 
         foreach ($agents as $agent) {
             $listeVentes = $salesByAgent[$agent->id] ?? collect();
@@ -341,8 +408,15 @@ class AgentStockFlowController extends Controller
                 $calculPointMax = $quantiteVendue * $qteDansRecette * $plafondArticle;
                 $pointsMaximumPossibles += $calculPointMax;
 
-                $strNumeratorParts[] = "({$quantiteVendue} * {$qteDansRecette} * {$stockInitialArt})";
-                $strDenominatorParts[] = "({$quantiteVendue} * {$qteDansRecette} * {$plafondArticle})";
+                $partNum = "({$quantiteVendue} * {$qteDansRecette} * {$stockInitialArt})";
+                $partDen = "({$quantiteVendue} * {$qteDansRecette} * {$plafondArticle})";
+
+                $strNumeratorParts[] = $partNum;
+                $strDenominatorParts[] = $partDen;
+
+                // Cumul global
+                $globalNumeratorParts[] = $partNum;
+                $globalDenominatorParts[] = $partDen;
 
                 $compositionDetails[] = [
                     'boisson' => strtolower($nomProduit),
@@ -360,6 +434,11 @@ class AgentStockFlowController extends Controller
 
             $formuleString = "[(" . implode(' + ', $strNumeratorParts) . ") / (" . implode(' + ', $strDenominatorParts) . ")] * 100%";
             $evaluation = $this->evaluatePerformance($tauxEcoulementGlobal);
+
+            // Cumul pour les totaux généraux
+            $sumTotalBoissonsVendues += $totalBoissonsVendues;
+            $sumTotalPointsReels += $pointsReelsAgent;
+            $sumTotalPointsMax += $pointsMaximumPossibles;
 
             $report[] = [
                 'agent_id' => $agent->id,
@@ -382,6 +461,26 @@ class AgentStockFlowController extends Controller
             ];
         }
 
+        // Calcul de la ligne globale / moyenne générale de tous les agents
+        $globalTauxEcoulement = $sumTotalPointsMax > 0
+            ? round(($sumTotalPointsReels / $sumTotalPointsMax) * 100, 2)
+            : 0;
+        $globalEvaluation = $this->evaluatePerformance($globalTauxEcoulement);
+
+        $globalFormuleString = !empty($globalNumeratorParts)
+            ? "[(" . implode(' + ', $globalNumeratorParts) . ") / (" . implode(' + ', $globalDenominatorParts) . ")] * 100%"
+            : "N/A";
+
+        $generalAverageSummary = [
+            'total_boissons_vendues' => $sumTotalBoissonsVendues,
+            'total_points_reels' => round($sumTotalPointsReels, 2),
+            'total_points_max' => round($sumTotalPointsMax, 2),
+            'taux_ecoulement_global' => $globalTauxEcoulement . '%',
+            'formule_appliquee' => $globalFormuleString,
+            'statut' => $globalEvaluation['message'],
+            'badge_color' => $globalEvaluation['badge_color']
+        ];
+
         return response()->json([
             'success' => true,
             'message' => 'Rapport du taux d\'écoulement - Bar Distribution.',
@@ -393,20 +492,30 @@ class AgentStockFlowController extends Controller
             'data' => [
                 'start_date' => $startDate->format('d-m-Y'),
                 'end_date' => $endDate->format('d-m-Y'),
-                'agents_performance' => $report
+                'agents_performance' => $report,
+                'general_average' => $generalAverageSummary
             ]
         ]);
     }
 
     public function indexBarTransformation(Request $request)
     {
-        $startDate = $request->input('start_date')
-            ? Carbon::createFromFormat('d-m-Y', $request->input('start_date'))->startOfDay()
-            : now()->startOfDay();
+        // 1. Gestion de la date de début (Début de l'app si non renseigné)
+        if ($request->filled('start_date')) {
+            $startDate = Carbon::createFromFormat('d-m-Y', $request->input('start_date'))->startOfDay();
+        } else {
+            $firstOrderDate = OrderRestaurantDrink::min('created_at');
+            $startDate = $firstOrderDate
+                ? Carbon::parse($firstOrderDate)->startOfDay()
+                : now()->startOfDay();
+        }
 
-        $endDate = $request->input('end_date')
-            ? Carbon::createFromFormat('d-m-Y', $request->input('end_date'))->endOfDay()
-            : now()->endOfDay();
+        // 2. Gestion de la date de fin (Fin de la journée d'hier / journée n-1 si non renseigné)
+        if ($request->filled('end_date')) {
+            $endDate = Carbon::createFromFormat('d-m-Y', $request->input('end_date'))->endOfDay();
+        } else {
+            $endDate = now()->subDay()->endOfDay();
+        }
 
         $agentId = $request->input('agent_id');
         $today = now()->toDateString();
@@ -462,7 +571,8 @@ class AgentStockFlowController extends Controller
                 'data' => [
                     'start_date' => $startDate->format('d-m-Y'),
                     'end_date' => $endDate->format('d-m-Y'),
-                    'agents_performance' => []
+                    'agents_performance' => [],
+                    'general_average' => null
                 ]
             ]);
         }
@@ -509,6 +619,13 @@ class AgentStockFlowController extends Controller
 
         $report = [];
 
+        // Variables globales pour le calcul de la moyenne générale
+        $sumTotalBoissonsVendues = 0;
+        $sumTotalPointsReels = 0;
+        $sumTotalPointsMax = 0;
+        $globalNumeratorParts = [];
+        $globalDenominatorParts = [];
+
         foreach ($agents as $agent) {
             $listeVentes = $salesByAgent[$agent->id] ?? collect();
             if ($listeVentes->isEmpty()) continue;
@@ -538,7 +655,6 @@ class AgentStockFlowController extends Controller
                     $productUuid = $drinkConfig->product_uuid ?? $drinkConfig->uuid;
                     $qteDansRecette = 1;
 
-                    // Récupération des valeurs figées de la transaction (virtuals -> snapshots -> stock actuel)
                     $matchingVirtual = $vente->virtuals->where('product_uuid', $productUuid)->first();
 
                     if ($matchingVirtual && isset($matchingVirtual->stock_at_billing)) {
@@ -561,8 +677,14 @@ class AgentStockFlowController extends Controller
                     $calculPointMax = $quantiteVendue * $qteDansRecette * $plafondArticle;
                     $pointsMaximumPossibles += $calculPointMax;
 
-                    $strNumeratorParts[] = "({$quantiteVendue} * {$qteDansRecette} * {$stockInitialArt})";
-                    $strDenominatorParts[] = "({$quantiteVendue} * {$qteDansRecette} * {$plafondArticle})";
+                    $partNum = "({$quantiteVendue} * {$qteDansRecette} * {$stockInitialArt})";
+                    $partDen = "({$quantiteVendue} * {$qteDansRecette} * {$plafondArticle})";
+
+                    $strNumeratorParts[] = $partNum;
+                    $strDenominatorParts[] = $partDen;
+
+                    $globalNumeratorParts[] = $partNum;
+                    $globalDenominatorParts[] = $partDen;
 
                     $compositionDetails[] = [
                         'boisson' => strtolower($nomBoisson),
@@ -600,8 +722,14 @@ class AgentStockFlowController extends Controller
                         $calculPointMax = $quantiteVendue * $qteDansRecette * $plafondArticle;
                         $pointsMaximumPossibles += $calculPointMax;
 
-                        $strNumeratorParts[] = "({$quantiteVendue} * {$qteDansRecette} * {$stockInitialArt})";
-                        $strDenominatorParts[] = "({$quantiteVendue} * {$qteDansRecette} * {$plafondArticle})";
+                        $partNum = "({$quantiteVendue} * {$qteDansRecette} * {$stockInitialArt})";
+                        $partDen = "({$quantiteVendue} * {$qteDansRecette} * {$plafondArticle})";
+
+                        $strNumeratorParts[] = $partNum;
+                        $strDenominatorParts[] = $partDen;
+
+                        $globalNumeratorParts[] = $partNum;
+                        $globalDenominatorParts[] = $partDen;
 
                         $compositionDetails[] = [
                             'boisson' => strtolower($nomBoisson),
@@ -624,6 +752,11 @@ class AgentStockFlowController extends Controller
             $formuleString = "[(" . implode(' + ', $strNumeratorParts) . ") / (" . implode(' + ', $strDenominatorParts) . ")] * 100%";
             $evaluation = $this->evaluatePerformance($tauxEcoulementGlobal);
 
+            // Cumul des totaux généraux
+            $sumTotalBoissonsVendues += $totalBoissonsVendues;
+            $sumTotalPointsReels += $pointsReelsAgent;
+            $sumTotalPointsMax += $pointsMaximumPossibles;
+
             $report[] = [
                 'agent_id' => $agent->id,
                 'agent_name' => $agent->nom_utilisateur ?? $agent->email,
@@ -645,6 +778,26 @@ class AgentStockFlowController extends Controller
             ];
         }
 
+        // Calcul de la moyenne générale / total global pour tous les agents
+        $globalTauxEcoulement = $sumTotalPointsMax > 0
+            ? round(($sumTotalPointsReels / $sumTotalPointsMax) * 100, 2)
+            : 0;
+        $globalEvaluation = $this->evaluatePerformance($globalTauxEcoulement);
+
+        $globalFormuleString = !empty($globalNumeratorParts)
+            ? "[(" . implode(' + ', $globalNumeratorParts) . ") / (" . implode(' + ', $globalDenominatorParts) . ")] * 100%"
+            : "N/A";
+
+        $generalAverageSummary = [
+            'total_boissons_vendues' => $sumTotalBoissonsVendues,
+            'total_points_reels' => round($sumTotalPointsReels, 2),
+            'total_points_max' => round($sumTotalPointsMax, 2),
+            'taux_ecoulement_global' => $globalTauxEcoulement . '%',
+            'formule_appliquee' => $globalFormuleString,
+            'statut' => $globalEvaluation['message'],
+            'badge_color' => $globalEvaluation['badge_color']
+        ];
+
         return response()->json([
             'success' => true,
             'message' => 'Rapport du taux d\'écoulement - Bar Transformation.',
@@ -656,7 +809,8 @@ class AgentStockFlowController extends Controller
             'data' => [
                 'start_date' => $startDate->format('d-m-Y'),
                 'end_date' => $endDate->format('d-m-Y'),
-                'agents_performance' => $report
+                'agents_performance' => $report,
+                'general_average' => $generalAverageSummary
             ]
         ]);
     }
@@ -682,6 +836,412 @@ class AgentStockFlowController extends Controller
             'message' => $criterion->description_template,
             'badge_color' => $criterion->badge_color ?? 'success'
         ];
+    }
+
+
+    public function print(Request $request)
+    {
+        try {
+            // 1. Gestion des dates (Début de l'app jusqu'à hier par défaut)
+            if ($request->filled('start_date')) {
+                $startDate = Carbon::createFromFormat('d-m-Y', $request->input('start_date'))->startOfDay();
+            } else {
+                $firstOrderDate = OrderMenuRestaurantItem::min('created_at');
+                $startDate = $firstOrderDate
+                    ? Carbon::parse($firstOrderDate)->startOfDay()
+                    : now()->startOfDay();
+            }
+
+            if ($request->filled('end_date')) {
+                $endDate = Carbon::createFromFormat('d-m-Y', $request->input('end_date'))->endOfDay();
+            } else {
+                $endDate = now()->subDay()->endOfDay();
+            }
+
+            $agentId = $request->input('agent_id');
+            $today = now()->toDateString();
+
+
+            // ==========================================
+            // SECTION 1 : CUISINE
+            // ==========================================
+            $agentIdsQueryKitchen = OrderMenuRestaurantItem::whereBetween('created_at', [$startDate, $endDate])
+                ->whereHas('order', fn($q) => $q->where('status', MenuOrderStatus::FACTURATE->value))
+                ->whereNotNull('updated_by');
+
+            if ($agentId) {
+                $agentIdsQueryKitchen->where('updated_by', $agentId);
+            }
+
+            $agentIdsKitchen = $agentIdsQueryKitchen->distinct()->pluck('updated_by');
+            $agentsKitchen = User::whereIn('id', $agentIdsKitchen)->get();
+
+            $restaurantWarehouse = Warehouse::where('is_used_for_restaurant', true)->first();
+            $nomEntrepotMax = $restaurantWarehouse ? $restaurantWarehouse->name : 'N/A';
+            $restaurantWarehouseUuid = $restaurantWarehouse ? $restaurantWarehouse->uuid : null;
+
+            $globalPlafondMaxKitchen = 1;
+            $globalNomProduitMaxKitchen = 'N/A';
+            $stocksCuisine = [];
+
+            if ($restaurantWarehouseUuid) {
+                $stocksCuisine = \App\Models\ProductPoint::with('product')
+                    ->where('point_uuid', $restaurantWarehouseUuid)
+                    ->pluck('quantity', 'produit_uuid')
+                    ->toArray();
+
+                $topProductPointGlobal = \App\Models\ProductPoint::with('product')
+                    ->where('point_uuid', $restaurantWarehouseUuid)
+                    ->orderBy('quantity', 'desc')
+                    ->first();
+
+                if ($topProductPointGlobal) {
+                    $globalNomProduitMaxKitchen = $topProductPointGlobal->product?->name ?? 'N/A';
+                    $globalPlafondMaxKitchen = max((float) $topProductPointGlobal->quantity, 1);
+                }
+            }
+
+            $reportKitchen = [];
+            $sumPlatsVendus = 0; $sumPtsReelsK = 0; $sumPtsMaxK = 0;
+            $numPartsK = []; $denPartsK = [];
+
+            foreach ($agentsKitchen as $agent) {
+                $listeVentes = OrderMenuRestaurantItem::with(['menu.compositionItems.product', 'menu', 'virtuals'])
+                    ->where('updated_by', $agent->id)
+                    ->whereBetween('created_at', [$startDate, $endDate])
+                    ->whereHas('order', fn($q) => $q->where('status', MenuOrderStatus::FACTURATE->value))
+                    ->get();
+
+                if ($listeVentes->isEmpty()) continue;
+
+                $ptsReelsAgent = 0; $ptsMaxAgent = 0; $totalVentes = $listeVentes->count();
+                $strNum = []; $strDen = []; $commandesNoms = [];
+
+                foreach ($listeVentes as $vente) {
+                    $qteVendue = (float) $vente->quantity_exactly;
+                    $menu = $vente->menu;
+                    if ($menu) $commandesNoms[] = $qteVendue . ' ' . ($menu->name ?? 'plat');
+                    if (!$menu || $menu->compositionItems->isEmpty()) continue;
+
+                    foreach ($menu->compositionItems as $item) {
+                        $qteRecette = (float) $item->quantity_used;
+                        $prodUuid = $item->product_uuid;
+                        $matchingVirtual = $vente->virtuals->where('product_uuid', $prodUuid)->first();
+
+                        $stockArt = ($matchingVirtual && isset($matchingVirtual->stock_at_billing))
+                            ? (float) $matchingVirtual->stock_at_billing
+                            : (float) ($stocksCuisine[$prodUuid] ?? 0);
+
+                        $plafondArt = ($matchingVirtual && isset($matchingVirtual->plafond_at_billing))
+                            ? (float) $matchingVirtual->plafond_at_billing
+                            : $globalPlafondMaxKitchen;
+
+                        $calcArt = $qteVendue * $qteRecette * $stockArt;
+                        $calcMax = $qteVendue * $qteRecette * $plafondArt;
+
+                        $ptsReelsAgent += $calcArt;
+                        $ptsMaxAgent += $calcMax;
+
+                        $pNum = "({$qteVendue} * {$qteRecette} * {$stockArt})";
+                        $pDen = "({$qteVendue} * {$qteRecette} * {$plafondArt})";
+                        $strNum[] = $pNum; $strDen[] = $pDen;
+                        $numPartsK[] = $pNum; $denPartsK[] = $pDen;
+                    }
+                }
+
+                $tauxAgent = $ptsMaxAgent > 0 ? round(($ptsReelsAgent / $ptsMaxAgent) * 100, 2) : 0;
+                $eval = $this->evaluatePerformance($tauxAgent);
+
+                $sumPlatsVendus += $totalVentes;
+                $sumPtsReelsK += $ptsReelsAgent;
+                $sumPtsMaxK += $ptsMaxAgent;
+
+                $reportKitchen[] = [
+                    'agent_name' => $agent->nom_utilisateur ?? $agent->email,
+                    'plats_vendus' => $totalVentes,
+                    'points_reels' => round($ptsReelsAgent, 2),
+                    'points_max' => round($ptsMaxAgent, 2),
+                    'taux_ecoulement' => $tauxAgent . '%',
+                    'statut' => $eval['message'],
+                    'badge_color' => $eval['badge_color']
+                ];
+            }
+
+            $globalTauxK = $sumPtsMaxK > 0 ? round(($sumPtsReelsK / $sumPtsMaxK) * 100, 2) : 0;
+            $kitchenGeneralAverage = [
+                'total_plats_vendus' => $sumPlatsVendus,
+                'total_points_reels' => round($sumPtsReelsK, 2),
+                'total_points_max' => round($sumPtsMaxK, 2),
+                'taux_ecoulement_global' => $globalTauxK . '%',
+                'formule_appliquee' => !empty($numPartsK) ? "[(" . implode(' + ', $numPartsK) . ") / (" . implode(' + ', $denPartsK) . ")] * 100%" : "N/A",
+                'statut' => $this->evaluatePerformance($globalTauxK)['message'],
+                'badge_color' => $this->evaluatePerformance($globalTauxK)['badge_color']
+            ];
+
+
+            // ==========================================
+            // SECTION 2 : BAR DISTRIBUTION
+            // ==========================================
+            $warehouseDist = Warehouse::where('is_bar_warehouse', true)->first();
+            $warehouseDistUuid = $warehouseDist?->uuid;
+            $globalPlafondMaxDist = 1; $globalNomProduitMaxDist = 'N/A'; $snapshotsToday = [];
+
+            if ($warehouseDistUuid) {
+                $snapshotsToday = \App\Models\StockSnapshot::where('snapshot_date', $today)->pluck('initial_quantity', 'product_uuid')->toArray();
+                $topDist = \App\Models\ProductPoint::with('product')->where('point_uuid', $warehouseDistUuid)->orderBy('quantity', 'desc')->first();
+                if ($topDist) {
+                    $globalNomProduitMaxDist = $topDist->product?->name ?? 'N/A';
+                    $pUuid = $topDist->produit_uuid ?? $topDist->product_uuid;
+                    $valPlafond = $snapshotsToday[$pUuid] ?? $topDist->quantity;
+                    $globalPlafondMaxDist = max((float) $valPlafond, 1);
+                }
+            }
+
+            $agentIdsQueryDist = OrderRestaurantDrink::whereBetween('created_at', [$startDate, $endDate])
+                ->whereHas('order', fn($q) => $q->where('status', MenuOrderStatus::FACTURATE->value))
+                ->whereHas('drinkConfig', fn($q) => $q->where('is_finished_product', true))
+                ->whereNotNull('updated_by');
+
+            if ($agentId) $agentIdsQueryDist->where('updated_by', $agentId);
+            $agentIdsDist = $agentIdsQueryDist->distinct()->pluck('updated_by');
+            $agentsDist = User::whereIn('id', $agentIdsDist)->get();
+
+            $salesDist = OrderRestaurantDrink::with(['drinkConfig.product', 'drinkConfig', 'order', 'virtuals'])
+                ->whereIn('updated_by', $agentIdsDist)
+                ->whereBetween('created_at', [$startDate, $endDate])
+                ->whereHas('order', fn($q) => $q->where('status', MenuOrderStatus::FACTURATE->value))
+                ->whereHas('drinkConfig', fn($q) => $q->where('is_finished_product', true))
+                ->get()->groupBy('updated_by');
+
+            $reportDistribution = [];
+            $sumBoissonsDist = 0; $sumPtsReelsD = 0; $sumPtsMaxD = 0;
+            $numPartsD = []; $denPartsD = [];
+
+            foreach ($agentsDist as $agent) {
+                $listeVentes = $salesDist[$agent->id] ?? collect();
+                if ($listeVentes->isEmpty()) continue;
+
+                $ptsReelsAgent = 0; $ptsMaxAgent = 0; $totalBoissons = $listeVentes->count();
+
+                foreach ($listeVentes as $vente) {
+                    $qteVendue = (float) ($vente->quantity_exactly ?? $vente->quantity);
+                    $drinkConfig = $vente->drinkConfig;
+                    if (!$drinkConfig) continue;
+
+                    $pUuid = $drinkConfig->product_uuid ?? $drinkConfig->uuid;
+                    $matchingVirtual = $vente->virtuals->where('product_uuid', $pUuid)->first();
+
+                    $stockArt = ($matchingVirtual && isset($matchingVirtual->stock_at_billing))
+                        ? (float) $matchingVirtual->stock_at_billing
+                        : ($snapshotsToday[$pUuid] ?? 0);
+
+                    $plafondArt = ($matchingVirtual && isset($matchingVirtual->plafond_at_billing))
+                        ? (float) $matchingVirtual->plafond_at_billing
+                        : $globalPlafondMaxDist;
+
+                    $calcArt = $qteVendue * 1 * $stockArt;
+                    $calcMax = $qteVendue * 1 * $plafondArt;
+
+                    $ptsReelsAgent += $calcArt;
+                    $ptsMaxAgent += $calcMax;
+
+                    $pNum = "({$qteVendue} * 1 * {$stockArt})";
+                    $pDen = "({$qteVendue} * 1 * {$plafondArt})";
+                    $numPartsD[] = $pNum; $denPartsD[] = $pDen;
+                }
+
+                $tauxAgent = $ptsMaxAgent > 0 ? round(($ptsReelsAgent / $ptsMaxAgent) * 100, 2) : 0;
+                $eval = $this->evaluatePerformance($tauxAgent);
+
+                $sumBoissonsDist += $totalBoissons;
+                $sumPtsReelsD += $ptsReelsAgent;
+                $sumPtsMaxD += $ptsMaxAgent;
+
+                $reportDistribution[] = [
+                    'agent_name' => $agent->nom_utilisateur ?? $agent->email,
+                    'boissons_vendues' => $totalBoissons,
+                    'points_reels' => round($ptsReelsAgent, 2),
+                    'points_max' => round($ptsMaxAgent, 2),
+                    'taux_ecoulement' => $tauxAgent . '%',
+                    'statut' => $eval['message'],
+                    'badge_color' => $eval['badge_color']
+                ];
+            }
+
+            $globalTauxD = $sumPtsMaxD > 0 ? round(($sumPtsReelsD / $sumPtsMaxD) * 100, 2) : 0;
+            $distributionGeneralAverage = [
+                'total_boissons_vendues' => $sumBoissonsDist,
+                'total_points_reels' => round($sumPtsReelsD, 2),
+                'total_points_max' => round($sumPtsMaxD, 2),
+                'taux_ecoulement_global' => $globalTauxD . '%',
+                'formule_appliquee' => !empty($numPartsD) ? "[(" . implode(' + ', $numPartsD) . ") / (" . implode(' + ', $denPartsD) . ")] * 100%" : "N/A",
+                'statut' => $this->evaluatePerformance($globalTauxD)['message'],
+                'badge_color' => $this->evaluatePerformance($globalTauxD)['badge_color']
+            ];
+
+
+            // ==========================================
+            // SECTION 3 : BAR TRANSFORMATION
+            // ==========================================
+            $warehouseTrans = Warehouse::where('is_used_for_drinks_transformation', true)->first();
+            $warehouseTransUuid = $warehouseTrans?->uuid;
+            $globalPlafondMaxTrans = 1; $globalNomProduitMaxTrans = 'N/A';
+
+            if ($warehouseTransUuid) {
+                $topTrans = \App\Models\ProductPoint::with('product')->where('point_uuid', $warehouseTransUuid)->orderBy('quantity', 'desc')->first();
+                if ($topTrans) {
+                    $globalNomProduitMaxTrans = $topTrans->product?->name ?? 'N/A';
+                    $globalPlafondMaxTrans = max((float) $topTrans->quantity, 1);
+                }
+            }
+
+            $agentIdsQueryTrans = OrderRestaurantDrink::whereBetween('created_at', [$startDate, $endDate])
+                ->whereHas('order', fn($q) => $q->where('status', MenuOrderStatus::FACTURATE->value))
+                ->whereHas('drinkConfig', fn($q) => $q->where('is_transformable_product', true))
+                ->whereNotNull('updated_by');
+
+            if ($agentId) $agentIdsQueryTrans->where('updated_by', $agentId);
+            $agentIdsTrans = $agentIdsQueryTrans->distinct()->pluck('updated_by');
+            $agentsTrans = User::whereIn('id', $agentIdsTrans)->get();
+
+            $salesTrans = OrderRestaurantDrink::with(['drinkConfig.composition.items.product', 'order', 'virtuals'])
+                ->whereIn('updated_by', $agentIdsTrans)
+                ->whereBetween('created_at', [$startDate, $endDate])
+                ->whereHas('order', fn($q) => $q->where('status', MenuOrderStatus::FACTURATE->value))
+                ->whereHas('drinkConfig', fn($q) => $q->where('is_transformable_product', true))
+                ->get()->groupBy('updated_by');
+
+            $reportTransformation = [];
+            $sumBoissonsTrans = 0; $sumPtsReelsT = 0; $sumPtsMaxT = 0;
+            $numPartsT = []; $denPartsT = [];
+
+            foreach ($agentsTrans as $agent) {
+                $listeVentes = $salesTrans[$agent->id] ?? collect();
+                if ($listeVentes->isEmpty()) continue;
+
+                $ptsReelsAgent = 0; $ptsMaxAgent = 0; $totalBoissons = $listeVentes->count();
+
+                foreach ($listeVentes as $vente) {
+                    $qteVendue = (float) ($vente->quantity_exactly ?? $vente->quantity);
+                    $drinkConfig = $vente->drinkConfig;
+                    if (!$drinkConfig) continue;
+
+                    $items = $drinkConfig->composition?->items;
+                    if (!$items || $items->isEmpty()) {
+                        $pUuid = $drinkConfig->product_uuid ?? $drinkConfig->uuid;
+                        $matchingVirtual = $vente->virtuals->where('product_uuid', $pUuid)->first();
+                        $stockArt = ($matchingVirtual && isset($matchingVirtual->stock_at_billing)) ? (float) $matchingVirtual->stock_at_billing : 0;
+                        $plafondArt = ($matchingVirtual && isset($matchingVirtual->plafond_at_billing)) ? (float) $matchingVirtual->plafond_at_billing : $globalPlafondMaxTrans;
+
+                        $calcArt = $qteVendue * 1 * $stockArt;
+                        $calcMax = $qteVendue * 1 * $plafondArt;
+                        $ptsReelsAgent += $calcArt; $ptsMaxAgent += $calcMax;
+
+                        $pNum = "({$qteVendue} * 1 * {$stockArt})";
+                        $pDen = "({$qteVendue} * 1 * {$plafondArt})";
+                        $numPartsT[] = $pNum; $denPartsT[] = $pDen;
+                    } else {
+                        foreach ($items as $item) {
+                            $qteRecette = (float) $item->quantity_used;
+                            $pUuid = $item->product_uuid;
+                            $matchingVirtual = $vente->virtuals->where('product_uuid', $pUuid)->first();
+                            $stockArt = ($matchingVirtual && isset($matchingVirtual->stock_at_billing)) ? (float) $matchingVirtual->stock_at_billing : 0;
+                            $plafondArt = ($matchingVirtual && isset($matchingVirtual->plafond_at_billing)) ? (float) $matchingVirtual->plafond_at_billing : $globalPlafondMaxTrans;
+
+                            $calcArt = $qteVendue * $qteRecette * $stockArt;
+                            $calcMax = $qteVendue * $qteRecette * $plafondArt;
+                            $ptsReelsAgent += $calcArt; $ptsMaxAgent += $calcMax;
+
+                            $pNum = "({$qteVendue} * {$qteRecette} * {$stockArt})";
+                            $pDen = "({$qteVendue} * {$qteRecette} * {$plafondArt})";
+                            $numPartsT[] = $pNum; $denPartsT[] = $pDen;
+                        }
+                    }
+                }
+
+                $tauxAgent = $ptsMaxAgent > 0 ? round(($ptsReelsAgent / $ptsMaxAgent) * 100, 2) : 0;
+                $eval = $this->evaluatePerformance($tauxAgent);
+
+                $sumBoissonsTrans += $totalBoissons;
+                $sumPtsReelsT += $ptsReelsAgent;
+                $sumPtsMaxT += $ptsMaxAgent;
+
+                $reportTransformation[] = [
+                    'agent_name' => $agent->nom_utilisateur ?? $agent->email,
+                    'boissons_vendues' => $totalBoissons,
+                    'points_reels' => round($ptsReelsAgent, 2),
+                    'points_max' => round($ptsMaxAgent, 2),
+                    'taux_ecoulement' => $tauxAgent . '%',
+                    'statut' => $eval['message'],
+                    'badge_color' => $eval['badge_color']
+                ];
+            }
+
+            $globalTauxT = $sumPtsMaxT > 0 ? round(($sumPtsReelsT / $sumPtsMaxT) * 100, 2) : 0;
+            $transformationGeneralAverage = [
+                'total_boissons_vendues' => $sumBoissonsTrans,
+                'total_points_reels' => round($sumPtsReelsT, 2),
+                'total_points_max' => round($sumPtsMaxT, 2),
+                'taux_ecoulement_global' => $globalTauxT . '%',
+                'formule_appliquee' => !empty($numPartsT) ? "[(" . implode(' + ', $numPartsT) . ") / (" . implode(' + ', $denPartsT) . ")] * 100%" : "N/A",
+                'statut' => $this->evaluatePerformance($globalTauxT)['message'],
+                'badge_color' => $this->evaluatePerformance($globalTauxT)['badge_color']
+            ];
+
+
+            $fileName = 'RAPPORT-GLOBAL-TAUX-DECOULEMENT-' . now()->format('YmdHis') . '.pdf';
+            $folderPath = 'storage/agent_stock_flow';
+            $filePath = $folderPath . '/' . $fileName;
+
+            if (!is_dir($folderPath)) {
+                mkdir($folderPath, 0755, true);
+            }
+
+            $data = [
+                'start_date' => $startDate->format('d/m/Y'),
+                'end_date' => $endDate->format('d/m/Y'),
+                'kitchen' => [
+                    'performance' => $reportKitchen,
+                    'general_average' => $kitchenGeneralAverage
+                ],
+                'distribution' => [
+                    'performance' => $reportDistribution,
+                    'general_average' => $distributionGeneralAverage
+                ],
+                'transformation' => [
+                    'performance' => $reportTransformation,
+                    'general_average' => $transformationGeneralAverage
+                ],
+            ];
+
+            save_browser_shot_pdf(
+                view: 'pdfs.agent_stock_flow.agent_stock_flow',
+                data: $data,
+                folderPath: $folderPath,
+                path: $filePath,
+                margins: [5, 5, 5, 5],
+                footer: 'pdfs.reports.factures.footer'
+            );
+
+            $pdfContent = file_get_contents($filePath);
+            $base64     = base64_encode($pdfContent);
+
+            return response()->json([
+                'status'   => 'success',
+                'data'     => $data,
+                'base64'   => $base64,
+                'url'      => $filePath,
+                'filename' => $fileName,
+            ], 200);
+
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Erreur génération PDF Global Taux d\'écoulement : ' . $e->getMessage() . ' ligne ' . $e->getLine());
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Erreur lors de la génération du PDF global',
+                'details' => $e->getMessage(),
+            ], 500);
+        }
     }
 
 }

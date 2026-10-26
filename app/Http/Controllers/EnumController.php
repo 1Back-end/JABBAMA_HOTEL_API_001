@@ -10,6 +10,7 @@ use App\Enums\MainCouranteFilter;
 use App\Enums\MenuOrderStatus;
 use App\Enums\PaymentOrderMenusStatus;
 use App\Enums\PurchaseOrdersStatus;
+use App\Enums\RestaurantReportType;
 use App\Enums\RoomServiceEnum;
 use App\Enums\RoomType;
 use App\Enums\StatusRecouvrements;
@@ -104,6 +105,13 @@ class EnumController extends Controller
         return response()->json([
             'status' => 'success',
             'data'   => MainCouranteFilter::toArray(),
+        ]);
+    }
+    public function RestaurantReportType()
+    {
+        return response()->json([
+            'status' => 'success',
+            'data'   => RestaurantReportType::toArray(),
         ]);
     }
 

@@ -35,6 +35,7 @@ class RestaurantStatisticsController extends Controller
                 $q->where('make_in_preparation_by', $agentId)
                     ->orWhere('make_delivered_by', $agentId)
                     ->orWhere('make_rejected_by', $agentId)
+                    ->orWhere('make_ready_by', $agentId)
                     ->orWhere('make_cancel_for_new_update_by', $agentId);
             });
         }
