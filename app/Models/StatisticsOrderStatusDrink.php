@@ -9,7 +9,7 @@ use Illuminate\Support\Str;
 
 class StatisticsOrderStatusDrink extends Model
 {
-    use SoftDeletes,HasFactory;
+    use SoftDeletes, HasFactory;
 
     protected $table = 'statistics_orders_status_drinks';
     protected $primaryKey = 'uuid';
@@ -50,13 +50,15 @@ class StatisticsOrderStatusDrink extends Model
         'make_partial_completed_by',
         'new_rejected_at',
         'make_new_rejected_by',
-        'type'
+        'type',
+        'rejected_after_validation_at',
+        'rejected_after_validation_by',
     ];
 
     protected $dates = [
         'pending_at',
         'rejected_at',
-        'delivered',
+        'delivered_at',
         'ready_at',
         'not_delivered_at',
         'partial_delivered_at',
@@ -66,6 +68,7 @@ class StatisticsOrderStatusDrink extends Model
         'in_preparation_at',
         'partial_completed_at',
         'new_rejected_at',
+        'rejected_after_validation_at',
         'created_at',
         'updated_at',
         'deleted_at',
@@ -85,50 +88,11 @@ class StatisticsOrderStatusDrink extends Model
         return $this->belongsTo(OrderMenuRestaurant::class, 'order_menu_restaurant_uuid', 'uuid');
     }
 
-    public function make_delivered_in_preparation_by()
+    public function drink()
     {
-        return $this->belongsTo(User::class, 'make_delivered_in_preparation_by');
+        return $this->belongsTo(OrderRestaurantDrink::class, 'order_restaurant_drink_uuid', 'uuid');
     }
-    public function make_transferred_by()
-    {
-        return $this->belongsTo(User::class, 'make_transferred_by');
-    }
-    public function make_cancel_for_new_update_by()
-    {
-        return $this->belongsTo(User::class, 'make_cancel_for_new_update_by');
-    }
-    public function make_in_preparation_by()
-    {
-        return $this->belongsTo(User::class, 'make_in_preparation_by');
-    }
-    public function make_new_rejected_by()
-    {
-        return $this->belongsTo(User::class, 'make_new_rejected_by');
-    }
-    public function make_pending_by()
-    {
-        return $this->belongsTo(User::class, 'make_pending_by');
-    }
-    public function make_rejected_by()
-    {
-        return $this->belongsTo(User::class, 'make_rejected_by');
-    }
-    public function make_delivered_by()
-    {
-        return $this->belongsTo(User::class, 'make_delivered_by');
-    }
-    public function make_ready_by()
-    {
-        return $this->belongsTo(User::class, 'make_ready_by');
-    }
-    public function make_not_delivered_by()
-    {
-        return $this->belongsTo(User::class, 'make_not_delivered_by');
-    }
-    public function make_partial_delivered_by()
-    {
-        return $this->belongsTo(User::class, 'make_partial_delivered_by');
-    }
+
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
@@ -137,9 +101,43 @@ class StatisticsOrderStatusDrink extends Model
     public function updater()
     {
         return $this->belongsTo(User::class, 'updated_by');
-    }
-    public function drink()
+    }    public function make_transferred_by()
     {
-        return $this->belongsTo(OrderRestaurantDrink::class, 'order_restaurant_drink_uuid', 'uuid');
+        return $this->belongsTo(User::class, 'make_transferred_by');
+    }
+
+    public function make_in_preparation_by()
+    {
+        return $this->belongsTo(User::class, 'make_in_preparation_by');
+    }
+
+    public function make_ready_by()
+    {
+        return $this->belongsTo(User::class, 'make_ready_by');
+    }
+
+    public function make_delivered_by()
+    {
+        return $this->belongsTo(User::class, 'make_delivered_by');
+    }
+
+        public function make_rejected_by()
+    {
+        return $this->belongsTo(User::class, 'make_rejected_by');
+    }
+
+    public function make_cancel_for_new_update_by()
+    {
+        return $this->belongsTo(User::class, 'make_cancel_for_new_update_by');
+    }
+
+    public function rejected_after_validation_by()
+    {
+        return $this->belongsTo(User::class, 'rejected_after_validation_by');
+    }
+
+    public function make_new_rejected_by()
+    {
+        return $this->belongsTo(User::class, 'make_new_rejected_by');
     }
 }

@@ -64,6 +64,7 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Enum;
 use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\JsonResponse;
 
 /**
  * @permission_category Gestion des commandes du restaurant
@@ -7966,7 +7967,7 @@ class OrderMenuRestaurantController extends Controller
                 'quantity'             => 0,
                 'quantity_accumulated' => 0,
                 'created_by'           => $auth->id,
-                'order_menu_restaurant_uuid' => $order->uuid // ✅ ajouté
+                'order_menu_restaurant_uuid' => $order->uuid
             ]
         );
         $deliveredStatus->increment('quantity', $qtyToProcess);
@@ -8176,8 +8177,8 @@ class OrderMenuRestaurantController extends Controller
             [
                 'order_menu_restaurant_uuid' => $order->uuid,
                 'quantity' => $rejectedStatus->quantity,
-                'cancel_for_new_update_at' => now(),
-                'make_cancel_for_new_update_by' => $auth->id,
+                'rejected_after_validation_at' => now(),
+                'rejected_after_validation_by' => $auth->id,
                 'created_by' => $auth->id,
                 'updated_by' => $auth->id,
             ]
@@ -8234,8 +8235,8 @@ class OrderMenuRestaurantController extends Controller
             [
                 'product_uuid' => $drink->product_uuid,
                 'quantity' => $rejectedStatus->quantity,
-                'cancel_for_new_update_at' => now(),
-                'make_cancel_for_new_update_by' => $auth->id,
+                'rejected_after_validation_at' => now(),
+                'rejected_after_validation_by' => $auth->id,
                 'created_by' => $auth->id,
                 'updated_by' => $auth->id,
             ]
@@ -11156,6 +11157,97 @@ class OrderMenuRestaurantController extends Controller
         ]);
     }
 
+
+    /**
+     * Display a listing of the resource.
+     * @permission OrderMenuRestaurantController::getByItem
+     * @permission_desc Afficher l'historique de facturation d'un menu
+     */
+    public function getByItem($orderUuid, $itemUuid): JsonResponse
+    {
+        $statistics = StatisticsOrderStatusMenuRestaurant::with([
+            'order.items.menu:uuid,name',
+            'order.items:uuid',
+            'orderItem' => function ($query) {
+                $query->select('uuid', 'order_menu_restaurant_uuid', 'status');
+            },
+            'orderItem.menu:uuid,name',
+            'orderItem:uuid',
+            'order:uuid,code',
+            'creator:id,nom_utilisateur',
+            'updater:id,nom_utilisateur',
+            'make_transferred_by:id,nom_utilisateur',
+            'make_in_preparation_by:id,nom_utilisateur',
+            'make_rejected_by:id,nom_utilisateur',
+            'make_delivered_by:id,nom_utilisateur',
+            'make_ready_by:id,nom_utilisateur',
+            'make_cancel_for_new_update_by:id,nom_utilisateur',
+            'make_new_rejected_by:id,nom_utilisateur',
+            'rejected_after_validation_by:id,nom_utilisateur',
+        ])
+            ->where('order_menu_restaurant_uuid', $orderUuid)
+            ->where('order_menu_restaurant_item_uuid', $itemUuid)
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        if ($statistics->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Aucune statistique trouvée pour cet item dans cette commande.'
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Historique des statistiques de l\'item récupéré avec succès.',
+            'data' => $statistics
+        ]);
+    }
+
+
+    /**
+     * Display a listing of the resource.
+     * @permission OrderMenuRestaurantController::getByDrinks
+     * @permission_desc Afficher l'historique de facturation d'une boisson
+     */
+    public function getByDrinks($orderUuid, $itemUuid): JsonResponse
+    {
+        $statistics = StatisticsOrderStatusDrink::with([
+            'drink' => function ($query) {
+                $query->select('uuid', 'order_menu_restaurant_uuid', 'drink_restaurant_uuid', 'status');
+            },
+            'drink.drinkConfig' => function ($query) {
+                $query->select('uuid', 'product_uuid', 'drink_name');
+            },
+            'creator:id,nom_utilisateur',
+            'updater:id,nom_utilisateur',
+            'make_transferred_by:id,nom_utilisateur',
+            'make_in_preparation_by:id,nom_utilisateur',
+            'make_rejected_by:id,nom_utilisateur',
+            'make_delivered_by:id,nom_utilisateur',
+            'make_ready_by:id,nom_utilisateur',
+            'make_cancel_for_new_update_by:id,nom_utilisateur',
+            'make_new_rejected_by:id,nom_utilisateur',
+            'rejected_after_validation_by:id,nom_utilisateur',
+        ])
+            ->where('order_menu_restaurant_uuid', $orderUuid)
+            ->where('order_restaurant_drink_uuid', $itemUuid)
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        if ($statistics->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Aucune statistique trouvée pour cette boisson dans cette commande.'
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Historique des statistiques de la boisson récupéré avec succès.',
+            'data' => $statistics
+        ]);
+    }
 
 
 

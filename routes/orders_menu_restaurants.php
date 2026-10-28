@@ -59,3 +59,5 @@ Route::get('/restaurant/orders/invoices_recouvrements', [\App\Http\Controllers\O
 Route::post('orders_menu_restaurants/allocate_amount', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'addAllocation']);
 Route::get('/export_orders_menu_restaurants', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'export_orders']);
 Route::get('/historics_encaissements_and_recouvrements', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'get_historics_recouvrements']);
+Route::get('/orders_menu_restaurants/historics_item/{orderUuid}/{itemUuid}', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'getByItem']);
+Route::get('/orders_menu_restaurants/historics_drinks/{orderUuid}/{itemUuid}', [\App\Http\Controllers\OrderMenuRestaurantController::class, 'getByDrinks']);

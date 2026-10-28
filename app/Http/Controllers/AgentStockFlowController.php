@@ -17,7 +17,6 @@ class AgentStockFlowController extends Controller
 {
     public function index(Request $request)
     {
-        // 1. Gestion de la date de début (Début de l'app si non renseigné)
         if ($request->filled('start_date')) {
             $startDate = Carbon::createFromFormat('d-m-Y', $request->input('start_date'))->startOfDay();
         } else {
@@ -27,7 +26,6 @@ class AgentStockFlowController extends Controller
                 : now()->startOfDay();
         }
 
-        // 2. Gestion de la date de fin (Fin de la journée d'hier / journée n-1 si non renseigné)
         if ($request->filled('end_date')) {
             $endDate = Carbon::createFromFormat('d-m-Y', $request->input('end_date'))->endOfDay();
         } else {

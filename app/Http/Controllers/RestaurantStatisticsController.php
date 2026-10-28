@@ -23,10 +23,6 @@ class RestaurantStatisticsController extends Controller
 
         $query = StatisticsOrderStatusMenuRestaurant::with([
             'orderItem.menu',
-            'agentInPreparation',
-            'agentServed',
-            'agentReject',
-            'agentCancelForNewUpdate'
         ])
             ->whereBetween('created_at', [$startDate, $endDate]);
 
@@ -36,7 +32,10 @@ class RestaurantStatisticsController extends Controller
                     ->orWhere('make_delivered_by', $agentId)
                     ->orWhere('make_rejected_by', $agentId)
                     ->orWhere('make_ready_by', $agentId)
-                    ->orWhere('make_cancel_for_new_update_by', $agentId);
+                    ->orWhere('make_transferred_by', $agentId)
+                    ->orWhere('make_new_rejected_by', $agentId)
+                    ->orWhere('make_cancel_for_new_update_by', $agentId)
+                    ->orWhere('rejected_after_validation_by', $agentId);
             });
         }
 
@@ -75,27 +74,21 @@ class RestaurantStatisticsController extends Controller
                     || !empty($item->make_cancel_for_new_update_by);
             })->first();
 
+            // Récupération propre du nom de l'agent pour le rejet
             $rejectAgentUuid = $rejectionStat?->make_rejected_by ?? $rejectionStat?->rejected_by;
             $rejectAgentName = 'Non défini';
-            if ($rejectionStat && $rejectionStat->agentReject) {
-                $rejectAgentName = $rejectionStat->agentReject->nom_utilisateur
-                    ?? $rejectionStat->agentReject->name
-                    ?? 'Agent #' . $rejectAgentUuid;
-            } elseif ($rejectAgentUuid) {
-                $rejectAgentName = 'Agent #' . $rejectAgentUuid;
+            if ($rejectAgentUuid) {
+                $userRej = \App\Models\User::find($rejectAgentUuid);
+                $rejectAgentName = $userRej?->nom_utilisateur ?? ('Agent #' . $rejectAgentUuid);
             }
 
+            // Récupération propre du nom de l'agent pour la mal confection
             $malConfectionAgentUuid = $malConfectionStat?->make_cancel_for_new_update_by;
             $malConfectionAgentName = 'Non défini';
-            if ($malConfectionStat && $malConfectionStat->agentCancelForNewUpdate) {
-                $userMal = $malConfectionStat->agentCancelForNewUpdate;
-                $malConfectionAgentName = $userMal->nom_utilisateur
-                    ?? $userMal->name
-                    ?? 'Agent #' . $malConfectionAgentUuid;
-            } elseif ($malConfectionAgentUuid) {
-                $malConfectionAgentName = 'Agent #' . $malConfectionAgentUuid;
+            if ($malConfectionAgentUuid) {
+                $userMal = \App\Models\User::find($malConfectionAgentUuid);
+                $malConfectionAgentName = $userMal?->nom_utilisateur ?? ('Agent #' . $malConfectionAgentUuid);
             }
-
 
             $rejectedQty = $rejectionStat ? (int) ($rejectionStat->quantity ?? 0) : 0;
             $malConfectionQty = $malConfectionStat ? (int) ($malConfectionStat->quantity ?? 0) : 0;
@@ -130,27 +123,21 @@ class RestaurantStatisticsController extends Controller
             $readyAt = $stats->whereNotNull('ready_at')->pluck('ready_at')->first();
             $deliveredAt = $stats->whereNotNull('delivered_at')->pluck('delivered_at')->first();
 
-            // Récupération des agents via les relations
+            // Récupération des agents pour les temps
             $inPrepStat = $stats->whereNotNull('in_preparation_at')->first();
             $prepAgentUuid = $inPrepStat?->make_in_preparation_by;
             $prepAgentName = 'Non défini';
-            if ($inPrepStat && $inPrepStat->agentInPreparation) {
-                $prepAgentName = $inPrepStat->agentInPreparation->nom_utilisateur
-                    ?? $inPrepStat->agentInPreparation->name
-                    ?? ($prepAgentUuid ? 'Agent #' . $prepAgentUuid : 'Non défini');
-            } elseif ($prepAgentUuid) {
-                $prepAgentName = 'Agent #' . $prepAgentUuid;
+            if ($prepAgentUuid) {
+                $prepAgent = \App\Models\User::find($prepAgentUuid);
+                $prepAgentName = $prepAgent?->nom_utilisateur ?? ('Agent #' . $prepAgentUuid);
             }
 
             $deliveredStat = $stats->whereNotNull('delivered_at')->first();
             $deliveredAgentUuid = $deliveredStat?->make_delivered_by;
             $deliveredAgentName = 'Non défini';
-            if ($deliveredStat && $deliveredStat->agentServed) {
-                $deliveredAgentName = $deliveredStat->agentServed->nom_utilisateur
-                    ?? $deliveredStat->agentServed->name
-                    ?? ($deliveredAgentUuid ? 'Agent #' . $deliveredAgentUuid : 'Non défini');
-            } elseif ($deliveredAgentUuid) {
-                $deliveredAgentName = 'Agent #' . $deliveredAgentUuid;
+            if ($deliveredAgentUuid) {
+                $delAgent = \App\Models\User::find($deliveredAgentUuid);
+                $deliveredAgentName = $delAgent?->nom_utilisateur ?? ('Agent #' . $deliveredAgentUuid);
             }
 
             // 1. Durée de Cuisson : in_preparation_at -> ready_at
