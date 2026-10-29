@@ -17,3 +17,4 @@ Route::get('orders/{uuid}/print_orders', [PurchaseOrderController::class, 'print
 Route::get('orders/{uuid}/show_parents_orders', [PurchaseOrderController::class, 'show_parents_orders']);
 Route::get('orders_actions', [\App\Http\Controllers\PurchaseOrderController::class, 'PurchaseOrdersStatus']);
 Route::get('get_validated_and_partial_validated_orders', [\App\Http\Controllers\PurchaseOrderController::class, 'get_validated_and_partial_validated_orders']);
+Route::get('/purchase_orders/{orderUuid}/products/{productUuid}/statistics', [PurchaseOrderController::class, 'getProductStatistics']);

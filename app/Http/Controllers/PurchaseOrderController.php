@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\DTO\ClientFilterData;
 use App\DTO\PurchaseOrderFilterData;
 use App\Enums\PurchaseOrdersStatus;
+use App\Enums\PurchaseOrderType;
 use App\Enums\StockAdjustmentAction;
 use App\Exports\PurchaseOrdersExport;
 use App\Models\DecisionalNotification;
@@ -13,6 +14,7 @@ use App\Models\Product;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 use App\Models\PurchaseOrderNotification;
+use App\Models\StatisticsPurchaseOrder;
 use App\Models\User;
 use App\Models\Warehouse;
 use Illuminate\Http\Request;
@@ -22,6 +24,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use Maatwebsite\Excel\Facades\Excel;
 
 /**
@@ -318,6 +321,39 @@ class PurchaseOrderController extends Controller
     }
 
 
+
+
+    private function createPurchaseOrderStatistic($order, $item, $auth, array $options = [])
+    {
+        $productUuid = is_array($item) ? ($item['product_uuid'] ?? null) : ($item->product_uuid ?? null);
+        $quantity = is_array($item) ? ($item['quantity'] ?? 0) : ($item->quantity ?? 0);
+        $status = $options['status'] ?? $order->status ?? 'draft';
+
+        return StatisticsPurchaseOrder::updateOrCreate(
+            [
+                'purchase_order_uuid' => $order->uuid ?? null,
+                'product_uuid'        => $productUuid,
+                'status'              => $status,
+            ],
+            [
+                'quantity'            => $quantity,
+                'transfered_by'       => $options['transfered_by'] ?? null,
+                'transfered_at'       => $options['transfered_at'] ?? null,
+                'validated_by'        => $options['validated_by'] ?? null,
+                'validated_at'        => $options['validated_at'] ?? null,
+                'rejected_by'         => $options['rejected_by'] ?? null,
+                'rejected_at'         => $options['rejected_at'] ?? null,
+                'received_by'         => $options['received_by'] ?? null,
+                'received_at'         => $options['received_at'] ?? null,
+                'approved_by'         => $options['approved_by'] ?? null,
+                'approved_at'         => $options['approved_at'] ?? null,
+                'cancelled_by'        => $options['cancelled_by'] ?? null,
+                'cancelled_at'        => $options['cancelled_at'] ?? null,
+                'updated_by'          => $auth->id,
+                'created_by'          => $auth->id,
+            ]
+        );
+    }
     /**
      * Display a listing of the resource.
      * @permission PurchaseOrderController::store
@@ -327,61 +363,76 @@ class PurchaseOrderController extends Controller
     {
         $auth = auth()->user();
 
-        return DB::transaction(function () use ($request, $auth) {
-            try {
-                // 🔹 Validation des données
-                $request->validate([
-                    'type' => 'required|in:external,internal',
-                    'supplier_uuid' => 'nullable|exists:suppliers,uuid',
-                    'warehouse_from' => 'nullable|exists:warehouses,uuid',
-                    'notes' => 'nullable|string',
-                    'items' => 'required|array|min:1',
-                    'items.*.product_uuid' => 'required|exists:produits,uuid',
-                    'items.*.quantity' => 'required|numeric|min:0.001',
-                ], [
-                    'items.required' => 'Vous devez ajouter au moins un produit à la commande.',
-                ]);
+        $request->validate([
+            'type' => ['required', Rule::enum(PurchaseOrderType::class)],
+            'supplier_uuid' => 'nullable|exists:suppliers,uuid',
+            'warehouse_from' => 'nullable|exists:warehouses,uuid',
+            'notes' => 'nullable|string',
+            'items' => 'required|array|min:1',
+            'items.*.product_uuid' => 'required|exists:produits,uuid',
+            'items.*.quantity' => 'required|numeric|min:0.001',
+        ], [
+            'items.required' => 'Vous devez ajouter au moins un produit à la commande.',
+        ]);
+
+        $supplierUuid = $request->type === PurchaseOrderType::EXTERNAL->value ? $request->supplier_uuid : null;
+        $warehouseFromUuid = null;
+        $warehouseToUuid = null;
+        $warehouseFrom = null;
 
 
-                $supplierUuid = $request->type === 'external' ? $request->supplier_uuid : null;
-                $warehouseFromUuid = null;
-                $warehouseToUuid = null;
-                $warehouseFrom = null;
+        if ($request->type === PurchaseOrderType::INTERNAL->value) {
+            $warehouseFrom = Warehouse::find($request->warehouse_from);
+            if (!$warehouseFrom) {
+                return response()->json(['message' => 'Entrepôt source introuvable.'], 404);
+            }
 
-                if ($request->type === 'internal') {
+            if (!$auth->can('view_role_related_data')) {
+                $isManager = $warehouseFrom->managers()->where('user_id', $auth->id)->exists();
+            } else {
+                $roleIds = $auth->roles->pluck('id');
+                $isManager = $warehouseFrom->managers()
+                    ->whereHas('roles', function ($q) use ($roleIds) {
+                        $q->whereIn('roles.id', $roleIds);
+                    })
+                    ->exists();
+            }
 
-                    $warehouseFrom = Warehouse::find($request->warehouse_from);
-                    if (!$warehouseFrom) {
-                        return response()->json(['message' => 'Entrepôt source introuvable.'], 404);
-                    }
+            if (!$isManager) {
+                return response()->json([
+                    'message' => 'Vous ne pouvez créer une commande interne que depuis un entrepôt que vous gérez ou partagé avec votre rôle.'
+                ], 403);
+            }
 
-                    if (!$auth->can('view_role_related_data')) {
-                        $isManager = $warehouseFrom->managers()->where('user_id', $auth->id)->exists();
+            $warehouseTo = Warehouse::where('is_primary', true)->first();
+            if (!$warehouseTo) {
+                return response()->json(['message' => 'Entrepôt principal introuvable.'], 404);
+            }
 
-                    } else {
-                        $roleIds = $auth->roles->pluck('id');
-                        $isManager = $warehouseFrom->managers()
-                            ->whereHas('roles', function ($q) use ($roleIds) {
-                                $q->whereIn('roles.id', $roleIds);
-                            })
-                            ->exists();
-                    }
+            $warehouseFromUuid = $warehouseFrom->uuid;
+            $warehouseToUuid = $warehouseTo->uuid;
+        }
 
-                    // 🔹 Bloquer si aucune permission
-                    if (!$isManager) {
-                        return response()->json([
-                            'message' => 'Vous ne pouvez créer une commande interne que depuis un entrepôt que vous gérez ou partagé avec votre rôle.'
-                        ], 403);
-                    }
+        foreach ($request->items as $item) {
+            $product = Product::find($item['product_uuid']);
+            $productName = $product ? $product->name : $item['product_uuid'];
 
-                    // Entrepôt destination = entrepôt principal
-                    $warehouseTo = Warehouse::where('is_primary', true)->firstOrFail();
+            if ($request->type === PurchaseOrderType::INTERNAL->value && $warehouseFrom) {
+                $available = Product::where('uuid', $item['product_uuid'])
+                    ->whereHas('points', function ($q) use ($warehouseFrom) {
+                        $q->where('point_uuid', $warehouseFrom->uuid);
+                    })->exists();
 
-                    $warehouseFromUuid = $warehouseFrom->uuid;
-                    $warehouseToUuid = $warehouseTo->uuid;
+                if (!$available) {
+                    return response()->json([
+                        'message' => "Le produit {$productName} n'est pas disponible dans l'entrepôt."
+                    ], 403);
                 }
+            }
+        }
 
-                // 🔹 Création de la commande
+        return DB::transaction(function () use ($request, $auth, $supplierUuid, $warehouseFromUuid, $warehouseToUuid) {
+            try {
                 $order = PurchaseOrder::create([
                     'type' => $request->type,
                     'status' => 'draft',
@@ -394,29 +445,16 @@ class PurchaseOrderController extends Controller
                     'added_by' => $auth->id,
                 ]);
 
-                // 🔹 Ajout des produits
                 foreach ($request->items as $item) {
-                    $product = Product::find($item['product_uuid']);
-                    $productName = $product ? $product->name : $item['product_uuid'];
-
-                    if ($request->type === 'internal' && $warehouseFrom) {
-                        $available = Product::where('uuid', $item['product_uuid'])
-                            ->whereHas('points', function ($q) use ($warehouseFrom) {
-                                $q->where('point_uuid', $warehouseFrom->uuid);
-                            })->exists();
-
-                        if (!$available) {
-                            return response()->json([
-                                'message' => "Le produit {$productName} n'est pas disponible dans l'entrepôt."
-                            ], 403);
-                        }
-                    }
-
                     $order->items()->create([
                         'product_uuid' => $item['product_uuid'],
                         'quantity' => $item['quantity'],
                         'created_by' => $auth->id,
                         'added_by' => $auth->id,
+                    ]);
+
+                    $this->createPurchaseOrderStatistic($order, $item, $auth, [
+                        'status' => PurchaseOrdersStatus::DRAFT->value,
                     ]);
                 }
 
@@ -441,17 +479,8 @@ class PurchaseOrderController extends Controller
                     'order' => $order->load(['items'])
                 ], 201);
 
-            } catch (\Illuminate\Validation\ValidationException $e) {
-                return response()->json([
-                    'message' => 'Erreur de validation.',
-                    'errors' => $e->errors()
-                ], 422);
-
             } catch (\Exception $e) {
-                return response()->json([
-                    'message' => 'Une erreur est survenue lors de la création de la commande.',
-                    'error' => $e->getMessage()
-                ], 500);
+                throw $e;
             }
         });
     }
@@ -685,6 +714,8 @@ class PurchaseOrderController extends Controller
             $order->items()->delete();
             \App\Models\PurchaseOrderNotification::where('purchase_order_uuid', $order->uuid)->delete();
             \App\Models\DecisionalNotification::where('purchase_order_uuid', $order->uuid)->delete();
+            \App\Models\StatisticsPurchaseOrder::where('purchase_order_uuid', $order->uuid)->delete();
+            \App\Models\StatisticSupply::where('purchase_order_uuid', $order->uuid)->delete();
 
 
             $order->delete();
@@ -730,39 +761,47 @@ class PurchaseOrderController extends Controller
             ], 422);
         }
 
-        $order = PurchaseOrder::where('uuid', $uuid)->firstOrFail();
+        $order = PurchaseOrder::with('items')->where('uuid', $uuid)->firstOrFail();
 
-        try {
-            $order->update([
-                'status' => PurchaseOrdersStatus::CANCEL->value,
-                'updated_by' => $auth->id,
-                'closed_at' => now(),
-            ]);
+        return DB::transaction(function () use ($auth, $order) {
+            try {
+                $order->update([
+                    'status' => PurchaseOrdersStatus::CANCEL->value,
+                    'updated_by' => $auth->id,
+                    'closed_at' => now(),
+                ]);
 
-            \App\Models\PurchaseOrderNotification::where('purchase_order_uuid', $order->uuid)
-                ->delete();
+                \App\Models\PurchaseOrderNotification::where('purchase_order_uuid', $order->uuid)
+                    ->delete();
 
-            $notifMessage = "La commande (Référence : {$order->reference}) a été annulée.";
 
-            $this->sendNotification(
-                order: $order,
-                status: PurchaseOrdersStatus::CANCEL->value,
-                message: $notifMessage,
-                userId: $auth->id,
-                target: 'purchases_orders',
-            );
+                foreach ($order->items as $item) {
+                    $this->createPurchaseOrderStatistic($order, $item, $auth, [
+                        'status' => PurchaseOrdersStatus::CANCEL->value,
+                        'cancelled_by' => $auth->id,
+                        'cancelled_at' => now(),
+                    ]);
+                }
 
-            return response()->json([
-                'message' => "La commande a été annulée avec succès.",
-                'order' => $order
-            ], 200);
+                $notifMessage = "La commande (Référence : {$order->reference}) a été annulée.";
 
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Une erreur est survenue lors de l\'annulation de la commande.',
-                'error' => $e->getMessage()
-            ], 500);
-        }
+                $this->sendNotification(
+                    order: $order,
+                    status: PurchaseOrdersStatus::CANCEL->value,
+                    message: $notifMessage,
+                    userId: $auth->id,
+                    target: 'purchases_orders',
+                );
+
+                return response()->json([
+                    'message' => "La commande a été annulée avec succès.",
+                    'order' => $order->load(['items'])
+                ], 200);
+
+            } catch (\Exception $e) {
+                throw $e;
+            }
+        });
     }
 
     /**
@@ -770,7 +809,8 @@ class PurchaseOrderController extends Controller
      * @permission PurchaseOrderController::cancel_orders_by_admin
      * @permission_desc Annuler une commande par le SUPER ADMIN
      */
-    public function cancel_orders_by_admin(Request $request, string $uuid){
+    public function cancel_orders_by_admin(Request $request, string $uuid)
+    {
         $auth = auth()->user();
 
         $request->validate([
@@ -786,39 +826,46 @@ class PurchaseOrderController extends Controller
             ], 422);
         }
 
-        $order = PurchaseOrder::where('uuid', $uuid)->firstOrFail();
+        $order = PurchaseOrder::with('items')->where('uuid', $uuid)->firstOrFail();
 
-        try {
-            $order->update([
-                'status' => PurchaseOrdersStatus::CANCEL->value,
-                'updated_by' => $auth->id,
-                'closed_at' => now(),
-            ]);
+        return DB::transaction(function () use ($auth, $order) {
+            try {
+                $order->update([
+                    'status' => PurchaseOrdersStatus::CANCEL->value,
+                    'updated_by' => $auth->id,
+                    'closed_at' => now(),
+                ]);
 
-            \App\Models\PurchaseOrderNotification::where('purchase_order_uuid', $order->uuid)
-                ->delete();
+                \App\Models\PurchaseOrderNotification::where('purchase_order_uuid', $order->uuid)
+                    ->delete();
 
-            $notifMessage = "La commande (Référence : {$order->reference}) a été annulée.";
+                foreach ($order->items as $item) {
+                    $this->createPurchaseOrderStatistic($order, $item, $auth, [
+                        'status' => PurchaseOrdersStatus::CANCEL->value,
+                        'cancelled_by' => $auth->id,
+                        'cancelled_at' => now(),
+                    ]);
+                }
 
-            $this->sendNotification(
-                order: $order,
-                status: PurchaseOrdersStatus::CANCEL->value,
-                message: $notifMessage,
-                userId: $auth->id,
-                target: 'purchases_orders',
-            );
+                $notifMessage = "La commande (Référence : {$order->reference}) a été annulée.";
 
-            return response()->json([
-                'message' => "La commande a été annulée avec succès.",
-                'order' => $order
-            ], 200);
+                $this->sendNotification(
+                    order: $order,
+                    status: PurchaseOrdersStatus::CANCEL->value,
+                    message: $notifMessage,
+                    userId: $auth->id,
+                    target: 'purchases_orders',
+                );
 
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Une erreur est survenue lors de l\'annulation de la commande.',
-                'error' => $e->getMessage()
-            ], 500);
-        }
+                return response()->json([
+                    'message' => "La commande a été annulée avec succès.",
+                    'order' => $order->load(['items'])
+                ], 200);
+
+            } catch (\Exception $e) {
+                throw $e;
+            }
+        });
     }
 
 
@@ -844,43 +891,50 @@ class PurchaseOrderController extends Controller
             ], 422);
         }
 
-        $order = PurchaseOrder::where('uuid', $uuid)->firstOrFail();
+        $order = PurchaseOrder::with('items')->where('uuid', $uuid)->firstOrFail();
 
-        try {
-            $order->update([
-                'status' => PurchaseOrdersStatus::VALIDATED->value,
-                'updated_by' => $auth->id,
-                'approved_by' => $auth->id,
-                'approved_at' => now(),
-                'closed_at' => now()
-            ]);
+        return DB::transaction(function () use ($auth, $order) {
+            try {
+                $order->update([
+                    'status' => PurchaseOrdersStatus::VALIDATED->value,
+                    'updated_by' => $auth->id,
+                    'approved_by' => $auth->id,
+                    'approved_at' => now(),
+                    'closed_at' => now()
+                ]);
 
-            \App\Models\PurchaseOrderNotification::where('purchase_order_uuid', $order->uuid)
-                ->where('status', PurchaseOrdersStatus::VALIDATED->value)
-                ->delete();
+                \App\Models\PurchaseOrderNotification::where('purchase_order_uuid', $order->uuid)
+                    ->where('status', PurchaseOrdersStatus::VALIDATED->value)
+                    ->delete();
 
+                // 🔹 Enregistrement des statistiques pour chaque article lors de la validation
+                foreach ($order->items as $item) {
+                    $this->createPurchaseOrderStatistic($order, $item, $auth, [
+                        'status' => PurchaseOrdersStatus::VALIDATED->value,
+                        'validated_by' => $auth->id,
+                        'validated_at' => now(),
+                    ]);
+                }
 
-            $notifMessage = "La commande (Référence : {$order->reference}) a été validée avec succès.";
+                $notifMessage = "La commande (Référence : {$order->reference}) a été validée avec succès.";
 
-            $this->sendNotification(
-                order: $order,
-                status: PurchaseOrdersStatus::VALIDATED->value,
-                message: $notifMessage,
-                userId: $auth->id,
-                target: 'purchases_orders',
-            );
+                $this->sendNotification(
+                    order: $order,
+                    status: PurchaseOrdersStatus::VALIDATED->value,
+                    message: $notifMessage,
+                    userId: $auth->id,
+                    target: 'purchases_orders',
+                );
 
-            return response()->json([
-                'message' => "La commande a été validée avec succès.",
-                'order' => $order
-            ], 200);
+                return response()->json([
+                    'message' => "La commande a été validée avec succès.",
+                    'order' => $order->load(['items'])
+                ], 200);
 
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Une erreur est survenue lors de la validation de la commande.',
-                'error' => $e->getMessage()
-            ], 500);
-        }
+            } catch (\Exception $e) {
+                throw $e;
+            }
+        });
     }
 
 
@@ -900,41 +954,48 @@ class PurchaseOrderController extends Controller
             'motif_rejet.string' => "La raison doit être une chaîne de caractères.",
         ]);
 
-        $order = PurchaseOrder::where('uuid', $uuid)->firstOrFail();
+        $order = PurchaseOrder::with('items')->where('uuid', $uuid)->firstOrFail();
 
-        try {
-            $order->update([
-                'status' => PurchaseOrdersStatus::REJECTED->value,
-                'motif_rejet' => $validated['motif_rejet'],
-                'updated_by' => $auth->id,
-                'closed_at' => now()
-            ]);
+        return DB::transaction(function () use ($request, $auth, $order, $validated) {
+            try {
+                $order->update([
+                    'status' => PurchaseOrdersStatus::REJECTED->value,
+                    'motif_rejet' => $validated['motif_rejet'],
+                    'updated_by' => $auth->id,
+                    'closed_at' => now()
+                ]);
 
-            \App\Models\PurchaseOrderNotification::where('purchase_order_uuid', $order->uuid)
-                ->where('status', PurchaseOrdersStatus::REJECTED->value)
-                ->delete();
+                \App\Models\PurchaseOrderNotification::where('purchase_order_uuid', $order->uuid)
+                    ->where('status', PurchaseOrdersStatus::REJECTED->value)
+                    ->delete();
 
-            $notifMessage = "La commande (Référence : {$order->reference}) a été rejetée. Motif : {$validated['motif_rejet']}";
+                foreach ($order->items as $item) {
+                    $this->createPurchaseOrderStatistic($order, $item, $auth, [
+                        'status' => PurchaseOrdersStatus::REJECTED->value,
+                        'rejected_by' => $auth->id,
+                        'rejected_at' => now(),
+                    ]);
+                }
 
-            $this->sendNotification(
-                order: $order,
-                status: PurchaseOrdersStatus::REJECTED->value,
-                message: $notifMessage,
-                userId: $auth->id,
-                target: 'purchases_orders',
-            );
+                $notifMessage = "La commande (Référence : {$order->reference}) a été rejetée. Motif : {$validated['motif_rejet']}";
 
-            return response()->json([
-                'message' => "La commande a été rejetée avec succès.",
-                'order' => $order
-            ], 200);
+                $this->sendNotification(
+                    order: $order,
+                    status: PurchaseOrdersStatus::REJECTED->value,
+                    message: $notifMessage,
+                    userId: $auth->id,
+                    target: 'purchases_orders',
+                );
 
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Erreur lors du rejet de la commande.',
-                'error' => $e->getMessage(),
-            ], 500);
-        }
+                return response()->json([
+                    'message' => "La commande a été rejetée avec succès.",
+                    'order' => $order->load(['items'])
+                ], 200);
+
+            } catch (\Exception $e) {
+                throw $e; // Force le rollback de la transaction en cas d'erreur
+            }
+        });
     }
 
 
@@ -954,42 +1015,49 @@ class PurchaseOrderController extends Controller
             'user_id.exists' => "L'utilisateur sélectionné est introuvable.",
         ]);
 
-        $order = PurchaseOrder::where('uuid', $uuid)->firstOrFail();
+        $order = PurchaseOrder::with('items')->where('uuid', $uuid)->firstOrFail();
         $recipient = User::findOrFail($validated['user_id']);
 
-        try {
-            $order->update([
-                'status' => PurchaseOrdersStatus::OPEN->value,
-                'updated_by' => $auth->id,
-                'transfered_by' => $recipient->id,
-                'transfered_at' => now(),
-            ]);
+        return DB::transaction(function () use ($auth, $order, $recipient) {
+            try {
+                $order->update([
+                    'status' => PurchaseOrdersStatus::OPEN->value,
+                    'updated_by' => $auth->id,
+                    'transfered_by' => $recipient->id,
+                    'transfered_at' => now(),
+                ]);
 
-            \App\Models\PurchaseOrderNotification::where('purchase_order_uuid', $order->uuid)
-                ->where('status', PurchaseOrdersStatus::OPEN->value)
-                ->delete();
+                \App\Models\PurchaseOrderNotification::where('purchase_order_uuid', $order->uuid)
+                    ->where('status', PurchaseOrdersStatus::OPEN->value)
+                    ->delete();
 
-            $notifMessage = "La commande (Référence : {$order->reference}) a été transférée à {$recipient->nom_utilisateur}.";
+                foreach ($order->items as $item) {
+                    $this->createPurchaseOrderStatistic($order, $item, $auth, [
+                        'status' => PurchaseOrdersStatus::OPEN->value,
+                        'transfered_by' =>$auth->id,
+                        'transfered_at' => now(),
+                    ]);
+                }
 
-            $this->sendNotification(
-                order: $order,
-                status: PurchaseOrdersStatus::OPEN->value,
-                message: $notifMessage,
-                userId: $auth->id,
-                target: 'purchases_orders',
-            );
+                $notifMessage = "La commande (Référence : {$order->reference}) a été transférée à {$recipient->nom_utilisateur}.";
 
-            return response()->json([
-                'message' => "Commande transférée avec succès à {$recipient->nom_utilisateur}.",
-                'order' => $order
-            ], 200);
+                $this->sendNotification(
+                    order: $order,
+                    status: PurchaseOrdersStatus::OPEN->value,
+                    message: $notifMessage,
+                    userId:  $auth->id,
+                    target: 'purchases_orders',
+                );
 
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Erreur lors du transfert de la commande.',
-                'error' => $e->getMessage(),
-            ], 500);
-        }
+                return response()->json([
+                    'message' => "Commande transférée avec succès à {$recipient->nom_utilisateur}.",
+                    'order' => $order->load(['items'])
+                ], 200);
+
+            } catch (\Exception $e) {
+                throw $e;
+            }
+        });
     }
 
 
@@ -1009,41 +1077,48 @@ class PurchaseOrderController extends Controller
             'motif_rejet.string' => "La raison doit être une chaîne de caractères.",
         ]);
 
-        $order = PurchaseOrder::where('uuid', $uuid)->firstOrFail();
+        $order = PurchaseOrder::with('items')->where('uuid', $uuid)->firstOrFail();
 
-        try {
-            $order->update([
-                'status' => PurchaseOrdersStatus::REJECTED->value,
-                'motif_rejet' => $validated['motif_rejet'],
-                'updated_by' => $auth->id,
-                'closed_at' => now()
-            ]);
+        return DB::transaction(function () use ($request, $auth, $order, $validated) {
+            try {
+                $order->update([
+                    'status' => PurchaseOrdersStatus::REJECTED->value,
+                    'motif_rejet' => $validated['motif_rejet'],
+                    'updated_by' => $auth->id,
+                    'closed_at' => now()
+                ]);
 
-            \App\Models\PurchaseOrderNotification::where('purchase_order_uuid', $order->uuid)
-                ->where('status', PurchaseOrdersStatus::REJECTED->value)
-                ->delete();
+                \App\Models\PurchaseOrderNotification::where('purchase_order_uuid', $order->uuid)
+                    ->where('status', PurchaseOrdersStatus::REJECTED->value)
+                    ->delete();
 
-            $notifMessage = "La commande (Référence : {$order->reference}) a été rejetée. Motif : {$validated['motif_rejet']}";
+                foreach ($order->items as $item) {
+                    $this->createPurchaseOrderStatistic($order, $item, $auth, [
+                        'status' => PurchaseOrdersStatus::REJECTED->value,
+                        'rejected_by' => $auth->id,
+                        'rejected_at' => now(),
+                    ]);
+                }
 
-            $this->sendNotification(
-                order: $order,
-                status: PurchaseOrdersStatus::REJECTED->value,
-                message: $notifMessage,
-                userId: $auth->id,
-                target: 'purchases_orders',
-            );
+                $notifMessage = "La commande (Référence : {$order->reference}) a été rejetée. Motif : {$validated['motif_rejet']}";
 
-            return response()->json([
-                'message' => "La commande a été rejetée avec succès.",
-                'order' => $order
-            ], 200);
+                $this->sendNotification(
+                    order: $order,
+                    status: PurchaseOrdersStatus::REJECTED->value,
+                    message: $notifMessage,
+                    userId: $auth->id,
+                    target: 'purchases_orders',
+                );
 
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Erreur lors du rejet de la commande.',
-                'error' => $e->getMessage(),
-            ], 500);
-        }
+                return response()->json([
+                    'message' => "La commande a été rejetée avec succès.",
+                    'order' => $order->load(['items'])
+                ], 200);
+
+            } catch (\Exception $e) {
+                throw $e;
+            }
+        });
     }
 
 
@@ -1572,6 +1647,45 @@ class PurchaseOrderController extends Controller
                 'details' => $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Display a listing of the resource.
+     * @permission PurchaseOrderController::getProductStatistics
+     * @permission_desc Afficher l'historique des commandes d'un article
+     */
+    public function getProductStatistics(string $orderUuid, string $productUuid)
+    {
+        $order = PurchaseOrder::where('uuid', $orderUuid)->firstOrFail();
+
+        $statistics = StatisticsPurchaseOrder::with([
+            'purchaseOrder:uuid,reference',
+            'product:uuid,name',
+            'creator:id,nom_utilisateur',
+            'transferer:id,nom_utilisateur',
+            'validator:id,nom_utilisateur',
+            'rejecter:id,nom_utilisateur',
+            'receiver:id,nom_utilisateur',
+            'canceller:id,nom_utilisateur'
+        ])
+            ->where('purchase_order_uuid', $orderUuid)
+            ->where('product_uuid', $productUuid)
+            ->latest()
+            ->get();
+
+        if ($statistics->isEmpty()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Aucune statistique trouvée pour ce produit dans cette commande.'
+            ], 404);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'order_reference' => $order->reference,
+            'product_uuid' => $productUuid,
+            'statistics_history' => $statistics
+        ], 200);
     }
 
 

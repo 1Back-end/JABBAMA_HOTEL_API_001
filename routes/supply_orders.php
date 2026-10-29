@@ -12,3 +12,4 @@ Route::patch('supply_orders/{uuid}/cancel_supply', [SupplyController::class, 'ca
 Route::patch('supply_orders/{uuid}/transfer_supply', [SupplyController::class, 'transfer_supply']);
 Route::get("/exports/supply", [SupplyController::class, 'export_supply']);
 Route::get('supply_actions', [\App\Http\Controllers\SupplyController::class, 'SupplyStatus']);
+Route::get('supply_orders/{supplyUuid}/products/{productUuid}/statistics', [\App\Http\Controllers\SupplyController::class, 'getProductSupplyStatistics']);

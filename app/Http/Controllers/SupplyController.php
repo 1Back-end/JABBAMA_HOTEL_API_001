@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\DTO\PurchaseOrderFilterData;
 use App\DTO\SupplyFilterData;
 use App\Enums\PurchaseOrdersStatus;
+use App\Enums\PurchaseOrdersType;
 use App\Enums\SupplyStatus;
 use App\Exports\PurchaseOrdersExport;
 use App\Exports\SuppliersExport;
@@ -16,6 +17,8 @@ use App\Models\ProductPoint;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 use App\Models\PurchaseOrderNotification;
+use App\Models\StatisticsPurchaseOrder;
+use App\Models\StatisticSupply;
 use App\Models\Supply;
 use App\Models\SupplyInvoice;
 use App\Models\SupplyItem;
@@ -221,6 +224,78 @@ class SupplyController extends Controller
         // vous pouvez déclencher un BroadcastEvent ici pour faire sonner le front.
     }
 
+    private function createPurchaseOrderStatistic($order, $item, $auth, array $options = [])
+    {
+        $productUuid = is_array($item) ? ($item['product_uuid'] ?? null) : ($item->product_uuid ?? null);
+        $quantity = is_array($item) ? ($item['quantity'] ?? 0) : ($item->quantity ?? 0);
+        $status = $options['status'] ?? $order->status ?? 'draft';
+
+        return StatisticsPurchaseOrder::updateOrCreate(
+            [
+                'purchase_order_uuid' => $order->uuid ?? null,
+                'product_uuid'        => $productUuid,
+                'status'              => $status,
+            ],
+            [
+                'quantity'            => $quantity,
+                'transfered_by'       => $options['transfered_by'] ?? null,
+                'transfered_at'       => $options['transfered_at'] ?? null,
+                'validated_by'        => $options['validated_by'] ?? null,
+                'validated_at'        => $options['validated_at'] ?? null,
+                'rejected_by'         => $options['rejected_by'] ?? null,
+                'rejected_at'         => $options['rejected_at'] ?? null,
+                'received_by'         => $options['received_by'] ?? null,
+                'received_at'         => $options['received_at'] ?? null,
+                'approved_by'         => $options['approved_by'] ?? null,
+                'approved_at'         => $options['approved_at'] ?? null,
+                'cancelled_by'        => $options['cancelled_by'] ?? null,
+                'cancelled_at'        => $options['cancelled_at'] ?? null,
+                'updated_by'          => $auth->id,
+                'created_by'          => $auth->id,
+            ]
+        );
+    }
+
+    private function createSupplyStatistic($order, $item, $auth, array $options = [])
+    {
+        $productUuid = is_array($item) ? ($item['product_uuid'] ?? null) : ($item->product_uuid ?? null);
+        $quantity = is_array($item)
+            ? ($item['quantity_supplied'] ?? $item['quantity'] ?? 0)
+            : ($item->quantity_supplied ?? $item->quantity ?? 0);
+
+        $supplierUuid = is_array($item) ? ($item['supplier_uuid'] ?? null) : ($item->supplier_uuid ?? null);
+        $status = $options['status'] ?? 'draft';
+
+        $supplyUuid = $options['supply_uuid'] ?? (is_array($item) ? ($item['supply_uuid'] ?? null) : ($item->supply_uuid ?? null));
+
+        return StatisticSupply::updateOrCreate(
+            [
+                'purchase_order_uuid' => $order->uuid ?? null,
+                'supply_uuid'         => $supplyUuid,
+                'product_uuid'        => $productUuid,
+                'status'              => $status,
+            ],
+            [
+                'quantity'            => $quantity,
+                'supplier_uuid'       => $options['supplier_uuid'] ?? $supplierUuid,
+                'transfered_by'       => $options['transfered_by'] ?? null,
+                'transfered_at'       => $options['transfered_at'] ?? null,
+                'validated_by'        => $options['validated_by'] ?? null,
+                'validated_at'        => $options['validated_at'] ?? null,
+                'rejected_by'         => $options['rejected_by'] ?? null,
+                'rejected_at'         => $options['rejected_at'] ?? null,
+                'received_by'         => $options['received_by'] ?? null,
+                'received_at'         => $options['received_at'] ?? null,
+                'approved_by'         => $options['approved_by'] ?? null,
+                'approved_at'         => $options['approved_at'] ?? null,
+                'cancelled_by'        => $options['cancelled_by'] ?? null,
+                'cancelled_at'        => $options['cancelled_at'] ?? null,
+                'updated_by'          => $auth->id,
+                'created_by'          => $auth->id,
+            ]
+        );
+    }
+
     /**
      * Display a listing of the resource.
      * @permission SupplyController::store
@@ -387,6 +462,25 @@ class SupplyController extends Controller
                     'created_by' => $auth->id,
                     'unit_price' => $item['unit_price'],
                     'sell_price' => $item['sell_price']
+                ]);
+                $poItemRecord = PurchaseOrderItem::where('purchase_order_uuid', $purchaseOrder->uuid)
+                    ->where('product_uuid', $item['product_uuid'])
+                    ->first();
+
+                if ($poItemRecord) {
+                    $this->createPurchaseOrderStatistic($purchaseOrder, $poItemRecord, $auth, [
+                        'status'      => PurchaseOrdersStatus::IN_DISCUSS->value,
+                        'received_by' => $auth->id,
+                        'received_at' => now(),
+                    ]);
+                }
+
+                $this->createSupplyStatistic($purchaseOrder, $item, $auth, [
+                    'status'      => PurchaseOrdersStatus::DRAFT->value,
+                    'received_by' => $auth->id,
+                    'received_at' => now(),
+                    'supply_uuid'         => $supply->uuid,
+                    'supplier_uuid' => $item['supplier_uuid'] ?? null,
                 ]);
             }
 
@@ -684,41 +778,37 @@ class SupplyController extends Controller
                 ], 422);
             }
 
-            // 🔹 Récupérer l'approvisionnement
-            $supply = Supply::where('uuid', $uuid)->firstOrFail();
+            $supply = Supply::with(['items', 'medias', 'purchaseOrder'])->where('uuid', $uuid)->firstOrFail();
 
             DB::beginTransaction();
 
-            // 🔹 Remettre à jour le stock des produits
             foreach ($supply->items as $item) {
                 Product::where('uuid', $item->product_uuid)
                     ->decrement('stock_quantity', $item->quantity_supplied);
             }
 
-            // 🔹 Supprimer les documents liés
             foreach ($supply->medias as $media) {
-                // Supprimer le fichier du disque
                 if (\Storage::disk($media->disk)->exists($media->path)) {
                     \Storage::disk($media->disk)->delete($media->path);
                 }
                 $media->delete();
             }
 
-            // 🔹 Supprimer les SupplyItems
-            $supply->items()->delete();
-
-            // 🔹 Supprimer l'approvisionnement
-            $supply->delete();
+            StatisticSupply::where('supply_uuid', $uuid)->delete();
 
             if ($supply->purchaseOrder) {
+                StatisticsPurchaseOrder::where('purchase_order_uuid', $supply->purchaseOrder->uuid)->delete();
                 $supply->purchaseOrder->delete();
             }
+
+            $supply->items()->delete();
+            $supply->delete();
 
             DB::commit();
 
             return response()->json([
                 'status' => 'success',
-                'message' => "L’approvisionnement a été supprimé avec succès."
+                'message' => "L’approvisionnement et ses statistiques ont été supprimés avec succès."
             ], 200);
 
         } catch (\Exception $e) {
@@ -749,15 +839,25 @@ class SupplyController extends Controller
             'rejection_reason.string'   => "La raison doit être une chaîne de caractères.",
         ]);
 
-
-        $supply = Supply::with('purchaseOrder')->where('uuid', $uuid)->firstOrFail();
+        $supply = Supply::with(['purchaseOrder', 'items'])->where('uuid', $uuid)->firstOrFail();
         $purchaseOrder = $supply->purchaseOrder;
 
         $supply->update([
-            'status'        => SupplyStatus::REJECTED->value,
+            'status'           => SupplyStatus::REJECTED->value,
             'rejection_reason' => $validated['rejection_reason'],
-            'rejected_by'  => auth()->id(),
+            'rejected_by'      => $auth->id,
         ]);
+
+        foreach ($supply->items as $item) {
+            $this->createSupplyStatistic($purchaseOrder, $item, $auth, [
+                'status'              => SupplyStatus::REJECTED->value,
+                'purchase_order_uuid' => $purchaseOrder->uuid ?? null,
+                'supply_uuid'         => $supply->uuid,
+                'rejected_by'         => $auth->id,
+                'rejected_at'         => now(),
+                'supplier_uuid'       => $item->supplier_uuid ?? null,
+            ]);
+        }
 
         $notifMessage = "L'approvisionnement de la commande (Référence : {$purchaseOrder->reference}) a été rejeté.";
 
@@ -765,7 +865,7 @@ class SupplyController extends Controller
             order: $purchaseOrder,
             status: PurchaseOrdersStatus::REJECTED->value,
             message: $notifMessage,
-            userId: auth()->id(),
+            userId: $auth->id,
             target: 'purchases_orders',
         );
 
@@ -794,7 +894,6 @@ class SupplyController extends Controller
 
         try {
             DB::beginTransaction();
-
 
             $supply = Supply::with('items.product', 'purchaseOrder.items')->findOrFail($uuid);
             $purchaseOrder = $supply->purchaseOrder;
@@ -825,7 +924,7 @@ class SupplyController extends Controller
                     $partial = true;
                 }
 
-                if ($supply->type === 'external') {
+                if ($supply->type === PurchaseOrdersType::EXTERNAL->value) {
                     $warehousePrimary = Warehouse::where('is_primary', true)->firstOrFail();
 
                     $productPoint = ProductPoint::where('produit_uuid', $item->product_uuid)
@@ -844,12 +943,9 @@ class SupplyController extends Controller
                         'quantity_remaining' => $remaining,
                         'updated_by' => $auth->id
                     ]);
-
                 }
 
-                if ($supply->type === 'internal') {
-
-                    //
+                if ($supply->type === PurchaseOrdersType::INTERNAL->value) {
                     $warehouseFrom = Warehouse::findOrFail($purchaseOrder->warehouse_from);
                     $warehouseTo = Warehouse::where('is_primary', true)->firstOrFail();
 
@@ -875,6 +971,7 @@ class SupplyController extends Controller
                     }
 
                     $totalAdded += $item->quantity_supplied;
+
                     $remaining = max($poItem->quantity - $item->quantity_supplied, 0);
 
                     $poItem->update([
@@ -883,6 +980,7 @@ class SupplyController extends Controller
                     ]);
                 }
             }
+
             $supplyStatus = $partial ? 'partially_validated' : 'validated';
             $orderStatus  = $partial ? 'partially_closed' : 'closed';
 
@@ -901,6 +999,28 @@ class SupplyController extends Controller
                 'closed_at' => $canClose ? now() : null,
                 'updated_by' => $auth->id,
             ]);
+
+            foreach ($supply->items as $item) {
+                $this->createSupplyStatistic($purchaseOrder, $item, $auth, [
+                    'status'              => $supplyStatus,
+                    'purchase_order_uuid' => $purchaseOrder->uuid,
+                    'validated_by'        => $auth->id,
+                    'supply_uuid'         => $supply->uuid,
+                    'validated_at'        => now(),
+                    'supplier_uuid'       => $item->supplier_uuid ?? null,
+                ]);
+
+                $poItemRecord = $purchaseOrder->items->firstWhere('product_uuid', $item->product_uuid);
+                if ($poItemRecord) {
+                    $this->createPurchaseOrderStatistic($purchaseOrder, $poItemRecord, $auth, [
+                        'status'       => $orderStatus,
+                        'approved_by'  => $auth->id,
+                        'approved_at'  => now(),
+                        'validated_by' => $auth->id,
+                        'validated_at' => now(),
+                    ]);
+                }
+            }
 
             if ($purchaseOrder->parent_uuid) {
                 $parent = PurchaseOrder::find($purchaseOrder->parent_uuid);
@@ -973,7 +1093,7 @@ class SupplyController extends Controller
             'reason_cancel.required' => 'Le motif d\'annulation est obligatoire.',
         ]);
 
-        $supply = Supply::with('purchaseOrder')->where('uuid', $uuid)->firstOrFail();
+        $supply = Supply::with(['purchaseOrder.items', 'items'])->where('uuid', $uuid)->firstOrFail();
         $purchaseOrder = $supply->purchaseOrder;
 
         try {
@@ -991,6 +1111,26 @@ class SupplyController extends Controller
                     'status'     => PurchaseOrdersStatus::CANCEL->value,
                     'updated_by' => $auth->id,
                 ]);
+
+                foreach ($supply->items as $item) {
+                    $this->createSupplyStatistic($purchaseOrder, $item, $auth, [
+                        'status'              => SupplyStatus::CANCELLED->value,
+                        'purchase_order_uuid' => $purchaseOrder->uuid,
+                        'cancelled_by'        => $auth->id,
+                        'supply_uuid'         => $supply->uuid,
+                        'cancelled_at'        => now(),
+                        'supplier_uuid'       => $item->supplier_uuid ?? null,
+                    ]);
+
+                    $poItemRecord = $purchaseOrder->items->firstWhere('product_uuid', $item->product_uuid);
+                    if ($poItemRecord) {
+                        $this->createPurchaseOrderStatistic($purchaseOrder, $poItemRecord, $auth, [
+                            'status'       => PurchaseOrdersStatus::CANCEL->value,
+                            'cancelled_by' => $auth->id,
+                            'cancelled_at' => now(),
+                        ]);
+                    }
+                }
 
                 $notifMessage = "L'approvisionnement de la commande (Référence : {$purchaseOrder->reference}) a été annulé.";
 
@@ -1145,15 +1285,25 @@ class SupplyController extends Controller
             'rejection_reason.string'   => "La raison doit être une chaîne de caractères.",
         ]);
 
-
-        $supply = Supply::with('purchaseOrder')->where('uuid', $uuid)->firstOrFail();
+        $supply = Supply::with(['purchaseOrder', 'items'])->where('uuid', $uuid)->firstOrFail();
         $purchaseOrder = $supply->purchaseOrder;
 
         $supply->update([
-            'status'        => SupplyStatus::REJECTED->value,
+            'status'           => SupplyStatus::REJECTED->value,
             'rejection_reason' => $validated['rejection_reason'],
-            'rejected_by'  => auth()->id(),
+            'rejected_by'      => $auth->id,
         ]);
+
+        foreach ($supply->items as $item) {
+            $this->createSupplyStatistic($purchaseOrder, $item, $auth, [
+                'status'              => SupplyStatus::REJECTED->value,
+                'purchase_order_uuid' => $purchaseOrder->uuid ?? null,
+                'supply_uuid'         => $supply->uuid,
+                'rejected_by'         => $auth->id,
+                'rejected_at'         => now(),
+                'supplier_uuid'       => $item->supplier_uuid ?? null,
+            ]);
+        }
 
         $notifMessage = "L'approvisionnement de la commande (Référence : {$purchaseOrder->reference}) a été rejeté.";
 
@@ -1161,7 +1311,7 @@ class SupplyController extends Controller
             order: $purchaseOrder,
             status: PurchaseOrdersStatus::REJECTED->value,
             message: $notifMessage,
-            userId: auth()->id(),
+            userId: $auth->id,
             target: 'purchases_orders',
         );
 
@@ -1212,7 +1362,7 @@ class SupplyController extends Controller
             ], 422);
         }
 
-        $supply = Supply::with('purchaseOrder')->findOrFail($uuid);
+        $supply = Supply::with(['purchaseOrder.items', 'items'])->findOrFail($uuid);
         $purchaseOrder = $supply->purchaseOrder;
 
         if ($supply->created_by !== $auth->id) {
@@ -1227,27 +1377,110 @@ class SupplyController extends Controller
             ], 400);
         }
 
-        $supply->update([
-            'transferred_at' => now(),
-            'transferred_by' => $auth->id,
-            'receiver_by' => $purchaseOrder->created_by,
-            'status' => SupplyStatus::IN_PROGRESS->value,
-        ]);
+        try {
+            DB::beginTransaction();
 
-        $notifMessage = "L'approvisionnement de la commande (Référence : {$purchaseOrder->reference}) a été transféré.";
+            $supply->update([
+                'transferred_at' => now(),
+                'transferred_by' => $auth->id,
+                'receiver_by'    => $purchaseOrder->created_by,
+                'status'         => SupplyStatus::IN_PROGRESS->value,
+            ]);
 
-        $this->sendNotification(
-            order: $purchaseOrder,
-            status: PurchaseOrdersStatus::IN_DISCUSS->value,
-            message: $notifMessage,
-            userId: $auth->id,
-            target: 'purchases_orders',
-        );
+            if ($purchaseOrder) {
+                $purchaseOrder->update([
+                    'status'     => PurchaseOrdersStatus::IN_DISCUSS->value,
+                    'updated_by' => $auth->id,
+                ]);
+
+                foreach ($supply->items as $item) {
+                    $this->createSupplyStatistic($purchaseOrder, $item, $auth, [
+                        'status'              => SupplyStatus::IN_PROGRESS->value,
+                        'purchase_order_uuid' => $purchaseOrder->uuid,
+                        'transfered_by'       => $auth->id,
+                        'supply_uuid'         => $supply->uuid,
+                        'transfered_at'       => now(),
+                        'supplier_uuid'       => $item->supplier_uuid ?? null,
+                    ]);
+
+                    $poItemRecord = $purchaseOrder->items->firstWhere('product_uuid', $item->product_uuid);
+                    if ($poItemRecord) {
+                        $this->createPurchaseOrderStatistic($purchaseOrder, $poItemRecord, $auth, [
+                            'status'        => PurchaseOrdersStatus::IN_DISCUSS->value,
+                            'transfered_by' => $auth->id,
+                            'transfered_at' => now(),
+                        ]);
+                    }
+                }
+            }
+
+            $notifMessage = "L'approvisionnement de la commande (Référence : {$purchaseOrder->reference}) a été transféré.";
+
+            $this->sendNotification(
+                order: $purchaseOrder,
+                status: PurchaseOrdersStatus::IN_DISCUSS->value,
+                message: $notifMessage,
+                userId: $auth->id,
+                target: 'purchases_orders',
+            );
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Approvisionnement transféré avec succès.',
+                'data'    => $supply
+            ], 200);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Erreur transfert approvisionnement : ' . $e->getMessage());
+
+            return response()->json([
+                'error'   => 'Erreur lors du transfert de l’approvisionnement.',
+                'details' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Display a listing of the resource.
+     * @permission SupplyController::getProductSupplyStatistics
+     * @permission_desc Afficher l'historique des approvisionnements d'un article
+     */
+    public function getProductSupplyStatistics(string $supplyUuid, string $productUuid)
+    {
+        $supply = Supply::with('purchaseOrder')->where('uuid', $supplyUuid)->firstOrFail();
+
+        $statistics = StatisticSupply::with([
+            'purchaseOrder:uuid,reference',
+            'supply:uuid,supply_date',
+            'product:uuid,name',
+            'creator:id,nom_utilisateur',
+            'transferer:id,nom_utilisateur',
+            'validator:id,nom_utilisateur',
+            'rejecter:id,nom_utilisateur',
+            'receiver:id,nom_utilisateur',
+            'canceller:id,nom_utilisateur'
+        ])
+            ->where('supply_uuid', $supplyUuid)
+            ->where('product_uuid', $productUuid)
+            ->latest()
+            ->get();
+
+        if ($statistics->isEmpty()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Aucune statistique d\'approvisionnement trouvée pour ce produit dans cet approvisionnement.'
+            ], 404);
+        }
 
         return response()->json([
-            'message' => 'Approvisionnement transféré avec succès.',
-            'data' => $supply
-        ]);
+            'status' => 'success',
+            'supply_uuid' => $supplyUuid,
+            'order_reference' => $supply->purchaseOrder?->reference,
+            'product_uuid' => $productUuid,
+            'statistics_history' => $statistics
+        ], 200);
     }
 
 
