@@ -21,6 +21,7 @@ class RestaurantStatisticsController extends Controller
             : Carbon::today()->endOfDay();
 
         $agentId = $request->input('agent_id');
+        $menuUuid = $request->input('menu_uuid') ?? $request->input('menu_id'); // 🔹 Récupération du filtre menu
         $reportType = RestaurantReportType::tryFrom($request->input('report_type')) ?? RestaurantReportType::ALL;
 
         // 🔹 ÉTAPE 1 : Récupération des UUIDs de la période
@@ -98,18 +99,15 @@ class RestaurantStatisticsController extends Controller
                     || !empty($item->make_rejected_by);
             })->first();
 
-            // Le rejet du prêt (mal confectionné / mal cuisiné)
             $malConfectionStat = $stats->filter(function ($item) {
                 return (!empty($item->status) && $item->status === OrderMenuRestaurantItemStatus::REJECTED_FOR_NEW_UPDATE->value)
                     || !empty($item->cancel_for_new_update_at)
                     || !empty($item->make_cancel_for_new_update_by);
             })->first();
 
-            // Agent de rejet : Cuisinier ayant passé le plat à "Rejeté"
             $rejectAgentUuid = $rejectionStat?->make_rejected_by ?? $rejectionStat?->rejected_by;
             $rejectAgentName = $getAgentName($rejectAgentUuid);
 
-            // Agent de mal confection : Cuisinier ayant passé le plat à "Prêt" avant le rejet du prêt
             $malConfectionAgentUuid = $malConfectionStat?->make_ready_by ?? $malConfectionStat?->ready_by ?? $malConfectionStat?->make_cancel_for_new_update_by;
             $malConfectionAgentName = $getAgentName($malConfectionAgentUuid);
 
@@ -134,15 +132,10 @@ class RestaurantStatisticsController extends Controller
                 'mal_confection_quantity' => $malConfectionQty,
             ];
 
-            // ⚠️ RÈGLE OFFICIELLE DU DOCUMENT :
-            // "Toutes ces stats sur temps ne doivent concerner que les quantités ayant suivi un processus classique,
-            // c'est-à-dire uniquement Transféré, En cours de préparation, Prêt et Servi.
-            // Il faut donc retirer de ce calcul toutes les quantités passées par Rejeté, Rejet du Prêt ou supprimées."[cite: 3, 4]
             if ($rejectionStat !== null || $malConfectionStat !== null || $stats->whereNotNull('deleted_at')->isNotEmpty()) {
                 continue;
             }
 
-            // --- EXTRACTION DES DATES POUR PROCESSUS CLASSIQUE ---
             $transferredAt = $stats->whereNotNull('transferred_at')->pluck('transferred_at')->first();
             $inPreparationAt = $stats->whereNotNull('in_preparation_at')->pluck('in_preparation_at')->first();
 
@@ -152,25 +145,20 @@ class RestaurantStatisticsController extends Controller
             $deliveredStat = $stats->whereNotNull('delivered_at')->sortByDesc('delivered_at')->first();
             $deliveredAt = $deliveredStat?->delivered_at;
 
-            // --- AGENTS RESPONSABLES DES TEMPS ---
-            // Cuisinier ayant passé à "en cours de préparation" (pour la prise en compte)
             $inPrepStat = $stats->whereNotNull('in_preparation_at')->first();
             $prepAgentUuid = $inPrepStat?->make_in_preparation_by;
             $prepAgentName = $getAgentName($prepAgentUuid);
 
-            // Cuisinier ayant passé le plat à "Prêt" (pour le temps de cuisson par agent)
             $readyAgentUuid = $readyStat?->make_ready_by ?? $readyStat?->ready_by;
             $readyAgentName = $getAgentName($readyAgentUuid);
 
-            // Agent / Serveur ayant passé le plat à "Servi" (pour le temps de service par agent)
             $deliveredAgentUuid = $deliveredStat?->make_delivered_by ?? $deliveredStat?->delivered_by;
             $deliveredAgentName = $getAgentName($deliveredAgentUuid);
 
-            // 1. Durée de Cuisson (En cours de préparation ➔ Prêt)
+            // 1. Durée de Cuisson
             if ($inPreparationAt && $readyAt) {
                 $cookingDuration = Carbon::parse($inPreparationAt)->diffInSeconds(Carbon::parse($readyAt));
 
-                // Global plat
                 $cookingItemDurations[] = [
                     'agent_uuid' => $prepAgentUuid,
                     'agent_name' => $prepAgentName,
@@ -180,7 +168,6 @@ class RestaurantStatisticsController extends Controller
                     'duration_seconds' => $cookingDuration,
                 ];
 
-                // Par agent (basé sur celui qui a mis le plat prêt)
                 $cookingItemDurationsPerAgent[] = [
                     'agent_uuid' => $readyAgentUuid,
                     'agent_name' => $readyAgentName,
@@ -191,11 +178,10 @@ class RestaurantStatisticsController extends Controller
                 ];
             }
 
-            // 2. Durée de Prise en compte (Transféré ➔ En cours de préparation)
+            // 2. Durée de Prise en compte
             if ($transferredAt && $inPreparationAt) {
                 $takeoverDuration = Carbon::parse($transferredAt)->diffInSeconds(Carbon::parse($inPreparationAt));
 
-                // Global plat
                 $takeoverItemDurations[] = [
                     'agent_uuid' => $prepAgentUuid,
                     'agent_name' => $prepAgentName,
@@ -205,7 +191,6 @@ class RestaurantStatisticsController extends Controller
                     'duration_seconds' => $takeoverDuration,
                 ];
 
-                // Par agent (basé sur le cuisinier ayant passé le plat à "en cours de préparation")
                 $takeoverItemDurationsPerAgent[] = [
                     'agent_uuid' => $prepAgentUuid,
                     'agent_name' => $prepAgentName,
@@ -216,11 +201,10 @@ class RestaurantStatisticsController extends Controller
                 ];
             }
 
-            // 3. Durée pour servir un plat prêt (Prêt ➔ Servi)
+            // 3. Durée pour servir un plat prêt
             if ($readyAt && $deliveredAt) {
                 $servingDuration = Carbon::parse($readyAt)->diffInSeconds(Carbon::parse($deliveredAt));
 
-                // Global plat
                 $servingReadyItemDurations[] = [
                     'agent_uuid' => $deliveredAgentUuid,
                     'agent_name' => $deliveredAgentName,
@@ -230,7 +214,6 @@ class RestaurantStatisticsController extends Controller
                     'duration_seconds' => $servingDuration,
                 ];
 
-                // Par agent (basé sur l'agent ayant passé le plat à "Servi")
                 $servingReadyItemDurationsPerAgent[] = [
                     'agent_uuid' => $deliveredAgentUuid,
                     'agent_name' => $deliveredAgentName,
@@ -241,7 +224,7 @@ class RestaurantStatisticsController extends Controller
                 ];
             }
 
-            // 4. Durée globale pour servir un plat (Transféré ➔ Servi)
+            // 4. Durée globale pour servir un plat
             if ($transferredAt && $deliveredAt) {
                 $totalDeliveryItemDurations[] = [
                     'agent_uuid' => $deliveredAgentUuid,
@@ -254,20 +237,29 @@ class RestaurantStatisticsController extends Controller
             }
         }
 
-        // Fonctions de calcul
         $formatDuration = function ($averageSeconds) {
             $hours = floor($averageSeconds / 3600);
             $minutes = floor(($averageSeconds / 60) % 60);
             $seconds = $averageSeconds % 60;
             return sprintf('%02d:%02d:%02d', (int)$hours, (int)$minutes, (int)$seconds);
         };
-
-        $calculateAverages = function ($items, $groupByKey) use ($formatDuration, $agentId) {
+        
+        $applyFilters = function ($items) use ($agentId, $menuUuid) {
             $collection = collect($items);
 
             if ($agentId) {
                 $collection = $collection->filter(fn($item) => $item['agent_uuid'] == $agentId);
             }
+
+            if ($menuUuid) {
+                $collection = $collection->filter(fn($item) => $item['dish_uuid'] == $menuUuid);
+            }
+
+            return $collection;
+        };
+
+        $calculateAverages = function ($items, $groupByKey) use ($formatDuration, $applyFilters) {
+            $collection = $applyFilters($items);
 
             return $collection->groupBy($groupByKey)->map(function ($group) use ($formatDuration) {
                 $first = $group->first();
@@ -299,12 +291,8 @@ class RestaurantStatisticsController extends Controller
             })->values();
         };
 
-        $calculateRatio = function ($items, $groupByKey, $quantityKey) use ($agentId) {
-            $collection = collect($items);
-
-            if ($agentId) {
-                $collection = $collection->filter(fn($item) => $item['agent_uuid'] == $agentId);
-            }
+        $calculateRatio = function ($items, $groupByKey, $quantityKey) use ($applyFilters) {
+            $collection = $applyFilters($items);
 
             return $collection->groupBy($groupByKey)->map(function ($group) use ($quantityKey) {
                 $first = $group->first();
@@ -335,7 +323,6 @@ class RestaurantStatisticsController extends Controller
             })->values();
         };
 
-        // Construction de la réponse selon l'Enum
         $reportData = [];
 
         if ($reportType === RestaurantReportType::ALL || $reportType === RestaurantReportType::AVERAGE_COOKING_TIME_DISHES) {

@@ -26,7 +26,7 @@ enum RestaurantReportType: string
             self::AVERAGE_TAKE_NOTE_TIME_PER_AGENT => 'Temps de prise en compte par agent (Transféré ➔ En cours de préparation)',
             self::AVERAGE_SERVE_READY_TIME => 'Temps de service (Prêt ➔ Servi)',
             self::AVERAGE_SERVE_READY_TIME_PER_AGENT => 'Temps de service par agent (Prêt ➔ Servi)',
-            self::AVERAGE_GLOBAL_SERVE_TIME => 'Temps global de service (Transféré ➔ Servi)',
+            self::AVERAGE_GLOBAL_SERVE_TIME => 'Temps global de cuisson (Transféré ➔ Servi)',
             self::REJECTION_RATIO_PER_DISH => 'Ratio de rejet (Rejeté)',
             self::REJECTION_RATIO_PER_AGENT => 'Ratio de rejet par agent (Rejeté)',
             self::BAD_PREPARATION_RATIO_PER_DISH => 'Ratio mal confectionné (Rejet du prêt)',
