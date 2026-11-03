@@ -21,8 +21,9 @@ use Maatwebsite\Excel\Facades\Excel;
 use Mockery\Generator\StringManipulation\Pass\Pass;
 
 /**
- * @permission_category Gestion des passations de stocks entre agents
+ * @permission_category Gestion des passations de stocks
  * @permission_module Gestion des stocks
+ * @code_module STOCK
  */
 class PassationController extends Controller
 {
@@ -30,6 +31,7 @@ class PassationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PassationController::index
+     * @code STOCK
      * @permission_desc Afficher la liste des passations de stocks
      */
     public function index(Request $request)
@@ -138,6 +140,7 @@ class PassationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PassationController::store
+     * @code STOCK
      * @permission_desc Créer une passation de stocks
      */
     public function store(Request $request)
@@ -159,18 +162,14 @@ class PassationController extends Controller
             ], 404);
         }
 
-        // 🔥 Récupérer les produits depuis produit_point (pivot)
         $products = $warehouse->products()
             ->wherePivot('is_active', true)
             ->get();
-
-        // 🔥 Total stock = somme des quantités de product_point
         $totalStock = $products->sum(fn ($p) => $p->pivot->quantity);
 
         DB::beginTransaction();
         try {
 
-            // 1️⃣ Créer la passation
             $passation = Passation::create([
                 'agent_from_id' => $auth->id,
                 'warehouse_uuid' => $warehouse->uuid,
@@ -179,12 +178,11 @@ class PassationController extends Controller
                 'created_by' => $auth->id,
             ]);
 
-            // 2️⃣ Ajouter les produits de product_point
             foreach ($products as $product) {
                 PassationItem::create([
                     'passation_uuid' => $passation->uuid,
                     'product_uuid' => $product->uuid,
-                    'quantity_sent' => $product->pivot->quantity, // quantité réelle de produit_point
+                    'quantity_sent' => $product->pivot->quantity,
                     'quantity_counted' => 0,
                     'difference' => 0,
                     'created_by' => $auth->id,
@@ -192,10 +190,9 @@ class PassationController extends Controller
                 ]);
             }
 
-            // 3️⃣ Lier les managers à la passation
             foreach ($managers as $manager) {
                 if ($manager->id == $auth->id) {
-                    continue; // ne pas réassigner à l’agent créateur
+                    continue;
                 }
 
                 DB::table('passation_managers')->insert([
@@ -229,34 +226,30 @@ class PassationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PassationController::update
+     * @code STOCK
      * @permission_desc Modifier une passation de stocks
      */
     public function update(Request $request, string $uuid)
     {
         $auth = auth()->user();
 
-        // Validation
         $validated = $request->validate([
             'warehouse_uuid' => 'required|exists:warehouses,uuid',
         ]);
 
         $passation = Passation::where('uuid', $uuid)->firstOrFail();
 
-        // Entrepôt ciblé
         $warehouse = Warehouse::where('uuid', $validated['warehouse_uuid'])->firstOrFail();
 
-        // Récupérer les produits du pivot produit_point
         $products = $warehouse->products()
             ->wherePivot('is_active', true)
             ->get();
 
-        // Nouveau total stock
         $totalStock = $products->sum(fn ($p) => $p->pivot->quantity);
 
         DB::beginTransaction();
         try {
 
-            // 1️⃣ Mise à jour de la passation
             $passation->update([
                 'warehouse_uuid' => $warehouse->uuid,
                 'quantity_sent' => $totalStock,
@@ -264,10 +257,8 @@ class PassationController extends Controller
                 'status' => 'pending',
             ]);
 
-            // 2️⃣ Supprimer tous les anciens items pour recréer proprement
             PassationItem::where('passation_uuid', $passation->uuid)->delete();
 
-            // 3️⃣ Recréer les items avec les données actualisées
             foreach ($products as $product) {
                 PassationItem::create([
                     'passation_uuid' => $passation->uuid,
@@ -302,6 +293,7 @@ class PassationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PassationController::show
+     * @code STOCK
      * @permission_desc Afficher les détails d'une passation de stocks
      */
     public function show(Request $request, $uuid)
@@ -311,12 +303,10 @@ class PassationController extends Controller
         $page = $request->input('page', 1);
         $search = trim($request->input('search'));
 
-        // Récupérer la passation
         $passation = Passation::with(['agentFrom', 'agentTo', 'warehouse', 'creator', 'updater'])
             ->where('uuid', $uuid)
             ->firstOrFail();
 
-        // Items query
         $itemsQuery = $passation->items()->with('product');
 
         if ($search) {
@@ -347,13 +337,13 @@ class PassationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PassationController::validate_passations
+     * @code STOCK
      * @permission_desc Valider une passation de stocks
      */
     public function validate_passations(Request $request, string $uuid)
     {
         $auth = auth()->user();
 
-        // 🔹 Validation
         $validated = $request->validate([
             'items' => 'required|array|min:1',
             'items.*.uuid' => 'required|exists:passation_items,uuid',
@@ -408,7 +398,6 @@ class PassationController extends Controller
                 ]);
             }
 
-            // 🔹 STATUT UNIQUE DE LA PASSATION
             $passationStatus = 'in_discuss';
 
             $passation->update([
@@ -447,13 +436,13 @@ class PassationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PassationController::update_passation_validation
+     * @code STOCK
      * @permission_desc Modifier une passation de stocks en discussion
      */
     public function update_passation_validation(Request $request, string $uuid)
     {
         $auth = auth()->user();
 
-        // 🔹 Validation
         $validated = $request->validate([
             'items' => 'required|array|min:1',
             'items.*.uuid' => 'required|exists:passation_items,uuid',
@@ -496,7 +485,6 @@ class PassationController extends Controller
                     $hasGap = true;
                 }
 
-                // 🔹 Mise à jour des items, même si validés
                 $item->update([
                     'quantity_counted' => $qteCounted,
                     'difference' => $difference,
@@ -507,7 +495,6 @@ class PassationController extends Controller
                 ]);
             }
 
-            // 🔹 Mise à jour du statut global de la passation
             $passationStatus = 'in_discuss';
 
             $passation->update([
@@ -546,6 +533,7 @@ class PassationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PassationController::cancel_passations
+     * @code STOCK
      * @permission_desc Annuler une passation de stocks
      */
     public function cancel_passations(Request $request, string $uuid){
@@ -575,6 +563,7 @@ class PassationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PassationController::reject_passations
+     * @code STOCK
      * @permission_desc Rejetter une passation de stocks
      */
     public function reject_passations(Request $request, string $uuid)
@@ -592,7 +581,6 @@ class PassationController extends Controller
         DB::beginTransaction();
 
         try {
-            // 🔹 Mettre à jour la passation
             $passation->update([
                 'status'        => 'rejected',
                 'rejected_at'   => now(),
@@ -601,7 +589,6 @@ class PassationController extends Controller
                 'reason_reject' => $validated['reason_reject'],
             ]);
 
-            // 🔹 Remettre tous les items à pending
             foreach ($passation->items as $item) {
                 $item->update([
                     'status' => 'pending',
@@ -636,6 +623,7 @@ class PassationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PassationController::destroy
+     * @code STOCK
      * @permission_desc Supprimer une passation de stocks
      */
     public function destroy(Request $request, string $uuid)
@@ -646,7 +634,7 @@ class PassationController extends Controller
             'password' => 'required|string'
         ]);
 
-        // Vérification du mot de passe
+
         if (!Hash::check($request->password, $auth->password)) {
             return response()->json([
                 'status'  => 'error',
@@ -668,6 +656,7 @@ class PassationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PassationController::print_passations
+     * @code STOCK
      * @permission_desc Imprimer les fiches de passations de stocks en PDF
      */
     public function print_passations(Request $request, string $uuid)
@@ -715,12 +704,10 @@ class PassationController extends Controller
                 return response()->json(['message' => "Le fichier PDF n'a pas été généré."], 500);
             }
 
-            // Chercher si le document existe déjà
             $pdf = PdfDocument::where('order_uuid', $passations->uuid)
                 ->where('name', 'DETAILS-ORDERS')
                 ->first();
 
-            // S'il existe → on met à jour le fichier
             if ($pdf) {
                 $pdf->update([
                     'path'       => $filePath,
@@ -728,7 +715,6 @@ class PassationController extends Controller
                     'updated_by' => $auth->id,
                 ]);
             }
-            // Sinon → on crée un nouvel enregistrement
             else {
                 $pdf = PdfDocument::create([
                     'name'       => 'DETAILS-ORDERS',
@@ -772,13 +758,13 @@ class PassationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PassationController::validate_passations_by_admin
+     * @code STOCK
      * @permission_desc Valider une passation de stocks par le SUPER ADMIN
      */
     public function validate_passations_by_admin(Request $request, string $uuid)
     {
         $auth = auth()->user();
 
-        // 🔐 Validation mot de passe
         $request->validate([
             'password' => 'required|string'
         ]);
@@ -790,20 +776,16 @@ class PassationController extends Controller
             ], 422);
         }
 
-        // 🔎 Récupération passation avec items
         $passation = Passation::with('items')
             ->where('uuid', $uuid)
             ->firstOrFail();
 
-        // 🔹 Vérifier s'il existe un écart
         $hasGap = $passation->items
                 ->where('difference', '>', 0)
                 ->count() > 0;
 
-        // 🔹 Statut final décidé par le super admin
         $finalStatus = $hasGap ? 'with_gap' : 'no_gap';
 
-        // ✅ Mise à jour finale
         $passation->update([
             'status'       => $finalStatus,
             'approved_by'  => $auth->id,
@@ -828,6 +810,7 @@ class PassationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PassationController::print_passations_by_agents_uuid
+     * @code STOCK
      * @permission_desc Imprimer les écarts de passations de stocks en PDF
      */
     public function print_passations_by_agents_uuid(Request $request)
@@ -927,6 +910,7 @@ class PassationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PassationController::export_passations_stocks
+     * @code STOCK
      * @permission_desc Exporter les passations de stocks en Excel
      */
     public function export_passations_stocks(Request $request)
@@ -949,23 +933,21 @@ class PassationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PassationController::print_passations_by_filter
+     * @code STOCK
      * @permission_desc Imprimer  passations de stocks en PDF
      */
     public function print_passations_by_filter(Request $request)
     {
         try {
-            // 🔹 Création de l'objet filter depuis la requête
             $filter = PassationsFilterData::fromRequestPassationsFilterData($request);
 
-            // 🔹 Dates par défaut
             $startDate = $filter->start_date
                 ? Carbon::parse($filter->start_date)->startOfDay()
-                : null; // null = pas de restriction
+                : null;
             $endDate = $filter->end_date
                 ? Carbon::parse($filter->end_date)->endOfDay()
                 : null;
 
-            // 🔹 Construction de la requête
             $query = Passation::with([
                 'agentFrom',
                 'agentTo',
@@ -979,7 +961,6 @@ class PassationController extends Controller
                 'items'
             ]);
 
-            // 🔹 Application des filtres uniquement si remplis
             if (!empty($filter->agent_from_id)) {
                 $query->where('agent_from_id', $filter->agent_from_id);
             }
@@ -1001,14 +982,12 @@ class PassationController extends Controller
                 });
             }
 
-            // 🔹 Application du filtre date si présent
             if ($startDate && $endDate) {
                 $query->whereBetween('created_at', [$startDate, $endDate]);
             }
             $query->orderByDesc('created_at');
 
 
-            // 🔹 Pagination (facultative)
             $passations = $query->skip(($filter->page - 1) * $filter->limit)
                 ->take($filter->limit)
                 ->get();
@@ -1021,8 +1000,6 @@ class PassationController extends Controller
             $manager = $filter->agent_from_id ? User::find($filter->agent_from_id) : null;
             $warehouse = $filter->warehouse_uuid ? Warehouse::find($filter->warehouse_uuid) : null;
 
-
-            // 🔹 Préparer le PDF
             $fileName = 'PASSATIONS-' . now()->format('YmdHis') . '.pdf';
             $folderPath = 'storage/passations_by_filter';
             $filePath = $folderPath . '/' . $fileName;

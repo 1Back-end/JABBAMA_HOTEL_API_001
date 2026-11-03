@@ -33,9 +33,13 @@ class UserController extends Controller
     public function index(Request $request): JsonResponse
     {
         $users = User::query()
+            ->whereHas('roles', function ($q) {
+                $q->where('roles.active', 1);
+            })
             ->when($request->input('roles'), function ($query) use ($request) {
                 $query->whereHas('roles', function ($q) use ($request) {
-                    $q->whereIn('id', $request->input('roles'));
+                    $q->where('roles.active', 1)
+                        ->whereIn('id', $request->input('roles'));
                 });
             })
             ->when($request->input('permissions'), function ($query) use ($request) {
@@ -84,17 +88,14 @@ class UserController extends Controller
     public function get_users_where_role_is_gestionnaire_stock(Request $request): JsonResponse
     {
         $users = User::query()
-            // Filtre uniquement les utilisateurs ayant le rôle GESTIONNAIRE STOCK
             ->whereHas('roles', function ($q) {
                 $q->where('name', 'GESTIONNAIRE_STOCK');
             })
-            // Filtre par permissions si fourni
             ->when($request->input('permissions'), function ($query) use ($request) {
                 $query->whereHas('permissions', function ($q) use ($request) {
                     $q->whereIn('id', $request->input('permissions'));
                 });
             })
-            // Filtre par recherche texte
             ->when($request->input('search'), function ($query) use ($request) {
                 $search = $request->input('search');
                 $query->where(function ($q) use ($search) {

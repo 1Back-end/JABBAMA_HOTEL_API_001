@@ -133,14 +133,7 @@ class RoleController extends Controller
         DB::beginTransaction();
 
         try {
-
             $data = $request->validated();
-
-            /*
-            |--------------------------------------------------------------------------
-            | PROTECTION ROLE ADMIN (id = 1)
-            |--------------------------------------------------------------------------
-            */
 
             if ($role->id === 1) {
                 unset($data['name']);
@@ -152,24 +145,18 @@ class RoleController extends Controller
 
             $role->update($data);
 
-            /*
-            |--------------------------------------------------------------------------
-            | PERMISSIONS
-            |--------------------------------------------------------------------------
-            */
 
             $permissions = collect($request->input('permissions', []))
                 ->pluck('id')
                 ->toArray();
-            $role->permissions()->detach();
 
             $now = now();
             $userId = auth()->id();
 
-            $attachData = [];
+            $syncData = [];
 
             foreach ($permissions as $permissionId) {
-                $attachData[$permissionId] = [
+                $syncData[$permissionId] = [
                     'created_by' => $userId,
                     'updated_by' => $userId,
                     'created_at' => $now,
@@ -177,9 +164,7 @@ class RoleController extends Controller
                 ];
             }
 
-            if (!empty($attachData)) {
-                $role->permissions()->attach($attachData);
-            }
+            $role->permissions()->sync($syncData);
 
             app()[\Spatie\Permission\PermissionRegistrar::class]
                 ->forgetCachedPermissions();
@@ -193,13 +178,13 @@ class RoleController extends Controller
             ]);
 
         } catch (\Exception $e) {
-
             DB::rollBack();
 
             Log::error($e->getMessage());
 
             return response()->json([
-                'message' => __("Une erreur s'est produite lors de la mise à jour du rôle !")
+                'message' => __("Une erreur s'est produite lors de la mise à jour du rôle !"),
+                'error' => $e->getMessage() // Optionnel pour le debug
             ], 500);
         }
     }

@@ -12,6 +12,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class AuthenticatedSessionController extends Controller
 {
@@ -29,11 +30,13 @@ class AuthenticatedSessionController extends Controller
                 "message" => "Votre compte est désactivé !"
             ], \Symfony\Component\HttpFoundation\Response::HTTP_UNAUTHORIZED);
         }
-
+        $allRoles = $user->roles()->get();
+        $activeRoles = $allRoles->filter(fn($r) => (bool)$r->active === true)->pluck('name')->toArray();
+        $inactiveRoles = $allRoles->filter(fn($r) => (bool)$r->active === false)->pluck('name')->toArray();
 
         $permissions = load_permissions($user);
-        $roles = $user->roles()->pluck('name');
-
+        $roles = $activeRoles;
+        
         $access = $request->user()->createToken(
             name: config('app.name'),
             abilities: $permissions,

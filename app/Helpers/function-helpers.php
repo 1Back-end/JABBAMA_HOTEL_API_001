@@ -714,20 +714,17 @@ if (! function_exists('load_permissions')) {
      */
     function load_permissions(User $user): array
     {
-        // Permissions directes de l’utilisateur
         $permissions = $user->permissions()
             ->where('permissions.active', true)
             ->wherePivot('active', true)
             ->pluck('name')
             ->toArray();
 
-        // Rôles actifs de l’utilisateur
         $roles = $user->roles()
             ->where('roles.active', true)
             ->wherePivot('active', true)
             ->get();
 
-        // Permissions par rôle
         $permissionsByRole = collect();
         foreach ($roles as $role) {
             $permissionByRole = $role->permissions()
@@ -739,7 +736,6 @@ if (! function_exists('load_permissions')) {
             $permissionsByRole->push(...$permissionByRole);
         }
 
-        // Fusionner et supprimer doublons
         return collect([...$permissions, ...$permissionsByRole])
             ->unique()
             ->flatten()

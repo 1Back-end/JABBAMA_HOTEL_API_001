@@ -8,12 +8,14 @@ use Illuminate\Support\Facades\Hash;
 /**
  * @permission_category Gestion des natures d'entrepôts
  * @permission_module Gestion des stocks
+ * @code_module STOCK
  */
 class NatureEntrepotController extends Controller
 {
     /**
      * Display a listing of the resource.
      * @permission NatureEntrepotController::index
+     * @code STOCK
      * @permission_desc Afficher la liste des natures d'entrepôts
      */
     public function index(Request $request)
@@ -36,7 +38,6 @@ class NatureEntrepotController extends Controller
         }
         $nature = $query->latest()->paginate($perPage, ['*'], 'page', $page);
 
-        // Réponse JSON
         return response()->json([
             'data'         => $nature->items(),
             'current_page' => $nature->currentPage(),
@@ -48,13 +49,13 @@ class NatureEntrepotController extends Controller
     /**
      * Display a listing of the resource.
      * @permission NatureEntrepotController::store
+     * @code STOCK
      * @permission_desc Créer des natures d'entrepôts
      */
     public function store(Request $request)
     {
         $auth = auth()->user();
 
-        // Validation
         $validated = $request->validate([
             'name'         => 'required|string|max:255|unique:nature_entrepots,name',
             'abbreviation' => 'required|string|max:255',
@@ -65,10 +66,8 @@ class NatureEntrepotController extends Controller
             'name.unique'           => "Le nom doit être unique.",
         ]);
 
-        // Ajout de l'utilisateur créateur
         $validated['created_by'] = $auth->id;
 
-        // Création
         $nature = NatureEntrepot::create($validated);
 
         // Retour JSON
@@ -83,11 +82,11 @@ class NatureEntrepotController extends Controller
     /**
      * Display a listing of the resource.
      * @permission NatureEntrepotController::show
+     * @code STOCK
      * @permission_desc Afficher les détails des natures d'entrepôts
      */
     public function show(string $uuid)
     {
-        // Récupère la nature d'entrepôt ou renvoie 404
         $nature = NatureEntrepot::findOrFail($uuid);
 
         return response()->json([
@@ -101,16 +100,15 @@ class NatureEntrepotController extends Controller
     /**
      * Display a listing of the resource.
      * @permission NatureEntrepotController::update
-     * @permission_desc Modifier des natures d'entrepôts
+     * @code STOCK
+     * @permission_desc Modifier les natures d'entrepôts
      */
     public function update(Request $request, $uuid)
     {
         $auth = auth()->user();
 
-        // Récupère la nature d'entrepôt
         $nature = NatureEntrepot::findOrFail($uuid);
 
-        // Validation
         $validated = $request->validate([
             'name'         => 'required|string|max:255|unique:nature_entrepots,name,' . $nature->uuid . ',uuid',
             'abbreviation' => 'required|string|max:255',
@@ -122,10 +120,8 @@ class NatureEntrepotController extends Controller
             'name.unique'           => "Le nom doit être unique.",
         ]);
 
-        // Ajout de l'utilisateur qui met à jour
         $validated['updated_by'] = $auth->id;
 
-        // Mise à jour
         $nature->update($validated);
 
         return response()->json([
@@ -138,7 +134,8 @@ class NatureEntrepotController extends Controller
     /**
      * Display a listing of the resource.
      * @permission NatureEntrepotController::destroy
-     * @permission_desc Supprimer des natures d'entrepôts
+     * @code STOCK
+     * @permission_desc Supprimer les natures d'entrepôts
      */
     public function destroy(Request $request, string $uuid)
     {
@@ -154,10 +151,8 @@ class NatureEntrepotController extends Controller
                 'message' => 'Mot de passe incorrect.'
             ], 422);
         }
-        // Récupère la nature d'entrepôt ou renvoie 404
         $nature = NatureEntrepot::findOrFail($uuid);
 
-        // Suppression soft
         $nature->delete();
 
         return response()->json([
@@ -169,16 +164,15 @@ class NatureEntrepotController extends Controller
     /**
      * Display a listing of the resource.
      * @permission NatureEntrepotController::update_status
-     * @permission_desc Activer/Désactiver des natures d'entrepôts
+     * @code STOCK
+     * @permission_desc Activer/Désactiver les natures d'entrepôts
      */
     public function update_status(string $uuid, Request $request)
     {
         $auth = auth()->user();
 
-        // Récupère la nature d'entrepôt ou renvoie 404
         $nature = NatureEntrepot::findOrFail($uuid);
 
-        // Validation du statut
         $validated = $request->validate([
             'is_active' => 'required|boolean',
         ], [
@@ -186,7 +180,6 @@ class NatureEntrepotController extends Controller
             'is_active.boolean'  => 'Le statut doit être true ou false.',
         ]);
 
-        // Mise à jour du statut et de l'utilisateur
         $nature->update([
             'is_active'  => $validated['is_active'],
             'updated_by' => $auth->id,

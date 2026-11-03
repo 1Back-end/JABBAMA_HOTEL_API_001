@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -36,10 +37,13 @@ class RestaurantDrinkConfiguration extends Model
         'is_transformable_product',
         'drink_name',
         'image_file',
-        'quantity'
+        'quantity',
+        'production_cost',
+        'additional_cost',
+        'production_cost_final',
     ];
 
-    protected $appends = ['product_image','display_name'];
+    protected $appends = ['product_image','display_name','calculated_production_cost'];
 
     protected $casts = [
         'prices_for_clients_debtor' => 'array',
@@ -127,5 +131,43 @@ class RestaurantDrinkConfiguration extends Model
             'drinks_restaurant_uuid',
             'uuid'
         );
+    }
+    public function getCalculatedProductionCostAttribute(): float
+    {
+        if (!$this->is_transformable_product) {
+            return 0.0;
+        }
+
+        $totalCalculatedProductionCost = 0;
+
+        $items = $this->composition?->items ?? [];
+
+        foreach ($items as $item) {
+            $quantityUsed = floatval($item->quantity_used ?? 0);
+
+            $latestSupplyItem = DB::table('supply_items as si')
+                ->join('supplies as s', 's.uuid', '=', 'si.supply_uuid')
+                ->where('si.product_uuid', $item->product_uuid)
+                ->whereNotNull('si.unit_price')
+                ->whereNull('si.deleted_at')
+                ->whereIn('s.status', [
+                    \App\Enums\SupplyStatus::VALIDATED->value,
+                    \App\Enums\SupplyStatus::PARTIALLY_VALIDATED->value
+                ])
+                ->orderBy('s.supply_date', 'desc')
+                ->orderBy('s.created_at', 'desc')
+                ->select('si.unit_price', 's.supply_date', 's.status')
+                ->first();
+
+            $unitPrice = $latestSupplyItem ? floatval($latestSupplyItem->unit_price) : 0;
+
+            $itemTotal = $unitPrice * $quantityUsed;
+            $totalCalculatedProductionCost += $itemTotal;
+        }
+
+        $additionalCost = floatval($this->additional_cost ?? 0);
+        $totalCalculatedProductionCost += $additionalCost;
+
+        return round($totalCalculatedProductionCost, 2);
     }
 }

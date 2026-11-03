@@ -25,13 +25,18 @@ use Maatwebsite\Excel\Facades\Excel;
 /**
  * @permission_category Gestion des entrepôts
  * @permission_module Gestion des stocks
+ * @code_module STOCK
  * @permission_module Gestion du restaurant
+ * @code_module RESTAURANT
+ * @permission_module Gestion du bar
+ * @code_module BAR
  */
 class WarehouseController extends Controller
 {
     /**
      * Display a listing of the resource.
      * @permission WarehouseController::index
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Afficher la liste des entrepôts
      */
     public function index(Request $request)
@@ -91,6 +96,7 @@ class WarehouseController extends Controller
     /**
      * Display a listing of the resource.
      * @permission WarehouseController::store
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Créer des entrepôts
      */
     public function store(Request $request)
@@ -113,11 +119,6 @@ class WarehouseController extends Controller
             'is_used_for_stock_flow' => 'nullable|boolean' // 🔹 Ajout ici
         ]);
 
-        /**
-         * ────────────────────────────────────────────────
-         * 🔥 RÈGLE 1 : entrepôt principal = 1 seul manager
-         * ────────────────────────────────────────────────
-         */
         if ($validated['is_primary'] && count($validated['managers']) !== 1) {
             return response()->json([
                 'success' => false,
@@ -125,11 +126,6 @@ class WarehouseController extends Controller
             ], 422);
         }
 
-        /**
-         * ────────────────────────────────────────────────
-         * 🔥 RÈGLE 2 : il ne doit exister qu'un seul entrepôt principal
-         * ────────────────────────────────────────────────
-         */
         if ($validated['is_primary']) {
             $existsPrimary = Warehouse::where('is_primary', true)->exists();
 
@@ -140,8 +136,6 @@ class WarehouseController extends Controller
                 ], 422);
             }
         }
-
-        // 🔹 Entrepôt cuisine (restaurant)
         if (!empty($validated['is_used_for_restaurant']) && $validated['is_used_for_restaurant']) {
 
             $existsKitchen = Warehouse::where('is_used_for_restaurant', true)->exists();
@@ -154,7 +148,6 @@ class WarehouseController extends Controller
             }
         }
 
-        // 🔹 Entrepôt bar
         if (!empty($validated['is_bar_warehouse']) && $validated['is_bar_warehouse']) {
 
             $existsBar = Warehouse::where('is_bar_warehouse', true)->exists();
@@ -220,6 +213,7 @@ class WarehouseController extends Controller
     /**
      * Display a listing of the resource.
      * @permission WarehouseController::show
+     * @code STOCK,BAR, RESTAURANT
      * @permission_desc Afficher les détails des entrepôts
      */
     public function show(string $uuid)
@@ -244,6 +238,7 @@ class WarehouseController extends Controller
     /**
      * Display a listing of the resource.
      * @permission WarehouseController::update
+     * @code STOCK,BAR, RESTAURANT
      * @permission_desc Modifier des entrepôts
      */
     public function update(Request $request, $uuid)
@@ -379,47 +374,11 @@ class WarehouseController extends Controller
         ]);
     }
 
-    /**
-     * Display a listing of the resource.
-     * @permission WarehouseController::destroy
-     * @permission_desc Supprimer des entrepôts
-     */
-    public function destroy(Request $request, string $uuid)
-    {
-        $auth = auth()->user();
-
-        $request->validate([
-            'password' => 'required|string'
-        ]);
-
-        if (!Hash::check($request->password, $auth->password)) {
-            return response()->json([
-                'status'  => 'error',
-                'message' => 'Mot de passe incorrect.'
-            ], 422);
-        }
-
-        $warehouse = Warehouse::findOrFail($uuid);
-
-        if ($warehouse->orders()->exists()) {
-            return response()->json([
-                'status'  => 'error',
-                'message' => 'Impossible de supprimer cet entrepot : des commandes lui sont associées.'
-            ], 422);
-        }
-
-        $warehouse->forceDelete();
-
-        return response()->json([
-            'success' => true,
-            'message' => "L'entrepôt a été supprimé avec succès."
-        ]);
-    }
-
 
     /**
      * Display a listing of the resource.
      * @permission WarehouseController::update_status
+     * @code STOCK,BAR, RESTAURANT
      * @permission_desc Activer/Désactiver des entrepôts
      */
     public function update_status(Request $request, $uuid){
@@ -444,6 +403,7 @@ class WarehouseController extends Controller
     /**
      * Display a listing of the resource.
      * @permission WarehouseController::get_products_by_warehouse
+     * @code STOCK,BAR, RESTAURANT
      * @permission_desc Afficher les articles par entrepôts
      */
     public function get_products_by_warehouse($uuid, Request $request)
@@ -465,17 +425,12 @@ class WarehouseController extends Controller
             $q->where('warehouses.uuid', $uuid);
         });
 
-        // 🔹 Filtre catégorie
         if ($request->filled('category_uuid')) {
             $query->where('category_uuid', $request->category_uuid);
         }
-
-        // 🔹 Filtre unité
         if ($request->filled('unit_uuid')) {
             $query->where('unit_uuid', $request->unit_uuid);
         }
-
-        // 🔹 Recherche globale
         if ($search = trim($request->input('search'))) {
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
@@ -495,183 +450,22 @@ class WarehouseController extends Controller
             'total'        => $products->total(),
         ]);
     }
-
-
-
-    public function get_products_by_warehouse_is_used_for_restaurant($uuid, Request $request)
-    {
-        $perPage = $request->input('limit', 10);
-        $page = $request->input('page', 1);
-
-        $query = Product::with([
-            'creator',
-            'updater',
-            'category',
-            'unitMeasure',
-            'subCategories',
-            'medias',
-            'points' => function ($q) use ($uuid) {
-                $q->where('warehouses.uuid', $uuid);
-            }
-        ])->whereHas('points', function ($q) use ($uuid) {
-            $q->where('warehouses.uuid', $uuid);
-        });
-
-        // 🔹 Filtre catégorie
-        if ($request->filled('category_uuid')) {
-            $query->where('category_uuid', $request->category_uuid);
-        }
-
-        // 🔹 Filtre unité
-        if ($request->filled('unit_uuid')) {
-            $query->where('unit_uuid', $request->unit_uuid);
-        }
-
-        // 🔹 Recherche globale
-        if ($search = trim($request->input('search'))) {
-            $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                    ->orWhere('code', 'like', "%{$search}%")
-                    ->orWhere('description', 'like', "%{$search}%")
-                    ->orWhereHas('unitMeasure', fn($u) => $u->where('name', 'like', "%{$search}%"))
-                    ->orWhereHas('category', fn($c) => $c->where('name', 'like', "%{$search}%"));
-            });
-        }
-
-        $products = $query->latest()->paginate($perPage, ['*'], 'page', $page);
-
-        return response()->json([
-            'data'         => $products->items(),
-            'current_page' => $products->currentPage(),
-            'last_page'    => $products->lastPage(),
-            'total'        => $products->total(),
-        ]);
-    }
-
-
-    public function get_products_by_warehouse_is_bar_warehouse($uuid, Request $request)
-    {
-        $perPage = $request->input('limit', 10);
-        $page = $request->input('page', 1);
-
-        $query = Product::with([
-            'creator',
-            'updater',
-            'category',
-            'unitMeasure',
-            'subCategories',
-            'medias',
-            'points' => function ($q) use ($uuid) {
-                $q->where('warehouses.uuid', $uuid);
-            }
-        ])->whereHas('points', function ($q) use ($uuid) {
-            $q->where('warehouses.uuid', $uuid);
-        });
-
-        // 🔹 Filtre catégorie
-        if ($request->filled('category_uuid')) {
-            $query->where('category_uuid', $request->category_uuid);
-        }
-
-        // 🔹 Filtre unité
-        if ($request->filled('unit_uuid')) {
-            $query->where('unit_uuid', $request->unit_uuid);
-        }
-
-        // 🔹 Recherche globale
-        if ($search = trim($request->input('search'))) {
-            $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                    ->orWhere('code', 'like', "%{$search}%")
-                    ->orWhere('description', 'like', "%{$search}%")
-                    ->orWhereHas('unitMeasure', fn($u) => $u->where('name', 'like', "%{$search}%"))
-                    ->orWhereHas('category', fn($c) => $c->where('name', 'like', "%{$search}%"));
-            });
-        }
-
-        $products = $query->latest()->paginate($perPage, ['*'], 'page', $page);
-
-        return response()->json([
-            'data'         => $products->items(),
-            'current_page' => $products->currentPage(),
-            'last_page'    => $products->lastPage(),
-            'total'        => $products->total(),
-        ]);
-    }
-
-
-    public function get_products_bar_points(Request $request)
-    {
-        $perPage = $request->input('limit', 5);
-        $page = $request->input('page', 1);
-
-        $query = Product::with([
-            'creator',
-            'updater',
-            'category',
-            'unitMeasure',
-            'subCategories',
-            'medias',
-            'points' => function ($q) {
-                $q->where('is_bar_warehouse', true);
-            }
-        ])->whereHas('points', function ($q) {
-            $q->where('is_bar_warehouse', true);
-        });
-
-        // 🔹 Filtre catégorie si besoin
-        if ($request->filled('category_uuid')) {
-            $query->where('category_uuid', $request->category_uuid);
-        }
-        // 🔹 Filtre catégorie si besoin
-        if ($request->filled('category_uuid')) {
-            $query->where('category_uuid', $request->category_uuid);
-        }
-
-        // 🔹 Filtre unité si besoin
-        if ($request->filled('unit_uuid')) {
-            $query->where('unit_uuid', $request->unit_uuid);
-        }
-
-        // 🔹 Recherche globale
-        if ($search = trim($request->input('search'))) {
-            $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                    ->orWhere('code', 'like', "%{$search}%")
-                    ->orWhere('description', 'like', "%{$search}%")
-                    ->orWhereHas('unitMeasure', fn($u) => $u->where('name', 'like', "%{$search}%"))
-                    ->orWhereHas('category', fn($c) => $c->where('name', 'like', "%{$search}%"));
-            });
-        }
-
-        $products = $query->latest()->paginate($perPage, ['*'], 'page', $page);
-
-        return response()->json([
-            'data'         => $products->items(),
-            'current_page' => $products->currentPage(),
-            'last_page'    => $products->lastPage(),
-            'total'        => $products->total(),
-        ]);
-    }
-
 
     /**
      * Display a listing of the resource.
      * @permission WarehouseController::get_managers_by_warehouse
+     * @code STOCK,BAR, RESTAURANT
      * @permission_desc Afficher les managers par entrepôts
      */
     public function get_managers_by_warehouse(string $uuid, Request $request)
     {
         $search = $request->query('search', '');
-        $is_active = $request->query('is_active', null); // 1 / 0 / null
+        $is_active = $request->query('is_active', null);
 
-        // Vérifier si l'entrepôt existe
         $warehouse = Warehouse::where('uuid', $uuid)->firstOrFail();
 
-        // Récupérer les managers via la relation belongsToMany
         $query = $warehouse->managers();
 
-        // Filtre recherche nom + email
         if (!empty($search)) {
             $query->where(function ($q) use ($search) {
                 $q->where('login', 'LIKE', "%$search%")
@@ -682,7 +476,6 @@ class WarehouseController extends Controller
             });
         }
 
-        // Filtre actif / inactif
         if (!is_null($is_active)) {
             $query->where('is_active', filter_var($is_active, FILTER_VALIDATE_BOOLEAN));
         }
@@ -698,123 +491,8 @@ class WarehouseController extends Controller
 
     /**
      * Display a listing of the resource.
-     * @permission WarehouseController::export_inventory_by_warehouse
-     * @permission_desc Exporter l'inventaire d'un entrepôt en Excel
-     */
-    public function export_inventory_by_warehouse(Request $request, ?string $pointUuid = null)
-    {
-        // 🔹 Normalisation
-        $pointUuid = ($pointUuid === 'all' || empty($pointUuid)) ? null : $pointUuid;
-
-        // 🔹 Nom du fichier
-        if ($pointUuid) {
-            $warehouse = Warehouse::findOrFail($pointUuid);
-
-            $fileName = 'INVENTAIRE_'
-                . strtoupper(str_replace(' ', '_', $warehouse->name))
-                . '_' . now()->format('Ymd_His')
-                . '.xlsx';
-        } else {
-            $fileName = 'INVENTAIRE_TOUS_LES_ENTREPOTS_'
-                . now()->format('Ymd_His')
-                . '.xlsx';
-        }
-
-        // 🔹 Export Excel
-        Excel::store(
-            new InventoryByPointExport($pointUuid),
-            $fileName,
-            'exportinventory',
-            \Maatwebsite\Excel\Excel::XLSX
-        );
-
-        return response()->json([
-            'message'  => 'Exportation des données effectuée avec succès',
-            'filename' => $fileName,
-            'url'      => Storage::disk('exportinventory')->url($fileName),
-        ], 200);
-    }
-
-
-    /**
-     * Display a listing of the resource.
-     * @permission WarehouseController::print_inventory_by_warehouse
-     * @permission_desc Imprimer l'inventaire de stocks d'un entrepôt en PDF
-     */
-    public function print_inventory_by_warehouse(Request $request, string $point_uuid)
-    {
-        $auth = auth()->user();
-
-        try {
-            DB::beginTransaction();
-
-            // ✅ Récupération des stocks de l'entrepôt
-            $product_points = ProductPoint::with([
-                'product',
-                'point',
-                'creator',
-                'updater'
-            ])
-                ->where('point_uuid', $point_uuid)
-                ->get();
-
-            if ($product_points->isEmpty()) {
-                return response()->json([
-                    'message' => 'Aucun article trouvé pour cet entrepôt'
-                ], 404);
-            }
-
-            // ✅ Entrepôt
-            $warehouse = $product_points->first()->point;
-
-            $fileName   = strtoupper('INVENTORY-WAREHOUSE-' . now()->format('YmdHis') . '.pdf');
-            $folderPath = 'storage/inventory-warehouse/' . $warehouse->uuid;
-            $filePath   = $folderPath . '/' . $fileName;
-
-            if (!is_dir($folderPath)) {
-                mkdir($folderPath, 0755, true);
-            }
-
-            $data = [
-                'warehouse'      => $warehouse,
-                'product_points' => $product_points,
-            ];
-            $footer = 'pdfs.reports.factures.footer';
-
-            save_browser_shot_pdf(
-                view: 'pdfs.inventory-warehouse.inventory-warehouse',
-                data: $data,
-                folderPath: $folderPath,
-                path: $filePath,
-                margins: [10, 10, 10, 10],
-                footer: $footer
-            );
-
-            DB::commit();
-            $pdfContent = file_get_contents($filePath);
-            $base64     = base64_encode($pdfContent);
-
-            return response()->json([
-                'data'     => $data,
-                'base64'   => $base64,
-                'url'      => $filePath,
-                'filename' => $fileName,
-            ], 200);
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-
-            return response()->json([
-                'status'  => 'error',
-                'message' => 'Erreur lors de la génération du PDF',
-                'details' => $e->getMessage(),
-            ], 500);
-        }
-    }
-
-    /**
-     * Display a listing of the resource.
      * @permission WarehouseController::export_warehouse
+     * @code STOCK,BAR, RESTAURANT
      * @permission_desc Exporter la liste des entrepôts en Excel
      */
     public function export_warehouse(Request $request)
@@ -836,6 +514,7 @@ class WarehouseController extends Controller
     /**
      * Display a listing of the resource.
      * @permission WarehouseController::export_warehouses
+     * @code STOCK
      * @permission_desc Exporter la liste des Points / entrepôts
      */
     public function export_warehouses()
@@ -848,6 +527,67 @@ class WarehouseController extends Controller
             "message" => "Exportation des données effectuée avec succès",
             "filename" => $fileName,
             "url" => Storage::disk('exportwarehouseall')->url($fileName)
+        ]);
+    }
+
+
+    public function product_used_for_warehouse_bar(Request $request)
+    {
+        $perPage = (int) $request->input('limit', 25);
+        $page = (int) $request->input('page', 1);
+
+        $warehouseUuid = $request->input('warehouse_uuid');
+
+        if (!$warehouseUuid) {
+            $barWarehouse = Warehouse::where('is_bar_warehouse', true)->first();
+            $warehouseUuid = $barWarehouse?->uuid;
+        }
+
+        $query = Product::with([
+            'creator',
+            'updater',
+            'category',
+            'unitMeasure',
+            'subCategories',
+            'medias',
+            'points' => function ($q) use ($warehouseUuid) {
+                if ($warehouseUuid) {
+                    $q->where('produit_point.point_uuid', $warehouseUuid);
+                }
+            }
+        ]);
+
+        if ($warehouseUuid) {
+            $query->whereHas('points', function ($q) use ($warehouseUuid) {
+                $q->where('produit_point.point_uuid', $warehouseUuid);
+            });
+        }
+
+        if ($request->filled('category_uuid')) {
+            $query->where('category_uuid', $request->category_uuid);
+        }
+
+        if ($request->filled('unit_uuid')) {
+            $query->where('unit_uuid', $request->unit_uuid);
+        }
+
+        if ($search = trim($request->input('search'))) {
+            $query->where(function ($q) use ($search) {
+                $q->where('produits.name', 'like', "%{$search}%")
+                    ->orWhere('produits.code', 'like', "%{$search}%")
+                    ->orWhere('produits.description', 'like', "%{$search}%")
+                    ->orWhereHas('unitMeasure', fn($u) => $u->where('name', 'like', "%{$search}%"))
+                    ->orWhereHas('category', fn($c) => $c->where('name', 'like', "%{$search}%"));
+            });
+        }
+
+        $products = $query->latest('produits.created_at')->paginate($perPage, ['produits.*'], 'page', $page);
+
+        return response()->json([
+            'data'         => $products->items(),
+            'current_page' => $products->currentPage(),
+            'last_page'    => $products->lastPage(),
+            'total'        => $products->total(),
         ]);
     }
 

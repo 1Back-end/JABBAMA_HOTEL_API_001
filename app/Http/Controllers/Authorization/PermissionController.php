@@ -70,10 +70,14 @@ class PermissionController extends Controller
     public function permissionsByCategory(Request $request): JsonResponse
     {
         $search = $request->input('search');
+        $moduleUuids = $request->input('module_uuids');
+
+        if (is_string($moduleUuids)) {
+            $moduleUuids = array_filter(explode(',', $moduleUuids));
+        }
 
         $categories = PermissionCategory::where('libelle', '!=', 'Autres')
-            ->with(['permissions' => function($query) use ($search) {
-                // Tri des permissions par nom au niveau de la base de données
+            ->with(['permissions' => function($query) use ($search, $moduleUuids) {
                 $query->orderBy('name', 'asc');
 
                 if ($search) {
@@ -82,12 +86,37 @@ class PermissionController extends Controller
                             ->orWhere('description', 'like', "%{$search}%");
                     });
                 }
+
+                if (!empty($moduleUuids)) {
+                    $query->where(function($q) use ($moduleUuids) {
+                        $q->whereIn('module_uuid', $moduleUuids)
+                            ->orWhereHas('modules', function($subQ) use ($moduleUuids) {
+                                $subQ->whereIn('modules_applications.uuid', $moduleUuids);
+                            });
+                    });
+                }
             }])
             ->when($search, function($query) use ($search) {
                 $query->where(function($q) use ($search) {
                     $q->where('libelle', 'like', "%{$search}%")
                         ->orWhere('description', 'like', "%{$search}%");
                 });
+            })
+            ->whereHas('permissions', function($query) use ($search, $moduleUuids) {
+                if ($search) {
+                    $query->where(function($q) use ($search) {
+                        $q->where('name', 'like', "%{$search}%")
+                            ->orWhere('description', 'like', "%{$search}%");
+                    });
+                }
+                if (!empty($moduleUuids)) {
+                    $query->where(function($q) use ($moduleUuids) {
+                        $q->whereIn('module_uuid', $moduleUuids)
+                            ->orWhereHas('modules', function($subQ) use ($moduleUuids) {
+                                $subQ->whereIn('modules_applications.uuid', $moduleUuids);
+                            });
+                    });
+                }
             })
             ->orderBy('libelle', 'asc')
             ->get();

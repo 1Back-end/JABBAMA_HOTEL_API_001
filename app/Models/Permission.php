@@ -60,5 +60,16 @@ class Permission extends \Spatie\Permission\Models\Permission
         return $this->belongsTo(ModuleApplications::class, 'module_uuid');
 
     }
+    public function modules(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            ModuleApplications::class,
+            'module_permission',
+            'permission_id',
+            'module_uuid',
+            'id',
+            'uuid'
+        )->using(ModulePermission::class)->withTimestamps();
+    }
 
 }

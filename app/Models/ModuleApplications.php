@@ -26,7 +26,8 @@ class ModuleApplications extends Model
         'is_active',
         'created_by',
         'updated_by',
-        'is_first_module'
+        'is_first_module',
+        'code'
     ];
 
 
@@ -40,7 +41,6 @@ class ModuleApplications extends Model
 
     protected $appends = ['permissions_count'];
 
-    // Relations facultatives avec User
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');

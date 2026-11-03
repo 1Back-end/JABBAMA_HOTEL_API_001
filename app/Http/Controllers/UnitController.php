@@ -10,12 +10,14 @@ use Illuminate\Support\Facades\Hash;
 /**
  * @permission_category Gestion des unités d'articles
  * @permission_module Gestion des stocks
+ * @code_module STOCK
  */
 class UnitController extends Controller
 {
     /**
      * Display a listing of the resource.
      * @permission UnitController::index
+     * @code STOCK
      * @permission_desc Afficher la liste des unités d'articles
      */
     public function index(Request $request)
@@ -51,13 +53,13 @@ class UnitController extends Controller
     /**
      * Display a listing of the resource.
      * @permission UnitController::store
+     * @code STOCK
      * @permission_desc Créer les unités d'articles
      */
     public function store(Request $request)
     {
         $auth = auth()->user();
 
-        // ✅ Validation avec unicité sur le nom et l’abréviation
         $validated = $request->validate([
             'name'         => 'required|string|max:255|unique:units,name',
             'abbreviation' => 'required|string|max:255|unique:units,abbreviation',
@@ -69,10 +71,8 @@ class UnitController extends Controller
             'abbreviation.unique'    => "Cette abréviation existe déjà.",
         ]);
 
-        // ✅ Ajouter l’auteur de la création
         $validated['created_by'] = $auth->id;
 
-        // ✅ Création de l’unité
         $unit = Unit::create($validated);
 
         return response()->json([
@@ -85,16 +85,15 @@ class UnitController extends Controller
     /**
      * Display a listing of the resource.
      * @permission UnitController::update
+     * @code STOCK
      * @permission_desc Modifier les unités d'articles
      */
     public function update(Request $request, string $uuid)
     {
         $auth = auth()->user();
 
-        // ✅ Récupérer l'unité à modifier
         $unit = Unit::findOrFail($uuid);
 
-        // ✅ Validation avec unicité sur name et abbreviation (sauf pour l'élément actuel)
         $validated = $request->validate([
             'name'         => 'required|string|max:150|unique:units,name,' . $unit->uuid . ',uuid',
             'abbreviation' => 'required|string|max:255|unique:units,abbreviation,' . $unit->uuid . ',uuid',
@@ -106,10 +105,8 @@ class UnitController extends Controller
             'abbreviation.unique'    => "Cette abréviation est déjà utilisée.",
         ]);
 
-        // ✅ Ajouter l'utilisateur qui met à jour
         $validated['updated_by'] = $auth->id;
 
-        // ✅ Mise à jour
         $unit->update($validated);
 
         return response()->json([
@@ -123,6 +120,7 @@ class UnitController extends Controller
     /**
      * Display a listing of the resource.
      * @permission UnitController::show
+     * @code STOCK
      * @permission_desc Afficher les détails des unités d'articles
      */
     public function show(string $uuid)
@@ -139,6 +137,7 @@ class UnitController extends Controller
     /**
      * Display a listing of the resource.
      * @permission UnitController::destroy
+     * @code STOCK
      * @permission_desc Supprimer des unités d'articles
      */
     public function destroy(Request $request, string $uuid)
@@ -149,7 +148,6 @@ class UnitController extends Controller
             'password' => 'required|string'
         ]);
 
-        // Vérification du mot de passe
         if (!Hash::check($request->password, $auth->password)) {
             return response()->json([
                 'status'  => 'error',
@@ -160,13 +158,12 @@ class UnitController extends Controller
         try {
             $unit = Unit::findOrFail($uuid);
 
-            // Vérifier si l'unité est utilisée dans des produits
             $isUsed = Product::where('unit_uuid', $uuid)->exists();
             if ($isUsed) {
                 return response()->json([
                     'status' => 'error',
                     'message' => "Impossible de supprimer cette unité. Elle est utilisée par un ou plusieurs produits."
-                ], 409); // 409 Conflict
+                ], 409);
             }
 
             $unit->forceDelete();
@@ -196,6 +193,7 @@ class UnitController extends Controller
     /**
      * Display a listing of the resource.
      * @permission UnitController::update_status
+     * @code STOCK
      * @permission_desc Activer/Désactiver les unités d'articles
      */
     public function update_status(Request $request, $uuid){

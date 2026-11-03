@@ -29,6 +29,7 @@ use Maatwebsite\Excel\Facades\Excel;
 /**
  * @permission_category Gestion des régularisations de stocks
  * @permission_module Gestion des stocks
+ * @code_module STOCK
  */
 class StockAdjustmentController extends Controller
 {
@@ -43,6 +44,7 @@ class StockAdjustmentController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StockAdjustmentController::store
+     * @code STOCK
      * @permission_desc Enregistrer une régularisation de stocks
      */
     public function store(Request $request)
@@ -108,6 +110,7 @@ class StockAdjustmentController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StockAdjustmentController::update
+     * @code STOCK
      * @permission_desc Modifier une régularisation de stocks
      */
     public function update(Request $request, string $uuid)
@@ -146,7 +149,6 @@ class StockAdjustmentController extends Controller
                 'status'     => 'pending',
             ]);
 
-            // 🔄 Reset items
             $adjustment->items()->delete();
 
             foreach ($data['items'] as $item) {
@@ -178,6 +180,7 @@ class StockAdjustmentController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StockAdjustmentController::index
+     * @code STOCK
      * @permission_desc Afficher la liste des régularisations de stocks
      */
     public function index(Request $request)
@@ -273,6 +276,7 @@ class StockAdjustmentController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StockAdjustmentController::show
+     * @code STOCK
      * @permission_desc Afficher les détails d'une régularisation de stocks
      */
     public function show($uuid)
@@ -305,6 +309,7 @@ class StockAdjustmentController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StockAdjustmentController::cancel_stock_adjustment
+     * @code STOCK
      * @permission_desc Annuler une régularisation de stocks
      */
     public function cancel_stock_adjustment(Request $request, string $uuid){
@@ -338,6 +343,7 @@ class StockAdjustmentController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StockAdjustmentController::destroy
+     * @code STOCK
      * @permission_desc Supprimer une régularisation de stocks
      */
     public function destroy(Request $request, string $uuid)
@@ -363,7 +369,6 @@ class StockAdjustmentController extends Controller
 
         try {
 
-            // 👉 Si l’ajustement était validé, on restaure le stock
             if ($adjustment->status === 'validated') {
 
                 foreach ($adjustment->items as $item) {
@@ -396,7 +401,6 @@ class StockAdjustmentController extends Controller
                 }
             }
 
-            // Suppression de l’ajustement
             $adjustment->delete();
 
             DB::commit();
@@ -422,6 +426,7 @@ class StockAdjustmentController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StockAdjustmentController::validated_stock_adjustment
+     * @code STOCK
      * @permission_desc Valider une régularisation de stocks
      */
     public function validated_stock_adjustment(Request $request, string $uuid)
@@ -515,6 +520,7 @@ class StockAdjustmentController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StockAdjustmentController::print_stock_adjustment
+     * @code STOCK
      * @permission_desc Imprimer une régularisation de stocks en PDF
      */
     public function print_stock_adjustment(Request $request, string $uuid)
@@ -617,6 +623,7 @@ class StockAdjustmentController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StockAdjustmentController::export_stock_adjustment
+     * @code STOCK
      * @permission_desc Exporter la régularisation des stocks en Excel
      */
     public function export_stock_adjustment(Request $request)
@@ -639,6 +646,7 @@ class StockAdjustmentController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StockAdjustmentController::print_stock_adjustments_by_action
+     * @code STOCK
      * @permission_desc Imprimer les rapports de régularisations de stocks par action
      */
     public function print_stock_adjustments_by_action(Request $request)
@@ -656,13 +664,10 @@ class StockAdjustmentController extends Controller
                 ], 422);
             }
 
-            // Dates optionnelles
             $start_date = $request->input('start_date') ? Carbon::parse($request->input('start_date'))->startOfDay() : null;
             $end_date   = $request->input('end_date') ? Carbon::parse($request->input('end_date'))->endOfDay() : null;
 
-            Log::info("Filtre de date : start_date={$start_date}, end_date={$end_date}");
 
-            // Récupération des régularisations
             $stock_adjustments = StockAdjustment::with([
                 'warehouse',
                 'items.product',
@@ -742,6 +747,7 @@ class StockAdjustmentController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StockAdjustmentController::print_stock_adjustments
+     * @code STOCK
      * @permission_desc Imprimer les rapports de régularisations de stocks en PDF
      */
     public function print_stock_adjustments(Request $request)

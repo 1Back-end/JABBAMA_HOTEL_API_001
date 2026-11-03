@@ -6,17 +6,22 @@ use App\Models\ModuleApplications;
 use App\Models\ModulePermission;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
-
 /**
- * @permission_category Gestion des modules de l'application
+ * @permission_category Gestion des modules d'applications
  * @permission_module Gestion des stocks
+ * @code_module STOCK
  * @permission_module Gestion du restaurant
+ * @code_module RESTAURANT
+ * @permission_module Gestion du bar
+ * @code_module BAR
  */
 class ModuleApplicationsController extends Controller
 {
     /**
      * Display a listing of the resource.
+     *
      * @permission ModuleApplicationsController::index
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Afficher la liste des modules d'applications
      */
     public function index(Request $request)
@@ -36,7 +41,8 @@ class ModuleApplicationsController extends Controller
             'is_active',
             'created_by',
             'updated_by',
-            'is_first_module'
+            'is_first_module',
+            'code'
         ])
             ->with([
                 'permissions:id,name',
@@ -45,15 +51,12 @@ class ModuleApplicationsController extends Controller
             ])
             ->where('name', '!=', 'Autres Modules');
 
-        // 🔥 filtre actif
         if ($request->has('is_active')) {
             $query->where(
                 'is_active',
                 $request->input('is_active') === 'true'
             );
         }
-
-        // 🔥 permissions
         if (
             !$auth->hasRole('SUPER_ADMIN') &&
             !$auth->can('view_all_orders_module_applications')
@@ -66,8 +69,6 @@ class ModuleApplicationsController extends Controller
                 });
             }
         }
-
-        // 🔥 recherche
         if ($search = trim($request->input('search'))) {
 
             $query->where(function ($q) use ($search) {
@@ -298,10 +299,8 @@ class ModuleApplicationsController extends Controller
         ], 200);
     }
 
-
     public function get_permissions_by_module($uuid)
     {
-        // Récupère le module avec ses permissions
         $module = ModuleApplications::with('permissions')->where('uuid', $uuid)->first();
 
         if (!$module) {
@@ -313,7 +312,33 @@ class ModuleApplicationsController extends Controller
         return response()->json([
             'module_uuid' => $module->uuid,
             'module_name' => $module->name,
-            'permissions' => $module->permissions, // Retourne toutes les permissions associées
+            'permissions' => $module->permissions,
+        ]);
+    }
+
+    public function get_combined_permissions(Request $request)
+    {
+        $uuids = $request->query('uuids');
+
+        $query = ModuleApplications::with('permissions');
+
+        if (!empty($uuids)) {
+            if (is_string($uuids)) {
+                $uuids = array_map('trim', explode(',', $uuids));
+            }
+            $query->whereIn('uuid', $uuids);
+        }
+
+        $modules = $query->get();
+
+        $permissions = $modules->flatMap(function ($module) {
+            return $module->permissions;
+        })->unique('id')->values();
+
+        return response()->json([
+            'status' => 'success',
+            'modules' => $modules,
+            'permissions' => $permissions,
         ]);
     }
 

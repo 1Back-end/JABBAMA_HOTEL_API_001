@@ -15,7 +15,6 @@ class ChangeDefaultPasswordController extends Controller
             'new_password' => ['required', 'min:6'],
         ]);
 
-        // Utilisateur connecté via Bearer token
         $user = auth()->user();
 
         if (!$user) {
@@ -24,14 +23,12 @@ class ChangeDefaultPasswordController extends Controller
             ], Response::HTTP_UNAUTHORIZED);
         }
 
-        // 🔐 Vérifier que le login envoyé correspond à l'utilisateur connecté
         if ($request->login !== $user->login) {
             return response()->json([
                 'message' => 'Le login fourni ne correspond pas à votre compte.'
             ], Response::HTTP_FORBIDDEN);
         }
 
-        // ❌ Nouveau mot de passe identique à l'ancien
         if (Hash::check($request->new_password, $user->password)) {
             return response()->json([
                 'message' => 'Le nouveau mot de passe doit être différent de l’ancien.'

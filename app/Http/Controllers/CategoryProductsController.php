@@ -9,14 +9,14 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 /**
  * @permission_category Gestion des catégories d'articles
- * @permission_module Gestion des stocks
- * @permission_module Gestion du restaurant
+ * @code_module STOCK
  */
 class CategoryProductsController extends Controller
 {
     /**
      * Display a listing of the resource.
      * @permission CategoryProductsController::index
+     * @code STOCK
      * @permission_desc Afficher la liste des catégories d'articles
      */
     public function index(Request $request)
@@ -39,7 +39,6 @@ class CategoryProductsController extends Controller
         }
         $category = $query->latest()->paginate($perPage, ['*'], 'page', $page);
 
-        // Réponse JSON
         return response()->json([
             'data'         => $category->items(),
             'current_page' => $category->currentPage(),
@@ -51,6 +50,7 @@ class CategoryProductsController extends Controller
     /**
      * Display a listing of the resource.
      * @permission CategoryProductsController::store
+     * @code STOCK
      * @permission_desc Créer les catégories d'articles
      */
     public function store(Request $request)
@@ -85,6 +85,7 @@ class CategoryProductsController extends Controller
     /**
      * Display a listing of the resource.
      * @permission CategoryProductsController::show
+     * @code STOCK
      * @permission_desc Afficher les détails des catégories d'articles
      */
     public function show(string $uuid)
@@ -101,6 +102,7 @@ class CategoryProductsController extends Controller
     /**
      * Display a listing of the resource.
      * @permission CategoryProductsController::update
+     * @code STOCK
      * @permission_desc Modifier les catégories d'articles
      */
     public function update(Request $request, string $uuid)
@@ -134,6 +136,7 @@ class CategoryProductsController extends Controller
     /**
      * Display a listing of the resource.
      * @permission CategoryProductsController::destroy
+     * @code STOCK
      * @permission_desc Supprimer les catégories d'articles
      */
     public function destroy(Request $request, string $uuid)
@@ -191,6 +194,7 @@ class CategoryProductsController extends Controller
     /**
      * Display a listing of the resource.
      * @permission CategoryProductsController::update_status
+     * @code STOCK
      * @permission_desc Activer/Désactiver les catégories d'articles
      */
     public function update_status(Request $request, $uuid){
@@ -211,7 +215,6 @@ class CategoryProductsController extends Controller
     }
     public function get_by_category($category_uuid)
     {
-        // Récupère toutes les sous-catégories actives de la catégorie
         $subCategories = SubCategory::where('category_uuid', $category_uuid)
             ->where('is_active', 1)
             ->get(['uuid', 'name']);

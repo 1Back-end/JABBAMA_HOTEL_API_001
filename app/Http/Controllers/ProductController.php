@@ -26,14 +26,19 @@ use Illuminate\Support\Str;
 /**
  * @permission_category Gestion des articles
  * @permission_module Gestion des stocks
+ * @code_module STOCK
  * @permission_module Gestion du restaurant
+ * @code_module RESTAURANT
+ * @permission_module Gestion du bar
+ * @code_module BAR
  */
-
 class ProductController extends Controller
 {
     /**
      * Display a listing of the resource.
+     *
      * @permission ProductController::index
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Afficher la liste des articles
      */
     public function index(Request $request)
@@ -118,6 +123,7 @@ class ProductController extends Controller
     /**
      * Display a listing of the resource.
      * @permission ProductController::store
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Créer les articles
      */
     public function store(Request $request)
@@ -160,10 +166,8 @@ class ProductController extends Controller
 
             $validated['created_by'] = $auth->id;
 
-            // Création du produit
             $product = Product::create($validated);
 
-            // Sous-catégories
             if (!empty($validated['sub_categories'])) {
                 $pivotData = [];
                 foreach ($validated['sub_categories'] as $sub_uuid) {
@@ -176,7 +180,6 @@ class ProductController extends Controller
                 $product->subCategories()->sync($pivotData);
             }
 
-            // Points de dépôt avec stocks_minimal
             if (!empty($validated['points'])) {
                 $pivotData = [];
                 foreach ($validated['points'] as $point) {
@@ -190,7 +193,6 @@ class ProductController extends Controller
                 $product->points()->sync($pivotData);
             }
 
-            // Upload de l'image
             if ($request->hasFile('image_file')) {
                 $file = $request->file('image_file');
                 $filename = time() . '_' . $file->getClientOriginalName();
@@ -236,6 +238,7 @@ class ProductController extends Controller
     /**
      * Display a listing of the resource.
      * @permission ProductController::update_status
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Activer/Désactiver des articles
      */
     public function update_status(Request $request, $uuid)
@@ -290,6 +293,7 @@ class ProductController extends Controller
     /**
      * Display a listing of the resource.
      * @permission ProductController::show
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Afficher les détails des articles
      */
     public function show($uuid)
@@ -323,6 +327,7 @@ class ProductController extends Controller
     /**
      * Display a listing of the resource.
      * @permission ProductController::update
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Modifier des articles
      */
     public function update_products(Request $request, $uuid)
@@ -480,6 +485,7 @@ class ProductController extends Controller
     /**
      * Display a listing of the resource.
      * @permission ProductController::destroy
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Supprimer des articles
      */
     public function destroy(Request $request, string $uuid)
@@ -521,6 +527,7 @@ class ProductController extends Controller
     /**
      * Display a listing of the resource.
      * @permission ProductController::export_products_by_points_uuid
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Imprimer l'inventaire des articles par entrepots en PDF
      */
     public function export_products_by_points_uuid(Request $request, ?string $warehouse_uuid = null)
@@ -632,6 +639,7 @@ class ProductController extends Controller
     /**
      * Display a listing of the resource.
      * @permission ProductController::print_inventory_by_day_and_warehouses
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Imprimer l'inventaire des articles par entrepots en PDF par période
      */
     public function print_inventory_by_day_and_warehouses(Request $request, ?string $warehouse_uuid = null)

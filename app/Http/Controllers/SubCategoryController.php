@@ -13,12 +13,14 @@ use Illuminate\Support\Facades\DB;
 /**
  * @permission_category Gestion des sous catégories d'articles
  * @permission_module Gestion des stocks
+ * @code_module STOCK
  */
 class SubCategoryController extends Controller
 {
     /**
      * Display a listing of the resource.
      * @permission SubCategoryController::index
+     * @code STOCK
      * @permission_desc Afficher la liste des sous-catégories d'articles
      */
     public function index(Request $request)
@@ -65,6 +67,7 @@ class SubCategoryController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SubCategoryController::store
+     * @code STOCK
      * @permission_desc Création des sous-catégories d'articles
      */
     public function store(Request $request)
@@ -82,10 +85,8 @@ class SubCategoryController extends Controller
 
             DB::beginTransaction();
 
-            // 🔹 Normalisation récursive
             $children = $this->normalizeSubCategories($validated['sub_categories']);
 
-            // 🔹 Upsert (1 arbre par catégorie)
             $tree = CategoryTree::updateOrCreate(
                 ['category_uuid' => $validated['category_uuid']],
                 [
@@ -120,7 +121,7 @@ class SubCategoryController extends Controller
             return response()->json([
                 'status'  => 'error',
                 'message' => 'Erreur interne lors de l’enregistrement',
-                'error'   => $e->getMessage(), // 🔥 utile pour Postman
+                'error'   => $e->getMessage(),
             ], 500);
         }
     }
@@ -128,6 +129,7 @@ class SubCategoryController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SubCategoryController::show
+     * @code STOCK
      * @permission_desc Afficher les détails des sous-catégories d'articles
      */
     public function show(string $uuid)
@@ -152,6 +154,7 @@ class SubCategoryController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SubCategoryController::update_status
+     * @code STOCK
      * @permission_desc Activation/Désactivation des sous-catégories d'articles
      */
     public function update_status(Request $request, string $uuid)
@@ -187,6 +190,7 @@ class SubCategoryController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SubCategoryController::update
+     * @code STOCK
      * @permission_desc Mise à jour des sous-catégories d'articles
      */
     public function update(Request $request, string $uuid)
@@ -203,10 +207,8 @@ class SubCategoryController extends Controller
 
             DB::beginTransaction();
 
-            // 🔹 Normalisation récursive
             $children = $this->normalizeSubCategories($validated['sub_categories']);
 
-            // 🔹 Récupérer l'arbre existant par UUID
             $tree = CategoryTree::where('uuid', $uuid)->first();
 
             if (!$tree) {
@@ -255,13 +257,13 @@ class SubCategoryController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SubCategoryController::destroy
+     * @code STOCK
      * @permission_desc Suppression des sous-catégories d'articles
      */
     public function destroy(Request $request, string $uuid)
     {
         $auth = auth()->user();
 
-        // Vérifier le mot de passe de l'utilisateur
         $request->validate([
             'password' => 'required|string'
         ]);
@@ -282,7 +284,6 @@ class SubCategoryController extends Controller
             ], 404);
         }
 
-         //Vérifier si des contraintes existent (exemple: produits liés)
          $isUsed = ProductSubCategory::where('sub_category_uuid', $uuid)->exists();
          if ($isUsed) {
              return response()->json([
@@ -291,7 +292,6 @@ class SubCategoryController extends Controller
              ], 409);
          }
 
-        // Supprimer définitivement la sous-catégorie (pas soft delete)
         $subcategory->delete();
 
         return response()->json([

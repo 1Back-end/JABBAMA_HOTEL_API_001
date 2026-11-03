@@ -19,6 +19,7 @@ use Maatwebsite\Excel\Facades\Excel;
 /**
  * @permission_category Gestion des déductions de stocks
  * @permission_module Gestion des stocks
+ * @code_module STOCK
  */
 class StockDeductionController extends Controller
 {
@@ -26,6 +27,7 @@ class StockDeductionController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StockDeductionController::print_stocks_deductions
+     * @code STOCK
      * @permission_desc Imprimer les détails de déductions de stocks en PDF
      */
     public function print_stocks_deductions(Request $request, string $uuid)
@@ -46,7 +48,6 @@ class StockDeductionController extends Controller
         $folderPath = 'storage/details-stocks-deductions/' . $deduction->uuid;
         $filePath   = $folderPath . '/' . $fileName;
 
-        // Créer le dossier si nécessaire
         if (!is_dir($folderPath)) {
             if (!mkdir($folderPath, 0755, true) && !is_dir($folderPath)) {
                 throw new \RuntimeException("Impossible de créer le répertoire : {$folderPath}");
@@ -72,12 +73,9 @@ class StockDeductionController extends Controller
             return response()->json(['message' => "Le fichier PDF n'a pas été généré."], 500);
         }
 
-        // Chercher si le document existe déjà
         $pdf = PdfDocument::where('order_uuid', $deduction->uuid)
             ->where('name', 'STOCKS-DEDUCTIONS')
             ->first();
-
-        // S'il existe → on met à jour le fichier
         if ($pdf) {
             $pdf->update([
                 'path'       => $filePath,
@@ -85,7 +83,6 @@ class StockDeductionController extends Controller
                 'updated_by' => $auth->id,
             ]);
         }
-        // Sinon → on crée un nouvel enregistrement
         else {
             $pdf = PdfDocument::create([
                 'name'       => 'STOCKS-DEDUCTIONS',
@@ -127,6 +124,7 @@ class StockDeductionController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StockDeductionController::export_stocks_deductions
+     * @code STOCK
      * @permission_desc Exporter les déductions de stocks en Excel
      */
     public function export_stocks_deductions(Request $request)
@@ -156,6 +154,7 @@ class StockDeductionController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StockDeductionController::index
+     * @code STOCK
      * @permission_desc Afficher la liste des déductions de stocks
      */
     public function index(Request $request)
@@ -239,7 +238,7 @@ class StockDeductionController extends Controller
                             ->orWhere('login', 'like', "%{$search}%")
                             ->orWhere('id', 'like', "%{$search}%");
                     })
-                    // 🔹 Produits
+
                     ->orWhereHas('items.product', function ($qp) use ($search) {
                         $qp->where('name', 'like', "%{$search}%")
                             ->orWhere('code', 'like', "%{$search}%")
@@ -249,7 +248,6 @@ class StockDeductionController extends Controller
             });
         }
 
-        // 🔹 Pagination
         $data = $deduction->latest()->paginate($perPage, ['*'], 'page', $page);
 
         return response()->json([
@@ -264,6 +262,7 @@ class StockDeductionController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StockDeductionController::store
+     * @code STOCK
      * @permission_desc Créer une déduction de stocks
      */
     public function store(Request $request)
@@ -314,6 +313,7 @@ class StockDeductionController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StockDeductionController::update
+     * @code STOCK
      * @permission_desc Modifier une déduction de stocks
      */
     public function update(Request $request, string $uuid)
@@ -343,7 +343,6 @@ class StockDeductionController extends Controller
 
         DB::transaction(function () use ($request, $deduction, $auth) {
 
-            // Mise à jour entête
             $deduction->update([
                 'warehouse_uuid' => $request->warehouse_uuid,
                 'comment' => $request->comment,
@@ -351,11 +350,9 @@ class StockDeductionController extends Controller
                 'status' => 'draft',
             ]);
 
-            // Suppression logique des anciens items
             StockDeductionItem::where('stocks_deduction_uuid', $deduction->uuid)
                 ->delete();
 
-            // Réinsertion des nouveaux items
             foreach ($request->items as $item) {
                 StockDeductionItem::create([
                     'stocks_deduction_uuid' => $deduction->uuid,
@@ -375,6 +372,7 @@ class StockDeductionController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StockDeductionController::show
+     * @code STOCK
      * @permission_desc Afficher les détails d'une déduction de stocks
      */
     public function show(string $uuid)
@@ -406,13 +404,13 @@ class StockDeductionController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StockDeductionController::destroy
+     * @code STOCK
      * @permission_desc Supprimer une déduction de stocks
      */
     public function destroy(Request $request, string $uuid)
     {
         $auth = auth()->user();
 
-        // Valider le mot de passe
         $request->validate([
             'password' => 'required|string',
         ], [
@@ -465,6 +463,7 @@ class StockDeductionController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StockDeductionController::cancel_deductions_stocks
+     * @code STOCK
      * @permission_desc Annuler une déduction de stocks
      */
     public function cancel_deductions_stocks(Request $request, string $uuid){
@@ -473,7 +472,6 @@ class StockDeductionController extends Controller
             'password' => 'required|string'
         ]);
 
-        // Vérification du mot de passe
         if (!Hash::check($request->password, $auth->password)) {
             return response()->json([
                 'status'  => 'error',
@@ -499,13 +497,13 @@ class StockDeductionController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StockDeductionController::validated_deductions_stocks
+     * @code STOCK
      * @permission_desc Valider une déduction de stocks
      */
     public function validated_deductions_stocks(Request $request, string $uuid)
     {
         $auth = auth()->user();
 
-        // 1️⃣ Vérifier le mot de passe
         $request->validate([
             'password' => 'required|string'
         ]);
@@ -517,12 +515,10 @@ class StockDeductionController extends Controller
             ], 422);
         }
 
-        // 2️⃣ Récupérer la déduction avec ses items et produits
         $deduction = StockDeduction::with('items.product')
             ->where('uuid', $uuid)
             ->firstOrFail();
 
-        // 3️⃣ Vérifier que la déduction est encore en brouillon
         if ($deduction->status !== 'draft') {
             return response()->json([
                 'status'  => 'error',
@@ -535,7 +531,6 @@ class StockDeductionController extends Controller
         try {
             $insufficientProducts = [];
 
-            // 4️⃣ Vérifier tous les items pour le stock
             foreach ($deduction->items as $item) {
                 $productPoint = ProductPoint::firstOrCreate(
                     [
@@ -554,7 +549,6 @@ class StockDeductionController extends Controller
                 }
             }
 
-            // 5️⃣ Si certains produits sont insuffisants, retourner la liste
             if (!empty($insufficientProducts)) {
                 return response()->json([
                     'status'  => 'error',
@@ -563,7 +557,6 @@ class StockDeductionController extends Controller
                 ], 422);
             }
 
-            // 6️⃣ Déduire les quantités maintenant que tout est OK
             foreach ($deduction->items as $item) {
                 $productPoint = ProductPoint::firstOrCreate(
                     [
@@ -575,7 +568,6 @@ class StockDeductionController extends Controller
                 $productPoint->decrement('quantity', $item->quantity);
             }
 
-            // 7️⃣ Mettre à jour le statut de la déduction
             $deduction->update([
                 'status'       => 'validated',
                 'validated_by' => $auth->id,

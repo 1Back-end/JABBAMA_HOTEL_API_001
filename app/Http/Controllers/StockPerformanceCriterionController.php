@@ -7,14 +7,18 @@ use Illuminate\Http\Request;
 /**
  * @permission_category Gestion des critères de performances sur les stocks
  * @permission_module Gestion des stocks
+ * @code_module STOCK
  * @permission_module Gestion du restaurant
+ * @code_module RESTAURANT
+ * @permission_module Gestion du bar
+ * @code_module BAR
  */
-
 class StockPerformanceCriterionController extends Controller
 {
     /**
      * Display a listing of the resource.
      * @permission StockPerformanceCriterionController::index
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Afficher la liste des critères de performances
      */
     public function index(Request $request)
@@ -32,6 +36,7 @@ class StockPerformanceCriterionController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StockPerformanceCriterionController::store
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Créer un critère de performances
      */
     public function store(Request $request)
@@ -94,6 +99,7 @@ class StockPerformanceCriterionController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StockPerformanceCriterionController::show
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Afficher les détails d'un critère de performances
      */
     public function show($uuid)
@@ -115,6 +121,7 @@ class StockPerformanceCriterionController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StockPerformanceCriterionController::update
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Modifier un critère de performances
      */
     public function update(Request $request, $uuid)
@@ -181,6 +188,7 @@ class StockPerformanceCriterionController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StockPerformanceCriterionController::updateStatus
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Activer/Désactiver un critère de performances
      */
     public function updateStatus(Request $request, $uuid)
@@ -207,22 +215,4 @@ class StockPerformanceCriterionController extends Controller
         ]);
     }
 
-    /**
-     * Supprimer un critère.
-     */
-    public function destroy($uuid)
-    {
-        $criterion = StockPerformanceCriterion::where('uuid', $uuid)->first();
-
-        if (!$criterion) {
-            return response()->json(['success' => false, 'message' => 'Critère introuvable.'], 404);
-        }
-
-        $criterion->delete();
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Critère supprimé avec succès.'
-        ]);
-    }
 }

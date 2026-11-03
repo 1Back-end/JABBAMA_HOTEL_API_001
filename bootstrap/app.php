@@ -41,7 +41,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
         $middleware->api([
             EnsureFrontendRequestsAreStateful::class,
-            NoCache::class, // ✅ ICI C’EST BON
+            NoCache::class,
         ]);
 
         $middleware->alias([
@@ -49,9 +49,10 @@ return Application::configure(basePath: dirname(__DIR__))
             'user.change_password' => UserPasswordChangeMiddleware::class,
             'auth.system' => \App\Http\Middleware\AuthSystemMiddleware::class,
             'response.time' => \App\Http\Middleware\ApiResponseTimeMiddleware::class,
+            'module.license' => \App\Http\Middleware\CheckModuleLicense::class,
         ]);
 
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        //
+
     })->create();

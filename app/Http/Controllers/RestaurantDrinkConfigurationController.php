@@ -34,7 +34,6 @@ class RestaurantDrinkConfigurationController extends Controller
             'updater',
             'product'
         ])
-
             ->when($request->has('is_active'), function ($query) use ($request) {
 
                 $query->where(
@@ -46,18 +45,14 @@ class RestaurantDrinkConfigurationController extends Controller
                 );
 
             })
-
             ->when(!empty($status), function ($query) use ($status) {
 
                 switch ($status) {
 
                     case 'transformable':
-
                         $query->where('is_transformable_product', 1);
                         break;
-
                     case 'finished':
-
                         $query->where('is_transformable_product', 0);
                         break;
                 }
@@ -65,20 +60,22 @@ class RestaurantDrinkConfigurationController extends Controller
             })
 
             ->when(!empty($search), function ($query) use ($search) {
-
                 $query->where(function ($q) use ($search) {
 
                     $q->where('code', 'like', "%{$search}%")
                         ->orWhere('uuid', 'like', "%{$search}%")
                         ->orWhere('product_uuid', 'like', "%{$search}%")
                         ->orWhere('drink_name', 'like', "%{$search}%")
-                        ->orWhere('description', 'like', "%{$search}%");
-
+                        ->orWhere('description', 'like', "%{$search}%")
+                        // 🔹 Recherche sur le nom et le code du produit lié
+                        ->orWhereHas('product', function ($productQuery) use ($search) {
+                            $productQuery->where('name', 'like', "%{$search}%")
+                                ->orWhere('code', 'like', "%{$search}%");
+                        });
                 });
 
             });
 
-        // 🔹 Pagination
         $config = $query->latest()->paginate($perPage, ['*'], 'page', $page);
 
         // 🔹 Response JSON
@@ -463,7 +460,14 @@ class RestaurantDrinkConfigurationController extends Controller
     public function show(string $uuid)
     {
         try {
-            $config = RestaurantDrinkConfiguration::with(['creator','updater','product','medias'])->findOrFail($uuid);
+            $config = RestaurantDrinkConfiguration::with([
+                'creator',
+                'updater',
+                'product',
+                'medias',
+                'composition.drink',
+                'composition.warehouse'
+            ])->findOrFail($uuid);
 
             return response()->json([
                 'status' => 'success',
@@ -540,6 +544,17 @@ class RestaurantDrinkConfigurationController extends Controller
                     'updated_by' => $userId,
                 ]);
             }
+
+            $productionCost = $request->input('production_cost', 0);
+            $additionalCost = $request->input('additional_cost', 0);
+            $productionCostFinal = $productionCost + $additionalCost;
+
+            RestaurantDrinkConfiguration::where('uuid', $drinks_restaurant_uuid)->update([
+                'production_cost' => $productionCost,
+                'additional_cost' => $additionalCost,
+                'production_cost_final' => $productionCostFinal,
+                'updated_by' => $userId,
+            ]);
 
             DB::commit();
 

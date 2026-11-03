@@ -27,7 +27,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
         Route::get("/get_users_where_role_is_gestionnaire_stock",[UserController::class,'get_users_where_role_is_gestionnaire_stock']);
         Route::get("/get_users_where_role_is_cuisinier",[UserController::class,'get_users_where_role_is_cuisinier']);
-        Route::get('/permissions_by_category', [PermissionController::class, 'permissionsByCategory']);
+        Route::get('/permissions-by-category', [PermissionController::class, 'permissionsByCategory']);
         Route::apiResource('subcategories', SubCategoryController::class);
         Route::patch('subcategories/{uuid}/is_active', [SubCategoryController::class, 'update_status']);
         Route::get('subcategories/by_category/{category_uuid}', [CategoryProductsController::class, 'get_by_category']);
@@ -41,17 +41,24 @@ Route::middleware(['auth:sanctum'])->group(function () {
          | GESTION DES STOCKS
          |---------------------------------------------------------------------------
        */
-        require __DIR__ . '/suppliers.php';
-        require __DIR__ . '/units.php';
-        require __DIR__ . '/products.php';
-        require __DIR__ . '/category_products.php';
-        require __DIR__ . '/warehouses.php';
-        require __DIR__ . '/orders.php';
-        require __DIR__ . '/supply_orders.php';
-        require __DIR__ . '/passations.php';
-        require __DIR__ . '/stocks_adjustments.php';
-        require __DIR__ . '/deductions_stocks.php';
-        require __DIR__ . '/statistics.php';
+        /*
+          |--------------------------------------------------------------------------
+          | GESTION DES STOCKS (Protégé par le module STOCK)
+          |---------------------------------------------------------------------------
+          */
+        Route::middleware(['module.license:STOCK'])->group(function () {
+            require __DIR__ . '/suppliers.php';
+            require __DIR__ . '/units.php';
+            require __DIR__ . '/products.php';
+            require __DIR__ . '/category_products.php';
+            require __DIR__ . '/warehouses.php';
+            require __DIR__ . '/orders.php';
+            require __DIR__ . '/supply_orders.php';
+            require __DIR__ . '/passations.php';
+            require __DIR__ . '/stocks_adjustments.php';
+            require __DIR__ . '/deductions_stocks.php';
+            require __DIR__ . '/statistics.php';
+        });
 
         /*
          |--------------------------------------------------------------------------

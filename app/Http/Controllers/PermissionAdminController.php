@@ -13,18 +13,9 @@ use App\Models\PermissionCategory;
 use ReflectionClass;
 use ReflectionMethod;
 
-/**
- * @permission_category Gestion de l'extractions des permissions
- * @permission_module Gestion du restaurant
- * @permission_module Gestion des stocks
- */
 class PermissionAdminController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     * @permission PermissionAdminController::sync_permissions
-     * @permission_desc Synchroniser les permissions du systèmes par le SUPER ADMIN
-     */
+
     public function sync_permissions(Request $request)
     {
         $auth = auth()->user();

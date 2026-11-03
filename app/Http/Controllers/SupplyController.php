@@ -36,6 +36,7 @@ use Maatwebsite\Excel\Facades\Excel;
 /**
  * @permission_category Gestion des approvisionnements
  * @permission_module Gestion des stocks
+ * @code_module STOCK
  */
 class SupplyController extends Controller
 {
@@ -53,6 +54,7 @@ class SupplyController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SupplyController::index
+     * @code STOCK
      * @permission_desc Afficher la liste des approvisionnements
      */
     public function index(Request $request)
@@ -104,15 +106,12 @@ class SupplyController extends Controller
 
             $query->where(function ($q) use ($auth, $roleIds) {
 
-                // 🔹 Utilisateurs avec la permission view_role_related_data
                 if ($auth->can('view_role_related_data')) {
                     $q->whereHas('purchaseOrder.creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
                 }
-                // 🔹 Utilisateurs avec la permission view_transferred_orders
                 if ($auth->can('view_transferred_supplies')) {
                     $q->orWhereHas('purchaseOrder', fn($po) => $po->whereNotNull('transfered_by'));
                 }
-                // 🔹 Utilisateurs sans aucune de ces permissions : seulement leurs propres commandes
                 if (!$auth->can('view_role_related_data') && !$auth->can('view_transferred_supplies')) {
                     $q->orWhereHas('purchaseOrder', fn($po) => $po->where('created_by', $auth->id));
                 }
@@ -130,7 +129,6 @@ class SupplyController extends Controller
                     ->orWhere('warehouse_uuid', 'like', "%{$search}%")
                     ->orWhere('supplier_uuid', 'like', "%{$search}%")
 
-                    // 🔹 Fournisseur
                     ->orWhereHas('supplier', function ($qs) use ($search) {
                         $qs->where('first_name', 'like', "%{$search}%")
                             ->orWhere('last_name', 'like', "%{$search}%")
@@ -299,6 +297,7 @@ class SupplyController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SupplyController::store
+     * @code STOCK
      * @permission_desc Approvisionner les commandes
      */
     public function store(Request $request)
@@ -537,6 +536,7 @@ class SupplyController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SupplyController::show
+     * @code STOCK
      * @permission_desc Afficher les détails d'un approvisionnement
      */
     public function show($uuid)
@@ -584,6 +584,7 @@ class SupplyController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SupplyController::update_supplies
+     * @code STOCK
      * @permission_desc Modifier les approvisionnements
      */
     public function update_supplies(Request $request, string $uuid)
@@ -760,6 +761,7 @@ class SupplyController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SupplyController::destroy
+     * @code STOCK
      * @permission_desc Supprimer les approvisionnements
      */
     public function destroy(Request $request, string $uuid)
@@ -826,6 +828,7 @@ class SupplyController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SupplyController::rejected_supplies
+     * @code STOCK
      * @permission_desc Rejetter les approvisionnements
      */
     public function rejected_supplies(Request $request, string $uuid)
@@ -878,6 +881,7 @@ class SupplyController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SupplyController::validate_supply
+     * @code STOCK
      * @permission_desc Valider les approvisionnements
      */
     public function validate_supply(Request $request, string $uuid)
@@ -1081,6 +1085,7 @@ class SupplyController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SupplyController::cancel_supply
+     * @code STOCK
      * @permission_desc Annuler les approvisionnements
      */
     public function cancel_supply(Request $request, string $uuid)
@@ -1165,6 +1170,7 @@ class SupplyController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SupplyController::print_supplies
+     * @code STOCK
      * @permission_desc Exporter les détails de l'approvisionnement en PDF
      */
     public function print_supplies(Request $request, string $uuid)
@@ -1272,6 +1278,7 @@ class SupplyController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SupplyController::reject_supply_by_super_admin
+     * @code STOCK
      * @permission_desc Rejetter un approvisionnement par le SUPER_ADMIN
      */
     public function reject_supply_by_super_admin(Request $request, string $uuid)
@@ -1324,6 +1331,7 @@ class SupplyController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SupplyController::export_supply
+     * @code STOCK
      * @permission_desc Exporter les approvisionnements au format Excel
      */
     public function export_supply(Request $request)
@@ -1345,6 +1353,7 @@ class SupplyController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SupplyController::transfer_supply
+     * @code STOCK
      * @permission_desc Transférer les approvisionnements
      */
     public function transfer_supply(Request $request, string $uuid)
@@ -1445,6 +1454,7 @@ class SupplyController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SupplyController::getProductSupplyStatistics
+     * @code STOCK
      * @permission_desc Afficher l'historique des approvisionnements d'un article
      */
     public function getProductSupplyStatistics(string $supplyUuid, string $productUuid)

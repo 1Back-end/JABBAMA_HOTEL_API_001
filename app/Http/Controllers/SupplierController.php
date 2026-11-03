@@ -20,6 +20,7 @@ use Maatwebsite\Excel\Facades\Excel;
 /**
  * @permission_category Gestion des fournisseurs
  * @permission_module Gestion des stocks
+ * @code_module STOCK
  */
 
 class SupplierController extends Controller
@@ -27,6 +28,7 @@ class SupplierController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SupplierController::index
+     * @code STOCK
      * @permission_desc Afficher la liste des fournisseurs
      */
     public function index(Request $request)
@@ -61,7 +63,6 @@ class SupplierController extends Controller
 
         $suppliers = $query->latest()->paginate($perPage, ['*'], 'page', $page);
 
-        // Réponse JSON
         return response()->json([
             'data'         => $suppliers->items(),
             'current_page' => $suppliers->currentPage(),
@@ -73,6 +74,7 @@ class SupplierController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SupplierController::store
+     * @code STOCK
      * @permission_desc Créer des fournisseurs
      */
 
@@ -109,11 +111,8 @@ class SupplierController extends Controller
                 'company_phone.required' => 'Le numéro de téléphone de la société est obligatoire.',
                 'company_phone.unique'   => 'Le numéro de téléphone de la société est déjà utilisé.',
             ]);
-
-            // ✅ Ajouter l'auteur
             $validated['created_by'] = $auth->id;
 
-            // ✅ Créer le fournisseur
             $supplier = Supplier::create($validated);
 
             return response()->json([
@@ -123,14 +122,12 @@ class SupplierController extends Controller
             ], 201);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
-            // ✅ Gestion propre des erreurs de validation
             return response()->json([
                 'status' => 'validation_error',
                 'errors' => $e->errors(),
             ], 422);
 
         } catch (\Exception $e) {
-            // ✅ Gestion des autres exceptions
             return response()->json([
                 'status'  => 'error',
                 'message' => 'Une erreur est survenue lors de la création du fournisseur.',
@@ -144,17 +141,17 @@ class SupplierController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SupplierController::update
+     * @code STOCK
      * @permission_desc Mettre à jour un fournisseur
      */
     public function update(Request $request, $uuid)
     {
         $auth = auth()->user();
 
-        // ✅ Vérifie que le fournisseur existe
         $supplier = Supplier::findOrFail($uuid);
 
         try {
-            // ✅ Validation des données
+
             $validated = $request->validate([
                 'first_name'     => 'required|string|max:255',
                 'last_name'      => 'nullable|string|max:255',
@@ -184,10 +181,9 @@ class SupplierController extends Controller
                 'company_phone.unique'   => 'Le numéro de téléphone de la société est déjà utilisé.',
             ]);
 
-            // ✅ Ajoute l'utilisateur ayant fait la mise à jour
             $validated['updated_by'] = $auth->id;
 
-            // ✅ Mise à jour du fournisseur
+
             $supplier->update($validated);
 
             return response()->json([
@@ -197,14 +193,12 @@ class SupplierController extends Controller
             ], 200);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
-            // ✅ Erreurs de validation Laravel
             return response()->json([
                 'status' => 'validation_error',
                 'errors' => $e->errors(),
             ], 422);
 
         } catch (\Exception $e) {
-            // ✅ Autres exceptions
             return response()->json([
                 'status'  => 'error',
                 'message' => 'Une erreur est survenue lors de la mise à jour du fournisseur.',
@@ -217,6 +211,7 @@ class SupplierController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SupplierController::show
+     * @code STOCK
      * @permission_desc Afficher les détails d'un fournisseur
      */
     public function show(string $uuid)
@@ -241,6 +236,7 @@ class SupplierController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SupplierController::update_status
+     * @code STOCK
      * @permission_desc Activer / Désactiver le compte d'un fournisseur
      */
     public function update_status(Request $request, $uuid)
@@ -248,7 +244,6 @@ class SupplierController extends Controller
         $auth = auth()->user();
 
         try {
-            // Valider la requête
             $request->validate([
                 'is_active' => 'required|boolean',
             ], [
@@ -278,88 +273,10 @@ class SupplierController extends Controller
         }
     }
 
-    public function send_user_code_otp(Request $request)
-    {
-        $auth = auth()->user();
-
-        // Générer un code numérique de 8 chiffres
-        $code = (string) mt_rand(10000000, 99999999);
-
-        // Définir la date d'expiration
-        $expires_at = now()->addHours(24);
-
-        $deletionCode = DeletionCode::create([
-            'user_id'     => $auth->id,
-            'target_type' => 'supplier',
-            'target_uuid' => $request->target_uuid,
-            'code'        => $code,
-            'used'        => false,
-            'expires_at'  => $expires_at,
-            'created_by'  => $auth->id,
-            'updated_by'  => $auth->id,
-        ]);
-
-        Mail::send('emails.deletion_code', [
-            'code'       => $code,
-            'expires_at' => $expires_at
-        ], function ($message) use ($auth) {
-            $message->to($auth->email)
-                ->subject('Code de validation pour suppression');
-        });
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Code de validation pour suppression envoyé à ' . $auth->email,
-            'data'  =>  $deletionCode
-        ]);
-    }
-
-
-
-    /**
-     * Display a listing of the resource.
-     * @permission SupplierController::destroy
-     * @permission_desc Suppression des  fournisseurs
-     */
-
-    public function destroy(Request $request, string $uuid)
-    {
-        $auth = auth()->user();
-
-        $request->validate([
-            'password' => 'required|string'
-        ]);
-
-        if (!Hash::check($request->password, $auth->password)) {
-            return response()->json([
-                'status'  => 'error',
-                'message' => 'Mot de passe incorrect.'
-            ], 422);
-        }
-
-        $supplier = Supplier::findOrFail($uuid);
-
-        // Vérifier si des commandes sont liées
-        if ($supplier->orders()->exists()) {
-            return response()->json([
-                'status'  => 'error',
-                'message' => 'Impossible de supprimer ce fournisseur : des commandes lui sont associées.'
-            ], 422);
-        }
-
-        // Supprimer le fournisseur avec forceDelete
-        $supplier->forceDelete();
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Fournisseur supprimé avec succès.'
-        ]);
-    }
-
-
     /**
      * Display a listing of the resource.
      * @permission SupplierController::export_suppliers
+     * @code STOCK
      * @permission_desc Exporer les fournisseurs au format Excel
      */
     public function export_suppliers()

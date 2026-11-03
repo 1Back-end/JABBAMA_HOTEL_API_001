@@ -17,7 +17,6 @@ class ExtractPermissions extends Command
     protected string $defaultManualModule = 'Autres Modules';
 
 
-    // 🔹 Permissions manuelles
     protected array $manualPermissions = [
         'view_all_products' => [
             'description' => 'Accéder à tous les produits, indépendamment de son rôle.',
@@ -419,7 +418,6 @@ class ExtractPermissions extends Command
             'description' => 'Afficher l\'icône des notifications opérationnelles',
             'category' => 'Gestion des notifications du restaurant',
         ],
-
         'view_stock_notification_draft' => [
             'description' => 'Afficher les notifications des commandes à l\'état Brouillon',
             'category' => 'Gestion des notifications de stocks',
@@ -660,7 +658,7 @@ class ExtractPermissions extends Command
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],
         'view_access_for_setting_restaurant' => [
-                'description' => 'Accéder au menu du paramétrage de la fiche de caisse du restaurant',
+            'description' => 'Accéder au menu du paramétrage de la fiche de caisse du restaurant',
             'category' => 'Permissions supplémentaires',
             'modules' => ['Gestion du restaurant', 'Autres Modules'],
         ],
@@ -689,13 +687,14 @@ class ExtractPermissions extends Command
 
         $validPermissions = [];
 
-
         foreach ($permissions as $controller => $methods) {
             ksort($methods);
             usort($methods, fn($a, $b) => strcmp($a['permission'], $b['permission']));
             foreach ($methods as $perm) {
-                $categoryName = $perm['category'] ?? 'Autres';
+                $categoryName = $perm['category'] ?? 'AUTRES';
                 $modules = $perm['modules'] ?? [$this->defaultManualModule];
+                $codeModules = $perm['code_modules'] ?? [];
+                $permissionCode = $perm['permission_code'] ?? null;
 
                 $category = PermissionCategory::firstOrCreate(
                     ['libelle' => $categoryName],
@@ -709,6 +708,7 @@ class ExtractPermissions extends Command
                 $permission = Permission::updateOrCreate(
                     ['name' => $perm['permission']],
                     [
+                        'code' => $permissionCode,
                         'description' => $perm['permission_desc'] ?? '',
                         'category_id' => $category->id,
                         'system' => true,
@@ -720,13 +720,15 @@ class ExtractPermissions extends Command
 
                 $validPermissions[] = $permission->name;
 
-                foreach ($modules as $moduleName) {
+                foreach ($modules as $index => $moduleName) {
                     $moduleSlug = \Str::slug($moduleName);
+                    $codeModule = $codeModules[$index] ?? null;
 
                     $module = \App\Models\ModuleApplications::firstOrCreate(
                         ['slug' => $moduleSlug],
                         [
                             'name' => $moduleName,
+                            'code' => $codeModule,
                             'description' => $moduleName,
                             'is_active' => true,
                             'created_by' => $systemId,
@@ -734,7 +736,12 @@ class ExtractPermissions extends Command
                         ]
                     );
 
-                    $this->info("✅ Module synchronisé : {$module->name}");
+                    if ($codeModule && $module->code !== $codeModule) {
+                        $module->code = $codeModule;
+                        $module->save();
+                    }
+
+                    $this->info("✅ Module synchronisé : {$module->name} (" . ($codeModule ?? 'N/A') . ")");
 
                     if (!$module->permissions()->where('permission_id', $permission->id)->exists()) {
                         $module->permissions()->attach($permission->id, [
@@ -746,7 +753,6 @@ class ExtractPermissions extends Command
                     $permission->module_uuid = $module->uuid;
                     $permission->save();
                 }
-
 
                 if ($permission->wasRecentlyCreated && $superAdminRole) {
                     $superAdminRole->permissions()->attach($permission->id, [
@@ -762,8 +768,13 @@ class ExtractPermissions extends Command
         $manualPermissions = $this->manualPermissions;
         uksort($manualPermissions, fn($a, $b) => strcmp($a['description'] ?? '', $b['description'] ?? ''));
         foreach ($this->manualPermissions as $name => $data) {
-            $categoryName = $data['category'] ?? 'Autres';
+            $categoryName = $data['category'] ?? 'AUTRES';
             $modules = $data['modules'] ?? [$this->defaultManualModule];
+
+            // CORRECTION SÉCURISÉE ICI : Utilisation de isset() pour éviter l'erreur sur code_module
+            $codeModules = $data['code_modules'] ?? (isset($data['code_module']) ? [$data['code_module']] : []);
+
+            $permissionCode = $data['code'] ?? null;
 
             $category = PermissionCategory::firstOrCreate(
                 ['libelle' => $categoryName],
@@ -777,6 +788,7 @@ class ExtractPermissions extends Command
             $permission = Permission::updateOrCreate(
                 ['name' => $name],
                 [
+                    'code' => $permissionCode,
                     'description' => $data['description'] ?? '',
                     'category_id' => $category->id,
                     'system' => true,
@@ -788,19 +800,26 @@ class ExtractPermissions extends Command
 
             $validPermissions[] = $permission->name;
 
-            foreach ($modules as $moduleName) {
+            foreach ($modules as $index => $moduleName) {
                 $moduleSlug = \Str::slug($moduleName);
+                $codeModule = $codeModules[$index] ?? null;
 
                 $module = \App\Models\ModuleApplications::firstOrCreate(
                     ['slug' => $moduleSlug],
                     [
                         'name' => $moduleName,
+                        'code' => $codeModule,
                         'description' => $moduleName,
                         'is_active' => true,
                         'created_by' => $systemId,
                         'updated_by' => $systemId,
                     ]
                 );
+
+                if ($codeModule && $module->code !== $codeModule) {
+                    $module->code = $codeModule;
+                    $module->save();
+                }
 
                 $this->info("✅ Module synchronisé : {$module->name}");
 
@@ -825,6 +844,7 @@ class ExtractPermissions extends Command
             $this->info("✅ Permission manuelle synchronisée : {$permission->name}");
         }
 
+        // Suppression des permissions obsolètes
         Permission::where('system', true)
             ->whereNotIn('name', $validPermissions)
             ->get()
@@ -833,12 +853,14 @@ class ExtractPermissions extends Command
                 $this->warn("🗑️ Permission supprimée : {$permission->name}");
             });
 
+        // Suppression automatique des catégories qui n'ont plus aucune permission liée
         $usedCategoryIds = Permission::pluck('category_id')->unique()->filter();
         PermissionCategory::whereNotIn('id', $usedCategoryIds)->each(function ($category) {
             $category->delete();
             $this->warn("🗑️ Catégorie supprimée : {$category->libelle}");
         });
 
+        // Suppression des modules orphelins
         $usedModuleIds = \DB::table('module_permission')->pluck('module_uuid')->unique()->filter();
         \App\Models\ModuleApplications::whereNotIn('uuid', $usedModuleIds)
             ->get()
@@ -855,12 +877,10 @@ class ExtractPermissions extends Command
             });
 
         $this->info("\n✅ Synchronisation complète et nettoyage terminés !");
-
-        $this->info("\n✅ Synchronisation complète terminée !");
     }
 
     /**
-     * Extraction des permissions depuis un contrôleur avec catégorie et modules multiples
+     * Extraction des permissions depuis un contrôleur avec catégorie, modules multiples et codes multiples
      */
     private function extractPermissionsFromController(string $controller, array &$permissions): void
     {
@@ -868,32 +888,32 @@ class ExtractPermissions extends Command
 
         $reflection = new \ReflectionClass($controller);
 
-        // Docblock du contrôleur
         $doc = $reflection->getDocComment() ?: '';
-
-        // Récupère la catégorie (une seule)
         $category = $this->extractTagValue($doc, '@permission_category') ?: 'Autres';
 
-        // Récupère tous les modules (peut être plusieurs)
         $modules = $this->extractTagValues($doc, '@permission_module');
         if (empty($modules)) {
-            $modules = ['Autres Modules']; // fallback
+            $modules = ['Autres Modules'];
         }
 
-        // Parcours des méthodes publiques
+        $codeModules = $this->extractTagValues($doc, '@code_module');
+
         foreach ($reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
             $docComment = $method->getDocComment();
             if (!$docComment) continue;
 
             $permission     = $this->extractTagValue($docComment, '@permission');
+            $permissionCode = $this->extractTagValue($docComment, '@code');
             $permissionDesc = $this->extractTagValue($docComment, '@permission_desc') ?? '';
 
             if ($permission) {
                 $permissions[$controller][$method->getName()] = [
                     'permission'      => $permission,
+                    'permission_code' => $permissionCode,
                     'permission_desc' => $permissionDesc,
                     'category'        => $category,
-                    'modules'         => $modules, // tableau de modules
+                    'modules'         => $modules,
+                    'code_modules'    => $codeModules,
                 ];
             }
         }
@@ -901,7 +921,6 @@ class ExtractPermissions extends Command
 
     /**
      * Récupère toutes les valeurs d'un tag dans un docblock
-     * Permet de gérer plusieurs modules
      */
     private function extractTagValues(string $doc, string $tag): array
     {
@@ -954,5 +973,4 @@ class ExtractPermissions extends Command
             ? trim($matches[1])
             : null;
     }
-
 }

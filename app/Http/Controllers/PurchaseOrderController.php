@@ -30,6 +30,7 @@ use Maatwebsite\Excel\Facades\Excel;
 /**
  * @permission_category Gestion des commandes
  * @permission_module Gestion des stocks
+ * @code_module STOCK
  */
 class PurchaseOrderController extends Controller
 {
@@ -47,6 +48,7 @@ class PurchaseOrderController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PurchaseOrderController::index
+     * @code STOCK
      * @permission_desc Afficher la liste des commandes
      */
     public function index(Request $request)
@@ -159,11 +161,6 @@ class PurchaseOrderController extends Controller
     }
 
 
-    /**
-     * Display a listing of the resource.
-     * @permission PurchaseOrderController::get_validated_and_partial_validated_orders
-     * @permission_desc Afficher les commandes Clôturée totalement et partiellement
-     */
     public function get_validated_and_partial_validated_orders(Request $request)
     {
 
@@ -202,7 +199,6 @@ class PurchaseOrderController extends Controller
             $query->where('warehouse_from', $request->warehouse_from);
         }
 
-        // 🔹 Filtrage par période
         if ($request->filled('start_date') && $request->filled('end_date')) {
             $query->whereBetween('created_at', [$start_date, $end_date]);
         }
@@ -213,15 +209,12 @@ class PurchaseOrderController extends Controller
 
             $query->where(function ($q) use ($auth, $roleIds) {
 
-                // 🔹 Utilisateurs avec la permission view_role_related_data
                 if ($auth->can('view_role_related_data')) {
                     $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
                 }
-                // 🔹 Utilisateurs avec la permission view_transferred_orders
                 if ($auth->can('view_transferred_orders')) {
                     $q->orWhereNotNull('transfered_by');
                 }
-                // 🔹 Utilisateurs sans aucune de ces permissions : seulement leurs propres commandes
                 if (!$auth->can('view_role_related_data') && !$auth->can('view_transferred_orders')) {
                     $q->orWhere('created_by', $auth->id);
                 }
@@ -229,7 +222,6 @@ class PurchaseOrderController extends Controller
             });
         }
 
-        // 🔹 Recherche globale
         if ($search = trim($request->input('search'))) {
             $query->where(function ($q) use ($search) {
                 $q->where('reference', 'like', "%{$search}%")
@@ -240,7 +232,6 @@ class PurchaseOrderController extends Controller
                     ->orWhere('warehouse_to', 'like', "%{$search}%")
                     ->orWhere('supplier_uuid', 'like', "%{$search}%")
 
-                    // 🔹 Entrepôts
                     ->orWhereHas('warehouseTo', function ($qw) use ($search) {
                         $qw->where('ref', 'like', "%{$search}%")
                             ->orWhere('name', 'like', "%{$search}%")
@@ -254,13 +245,11 @@ class PurchaseOrderController extends Controller
                             ->orWhere('address', 'like', "%{$search}%");
                     })
 
-                    // 🔹 Créateur
                     ->orWhereHas('creator', function ($qc) use ($search) {
                         $qc->where('nom_utilisateur', 'like', "%{$search}%")
                             ->orWhere('email', 'like', "%{$search}%");
                     })
 
-                    // 🔹 Produits
                     ->orWhereHas('items.product', function ($qp) use ($search) {
                         $qp->where('name', 'like', "%{$search}%")
                             ->orWhere('code', 'like', "%{$search}%")
@@ -269,7 +258,6 @@ class PurchaseOrderController extends Controller
             });
         }
 
-        // 🔹 Pagination
         $data = $query->latest()->paginate($perPage, ['*'], 'page', $page);
 
         return response()->json([
@@ -357,6 +345,7 @@ class PurchaseOrderController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PurchaseOrderController::store
+     * @code STOCK
      * @permission_desc Création des commandes
      */
     public function store(Request $request)
@@ -489,6 +478,7 @@ class PurchaseOrderController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PurchaseOrderController::show
+     * @code STOCK
      * @permission_desc Afficher les détails des commandes
      */
     public function show($uuid)
@@ -535,7 +525,8 @@ class PurchaseOrderController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PurchaseOrderController::update_orders
-     * @permission_desc Modification des commandes
+     * @code STOCK
+     * @permission_desc Modifier les commandes
      */
     public function update_orders(Request $request, $uuid)
     {
@@ -680,6 +671,7 @@ class PurchaseOrderController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PurchaseOrderController::destroy
+     * @code STOCK
      * @permission_desc Suppression des commandes
      */
     public function destroy(Request $request, string $uuid)
@@ -742,6 +734,7 @@ class PurchaseOrderController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PurchaseOrderController::cancel_orders
+     * @code STOCK
      * @permission_desc Annuler une commande
      */
     public function cancel_orders(Request $request, string $uuid)
@@ -807,6 +800,7 @@ class PurchaseOrderController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PurchaseOrderController::cancel_orders_by_admin
+     * @code STOCK
      * @permission_desc Annuler une commande par le SUPER ADMIN
      */
     public function cancel_orders_by_admin(Request $request, string $uuid)
@@ -872,6 +866,7 @@ class PurchaseOrderController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PurchaseOrderController::validate_orders
+     * @code STOCK
      * @permission_desc Valider une commande
      */
     public function validate_orders(Request $request, string $uuid)
@@ -941,6 +936,7 @@ class PurchaseOrderController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PurchaseOrderController::rejected_orders
+     * @code STOCK
      * @permission_desc Rejetter une commande
      */
     public function rejected_orders(Request $request, string $uuid)
@@ -993,7 +989,7 @@ class PurchaseOrderController extends Controller
                 ], 200);
 
             } catch (\Exception $e) {
-                throw $e; // Force le rollback de la transaction en cas d'erreur
+                throw $e;
             }
         });
     }
@@ -1002,6 +998,7 @@ class PurchaseOrderController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PurchaseOrderController::send_orders
+     * @code STOCK
      * @permission_desc Transferer une commande
      */
     public function send_orders(Request $request, string $uuid)
@@ -1064,6 +1061,7 @@ class PurchaseOrderController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PurchaseOrderController::rejected_orders_by_admin
+     * @code STOCK
      * @permission_desc Rejetter une commande par le SUPER ADMIN
      */
     public function rejected_orders_by_admin(Request $request, string $uuid)
@@ -1125,6 +1123,7 @@ class PurchaseOrderController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PurchaseOrderController::HaveRoleToSeeInternalOrder
+     * @code STOCK
      * @permission_desc Afficher l'option des commandes internes
      */
     public function HaveRoleToSeeInternalOrder(Request $request, string $uuid)
@@ -1136,6 +1135,7 @@ class PurchaseOrderController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PurchaseOrderController::HaveRoleToSeeExternalOrder
+     * @code STOCK
      * @permission_desc Afficher l'option des commandes externes
      */
     public function HaveRoleToSeeExternalOrder(Request $request, string $uuid)
@@ -1147,6 +1147,7 @@ class PurchaseOrderController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PurchaseOrderController::export_orders
+     * @code STOCK
      * @permission_desc Exporter les commandes au format Excel
      */
     public function export_orders(Request $request)
@@ -1168,6 +1169,7 @@ class PurchaseOrderController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PurchaseOrderController::show_parents_orders
+     * @code STOCK
      * @permission_desc Afficher les détails d’une commande parent
      */
     public function show_parents_orders($uuid)
@@ -1222,6 +1224,7 @@ class PurchaseOrderController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PurchaseOrderController::create_parents_orders
+     * @code STOCK
      * @permission_desc Créer une commande enfant
      */
     public function create_parents_orders(Request $request, string $uuid)
@@ -1380,16 +1383,15 @@ class PurchaseOrderController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PurchaseOrderController::update_parents_orders
+     * @code STOCK
      * @permission_desc Modifier une commande enfant
      */
     public function update_parents_orders(Request $request, string $uuid)
     {
         $auth = auth()->user();
 
-        // 🔹 Récupérer la commande enfant à mettre à jour
         $childOrder = PurchaseOrder::where('uuid', $uuid)->firstOrFail();
 
-        // 🔹 Récupérer la commande parent si elle existe
         $parentOrder = $childOrder->parent_uuid ? PurchaseOrder::where('uuid', $childOrder->parent_uuid)->first() : null;
 
         try {
@@ -1408,7 +1410,6 @@ class PurchaseOrderController extends Controller
                 'items.required' => 'Vous devez ajouter au moins un produit à la commande.',
             ]);
 
-            // 🔹 Préparer entrepôts et fournisseur
             $supplierUuid = $request->type === 'external' ? $request->supplier_uuid : null;
             $warehouseFromUuid = null;
             $warehouseToUuid = null;
@@ -1428,7 +1429,6 @@ class PurchaseOrderController extends Controller
                 $warehouseToUuid = $warehouseTo->uuid;
             }
 
-            // 🔹 Remettre les quantités de l'ancien enfant dans le parent
             if ($parentOrder) {
                 foreach ($childOrder->items as $oldItem) {
                     $parentItem = PurchaseOrderItem::where('purchase_order_uuid', $parentOrder->uuid)
@@ -1443,10 +1443,8 @@ class PurchaseOrderController extends Controller
                 }
             }
 
-            // 🔹 Supprimer les anciens articles
             $childOrder->items()->delete();
 
-            // 🔹 Mise à jour de la commande enfant
             $childOrder->update([
                 'type' => $request->type,
                 'supplier_uuid' => $supplierUuid,
@@ -1457,12 +1455,10 @@ class PurchaseOrderController extends Controller
                 'status' => 'draft',
             ]);
 
-            // 🔹 Ajouter les nouveaux items et mettre à jour le parent
             foreach ($request->items as $item) {
                 $product = Product::find($item['product_uuid']);
                 $productName = $product ? $product->name : $item['product_uuid'];
 
-                // Vérification disponibilité pour commandes internes
                 if ($request->type === 'internal') {
                     $available = Product::where('uuid', $item['product_uuid'])
                         ->whereHas('points', function ($q) use ($warehouseFrom) {
@@ -1493,7 +1489,6 @@ class PurchaseOrderController extends Controller
                         ], 422);
                     }
 
-                    // Déduire la nouvelle quantité de la quantité restante du parent
                     $parentItem->update([
                         'quantity_remaining' => $parentItem->quantity_remaining - $item['quantity']
                     ]);
@@ -1547,6 +1542,7 @@ class PurchaseOrderController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PurchaseOrderController::print_orders
+     * @code STOCK
      * @permission_desc Imprimer une commande au format PDF
      */
     public function print_orders(Request $request, string $uuid)
@@ -1652,6 +1648,7 @@ class PurchaseOrderController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PurchaseOrderController::getProductStatistics
+     * @code STOCK
      * @permission_desc Afficher l'historique des commandes d'un article
      */
     public function getProductStatistics(string $orderUuid, string $productUuid)
