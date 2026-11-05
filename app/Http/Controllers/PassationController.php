@@ -75,7 +75,7 @@ class PassationController extends Controller
             $query->whereBetween('created_at', [$start_date, $end_date]);
         }
 
-        if (!$auth->hasRole('SUPER_ADMIN')) {
+        if (!$auth->is_super_admin) {
             $query->whereHas('warehouse.managers', function($qw) use ($auth) {
                 $qw->where('warehouse_managers.user_id', $auth->id)
                     ->whereNull('warehouse_managers.deleted_at');
@@ -307,13 +307,17 @@ class PassationController extends Controller
             ->where('uuid', $uuid)
             ->firstOrFail();
 
-        $itemsQuery = $passation->items()->with('product');
+        $itemsQuery = $passation->items()
+            ->with('product')
+            ->join('produits', 'passation_items.product_uuid', '=', 'produits.uuid')
+            ->orderBy('produits.name', 'asc')
+            ->select('passation_items.*');
 
         if ($search) {
             $itemsQuery->where(function ($q) use ($search) {
-                $q->where('quantity_sent', 'like', "%{$search}%")
-                    ->orWhere('quantity_counted', 'like', "%{$search}%")
-                    ->orWhere('difference', 'like', "%{$search}%")
+                $q->where('passation_items.quantity_sent', 'like', "%{$search}%")
+                    ->orWhere('passation_items.quantity_counted', 'like', "%{$search}%")
+                    ->orWhere('passation_items.difference', 'like', "%{$search}%")
                     ->orWhereHas('product', function ($qp) use ($search) {
                         $qp->where('name', 'like', "%{$search}%")
                             ->orWhere('code', 'like', "%{$search}%");
