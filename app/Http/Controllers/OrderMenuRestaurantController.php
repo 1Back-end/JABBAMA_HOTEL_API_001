@@ -6133,8 +6133,7 @@ class OrderMenuRestaurantController extends Controller
 
 
         if (
-            !$auth->hasRole('SUPER_ADMIN') &&
-            !$auth->can('view_kitchen_and_bar_orders')
+            !$auth->is_super_admin
         ) {
             $roleIds = $auth->roles->pluck('id');
 

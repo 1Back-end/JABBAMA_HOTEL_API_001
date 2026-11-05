@@ -6,7 +6,7 @@ use App\Models\SettingRestaurant;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 /**
- * @permission_category Paramètres de facturations du restaurant
+ * @permission_category Paramètres de facturations
  * @permission_module Gestion du restaurant
  */
 class SettingRestaurantController extends Controller
@@ -14,7 +14,7 @@ class SettingRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SettingRestaurantController::store
-     * @permission_desc Créer les paramètres de facturations du restaurant
+     * @permission_desc Créer les paramètres de facturations
      */
     public function store(Request $request) {
         $auth = auth()->user();
@@ -39,7 +39,7 @@ class SettingRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SettingRestaurantController::update
-     * @permission_desc Modifier les paramètres de facturations du restaurant
+     * @permission_desc Modifier les paramètres de facturations
      */
     public function update(Request $request, $uuid)
     {
@@ -68,7 +68,7 @@ class SettingRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SettingRestaurantController::index
-     * @permission_desc Afficher la liste des paramètres de facturations du restaurant
+     * @permission_desc Afficher la liste des paramètres de facturations
      */
     public function index(Request $request)
     {
@@ -104,16 +104,14 @@ class SettingRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SettingRestaurantController::toggleActive
-     * @permission_desc Activer/Désactiver les paramètres de facturations du restaurant
+     * @permission_desc Activer/Désactiver les paramètres de facturations
      */
     public function toggleActive($uuid)
     {
         $auth = auth()->user();
 
-        // 🔹 Récupérer le module
         $settings_restaurants = SettingRestaurant::findOrFail($uuid);
 
-        // 🔹 Bascule le statut
         $settings_restaurants->is_active = !$settings_restaurants->is_active;
         $settings_restaurants->updated_by = $auth->id;
         $settings_restaurants->save();

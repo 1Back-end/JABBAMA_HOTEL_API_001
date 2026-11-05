@@ -8,6 +8,7 @@ use App\Enums\OrderMenuRestaurantItemStatus;
 use App\Enums\PaymentOrderItemStatus;
 use App\Enums\PaymentOrderMenusStatus;
 use App\Enums\PaymentRegulationSlug;
+use App\Enums\PaymentRegulationType;
 use App\Enums\PaymentStatus;
 use App\Enums\RestaurantExpenseSlug;
 use App\Models\CashReceiptFamily;
@@ -725,14 +726,21 @@ class PaymentController extends Controller
 
     public function get_cash_register_sheet(Request $request)
     {
-        $perPage = (int)$request->input('limit', 25);
-        $page = (int)$request->input('page', 1);
+        $perPage = (int) $request->input('limit', 25);
+        $page = (int) $request->input('page', 1);
 
         $date = $request->filled('date')
             ? Carbon::parse($request->date)->toDateString()
             : Carbon::today()->toDateString();
 
         $relations = ['creator:id,nom_utilisateur'];
+
+        $entryTypes = "('" . implode("', '", PaymentRegulationType::entryTypes()) . "')";
+        $expenseType = PaymentRegulationType::EXPENSE->value;
+
+        $sumEncaissementsSql = "SUM(CASE WHEN payment_regulations.type IN {$entryTypes} THEN payment_regulations.amount ELSE 0 END)";
+        $sumDepensesSql      = "SUM(CASE WHEN payment_regulations.type = '{$expenseType}' THEN payment_regulations.amount ELSE 0 END)";
+        $sumNetAmountSql     = "SUM(CASE WHEN payment_regulations.type IN {$entryTypes} THEN payment_regulations.amount ELSE -payment_regulations.amount END)";
 
         $selectColumns = [
             DB::raw('MIN(payment_regulations.uuid) as uuid'),
@@ -744,15 +752,22 @@ class PaymentController extends Controller
             DB::raw('DATE(payment_regulations.created_at)'),
         ];
 
-        $query = PaymentRegulation::query()->whereNotNull('payment_regulations.slug');
-        $totalsQuery = PaymentRegulation::whereDate('created_at', $date)->whereNotNull('slug');
+        $query = PaymentRegulation::query()
+            ->whereNotNull('payment_regulations.slug')
+            ->whereDate('payment_regulations.created_at', $date)
+            ->whereNull('payment_regulations.deleted_at');
+
+        $totalsQuery = PaymentRegulation::query()
+            ->whereNotNull('slug')
+            ->whereDate('created_at', $date)
+            ->whereNull('deleted_at');
 
         if ($request->cash_register_filter_type === CashRegisterFilterType::PAYMENT_METHOD->value) {
 
             $selectColumns[] = 'payment_regulations.regulation_method_uuid';
-            $selectColumns[] = DB::raw("SUM(CASE WHEN payment_regulations.type IN ('encaissement', 'recouvrement') THEN payment_regulations.amount ELSE 0 END) as total_encaissements");
-            $selectColumns[] = DB::raw("SUM(CASE WHEN payment_regulations.type = 'expense' THEN payment_regulations.amount ELSE 0 END) as total_depenses");
-            $selectColumns[] = DB::raw("SUM(CASE WHEN payment_regulations.type IN ('encaissement', 'recouvrement') THEN payment_regulations.amount ELSE -payment_regulations.amount END) as total_amount");
+            $selectColumns[] = DB::raw("{$sumEncaissementsSql} as total_encaissements");
+            $selectColumns[] = DB::raw("{$sumDepensesSql} as total_depenses");
+            $selectColumns[] = DB::raw("{$sumNetAmountSql} as total_amount");
 
             $groupByColumns[] = 'payment_regulations.regulation_method_uuid';
             $relations[] = 'method:uuid,name';
@@ -764,62 +779,34 @@ class PaymentController extends Controller
 
         } elseif ($request->cash_register_filter_type === CashRegisterFilterType::PAYMENT_TYPE->value) {
 
-            $selectColumns[] = DB::raw("
-            CASE
-                WHEN payment_regulations.slug LIKE '%BAR%' THEN 'BAR'
-                WHEN payment_regulations.slug LIKE '%RESTO%' THEN 'RESTO'
-                ELSE 'AUTRES'
-            END as category_slug
-        ");
-
-            $selectColumns[] = DB::raw("
-            CASE
-                WHEN payment_regulations.slug LIKE '%BAR%' THEN 'BAR'
-                WHEN payment_regulations.slug LIKE '%RESTO%' THEN 'RESTO'
-                ELSE 'AUTRES'
-            END as category_type_name
-        ");
-
-            $selectColumns[] = DB::raw("SUM(CASE WHEN payment_regulations.type IN ('encaissement', 'recouvrement') THEN payment_regulations.amount ELSE 0 END) as total_encaissements");
-            $selectColumns[] = DB::raw("SUM(CASE WHEN payment_regulations.type = 'expense' THEN payment_regulations.amount ELSE 0 END) as total_depenses");
-            $selectColumns[] = DB::raw("SUM(CASE WHEN payment_regulations.type IN ('encaissement', 'recouvrement') THEN payment_regulations.amount ELSE -payment_regulations.amount END) as total_amount");
-
-            $groupByColumns[] = DB::raw("
+            $categorySql = "
             CASE
                 WHEN payment_regulations.slug LIKE '%BAR%' THEN 'BAR'
                 WHEN payment_regulations.slug LIKE '%RESTO%' THEN 'RESTO'
                 ELSE 'AUTRES'
             END
-        ");
+        ";
+
+            $selectColumns[] = DB::raw("{$categorySql} as category_slug");
+            $selectColumns[] = DB::raw("{$categorySql} as category_type_name");
+            $selectColumns[] = DB::raw("{$sumEncaissementsSql} as total_encaissements");
+            $selectColumns[] = DB::raw("{$sumDepensesSql} as total_depenses");
+            $selectColumns[] = DB::raw("{$sumNetAmountSql} as total_amount");
+
+            $groupByColumns[] = DB::raw($categorySql);
 
             if ($request->filled('slug')) {
                 $slugFilter = $request->slug;
-
-                $query->where(function($q) use ($slugFilter) {
-                    $q->where(DB::raw("
-                    CASE
-                        WHEN payment_regulations.slug LIKE '%BAR%' THEN 'BAR'
-                        WHEN payment_regulations.slug LIKE '%RESTO%' THEN 'RESTO'
-                        ELSE 'AUTRES'
-                    END
-                "), 'LIKE', '%' . $slugFilter . '%');
-                });
-
-                $totalsQuery->where(DB::raw("
-                CASE
-                    WHEN payment_regulations.slug LIKE '%BAR%' THEN 'BAR'
-                    WHEN payment_regulations.slug LIKE '%RESTO%' THEN 'RESTO'
-                    ELSE 'AUTRES'
-                END
-            "), 'LIKE', '%' . $slugFilter . '%');
+                $query->whereRaw("{$categorySql} LIKE ?", ['%' . $slugFilter . '%']);
+                $totalsQuery->whereRaw("{$categorySql} LIKE ?", ['%' . $slugFilter . '%']);
             }
 
         } else {
 
             $selectColumns[] = 'payment_regulations.created_by';
-            $selectColumns[] = DB::raw("SUM(CASE WHEN payment_regulations.type IN ('encaissement', 'recouvrement') THEN payment_regulations.amount ELSE 0 END) as total_encaissements");
-            $selectColumns[] = DB::raw("SUM(CASE WHEN payment_regulations.type = 'expense' THEN payment_regulations.amount ELSE 0 END) as total_depenses");
-            $selectColumns[] = DB::raw("SUM(CASE WHEN payment_regulations.type IN ('encaissement', 'recouvrement') THEN payment_regulations.amount ELSE -payment_regulations.amount END) as total_amount");
+            $selectColumns[] = DB::raw("{$sumEncaissementsSql} as total_encaissements");
+            $selectColumns[] = DB::raw("{$sumDepensesSql} as total_depenses");
+            $selectColumns[] = DB::raw("{$sumNetAmountSql} as total_amount");
 
             $groupByColumns[] = 'payment_regulations.created_by';
 
@@ -831,27 +818,23 @@ class PaymentController extends Controller
 
         $queryBuilder = $query->select($selectColumns)
             ->with($relations)
-            ->whereDate('payment_regulations.created_at', $date)
-            ->whereNull('payment_regulations.deleted_at')
             ->groupBy($groupByColumns);
 
         if ($request->cash_register_filter_type === CashRegisterFilterType::PAYMENT_TYPE->value) {
-            $queryBuilder->havingRaw("SUM(CASE WHEN payment_regulations.type IN ('encaissement', 'recouvrement') THEN payment_regulations.amount ELSE 0 END) > 0
-                      OR SUM(CASE WHEN payment_regulations.type = 'expense' THEN payment_regulations.amount ELSE 0 END) > 0");
+            $queryBuilder->havingRaw("{$sumEncaissementsSql} > 0 OR {$sumDepensesSql} > 0");
         }
 
         $data = $queryBuilder->orderByDesc(DB::raw('DATE(payment_regulations.created_at)'))
             ->paginate($perPage, ['*'], 'page', $page);
 
         $totals = $totalsQuery->select('type', DB::raw('SUM(amount) as total'))
-            ->whereNull('deleted_at')
             ->groupBy('type')
             ->get()
             ->keyBy('type');
 
-        $totalEncaissements = (float) ($totals->get('encaissement')?->total ?? 0);
-        $totalRecouvrements = (float) ($totals->get('recouvrement')?->total ?? 0);
-        $totalDepenses      = (float) ($totals->get('expense')?->total ?? 0);
+        $totalEncaissements = (float) ($totals->get(PaymentRegulationType::ENCAISSEMENT->value)?->total ?? 0);
+        $totalRecouvrements = (float) ($totals->get(PaymentRegulationType::RECOUVREMENT->value)?->total ?? 0);
+        $totalDepenses      = (float) ($totals->get(PaymentRegulationType::EXPENSE->value)?->total ?? 0);
 
         $totalEntreesGlobal = $totalEncaissements + $totalRecouvrements;
         $soldeNet           = $totalEntreesGlobal - $totalDepenses;

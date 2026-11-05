@@ -49,7 +49,9 @@ class ModuleApplicationsController extends Controller
                 'creator:id,nom_utilisateur',
                 'updater:id,nom_utilisateur',
             ])
-            ->where('name', '!=', 'Autres Modules');
+            ->where('name', '!=', 'Autres Modules')
+            ->whereNotNull('name')
+            ->where('name', '!=', '');
 
         if ($request->has('is_active')) {
             $query->where(
@@ -58,12 +60,10 @@ class ModuleApplicationsController extends Controller
             );
         }
         if (
-            !$auth->hasRole('SUPER_ADMIN') &&
-            !$auth->can('view_all_orders_module_applications')
+            !$auth->is_super_admin
         ) {
 
             if ($auth->can('view_role_related_data')) {
-
                 $query->whereHas('creator.roles', function ($qr) use ($roleIds) {
                     $qr->whereIn('roles.id', $roleIds);
                 });

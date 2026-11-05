@@ -75,7 +75,7 @@ class PassationController extends Controller
             $query->whereBetween('created_at', [$start_date, $end_date]);
         }
 
-        if (!$auth->hasRole('SUPER_ADMIN') && !$auth->can('view_all_passations')) {
+        if (!$auth->hasRole('SUPER_ADMIN')) {
             $query->whereHas('warehouse.managers', function($qw) use ($auth) {
                 $qw->where('warehouse_managers.user_id', $auth->id)
                     ->whereNull('warehouse_managers.deleted_at');

@@ -34,7 +34,8 @@ class User extends Authenticatable
         'connexion_counter',
         'password_expiated_at',
         'connected',
-        'default'
+        'default',
+        'is_super_admin'
     ];
 
     protected $hidden = [

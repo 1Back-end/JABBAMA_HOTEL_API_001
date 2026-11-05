@@ -36,7 +36,7 @@ class AuthenticatedSessionController extends Controller
 
         $permissions = load_permissions($user);
         $roles = $activeRoles;
-        
+
         $access = $request->user()->createToken(
             name: config('app.name'),
             abilities: $permissions,

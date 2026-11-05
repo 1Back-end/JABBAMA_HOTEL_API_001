@@ -57,7 +57,7 @@ class ProductController extends Controller
             'subCategories',
             'medias',
             'points' => function ($q) use ($auth, $pointUuid) {
-                if (!$auth->hasRole('SUPER_ADMIN')) {
+                if (!$auth->is_super_admin) {
                     $q->whereHas('managers', function ($m) use ($auth) {
                         $m->where('warehouse_managers.user_id', $auth->id)
                             ->whereNull('warehouse_managers.deleted_at');
@@ -70,7 +70,7 @@ class ProductController extends Controller
             }
         ]);
 
-        if (!$auth->hasRole('SUPER_ADMIN')) {
+        if (!$auth->is_super_admin) {
             $query->whereHas('points', function ($q) use ($auth, $pointUuid) {
                 $q->whereHas('managers', function ($m) use ($auth) {
                     $m->where('warehouse_managers.user_id', $auth->id)

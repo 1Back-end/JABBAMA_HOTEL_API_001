@@ -92,10 +92,8 @@ class PurchaseOrderController extends Controller
             $query->whereDate('created_at', Carbon::today());
         }
 
-        if (!$auth->hasRole('SUPER_ADMIN')) {
-
+        if (!$auth->is_super_admin) {
             $roleIds = $auth->roles->pluck('id');
-
             $query->where(function ($q) use ($auth, $roleIds) {
                 if ($auth->can('view_role_related_data')) {
                     $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
@@ -106,7 +104,6 @@ class PurchaseOrderController extends Controller
                 if (!$auth->can('view_role_related_data') && !$auth->can('view_transferred_orders')) {
                     $q->orWhere('created_by', $auth->id);
                 }
-
             });
         }
 

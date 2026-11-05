@@ -12,15 +12,17 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * @permission_category Configuration des prix des boissons clients
- * @permission_module Gestion du restaurant
+ * @permission_category Configuration des boissons
+ * @permission_module Gestion du bar
+ * @code_module BAR
  */
 class RestaurantDrinkConfigurationController extends Controller
 {
     /**
      * Display a listing of the resource.
      * @permission RestaurantDrinkConfigurationController::index
-     * @permission_desc Afficher la liste des prix des boissons clients
+     * @code BAR
+     * @permission_desc Afficher la liste boissons
      */
     public function index(Request $request)
     {
@@ -67,7 +69,6 @@ class RestaurantDrinkConfigurationController extends Controller
                         ->orWhere('product_uuid', 'like', "%{$search}%")
                         ->orWhere('drink_name', 'like', "%{$search}%")
                         ->orWhere('description', 'like', "%{$search}%")
-                        // 🔹 Recherche sur le nom et le code du produit lié
                         ->orWhereHas('product', function ($productQuery) use ($search) {
                             $productQuery->where('name', 'like', "%{$search}%")
                                 ->orWhere('code', 'like', "%{$search}%");
@@ -141,7 +142,8 @@ class RestaurantDrinkConfigurationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantDrinkConfigurationController::transformableProducts
-     * @permission_desc Afficher la liste des prix des boissons transformables
+     * @code BAR
+     * @permission_desc Afficher la liste des boissons transformables
      */
     public function transformableProducts(Request $request)
     {
@@ -188,7 +190,8 @@ class RestaurantDrinkConfigurationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantDrinkConfigurationController::store
-     * @permission_desc Créer les prix des boissons clients
+     * @code BAR
+     * @permission_desc Créer les boissons de consommation directeq
      */
     public function store(Request $request)
     {
@@ -207,7 +210,6 @@ class RestaurantDrinkConfigurationController extends Controller
                 'quantity' => ['nullable', 'integer', 'min:0'],
             ]);
 
-            // Vérification de l'existence d'une configuration existante
             if (!empty($validated['product_uuid'])) {
                 $existingConfig = RestaurantDrinkConfiguration::where('product_uuid', $validated['product_uuid'])->first();
                 if ($existingConfig) {
@@ -226,7 +228,6 @@ class RestaurantDrinkConfigurationController extends Controller
                 }
             }
 
-            // Gestion automatique des types de produits (Transformable vs Fini)
             if (!empty($validated['drink_name'])) {
                 $validated['is_transformable_product'] = true;
                 $validated['is_finished_product'] = false;
@@ -296,7 +297,8 @@ class RestaurantDrinkConfigurationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantDrinkConfigurationController::update
-     * @permission_desc Modifier les prix des boissons clients
+     * @code BAR
+     * @permission_desc Modifier les boissons de consommation directes
      */
 
     public function update(Request $request, string $uuid)
@@ -317,7 +319,6 @@ class RestaurantDrinkConfigurationController extends Controller
                 'is_active' => ['nullable', 'boolean'],
             ]);
 
-            // Vérification de doublon (produit ou nom de boisson)
             if (!empty($validated['product_uuid'])) {
                 $exists = RestaurantDrinkConfiguration::where('product_uuid', $validated['product_uuid'])
                     ->where('uuid', '!=', $uuid)
@@ -329,7 +330,6 @@ class RestaurantDrinkConfigurationController extends Controller
                         'message' => 'Ce produit possède déjà une configuration de prix.'
                     ], 400);
                 }
-                // Si on passe à un product_uuid, on nettoie drink_name
                 $validated['drink_name'] = null;
             } elseif (!empty($validated['drink_name'])) {
                 $exists = RestaurantDrinkConfiguration::where('drink_name', $validated['drink_name'])
@@ -342,11 +342,9 @@ class RestaurantDrinkConfigurationController extends Controller
                         'message' => 'Cette boisson possède déjà une configuration de prix.'
                     ], 400);
                 }
-                // Si on passe à un drink_name, on nettoie product_uuid
                 $validated['product_uuid'] = null;
             }
 
-            // Attribution automatique des drapeaux selon le champ présent
             if (!empty($validated['drink_name'])) {
                 $validated['is_transformable_product'] = true;
                 $validated['is_finished_product'] = false;
@@ -414,7 +412,8 @@ class RestaurantDrinkConfigurationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantDrinkConfigurationController::update_status
-     * @permission_desc Activer/Désactiver les prix des boissons du bar
+     * @code BAR
+     * @permission_desc Activer/Désactiver les boissons
      */
     public function update_status(Request $request, string $uuid)
     {
@@ -455,7 +454,8 @@ class RestaurantDrinkConfigurationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantDrinkConfigurationController::show
-     * @permission_desc Afficher les détails des prix des boissons clients
+     * @code BAR
+     * @permission_desc Afficher les détails des boissons
      */
     public function show(string $uuid)
     {
@@ -486,7 +486,7 @@ class RestaurantDrinkConfigurationController extends Controller
         $data = RestaurantDrinkConfiguration::with(['creator','updater','product'])
             ->where('is_transformable_product', true)
             ->where('uuid', $uuid)
-            ->first(); // ✅ IMPORTANT
+            ->first();
 
         if (!$data) {
             return response()->json([
@@ -504,6 +504,7 @@ class RestaurantDrinkConfigurationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantDrinkConfigurationController::upsert
+     * @code BAR
      * @permission_desc Effectuer la confection des boissons de transformation
      */
     public function upsert(Request $request, $drinks_restaurant_uuid)
@@ -604,6 +605,7 @@ class RestaurantDrinkConfigurationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantDrinkConfigurationController::storeTransformableByName
+     * @code BAR
      * @permission_desc Enregistrer les boissons de transformation
      */
     public function storeTransformableByName(Request $request)
@@ -656,7 +658,6 @@ class RestaurantDrinkConfigurationController extends Controller
             $validated['prices_for_clients_partner'] = $sanitizeAndCastToString($validated['prices_for_clients_partner'] ?? null);
             $validated['prices_for_clients_free'] = $sanitizeAndCastToString($validated['prices_for_clients_free'] ?? null);
 
-            // 🔥 flags métier
             $validated['is_transformable_product'] = true;
             $validated['is_finished_product'] = false;
 

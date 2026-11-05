@@ -390,10 +390,8 @@ class MenuRestaurantController extends Controller
     {
         $auth = auth()->user();
 
-        // Récupérer le menu
         $menu = MenuRestaurant::where('uuid', $uuid)->firstOrFail();
 
-        // Inverser le statut actif
         $menu->is_active = ! $menu->is_active;
         $menu->updated_by = $auth->id;
         $menu->save();

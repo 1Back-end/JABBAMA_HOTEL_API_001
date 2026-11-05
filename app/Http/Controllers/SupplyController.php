@@ -100,7 +100,7 @@ class SupplyController extends Controller
             $query->whereDate('created_at', Carbon::today());
         }
 
-        if (!$auth->hasRole('SUPER_ADMIN')) {
+        if (!$auth->is_super_admin) {
 
             $roleIds = $auth->roles->pluck('id');
 

@@ -10,13 +10,17 @@ use Illuminate\Support\Facades\Storage;
 /**
  * @permission_category Gestion des clients gratuits
  * @permission_module Gestion du restaurant
+ * @code_module RESTAURANT
+ * @permission_module Gestion du bar
+ * @code_module BAR
  */
 class FreeClientRestaurantController extends Controller
 {
     /**
      * Display a listing of the resource.
      * @permission FreeClientRestaurantController::store
-     * @permission_desc Créer les clients gratuits du restaurant
+     * @code BAR, RESTAURANT
+     * @permission_desc Créer les clients
      */
     public function store(Request $request)
     {
@@ -80,7 +84,8 @@ class FreeClientRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission FreeClientRestaurantController::update_free_clients_restaurants
-     * @permission_desc Modifier les clients gratuits du restaurant
+     * @code BAR, RESTAURANT
+     * @permission_desc Modifier un client
      */
     public function update_free_clients_restaurants(Request $request, $uuid)
     {
@@ -101,13 +106,11 @@ class FreeClientRestaurantController extends Controller
                 'profession'          => 'nullable|string|max:255',
             ]);
 
-            // Mise à jour des champs
+
             $client->fill($validated);
             $client->updated_by = $auth->id;
 
-            // Gestion du fichier CNI
             if ($request->hasFile('cni_number_file')) {
-                // Supprimer l’ancien fichier si existant
                 if ($client->medias()->exists()) {
                     $oldMedia = $client->medias()->first();
                     if (Storage::disk($oldMedia->disk)->exists($oldMedia->path)) {
@@ -158,7 +161,8 @@ class FreeClientRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission FreeClientRestaurantController::show
-     * @permission_desc Afficher les détails d'un client gratuit du restaurant
+     * @code BAR, RESTAURANT
+     * @permission_desc Afficher les détails d'un client
      */
     public function show($uuid)
     {
@@ -186,7 +190,8 @@ class FreeClientRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission FreeClientRestaurantController::updateStatus
-     * @permission_desc Activer/Désactiver les clients gratuits du restaurant
+     * @code BAR, RESTAURANT
+     * @permission_desc Activer/Désactiver un client
      */
     public function updateStatus($uuid)
     {
@@ -228,7 +233,8 @@ class FreeClientRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission FreeClientRestaurantController::index
-     * @permission_desc Afficher la liste des clients gratuits du restaurant
+     * @code BAR, RESTAURANT
+     * @permission_desc Afficher la liste des clients gratuits
      */
     public function index(Request $request)
     {
@@ -256,7 +262,6 @@ class FreeClientRestaurantController extends Controller
         }
         $config = $query->latest()->paginate($perPage, ['*'], 'page', $page);
 
-        // Réponse JSON
         return response()->json([
             'data'         => $config->items(),
             'current_page' => $config->currentPage(),
@@ -270,6 +275,7 @@ class FreeClientRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission FreeClientRestaurantController::allocateAmount
+     * @code BAR, RESTAURANT
      * @permission_desc Enregistrer le montant des arrhes
      */
     public function allocateAmount(Request $request, $uuid)

@@ -48,7 +48,7 @@ class WarehouseController extends Controller
         $roleIds = $auth->roles->pluck('id');
         $query = Warehouse::with(['creator', 'updater', 'natures', 'managers']);
 
-        if (!$auth->hasRole('SUPER_ADMIN')) {
+        if (!$auth->is_super_admin) {
             $query->whereHas('managers', function($qw) use ($auth) {
                 $qw->where('warehouse_managers.user_id', $auth->id)
                     ->whereNull('warehouse_managers.deleted_at');
@@ -116,17 +116,11 @@ class WarehouseController extends Controller
             'is_used_for_restaurant' => 'nullable|boolean',
             'is_bar_warehouse'  => 'nullable|boolean',
             'is_used_for_drinks_transformation' => 'nullable|boolean',
-            'is_used_for_stock_flow' => 'nullable|boolean' // 🔹 Ajout ici
+            'is_used_for_stock_flow' => 'nullable|boolean'
         ]);
 
-        if ($validated['is_primary'] && count($validated['managers']) !== 1) {
-            return response()->json([
-                'success' => false,
-                'message' => "Un entrepôt principal doit avoir exactement un seul manager.",
-            ], 422);
-        }
 
-        if ($validated['is_primary']) {
+        if (!empty($validated['is_primary']) && $validated['is_primary']) {
             $existsPrimary = Warehouse::where('is_primary', true)->exists();
 
             if ($existsPrimary) {
@@ -262,14 +256,8 @@ class WarehouseController extends Controller
             'is_used_for_stock_flow' => 'nullable|boolean'
         ]);
 
-        if ($validated['is_primary'] && count($validated['managers']) !== 1) {
-            return response()->json([
-                'success' => false,
-                'message' => "Un entrepôt principal doit avoir exactement un seul manager.",
-            ], 422);
-        }
 
-        if ($validated['is_primary']) {
+        if (!empty($validated['is_primary']) && $validated['is_primary']) {
             $alreadyPrimary = Warehouse::where('uuid', '!=', $warehouse->uuid)
                 ->where('is_primary', true)
                 ->exists();
@@ -441,7 +429,7 @@ class WarehouseController extends Controller
             });
         }
 
-        $products = $query->latest()->paginate($perPage, ['*'], 'page', $page);
+        $products = $query->orderBy('name', 'asc')->paginate($perPage, ['*'], 'page', $page);
 
         return response()->json([
             'data'         => $products->items(),

@@ -12,7 +12,7 @@ class NatureWarehouseSeeder extends Seeder
      */
     public function run(): void
     {
-        $userId = 2; // ID de l'utilisateur créateur / modificateur
+        $userId = 2;
 
         $natureEntrepots = [
             [

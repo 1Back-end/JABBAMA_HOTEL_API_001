@@ -10,15 +10,19 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 /**
- * @permission_category Gestion des tables du restaurant
+ * @permission_category Gestion des tables
  * @permission_module Gestion du restaurant
+ * @code_module RESTAURANT
+ * @permission_module Gestion du bar
+ * @code_module BAR
  */
 class RestaurantTableController extends Controller
 {
     /**
      * Display a listing of the resource.
      * @permission RestaurantTableController::store
-     * @permission_desc Créer les tables du restaurant
+     * @code BAR, RESTAURANT
+     * @permission_desc Créer une table
      */
     public function store(Request $request)
     {
@@ -67,7 +71,8 @@ class RestaurantTableController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantTableController::update
-     * @permission_desc Modifier les tables du restaurant
+     * @code BAR, RESTAURANT
+     * @permission_desc Modifier une table
      */
     public function update(Request $request, string $uuid)
     {
@@ -127,7 +132,8 @@ class RestaurantTableController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantTableController::show
-     * @permission_desc Afficher les détails d'une table du restaurant
+     * @code BAR, RESTAURANT
+     * @permission_desc Afficher les détails d'une table
      */
     public function show(string $uuid)
     {
@@ -162,7 +168,8 @@ class RestaurantTableController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantTableController::update_status
-     * @permission_desc Activer/Désactiver les tables du restaurant
+     * @code BAR, RESTAURANT
+     * @permission_desc Activer/Désactiver une table
      */
     public function update_status(Request $request, string $uuid)
     {
@@ -220,67 +227,12 @@ class RestaurantTableController extends Controller
     }
 
 
-    /**
-     * Display a listing of the resource.
-     * @permission RestaurantTableController::destroy
-     * @permission_desc Supprimer les tables du restaurant
-     */
-    public function destroy(Request $request, string $uuid)
-    {
-        $auth = auth()->user();
-
-        // 🔹 Validation du mot de passe
-        $request->validate([
-            'password' => 'required|string'
-        ], [
-            'password.required' => 'Le mot de passe est obligatoire.',
-            'password.string'   => 'Le mot de passe doit être une chaîne de caractères.'
-        ]);
-
-        // 🔹 Vérification du mot de passe
-        if (!Hash::check($request->password, $auth->password)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Mot de passe incorrect.'
-            ], 422);
-        }
-
-        DB::beginTransaction();
-
-        try {
-            $restaurantTable = RestaurantTable::where('uuid', $uuid)->firstOrFail();
-            $restaurantTable->delete();
-
-            DB::commit();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Table du restaurant supprimée avec succès.',
-            ], 200);
-
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            DB::rollBack();
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Table du restaurant introuvable.',
-            ], 404);
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Une erreur est survenue lors de la suppression de la table.',
-                'error'   => $e->getMessage(),
-            ], 500);
-        }
-    }
 
     /**
      * Display a listing of the resource.
      * @permission RestaurantTableController::index
-     * @permission_desc Afficher la liste des tables du restaurant
+     * @code BAR, RESTAURANT
+     * @permission_desc Afficher la liste des tables
      */
     public function index(Request $request)
     {

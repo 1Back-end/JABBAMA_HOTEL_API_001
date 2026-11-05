@@ -257,7 +257,7 @@ class RestaurantRoomController extends Controller
         }
 
 
-        if (!$auth->hasRole('SUPER_ADMIN') && !$auth->can('view_all_restaurant_rooms')) {
+        if (!$auth->is_super_admin) {
             $query->where(function ($q) use ($auth, $roleIds) {
                 if ($auth->can('view_role_related_data')) {
                     $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));

@@ -9,7 +9,9 @@ use Illuminate\Http\Request;
 /**
  *  @permission_category Gestion des modes de règlements
  * @permission_module Gestion du restaurant
- * /
+ * @code_module RESTAURANT
+ * @permission_module Gestion du bar
+ * @code_module BAR
  */
 class RegulationMethodController extends Controller
 {
@@ -18,6 +20,7 @@ class RegulationMethodController extends Controller
      * @return JsonResponse
      *
      * @permission RegulationMethodController::index
+     * @code BAR, RESTAURANT
      * @permission_desc Afficher la liste des modes de règlement
      */
     public function index()
@@ -36,6 +39,7 @@ class RegulationMethodController extends Controller
      * @return JsonResponse
      *
      * @permission RegulationMethodController::store
+     * @code BAR, RESTAURANT
      * @permission_desc Créer un mode de règlement
      */
     public function store(RegulationMethodRequest $request)
@@ -60,6 +64,7 @@ class RegulationMethodController extends Controller
      * @return JsonResponse
      *
      * @permission RegulationMethodController::update
+     * @code BAR, RESTAURANT
      * @permission_desc Modifier un mode de règlement
      */
     public function update(RegulationMethodRequest $request, RegulationMethod $regulationMethod)
@@ -81,6 +86,7 @@ class RegulationMethodController extends Controller
      * @return JsonResponse
      *
      * @permission RegulationMethodController::activate
+     * @code BAR, RESTAURANT
      * @permission_desc Activer/Désactiver un mode de règlement
      */
     public function activate(RegulationMethod $regulationMethod)

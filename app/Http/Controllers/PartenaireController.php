@@ -13,6 +13,9 @@ use Illuminate\Validation\Rule;
 /**
  * @permission_category Gestion des partenaires
  * @permission_module Gestion du restaurant
+ * @code_module RESTAURANT
+ * @permission_module Gestion du bar
+ * @code_module BAR
  */
 class PartenaireController extends Controller
 {
@@ -20,7 +23,8 @@ class PartenaireController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PartenaireController::store
-     * @permission_desc Créer les partenaires du restaurant
+     * @code BAR, RESTAURANT
+     * @permission_desc Créer un partenaire
      */
     public function store(Request $request)
     {
@@ -29,7 +33,6 @@ class PartenaireController extends Controller
         DB::beginTransaction();
 
         try {
-            // 🔹 Validation
             $validated = $request->validate([
                 'first_name'          => 'required|string|max:255',
                 'last_name'           => 'nullable|string|max:255',
@@ -44,12 +47,10 @@ class PartenaireController extends Controller
                 'is_second_whatsapp' => 'nullable|boolean',
             ]);
 
-            // 🔹 Ajout des champs automatiques
             $validated['created_by'] = $auth->id;
 
             $partner = RestaurantPartner::create($validated);
 
-            // 🔹 Gestion du logo
             if ($request->hasFile('logo')) {
                 $file = $request->file('logo');
                 $path = $file->store('logo_partners', 'public');
@@ -73,14 +74,12 @@ class PartenaireController extends Controller
             ], 201);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
-            // ✅ Gestion propre des erreurs de validation
             return response()->json([
                 'status' => 'validation_error',
                 'errors' => $e->errors(),
             ], 422);
 
         } catch (\Exception $e) {
-            // ✅ Gestion des autres exceptions
             return response()->json([
                 'status'  => 'error',
                 'message' => 'Une erreur est survenue lors de la création du fournisseur.',
@@ -93,7 +92,8 @@ class PartenaireController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PartenaireController::update
-     * @permission_desc Modifier les partenaires du restaurant
+     * @code BAR, RESTAURANT
+     * @permission_desc Modifier un partenaire
      */
     public function update_partners(Request $request, string $uuid)
     {
@@ -102,10 +102,8 @@ class PartenaireController extends Controller
         DB::beginTransaction();
 
         try {
-            // 🔹 Récupérer le partenaire
             $partner = RestaurantPartner::where('uuid', $uuid)->firstOrFail();
 
-            // 🔹 Validation
             $validated = $request->validate([
                 'first_name' => ['required', 'string', 'max:255'],
                 'last_name'  => ['nullable', 'string', 'max:255'],
@@ -123,22 +121,17 @@ class PartenaireController extends Controller
 
             $validated['updated_by'] = $auth->id;
 
-            // 🔹 Mise à jour des données
             $partner->update($validated);
 
-            // 🔹 Gestion du nouveau logo
             if ($request->hasFile('logo')) {
                 $file = $request->file('logo');
 
-                // 1️⃣ Supprimer les anciens médias du disque et de la base
                 foreach ($partner->medias as $media) {
                     if (Storage::disk($media->disk)->exists($media->path)) {
                         Storage::disk($media->disk)->delete($media->path);
                     }
                     $media->delete();
                 }
-
-                // 2️⃣ Stocker le nouveau fichier
                 $path = $file->store('logo_partners', 'public');
 
                 $partner->medias()->create([
@@ -179,7 +172,8 @@ class PartenaireController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PartenaireController::show
-     * @permission_desc Afficher les détails d'un partenaire du restaurant
+     * @code BAR, RESTAURANT
+     * @permission_desc Afficher les détails d'un partenaire
      */
     public function show(string $uuid)
     {
@@ -209,7 +203,8 @@ class PartenaireController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PartenaireController::updateStatus
-     * @permission_desc Activer/Désactiver les partenaires du restaurant
+     * @code BAR, RESTAURANT
+     * @permission_desc Activer/Désactiver un partenaire
      */
     public function updateStatus(Request $request, string $uuid)
     {
@@ -248,7 +243,8 @@ class PartenaireController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PartenaireController::index
-     * @permission_desc Afficher la liste des partenaires du restaurant
+     * @code BAR, RESTAURANT
+     * @permission_desc Afficher la liste des partenaires
      */
     public function index(Request $request)
     {
@@ -275,7 +271,7 @@ class PartenaireController extends Controller
             $query->whereBetween('created_at', [$start, $end]);
         }
 
-        if (!$auth->hasRole('SUPER_ADMIN') && !$auth->can('view_all_restaurant_partners')) {
+        if (!$auth->is_super_admin) {
             $query->where(function ($q) use ($auth, $roleIds) {
                 if ($auth->can('view_role_related_data')) {
                     $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
@@ -302,7 +298,6 @@ class PartenaireController extends Controller
             });
         }
 
-        // 🔹 Pagination
         $data = $query->latest()->paginate($perPage, ['*'], 'page', $page);
         return response()->json([
             'data'         => $data->items(),
@@ -317,6 +312,7 @@ class PartenaireController extends Controller
     /**
      * Display a listing of the resource.
      * @permission PartenaireController::allocateAmount
+     * @code BAR, RESTAURANT
      * @permission_desc Enregistrer le montant des arrhes
      */
     public function allocateAmount(Request $request, $uuid)

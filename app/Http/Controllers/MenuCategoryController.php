@@ -30,7 +30,6 @@ class MenuCategoryController extends Controller
         DB::beginTransaction();
 
         try {
-            // 🔹 Validation
             $validated = $request->validate([
                 'name'     => 'required|string|unique:menu_categories,name',
                 'position' => 'required|integer|min:0',
@@ -56,7 +55,6 @@ class MenuCategoryController extends Controller
             $validated['slug'] = \Str::slug($validated['name']);
             $validated['created_by'] = $auth->id;
 
-            // 🔹 Création de la catégorie
             $category = MenuCategory::create($validated);
 
             DB::commit();
@@ -87,7 +85,6 @@ class MenuCategoryController extends Controller
     {
         $auth = auth()->user();
 
-        // 🔹 Récupération de la catégorie
         $category = MenuCategory::find($uuid);
 
         if (!$category) {
@@ -99,7 +96,6 @@ class MenuCategoryController extends Controller
         DB::beginTransaction();
 
         try {
-            // 🔹 Validation
             $validated = $request->validate([
                 'name'     => 'sometimes|required|string|unique:menu_categories,name,' . $category->uuid . ',uuid',
                 'position' => 'sometimes|required|integer|min:0',
@@ -115,8 +111,8 @@ class MenuCategoryController extends Controller
 
             if (isset($validated['position'])) {
                 $positionExists = MenuCategory::where('position', $validated['position'])
-                    ->whereNull('deleted_at') // ignore les catégories supprimées
-                    ->where('uuid', '!=', $category->uuid) // ignore la catégorie actuelle
+                    ->whereNull('deleted_at')
+                    ->where('uuid', '!=', $category->uuid)
                     ->exists();
 
                 if ($positionExists) {
@@ -128,11 +124,9 @@ class MenuCategoryController extends Controller
                 $category->position = $validated['position'];
             }
 
-
-            // 🔹 Mise à jour des champs
             if (isset($validated['name'])) {
                 $category->name = $validated['name'];
-                $category->slug = \Str::slug($validated['name']); // génération automatique du slug
+                $category->slug = \Str::slug($validated['name']);
             }
 
             if (isset($validated['position'])) {
@@ -200,7 +194,6 @@ class MenuCategoryController extends Controller
         $auth = auth()->user();
 
         try {
-            // 🔹 Validation
             $validated = $request->validate([
                 'is_active' => 'required|boolean',
             ], [
@@ -208,7 +201,6 @@ class MenuCategoryController extends Controller
                 'is_active.boolean'  => 'Le statut doit être vrai ou faux.',
             ]);
 
-            // 🔹 Récupération de la catégorie
             $category = MenuCategory::find($uuid);
 
             if (!$category) {
@@ -217,7 +209,6 @@ class MenuCategoryController extends Controller
                 ], 404);
             }
 
-            // 🔹 Mise à jour du statut
             $category->is_active = $validated['is_active'];
             $category->updated_by = $auth->id;
             $category->save();
@@ -255,14 +246,12 @@ class MenuCategoryController extends Controller
             'updater',
         ]);
 
-        // 🔹 Filtre par statut actif/inactif
         if ($request->has('is_active')) {
             $isActive = $request->input('is_active') === 'true' ? true : false;
             $query->where('is_active', $isActive);
         }
 
-        // 🔹 Permissions
-        if (!$auth->hasRole('SUPER_ADMIN') && !$auth->can('view_all_category_menus')) {
+        if (!$auth->is_super_admin) {
             $query->where(function ($q) use ($auth, $roleIds) {
                 if ($auth->can('view_role_related_data')) {
                     $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
@@ -270,7 +259,6 @@ class MenuCategoryController extends Controller
             });
         }
 
-        // 🔹 Recherche
         if ($search = trim($request->input('search'))) {
             $query->where(function ($q) use ($search) {
                 $q->where('uuid', 'like', "%{$search}%")

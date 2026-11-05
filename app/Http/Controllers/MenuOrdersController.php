@@ -112,7 +112,6 @@ class MenuOrdersController extends Controller
             $items = $validated['items'] ?? [];
 
             foreach ($items as $item) {
-                // 1. Récupérer le prix unitaire du DERNIER approvisionnement validé pour ce produit
                 $latestSupplyItem = DB::table('supply_items as si')
                     ->join('supplies as s', 's.uuid', '=', 'si.supply_uuid')
                     ->where('si.product_uuid', $item['product_uuid'])
@@ -274,7 +273,7 @@ class MenuOrdersController extends Controller
             $query->whereBetween('created_at', [$start_date, $end_date]);
         }
 
-        if (!$auth->hasRole('SUPER_ADMIN') && !$auth->can('view_all_menu_orders')) {
+        if (!$auth->is_super_admin) {
             $query->where(function ($q) use ($auth, $roleIds) {
                 if ($auth->can('view_role_related_data')) {
                     $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
@@ -391,7 +390,7 @@ class MenuOrdersController extends Controller
     {
         $request->validate([
             'product_uuids' => 'required|array',
-            'product_uuids.*' => 'exists:produits,uuid', // Adaptez 'produits' et 'uuid' selon votre base
+            'product_uuids.*' => 'exists:produits,uuid',
         ]);
 
         $prices = [];

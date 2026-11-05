@@ -20,14 +20,12 @@ class FloorController extends Controller
         try {
             $auth = auth()->user();
 
-            // 1. Validation des données
             $validated = $request->validate([
                 'name'         => ['required', 'string', 'unique:floors,name'],
                 'floor_number' => ['required', 'integer', 'unique:floors,floor_number'],
                 'description'  => ['nullable', 'string'],
             ]);
 
-            // 2. Ajout de l'auteur
             $validated['created_by'] = $auth->id;
             $floor = Floor::create($validated);
 
@@ -38,7 +36,6 @@ class FloorController extends Controller
             ], 201);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
-            // Retourne les erreurs de validation (ex: nom déjà pris)
             return response()->json([
                 'success' => false,
                 'message' => "Erreur de validation",
@@ -46,11 +43,10 @@ class FloorController extends Controller
             ], 422);
 
         } catch (\Exception $e) {
-            // Capture toutes les autres erreurs (DB, Système, etc.)
             return response()->json([
                 'success' => false,
                 'message' => "Une erreur est survenue lors de la création de l'étage.",
-                'error'   => $e->getMessage() // À retirer en production pour la sécurité
+                'error'   => $e->getMessage()
             ], 500);
         }
     }
@@ -64,7 +60,6 @@ class FloorController extends Controller
     {
         $auth = auth()->user();
 
-        // On récupère l'étage par son UUID
         $floor = Floor::where('uuid', $uuid)->firstOrFail();
 
         $validated = $request->validate([
@@ -94,7 +89,6 @@ class FloorController extends Controller
     public function updateStatus(Request $request,string $uuid)
     {
         $auth = auth()->user();
-        // Récupérer le menu
         $floor = Floor::where('uuid', $uuid)->firstOrFail();
 
         // Inverser le statut actif
@@ -133,7 +127,7 @@ class FloorController extends Controller
         }
 
 
-        if (!$auth->hasRole('SUPER_ADMIN') && !$auth->can('view_access_for_floor_room_services')) {
+        if (!$auth->is_super_admin) {
             $query->where(function ($q) use ($auth, $roleIds) {
                 if ($auth->can('view_role_related_data')) {
                     $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
