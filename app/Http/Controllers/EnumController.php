@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\BarReportType;
 use App\Enums\CashRegisterFilterType;
 use App\Enums\ChooseRubriquesSall;
 use App\Enums\ConsumptionType;
@@ -112,6 +113,14 @@ class EnumController extends Controller
         return response()->json([
             'status' => 'success',
             'data'   => RestaurantReportType::toArray(),
+        ]);
+    }
+
+    public function BarReportType()
+    {
+        return response()->json([
+            'status' => 'success',
+            'data'   => BarReportType::toArray(),
         ]);
     }
 

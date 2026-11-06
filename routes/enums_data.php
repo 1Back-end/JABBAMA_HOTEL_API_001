@@ -15,6 +15,6 @@ Route::get('enums/types_encaissements_recouvrements', [\App\Http\Controllers\Enu
 Route::get('enums/room_service_type', [\App\Http\Controllers\EnumController::class, 'RoomServiceType']);
 Route::get('enums/situation_sheet', [\App\Http\Controllers\EnumController::class, 'MainCouranteFilter']);
 Route::get('enums/RestaurantReportType', [\App\Http\Controllers\EnumController::class, 'RestaurantReportType']);
-
+Route::get('enums/BarReportType', [\App\Http\Controllers\EnumController::class, 'BarReportType']);
 
 

@@ -37,7 +37,6 @@ class RestaurantDrinkConfigurationController extends Controller
             'product'
         ])
             ->when($request->has('is_active'), function ($query) use ($request) {
-
                 $query->where(
                     'is_active',
                     filter_var(
@@ -45,12 +44,9 @@ class RestaurantDrinkConfigurationController extends Controller
                         FILTER_VALIDATE_BOOLEAN
                     )
                 );
-
             })
             ->when(!empty($status), function ($query) use ($status) {
-
                 switch ($status) {
-
                     case 'transformable':
                         $query->where('is_transformable_product', 1);
                         break;
@@ -58,12 +54,9 @@ class RestaurantDrinkConfigurationController extends Controller
                         $query->where('is_transformable_product', 0);
                         break;
                 }
-
             })
-
             ->when(!empty($search), function ($query) use ($search) {
                 $query->where(function ($q) use ($search) {
-
                     $q->where('code', 'like', "%{$search}%")
                         ->orWhere('uuid', 'like', "%{$search}%")
                         ->orWhere('product_uuid', 'like', "%{$search}%")
@@ -74,14 +67,17 @@ class RestaurantDrinkConfigurationController extends Controller
                                 ->orWhere('code', 'like', "%{$search}%");
                         });
                 });
-
             });
 
         $config = $query->latest()->paginate($perPage, ['*'], 'page', $page);
 
-        // 🔹 Response JSON
+        $sortedItems = collect($config->items())
+            ->sortBy('display_name', SORT_NATURAL | SORT_FLAG_CASE)
+            ->values()
+            ->all();
+
         return response()->json([
-            'data' => $config->items(),
+            'data' => $sortedItems,
             'current_page' => $config->currentPage(),
             'last_page' => $config->lastPage(),
             'total' => $config->total(),
