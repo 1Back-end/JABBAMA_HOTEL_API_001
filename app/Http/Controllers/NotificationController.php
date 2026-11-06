@@ -2,14 +2,20 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\DecisionalNotification;
 use App\Models\NotificationOrderRestaurantForDecisional;
 use App\Models\OrderNotification;
+use App\Models\PurchaseOrderNotification;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\JsonResponse;
+
 /**
  * @permission_category Gestion des notifications du restaurant
  * @permission_module Gestion du restaurant
  * @permission_module Gestion des stocks
  */
+
+
 class NotificationController extends Controller
 {
 
@@ -131,7 +137,57 @@ class NotificationController extends Controller
     }
 
 
-    public function stream(Request $request)
+    private const STREAM_LIMIT = 50;
+    private const ORDER_STATUS_PERMISSIONS = [
+        'in_preparation'            => 'view_all_notification_in_preparation',
+        'transferred'               => 'view_all_notification_transferred',
+        'rejected'                  => 'view_all_notification_rejected',
+        'defective'                 => 'view_all_notification_in_defective',
+        'ready'                     => 'view_all_notification_in_ready',
+        'delivered'                 => 'view_all_notification_in_delivered',
+        'rejected_after_validation' => 'view_all_notification_in_rejected_after_validation',
+        'cancel_for_new_update'     => 'view_all_notification_in_cancel_for_new_update',
+        'partial_completed'         => 'view_all_notification_in_partial_completed',
+        'partial_delivered'         => 'view_all_notification_in_partial_delivered',
+    ];
+    private const DECISIONAL_STATUS_PERMISSIONS = [
+        'in_preparation'            => 'view_all_notification_in_preparation_by_admin',
+        'transferred'               => 'view_all_notification_transferred_by_admin',
+        'rejected'                  => 'view_all_notification_rejected_by_admin',
+        'defective'                 => 'view_all_notification_in_defective_by_admin',
+        'ready'                     => 'view_all_notification_in_ready_by_admin',
+        'delivered'                 => 'view_all_notification_in_delivered_by_admin',
+        'cancel_for_new_update'     => 'view_all_notification_in_cancel_for_new_update_by_admin',
+        'rejected_after_validation' => 'view_all_notification_in_rejected_after_validation_by_admin',
+        'partial_delivered'         => 'view_all_notification_in_partial_delivered_by_admin',
+        'partial_completed'         => 'view_all_notification_in_partial_completed_by_admin',
+    ];
+
+    /** statut => permission (notifications de stock) */
+    private const STOCK_STATUS_PERMISSIONS = [
+        'draft'            => 'view_stock_notification_draft',
+        'open'             => 'view_stock_notification_open',
+        'validated'        => 'view_stock_notification_validated',
+        'in_discuss'       => 'view_stock_notification_in_discuss',
+        'rejected'         => 'view_stock_notification_rejected',
+        'cancel'           => 'view_stock_notification_cancel',
+        'partially_closed' => 'view_stock_notification_partially_closed',
+        'closed'           => 'view_stock_notification_closed',
+    ];
+
+    private const DECISIONAL_STOCK_STATUS_PERMISSIONS = [
+        'draft'            => 'view_decisional_stock_notification_draft',
+        'open'             => 'view_decisional_stock_notification_open',
+        'validated'        => 'view_decisional_stock_notification_validated',
+        'in_discuss'       => 'view_decisional_stock_notification_in_discuss',
+        'rejected'         => 'view_decisional_stock_notification_rejected',
+        'cancel'           => 'view_decisional_stock_notification_cancel',
+        'partially_closed' => 'view_decisional_stock_notification_partially_closed',
+        'closed'           => 'view_decisional_stock_notification_closed',
+    ];
+
+
+    public function stream(Request $request): JsonResponse
     {
         $user = auth()->user();
 
@@ -139,156 +195,113 @@ class NotificationController extends Controller
             return response()->json(['message' => 'Unauthenticated'], 401);
         }
 
-        $notificationsQuery = \App\Models\OrderNotification::with(['creator:id,nom_utilisateur', 'updater', 'order:uuid,code']);
-
-        $statuses = [];
-        if ($user->can('view_all_notification_in_preparation')) $statuses[] = 'in_preparation';
-        if ($user->can('view_all_notification_transferred')) $statuses[] = 'transferred';
-        if ($user->can('view_all_notification_rejected')) $statuses[] = 'rejected';
-        if ($user->can('view_all_notification_in_defective')) $statuses[] = 'defective';
-        if ($user->can('view_all_notification_in_ready')) $statuses[] = 'ready';
-        if ($user->can('view_all_notification_in_delivered')) $statuses[] = 'delivered';
-        if ($user->can('view_all_notification_in_rejected_after_validation')) $statuses[] = 'rejected_after_validation';
-        if ($user->can('view_all_notification_in_cancel_for_new_update')) $statuses[] = 'cancel_for_new_update';
-        if ($user->can('view_all_notification_in_partial_completed')) $statuses[] = 'partial_completed';
-        if ($user->can('view_all_notification_in_partial_delivered')) $statuses[] = 'partial_delivered';
-
-        $notifications = [];
-        if (!empty($statuses)) {
-            $notificationsQuery->whereIn('status', $statuses);
-
-            $notificationsQuery->where(function ($q) use ($user) {
-                if ($user->can('view_kitchen_notifications')) {
-                    $q->orWhere(function ($sub) {
-                        $sub->whereIn('target', ['all', 'kitchen'])
-                            ->orWhere(function ($q2) {
-                                $q2->where('target', 'kitchen')
-                                    ->whereHas('order', function ($order) {
-                                        $order->whereHas('items');
-                                    });
-                            });
-                    });
-                }
-
-                if ($user->can('view_bar_notifications')) {
-                    $q->orWhere(function ($sub) {
-                        $sub->whereIn('target', ['all', 'bar'])
-                            ->orWhere(function ($q2) {
-                                $q2->where('target', 'bar')
-                                    ->whereHas('order', function ($order) {
-                                        $order->whereHas('drinks');
-                                    });
-                            });
-                    });
-                }
-            });
-
-            $notifications = $notificationsQuery->latest()->limit(50)->get();
-        }
-
-        $decisionalQuery = \App\Models\NotificationOrderRestaurantForDecisional::with([
-            'user:id,nom_utilisateur',
-            'updatedBy:id,nom_utilisateur',
-            'orderMenuRestaurant:uuid,code'
-        ]);
-
-        $decisionalPermissions = [
-            'in_preparation' => ['view_all_notification_in_preparation_by_admin'],
-            'transferred' => ['view_all_notification_transferred_by_admin'],
-            'rejected' => ['view_all_notification_rejected_by_admin'],
-            'defective' => ['view_all_notification_in_defective_by_admin'],
-            'ready' => ['view_all_notification_in_ready_by_admin'],
-            'delivered' => ['view_all_notification_in_delivered_by_admin'],
-            'cancel_for_new_update' => ['view_all_notification_in_cancel_for_new_update_by_admin'],
-            'rejected_after_validation' => ['view_all_notification_in_rejected_after_validation_by_admin'],
-            'partial_delivered' => ['view_all_notification_in_partial_delivered_by_admin'],
-            'partial_completed' => ['view_all_notification_in_partial_completed_by_admin'],
-        ];
-
-        $decisionalStatuses = collect($decisionalPermissions)
-            ->filter(fn ($perms) => collect($perms)->contains(fn ($p) => $user->can($p)))
-            ->keys()
-            ->toArray();
-
-        $decisionalData = [
-            'data' => [],
-            'total' => 0,
-            'unread' => 0
-        ];
-
-        if (!empty($decisionalStatuses)) {
-            $decisionalQuery->whereIn('status', $decisionalStatuses);
-
-            $total = (clone $decisionalQuery)->count();
-            $unread = (clone $decisionalQuery)->whereNull('read_at')->count();
-            $data = $decisionalQuery->latest()->limit(50)->get();
-
-            $decisionalData = [
-                'data' => $data,
-                'total' => $total,
-                'unread' => $unread
-            ];
-        }
-
-        $stockNotificationsQuery = \App\Models\PurchaseOrderNotification::with(['creator:id,nom_utilisateur', 'updater:id,nom_utilisateur', 'purchaseOrder:uuid,reference']);
-
-        $stockStatuses = [];
-        if ($user->can('view_stock_notification_draft')) $stockStatuses[] = 'draft';
-        if ($user->can('view_stock_notification_open')) $stockStatuses[] = 'open';
-        if ($user->can('view_stock_notification_validated')) $stockStatuses[] = 'validated';
-        if ($user->can('view_stock_notification_in_discuss')) $stockStatuses[] = 'in_discuss';
-        if ($user->can('view_stock_notification_rejected')) $stockStatuses[] = 'rejected';
-        if ($user->can('view_stock_notification_cancel')) $stockStatuses[] = 'cancel';
-        if ($user->can('view_stock_notification_partially_closed')) $stockStatuses[] = 'partially_closed';
-        if ($user->can('view_stock_notification_closed')) $stockStatuses[] = 'closed';
-
-        $stocks = [];
-        if (!empty($stockStatuses)) {
-            $stockNotificationsQuery->whereIn('status', $stockStatuses);
-            $stocks = $stockNotificationsQuery->latest()->limit(50)->get();
-        }
-
-        $decisionalStockQuery = \App\Models\DecisionalNotification::with(['creator:id,nom_utilisateur', 'updater:id,nom_utilisateur', 'purchaseOrder:uuid,reference']);
-
-        $decisionalStockStatuses = [];
-        if ($user->can('view_decisional_stock_notification_draft')) $decisionalStockStatuses[] = 'draft';
-        if ($user->can('view_decisional_stock_notification_open')) $decisionalStockStatuses[] = 'open';
-        if ($user->can('view_decisional_stock_notification_validated')) $decisionalStockStatuses[] = 'validated';
-        if ($user->can('view_decisional_stock_notification_in_discuss')) $decisionalStockStatuses[] = 'in_discuss';
-        if ($user->can('view_decisional_stock_notification_rejected')) $decisionalStockStatuses[] = 'rejected';
-        if ($user->can('view_decisional_stock_notification_cancel')) $decisionalStockStatuses[] = 'cancel';
-        if ($user->can('view_decisional_stock_notification_partially_closed')) $decisionalStockStatuses[] = 'partially_closed';
-        if ($user->can('view_decisional_stock_notification_closed')) $decisionalStockStatuses[] = 'closed';
-
-        $decisionalStocks = [
-            'data' => [],
-            'total' => 0,
-            'unread' => 0
-        ];
-
-        if (!empty($decisionalStockStatuses)) {
-            $decisionalStockQuery->whereIn('status', $decisionalStockStatuses);
-
-            $totalDecisionalStock = (clone $decisionalStockQuery)->count();
-            $unreadDecisionalStock = (clone $decisionalStockQuery)->where('is_read', false)->count();
-            $dataDecisionalStock = $decisionalStockQuery->latest()->limit(50)->get();
-
-            $decisionalStocks = [
-                'data' => $dataDecisionalStock,
-                'total' => $totalDecisionalStock,
-                'unread' => $unreadDecisionalStock
-            ];
-        }
-
-        session()->save();
+        $allowedStatuses = fn (array $map): array => array_keys(
+            array_filter($map, fn (string $permission) => $user->can($permission))
+        );
 
         return response()->json([
-            'notifications' => $notifications,
-            'decisional' => $decisionalData,
-            'stocks' => $stocks,
-            'decisional_stocks' => $decisionalStocks
+            'notifications'     => $this->streamOrderNotifications(
+                $user,
+                $allowedStatuses(self::ORDER_STATUS_PERMISSIONS)
+            ),
+            'decisional'        => $this->streamDecisionalNotifications(
+                $allowedStatuses(self::DECISIONAL_STATUS_PERMISSIONS)
+            ),
+            'stocks'            => $this->streamStockNotifications(
+                $allowedStatuses(self::STOCK_STATUS_PERMISSIONS)
+            ),
+            'decisional_stocks' => $this->streamDecisionalStockNotifications(
+                $allowedStatuses(self::DECISIONAL_STOCK_STATUS_PERMISSIONS)
+            ),
         ]);
     }
+
+    private function streamOrderNotifications($user, array $statuses)
+    {
+        if (empty($statuses)) {
+            return [];
+        }
+
+        $targets = [];
+        if ($user->can('view_kitchen_notifications')) {
+            $targets[] = 'kitchen';
+        }
+        if ($user->can('view_bar_notifications')) {
+            $targets[] = 'bar';
+        }
+
+        if (empty($targets)) {
+            return [];
+        }
+        $targets[] = 'all';
+
+        return OrderNotification::with([
+            'creator:id,nom_utilisateur',
+            'updater:id,nom_utilisateur',
+            'order:uuid,code',
+        ])
+            ->whereIn('status', $statuses)
+            ->whereIn('target', $targets)
+            ->latest()
+            ->limit(self::STREAM_LIMIT)
+            ->get();
+    }
+
+    private function streamDecisionalNotifications(array $statuses): array
+    {
+        if (empty($statuses)) {
+            return ['data' => []];
+        }
+
+        $data = NotificationOrderRestaurantForDecisional::with([
+            'user:id,nom_utilisateur',
+            'updatedBy:id,nom_utilisateur',
+            'orderMenuRestaurant:uuid,code',
+        ])
+            ->whereIn('status', $statuses)
+            ->latest()
+            ->limit(self::STREAM_LIMIT)
+            ->get();
+
+        return ['data' => $data];
+    }
+
+    private function streamStockNotifications(array $statuses)
+    {
+        if (empty($statuses)) {
+            return [];
+        }
+
+        return PurchaseOrderNotification::with([
+            'creator:id,nom_utilisateur',
+            'updater:id,nom_utilisateur',
+            'purchaseOrder:uuid,reference',
+        ])
+            ->whereIn('status', $statuses)
+            ->latest()
+            ->limit(self::STREAM_LIMIT)
+            ->get();
+    }
+
+    private function streamDecisionalStockNotifications(array $statuses): array
+    {
+        if (empty($statuses)) {
+            return ['data' => []];
+        }
+
+        $data = DecisionalNotification::with([
+            'creator:id,nom_utilisateur',
+            'updater:id,nom_utilisateur',
+            'purchaseOrder:uuid,reference',
+        ])
+            ->whereIn('status', $statuses)
+            ->latest()
+            ->limit(self::STREAM_LIMIT)
+            ->get();
+
+        return ['data' => $data];
+    }
+
 
     public function markAllAsReadNotificationDecisional()
     {

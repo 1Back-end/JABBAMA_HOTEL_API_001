@@ -281,29 +281,41 @@ class StockAdjustmentController extends Controller
      */
     public function show($uuid)
     {
-        // Récupérer la passation avec ses relations
-        $stock_adjustment = StockAdjustment::with([
-            'warehouse',
-            'items.product',
-            'creator',
-            'updater',
-            'validator',
-        ])
-            ->where('uuid', $uuid)
-            ->firstOrFail();
+        try {
+            $stock_adjustment = StockAdjustment::with([
+                'warehouse',
+                'items.product',
+                'creator',
+                'updater',
+                'validator',
+            ])
+                ->where('uuid', $uuid)
+                ->firstOrFail();
 
-        if (!$stock_adjustment) {
+            $sortedItems = $stock_adjustment->items->sortBy(function ($item) {
+                return $item->product->name ?? '';
+            })->values();
+
+            $stock_adjustment->setRelation('items', $sortedItems);
+
+            return response()->json([
+                'status' => 'success',
+                'stock_adjustment' => $stock_adjustment,
+            ], 200);
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Ajustement de stock introuvable.',
-                ''
             ], 404);
-        }
 
-        return response()->json([
-            'status' => 'success',
-            'stock_adjustment' => $stock_adjustment,
-        ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => "Impossible de récupérer les détails de l'ajustement de stock pour le moment. Veuillez réessayer plus tard.",
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**

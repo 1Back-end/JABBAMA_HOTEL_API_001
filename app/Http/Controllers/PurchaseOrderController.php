@@ -497,6 +497,11 @@ class PurchaseOrderController extends Controller
                 ->where('uuid', $uuid)
                 ->firstOrFail();
 
+            $sortedItems = $purchaseOrder->items->sortBy(function ($item) {
+                return $item->product->name ?? '';
+            })->values();
+            $purchaseOrder->setRelation('items', $sortedItems);
+
             return response()->json([
                 'success' => true,
                 'message' => "Détails de la commande '{$purchaseOrder->name}' récupérés avec succès.",
@@ -512,7 +517,7 @@ class PurchaseOrderController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Impossible de récupérer les détails de la commande pour le moment. Veuillez réessayer plus tard.',
+                'message' => "Impossible de récupérer les détails de la commande pour le moment. Veuillez réessayer plus tard.",
                 'error' => $e->getMessage()
             ], 500);
         }

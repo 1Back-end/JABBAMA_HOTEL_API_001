@@ -544,7 +544,7 @@ class SupplyController extends Controller
         try {
             $supply = Supply::with([
                 'items.product',
-                'items.supplier',       // fournisseurs des items
+                'items.supplier',
                 'purchaseOrder.items',
                 'purchaseOrder.warehouseTo.natures',
                 'purchaseOrder.warehouseFrom.natures',
@@ -559,6 +559,11 @@ class SupplyController extends Controller
             ])
                 ->where('uuid', $uuid)
                 ->firstOrFail();
+
+            $sortedItems = $supply->items->sortBy(function ($item) {
+                return $item->product->name ?? '';
+            })->values();
+            $supply->setRelation('items', $sortedItems);
 
             return response()->json([
                 'success' => true,

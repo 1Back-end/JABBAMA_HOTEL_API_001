@@ -10349,6 +10349,7 @@ class OrderMenuRestaurantController extends Controller
         ComplementVirtualTemp::where('order_menu_restaurant_uuid', $orderUuid)->delete();
         OrderMenuRestaurantItemComplement::where('order_menu_restaurant_uuid', $orderUuid)->delete();
         Payment::where('order_menu_restaurant_uuid', $orderUuid)->delete();
+        NotificationOrderRestaurantForDecisional::where('order_menu_restaurant_uuid',$orderUuid)->delete();
     }
 
 

@@ -9,19 +9,10 @@ use App\Models\Permission;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
-/**
- * @permission_category Gestion des menus
- * @permission_module Gestion des stocks
- * @permission_module Gestion du restaurant
- */
+
 class MenuController extends Controller
 {
-    /**
-     * @return JsonResponse
-     *
-     * @permission MenuController::index
-     * @permission_desc Liste des Menus
-     */
+
     public function index(Request $request)
     {
         return response()->json([
@@ -33,12 +24,7 @@ class MenuController extends Controller
     }
 
 
-    /**
-     * @return JsonResponse
-     *
-     * @permission MenuController::store
-     * @permission_desc Créer un menu et l’associé avec des permissions
-     */
+
     public function store(MenuRequest $request)
     {
         $menu = Menu::create($request->except('permission'));
@@ -51,12 +37,6 @@ class MenuController extends Controller
         ], Response::HTTP_CREATED);
     }
 
-    /**
-     * Verifies qu’une permission est associée au menu
-     *
-     * @permission MenuController::store
-     * @permission_desc Créer un menu et l’associé avec des permissions
-     */
     public function checkMenu(Request $request): JsonResponse
     {
         $request->validate([
@@ -71,12 +51,6 @@ class MenuController extends Controller
         ]);
     }
 
-    /**
-     * @return JsonResponse
-     *
-     * @permission MenuController::show
-     * @permission_desc Afficher un menu et des permissions associées
-     */
     public function show(Menu $menu)
     {
         return \response()->json([
@@ -84,12 +58,6 @@ class MenuController extends Controller
         ]);
     }
 
-    /**
-     * @return JsonResponse
-     *
-     * @permission MenuController::update
-     * @permission_desc Mise à jou d’un menu et l’associé avec des permissions
-     */
     public function update(MenuRequest $request, Menu $menu)
     {
         $menu->update($request->except('permission'));
@@ -107,12 +75,7 @@ class MenuController extends Controller
         ], Response::HTTP_ACCEPTED);
     }
 
-    /**
-     * @return JsonResponse
-     *
-     * @permission MenuController::activate
-     * @permission_desc Activer / Désactiver un menu
-     */
+
     public function activate(Menu $menu, int $activate)
     {
         $menu->update(['active' => $activate]);
