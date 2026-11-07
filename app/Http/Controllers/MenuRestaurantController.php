@@ -574,14 +574,6 @@ class MenuRestaurantController extends Controller
         ])
             ->where('is_active', true);
 
-        if (!$auth->hasRole('SUPER_ADMIN') && !$auth->can('view_all_menus_restaurants')) {
-            $query->where(function ($q) use ($auth, $roleIds) {
-                if ($auth->can('view_role_related_data')) {
-                    $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
-                }
-            });
-        }
-
         if ($search = trim($request->input('search'))) {
             $query->where(function ($q) use ($search) {
                 $q->where('uuid', 'like', "%{$search}%")
