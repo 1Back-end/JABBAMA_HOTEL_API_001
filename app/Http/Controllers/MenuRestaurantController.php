@@ -558,6 +558,75 @@ class MenuRestaurantController extends Controller
         ], 200);
     }
 
+    public function get_menu_is_confectioned(Request $request)
+    {
+        $auth = auth()->user();
+        $roleIds = $auth->roles->pluck('id');
+        $perPage = $request->input('limit', 30);
+        $page = (int) $request->input('page', 1);
+
+        $query = MenuRestaurant::with([
+            'creator',
+            'updater',
+            'medias',
+            'category',
+            'complements:uuid,name'
+        ])
+            ->where('is_active', true);
+
+        if (!$auth->hasRole('SUPER_ADMIN') && !$auth->can('view_all_menus_restaurants')) {
+            $query->where(function ($q) use ($auth, $roleIds) {
+                if ($auth->can('view_role_related_data')) {
+                    $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
+                }
+            });
+        }
+
+        if ($search = trim($request->input('search'))) {
+            $query->where(function ($q) use ($search) {
+                $q->where('uuid', 'like', "%{$search}%")
+                    ->orWhere('name', 'like', "%{$search}%")
+                    ->orWhere('code', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%");
+            });
+        }
+
+        $query->orderByRaw("
+        CASE
+            -- 1. Menus AVEC complément (et qui ne sont pas des boissons ou compléments bruts)
+            WHEN is_generated_from_complement = 0
+                 AND is_drinks = 0
+                 AND have_complements = 1 THEN 1
+
+            -- 2. Menus SANS complément
+            WHEN is_generated_from_complement = 0
+                 AND is_drinks = 0
+                 AND have_complements = 0 THEN 2
+
+            -- 3. Les compléments seuls
+            WHEN is_generated_from_complement = 1
+                 AND is_menu = 1 THEN 3
+
+            -- 4. Les boissons
+            WHEN is_drinks = 1
+                 OR (is_generated_from_complement = 1 AND is_drinks = 1) THEN 4
+
+            ELSE 5
+        END ASC
+    ");
+
+        $query->orderBy('name', 'ASC');
+
+        $data = $query->paginate($perPage, ['*'], 'page', $page);
+
+        return response()->json([
+            'data'         => $data->items(),
+            'current_page' => $data->currentPage(),
+            'last_page'    => $data->lastPage(),
+            'total'        => $data->total(),
+        ]);
+    }
+
 
 
 
