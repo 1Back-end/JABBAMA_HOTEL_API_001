@@ -256,15 +256,7 @@ class RestaurantRoomController extends Controller
             $query->where('is_active', $isActive);
         }
 
-
-        if (!$auth->is_super_admin) {
-            $query->where(function ($q) use ($auth, $roleIds) {
-                if ($auth->can('view_role_related_data')) {
-                    $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
-                }
-            });
-        }
-
+        
         if ($search = trim($request->input('search'))) {
             $query->where(function ($q) use ($search) {
                 $q->where('uuid', 'like', "%{$search}%")
