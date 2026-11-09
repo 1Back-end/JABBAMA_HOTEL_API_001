@@ -256,7 +256,7 @@ class RestaurantRoomController extends Controller
             $query->where('is_active', $isActive);
         }
 
-        
+
         if ($search = trim($request->input('search'))) {
             $query->where(function ($q) use ($search) {
                 $q->where('uuid', 'like', "%{$search}%")

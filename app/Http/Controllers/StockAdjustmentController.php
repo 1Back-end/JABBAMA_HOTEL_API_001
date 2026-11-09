@@ -223,7 +223,7 @@ class StockAdjustmentController extends Controller
                     ->orWhere('action', 'like', "%{$search}%")
                     ->orWhere('reference', 'like', "%{$search}%")
 
-                    // 🔹 Entrepôts
+
                     ->orWhereHas('warehouse', function ($qw) use ($search) {
                         $qw->where('name', 'like', "%{$search}%")
                             ->orWhere('uuid', 'like', "%{$search}%")
@@ -238,19 +238,21 @@ class StockAdjustmentController extends Controller
                             ->orWhere('login', 'like', "%{$search}%")
                             ->orWhere('id', 'like', "%{$search}%");
                     })
+
                     ->orWhereHas('updater', function ($qu) use ($search) {
                         $qu->where('nom_utilisateur', 'like', "%{$search}%")
                             ->orWhere('email', 'like', "%{$search}%")
                             ->orWhere('login', 'like', "%{$search}%")
                             ->orWhere('id', 'like', "%{$search}%");
                     })
+
                     ->orWhereHas('validator', function ($qv) use ($search) {
                         $qv->where('nom_utilisateur', 'like', "%{$search}%")
                             ->orWhere('email', 'like', "%{$search}%")
                             ->orWhere('login', 'like', "%{$search}%")
                             ->orWhere('id', 'like', "%{$search}%");
                     })
-                    // 🔹 Produits
+
                     ->orWhereHas('items.product', function ($qp) use ($search) {
                         $qp->where('name', 'like', "%{$search}%")
                             ->orWhere('code', 'like', "%{$search}%")

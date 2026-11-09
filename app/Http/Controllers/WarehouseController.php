@@ -45,7 +45,6 @@ class WarehouseController extends Controller
         $perPage = (int) $request->input('limit', 25);
         $page = (int) $request->input('page', 1);
 
-        $roleIds = $auth->roles->pluck('id');
         $query = Warehouse::with(['creator', 'updater', 'natures', 'managers']);
 
         if (!$auth->is_super_admin) {
@@ -83,7 +82,11 @@ class WarehouseController extends Controller
             });
         }
 
-        $warehouses = $query->latest()->paginate($perPage, ['*'], 'page', $page);
+        $warehouses = $query->orderBy('name', 'asc')
+            ->paginate(
+                perPage: $perPage,
+                page: $page
+            );
 
         return response()->json([
             'data'         => $warehouses->items(),

@@ -101,7 +101,10 @@ class PurchaseOrderController extends Controller
                 if ($auth->can('view_transferred_orders')) {
                     $q->orWhereNotNull('transfered_by');
                 }
-                if (!$auth->can('view_role_related_data') && !$auth->can('view_transferred_orders')) {
+                if ($auth->can('view_orders_in_draft')) {
+                    $q->orWhereNull('transfered_by');
+                }
+                if (!$auth->can('view_role_related_data') && !$auth->can('view_transferred_orders') && !$auth->can('view_orders_in_draft')) {
                     $q->orWhere('created_by', $auth->id);
                 }
             });

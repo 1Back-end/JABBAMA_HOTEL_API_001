@@ -28,6 +28,11 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des commandes',
             'modules' => ['Gestion des stocks'],
         ],
+        'view_orders_in_draft' => [
+            'description' => 'Permettre aux gestionnaires de stock de voir toutes les commandes en Brouillon.',
+            'category' => 'Gestion des commandes',
+            'modules' => ['Gestion des stocks'],
+        ],
         'view_transferred_supplies' => [
             'description' => 'Permettre aux gestionnaires de stock de voir tous les approvisionnements qui leur ont été transférées.',
             'category' => 'Gestion des approvisionnements',

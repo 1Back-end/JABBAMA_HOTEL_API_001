@@ -56,9 +56,11 @@ class PassationController extends Controller
         if ($request->filled('status')) {
             $query->where('status', $request->status);
         }
+
         if ($request->filled('agent_from_id')) {
-            $query->where('agent_from_id', $request->agent_from_id);
+            $query->where('agent_from_id', $request->input('agent_from_id'));
         }
+
         if ($request->filled('warehouse_uuid')) {
             $query->where('warehouse_uuid', $request->warehouse_uuid);
         }
@@ -66,11 +68,6 @@ class PassationController extends Controller
         if ($request->filled('start_date') && $request->filled('end_date')) {
             $start_date = \Illuminate\Support\Carbon::parse($request->input('start_date'))->startOfDay();
             $end_date = \Illuminate\Support\Carbon::parse($request->input('end_date'))->endOfDay();
-
-            $query->whereBetween('created_at', [$start_date, $end_date]);
-        } else {
-            $start_date = \Illuminate\Support\Carbon::yesterday()->startOfDay();
-            $end_date = \Illuminate\Support\Carbon::today()->endOfDay();
 
             $query->whereBetween('created_at', [$start_date, $end_date]);
         }
