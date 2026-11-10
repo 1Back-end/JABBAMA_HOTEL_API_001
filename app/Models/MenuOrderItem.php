@@ -24,7 +24,6 @@ class MenuOrderItem extends Model
         'created_by',
         'updated_by',
     ];
-
     public static function boot()
     {
         parent::boot();
@@ -32,12 +31,10 @@ class MenuOrderItem extends Model
             $model->uuid = (string) Str::uuid();
         });
     }
-
     public function order()
     {
         return $this->belongsTo(MenuOrder::class, 'menu_order_uuid', 'uuid');
     }
-
     public function product()
     {
         return $this->belongsTo(Product::class, 'product_uuid', 'uuid');

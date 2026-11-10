@@ -101,6 +101,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         require __DIR__ . '/settings_restaurants.php';
         require __DIR__ . '/modules_applications.php';
         require __DIR__ . '/countries.php';
+        require __DIR__ . '/license.php';
 
     });
 });

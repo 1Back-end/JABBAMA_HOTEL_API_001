@@ -40,23 +40,18 @@ class CashCollectionFamily extends Model
             }
         });
     }
-
     public function scopeForRestaurant(Builder $query): Builder
     {
         return $query->whereIn('target_sector', ['restaurant', 'all'])->where('is_active', true);
     }
-
     public function scopeForBar(Builder $query): Builder
     {
         return $query->whereIn('target_sector', ['bar', 'all'])->where('is_active', true);
     }
-
-
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
     }
-
     public function updater()
     {
         return $this->belongsTo(User::class, 'updated_by');
@@ -65,7 +60,6 @@ class CashCollectionFamily extends Model
     {
         return $this->belongsTo(CashReceiptType::class, 'cash_receipt_type_uuid');
     }
-
     public function SubcashCollectionFamily()
     {
         return $this->belongsTo(SubCashCollectionFamily::class, 'cash_collection_family_uuid');
