@@ -134,6 +134,26 @@ class RestaurantDrinkConfiguration extends Model
     }
     public function getCalculatedProductionCostAttribute(): float
     {
+        if (isset($this->is_finished_product) && $this->is_finished_product) {
+            $latestSupplyItem = DB::table('supply_items as si')
+                ->join('supplies as s', 's.uuid', '=', 'si.supply_uuid')
+                ->where('si.product_uuid', $this->uuid)
+                ->whereNotNull('si.unit_price')
+                ->whereNull('si.deleted_at')
+                ->whereIn('s.status', [
+                    \App\Enums\SupplyStatus::VALIDATED->value,
+                    \App\Enums\SupplyStatus::PARTIALLY_VALIDATED->value
+                ])
+                ->orderBy('s.supply_date', 'desc')
+                ->orderBy('s.created_at', 'desc')
+                ->value('si.unit_price');
+
+            $unitPrice = $latestSupplyItem ? floatval($latestSupplyItem) : 0.0;
+            $additionalCost = floatval($this->additional_cost ?? 0);
+
+            return round($unitPrice + $additionalCost, 2);
+        }
+
         if (!$this->is_transformable_product) {
             return 0.0;
         }

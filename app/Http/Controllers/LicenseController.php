@@ -67,7 +67,8 @@ class LicenseController extends Controller
                     'status' => $license->status,
                     'jti' => $license->jti,
                 ],
-                'modules' => $license->modules,
+                'modules' => $license->active_modules,
+                'modules_details' => $license->modules_status_details,
                 'module_entitlements' => $license->module_entitlements,
                 'issued_at' => $license->issued_at,
                 'expires_at' => $license->expires_at,
@@ -78,7 +79,6 @@ class LicenseController extends Controller
 
     public function store(Request $request)
     {
-
         $request->validate([
             'certificate' => 'required|file|mimes:json,cer,txt',
         ]);
@@ -87,35 +87,36 @@ class LicenseController extends Controller
             $fileContent = file_get_contents($request->file('certificate')->getRealPath());
             $data = json_decode($fileContent, true);
 
-            if (!isset($data['format']) || $data['format'] !== 'sgl-license-clear-v1') {
+            $entitlements = $data['module_entitlements'] ?? [];
+
+            if (!is_array($entitlements) || empty($entitlements)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Format de certificat invalide ou non reconnu.'
-                ], 422);
+                    'message' => 'Le certificat ne contient aucun module ou droit d\'accès.'
+                ], 403);
             }
 
-            $stockEntitlement = null;
-            if (isset($data['module_entitlements']) && is_array($data['module_entitlements'])) {
-                foreach ($data['module_entitlements'] as $entitlement) {
-                    if (isset($entitlement['code']) && $entitlement['code'] === 'STOCK') {
-                        $stockEntitlement = $entitlement;
-                        break;
+            $activeModules = [];
+            $latestExpiration = null;
+
+            foreach ($entitlements as $entitlement) {
+                $code = $entitlement['code'] ?? null;
+                $status = $entitlement['status'] ?? null;
+                $expiresAt = isset($entitlement['expires_at']) ? Carbon::parse($entitlement['expires_at']) : null;
+
+                if ($code && $status === 'ACTIVE' && $expiresAt && !$expiresAt->isPast()) {
+                    $activeModules[] = $code;
+
+                    if (!$latestExpiration || $expiresAt->greaterThan($latestExpiration)) {
+                        $latestExpiration = $expiresAt;
                     }
                 }
             }
 
-            if (!$stockEntitlement || $stockEntitlement['status'] !== 'ACTIVE') {
+            if (empty($activeModules)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Le certificat ne contient pas de licence active pour le module Gestion de Stock (STOCK).'
-                ], 403);
-            }
-
-            $stockExpiresAt = isset($stockEntitlement['expires_at']) ? Carbon::parse($stockEntitlement['expires_at']) : null;
-            if (!$stockExpiresAt || $stockExpiresAt->isPast()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'La licence du module Stock a expiré.'
+                    'message' => 'Aucune licence active ou valide n\'a été trouvée dans le certificat.'
                 ], 403);
             }
 
@@ -133,7 +134,7 @@ class LicenseController extends Controller
                 ['license_key' => $licenseKey],
                 [
                     'user_id' => $user ? $user->id : null,
-                    'format' => $data['format'],
+                    'format' => $data['format'] ?? 'unknown',
                     'issuer' => $data['issuer'] ?? 'SGL',
                     'client_external_id' => $data['client']['id'] ?? null,
                     'client_name' => $data['client']['name'] ?? null,
@@ -146,10 +147,10 @@ class LicenseController extends Controller
                     'status' => $data['license']['status'] ?? 'ACTIVE',
                     'jti' => $data['license']['jti'] ?? null,
                     'kid' => $data['license']['kid'] ?? null,
-                    'modules' => ['STOCK'],
-                    'module_entitlements' => [$stockEntitlement],
-                    'issued_at' => isset($stockEntitlement['issued_at']) ? Carbon::parse($stockEntitlement['issued_at']) : null,
-                    'expires_at' => $stockExpiresAt,
+                    'modules' => $activeModules,
+                    'module_entitlements' => $entitlements,
+                    'issued_at' => isset($data['license']['issued_at']) ? Carbon::parse($data['license']['issued_at']) : null,
+                    'expires_at' => $latestExpiration,
                     'generated_at' => isset($data['generated_at']) ? Carbon::parse($data['generated_at']) : null,
                     'signature_alg' => $data['signature']['alg'] ?? null,
                     'signature_kid' => $data['signature']['kid'] ?? null,
@@ -161,9 +162,9 @@ class LicenseController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Certificat importé avec succès. Le module Stock est activé !',
-                'modules' => ['STOCK'],
-                'expires_at' => $stockExpiresAt->format('d/m/Y H:i')
+                'message' => 'Certificat importé avec succès. Tous les modules valides sont activés !',
+                'modules' => $activeModules,
+                'expires_at' => $latestExpiration ? $latestExpiration->format('d/m/Y H:i') : null
             ], 200);
 
         } catch (\Exception $e) {

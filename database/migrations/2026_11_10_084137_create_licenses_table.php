@@ -11,6 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
+        Schema::dropIfExists('licenses');
         Schema::create('licenses', function (Blueprint $table) {
             $table->uuid('uuid')->primary();
             $table->foreignId('user_id')->nullable()->constrained('users')->nullOnDelete();
