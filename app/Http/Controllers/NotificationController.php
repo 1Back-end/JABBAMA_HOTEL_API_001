@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\DecisionalNotification;
 use App\Models\NotificationOrderRestaurantForDecisional;
 use App\Models\OrderNotification;
+use App\Models\PassationDecisionnelle;
+use App\Models\PassationNotification;
 use App\Models\PurchaseOrderNotification;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -174,7 +176,6 @@ class NotificationController extends Controller
         'partially_closed' => 'view_stock_notification_partially_closed',
         'closed'           => 'view_stock_notification_closed',
     ];
-
     private const DECISIONAL_STOCK_STATUS_PERMISSIONS = [
         'draft'            => 'view_decisional_stock_notification_draft',
         'open'             => 'view_decisional_stock_notification_open',
@@ -184,6 +185,24 @@ class NotificationController extends Controller
         'cancel'           => 'view_decisional_stock_notification_cancel',
         'partially_closed' => 'view_decisional_stock_notification_partially_closed',
         'closed'           => 'view_decisional_stock_notification_closed',
+    ];
+    private const PASSATION_STATUS_PERMISSIONS = [
+        'pending'    => 'view_passations_notification_pending',
+        'cancel'     => 'view_passations_notification_cancel',
+        'in_discuss' => 'view_passations_notification_in_discuss',
+        'no_gap'     => 'view_passations_notification_no_gap',
+        'with_gap'   => 'view_passations_notification_with_gap',
+        'closed'     => 'view_passations_notification_closed',
+        'rejected'   => 'view_passations_notification_rejected',
+    ];
+    private const DECISIONAL_PASSATION_STATUS_PERMISSIONS = [
+        'pending'    => 'view_passations_notification_pending_by_admin',
+        'cancel'     => 'view_passations_notification_cancel_by_admin',
+        'in_discuss' => 'view_passations_notification_in_discuss_by_admin',
+        'no_gap'     => 'view_passations_notification_no_gap_by_admin',
+        'with_gap'   => 'view_passations_notification_with_gap_by_admin',
+        'closed'     => 'view_passations_notification_closed_by_admin',
+        'rejected'   => 'view_passations_notification_rejected_by_admin',
     ];
 
 
@@ -212,6 +231,12 @@ class NotificationController extends Controller
             ),
             'decisional_stocks' => $this->streamDecisionalStockNotifications(
                 $allowedStatuses(self::DECISIONAL_STOCK_STATUS_PERMISSIONS)
+            ),
+            'passations'          => $this->streamPassationNotifications(
+                $allowedStatuses(self::PASSATION_STATUS_PERMISSIONS)
+            ),
+            'decisional_passations' => $this->streamDecisionalPassationNotifications(
+                $allowedStatuses(self::DECISIONAL_PASSATION_STATUS_PERMISSIONS)
             ),
         ]);
     }
@@ -293,6 +318,44 @@ class NotificationController extends Controller
             'creator:id,nom_utilisateur',
             'updater:id,nom_utilisateur',
             'purchaseOrder:uuid,reference',
+        ])
+            ->whereIn('status', $statuses)
+            ->latest()
+            ->limit(self::STREAM_LIMIT)
+            ->get();
+
+        return ['data' => $data];
+    }
+
+    private function streamPassationNotifications(array $statuses)
+    {
+        if (empty($statuses)) {
+            return ['data' => []];
+        }
+
+        $data = PassationNotification::with([
+            'creator:id,nom_utilisateur',
+            'updater:id,nom_utilisateur',
+            'passation:uuid',
+        ])
+            ->whereIn('status', $statuses)
+            ->latest()
+            ->limit(self::STREAM_LIMIT)
+            ->get();
+
+        return ['data' => $data];
+    }
+
+    private function streamDecisionalPassationNotifications(array $statuses)
+    {
+        if (empty($statuses)) {
+            return ['data' => []];
+        }
+
+        $data = PassationDecisionnelle::with([
+            'creator:id,nom_utilisateur',
+            'updater:id,nom_utilisateur',
+            'passation:uuid',
         ])
             ->whereIn('status', $statuses)
             ->latest()
@@ -449,13 +512,10 @@ class NotificationController extends Controller
         ]);
 
     }
-
-
     public function markAsReadNotificationForPurchaseOrers(string $uuid)
     {
         $user = auth()->user();
 
-        // 🔹 Vérifier si l'utilisateur a la permission globale de marquer comme lu
         if (!$user->can('mark_stock_notification_as_read')) {
             return response()->json([
                 'message' => "Vous n'avez pas la permission de marquer cette notification comme lue."
@@ -473,7 +533,6 @@ class NotificationController extends Controller
             'closed' => 'view_stock_notification_closed',
         ];
 
-        // 🔹 Récupération des statuts autorisés pour l'utilisateur
         $statuses = collect($stockPermissions)
             ->filter(fn ($permission) => $user->can($permission))
             ->keys()
@@ -501,8 +560,6 @@ class NotificationController extends Controller
             'notification' => $notification
         ]);
     }
-
-
     public function markAllAsReadNotificationForPurchaseOrders()
     {
         $user = auth()->user();
@@ -551,8 +608,6 @@ class NotificationController extends Controller
             'message' => 'Toutes les notifications de stock ont été marquées comme lues'
         ]);
     }
-
-
     public function markAllAsRead()
     {
         $user = auth()->user();
@@ -597,8 +652,6 @@ class NotificationController extends Controller
             'message' => 'Toutes les notifications ont été marquées comme lues'
         ]);
     }
-
-
     public function markAllAsReadDecisionalStockNotification()
     {
         $user = auth()->user();
@@ -639,7 +692,6 @@ class NotificationController extends Controller
             'updated_count' => $updatedCount
         ]);
     }
-
     public function markAsReadDecisionalStockNotification(string $uuid)
     {
         $user = auth()->user();
@@ -679,6 +731,203 @@ class NotificationController extends Controller
         return response()->json([
             'message' => 'Notification de stock décisionnelle marquée comme lue.',
             'data' => $notification
+        ]);
+    }
+
+    public function markAsReadDecisionalPassationNotification(string $uuid)
+    {
+        $user = auth()->user();
+
+        $decisionalPassationStatuses = [];
+        if ($user->can('view_passations_notification_pending_by_admin')) $decisionalPassationStatuses[] = 'pending';
+        if ($user->can('view_passations_notification_cancel_by_admin')) $decisionalPassationStatuses[] = 'cancel';
+        if ($user->can('view_passations_notification_in_discuss_by_admin')) $decisionalPassationStatuses[] = 'in_discuss';
+        if ($user->can('view_passations_notification_no_gap_by_admin')) $decisionalPassationStatuses[] = 'no_gap';
+        if ($user->can('view_passations_notification_with_gap_by_admin')) $decisionalPassationStatuses[] = 'with_gap';
+        if ($user->can('view_passations_notification_closed_by_admin')) $decisionalPassationStatuses[] = 'closed';
+        if ($user->can('view_passations_notification_rejected_by_admin')) $decisionalPassationStatuses[] = 'rejected';
+
+        $query = \App\Models\PassationDecisionnelle::query()
+            ->where('uuid', $uuid)
+            ->whereIn('status', $decisionalPassationStatuses);
+
+        if (!$user->can('mark_all_as_read_decisional_passations_notification')) {
+            $query->where('user_id', $user->id);
+        }
+
+        $notification = $query->first();
+
+        if (!$notification) {
+            return response()->json([
+                'message' => 'Notification décisionnelle de passation introuvable.'
+            ], 404);
+        }
+
+        $notification->update([
+            'is_read' => true,
+            'updated_by' => $user->id,
+            'read_at' => now()
+        ]);
+
+        return response()->json([
+            'message' => 'Notification décisionnelle de passation marquée comme lue.',
+            'data' => $notification
+        ]);
+    }
+
+    public function markAsReadPassationNotification(string $uuid)
+    {
+        $user = auth()->user();
+
+        if (!$user->can('mark_as_read_passations_notification')) {
+            return response()->json([
+                'message' => "Vous n'avez pas la permission de marquer cette notification de passation comme lue."
+            ], 403);
+        }
+
+        $passationPermissions = [
+            'pending'    => 'view_passations_notification_pending',
+            'cancel'     => 'view_passations_notification_cancel',
+            'in_discuss' => 'view_passations_notification_in_discuss',
+            'no_gap'     => 'view_passations_notification_no_gap',
+            'with_gap'   => 'view_passations_notification_with_gap',
+            'closed'     => 'view_passations_notification_closed',
+            'rejected'   => 'view_passations_notification_rejected',
+        ];
+
+        $statuses = collect($passationPermissions)
+            ->filter(fn ($permission) => $user->can($permission))
+            ->keys()
+            ->toArray();
+
+        $notification = \App\Models\PassationNotification::query()
+            ->where('uuid', $uuid)
+            ->whereIn('status', $statuses)
+            ->first();
+
+        if (!$notification) {
+            return response()->json([
+                'message' => 'Notification de passation introuvable ou accès non autorisé.'
+            ], 404);
+        }
+
+        $notification->update([
+            'is_read'    => true,
+            'read_at'    => now(),
+            'updated_by' => $user->id,
+        ]);
+
+        return response()->json([
+            'message' => 'Notification de passation marquée comme lue avec succès.',
+            'notification' => $notification
+        ]);
+    }
+    public function markAllAsReadPassationNotifications()
+    {
+        $user = auth()->user();
+
+        if (!$user->can('mark_all_as_read_passations_notification')) {
+            return response()->json([
+                'message' => "Vous n'avez pas la permission de marquer toutes les notifications de passations comme lues."
+            ], 403);
+        }
+
+        $passationPermissions = [
+            'pending'    => 'view_passations_notification_pending',
+            'cancel'     => 'view_passations_notification_cancel',
+            'in_discuss' => 'view_passations_notification_in_discuss',
+            'no_gap'     => 'view_passations_notification_no_gap',
+            'with_gap'   => 'view_passations_notification_with_gap',
+            'closed'     => 'view_passations_notification_closed',
+            'rejected'   => 'view_passations_notification_rejected',
+        ];
+
+        $statuses = collect($passationPermissions)
+            ->filter(fn ($permission) => $user->can($permission))
+            ->keys()
+            ->toArray();
+
+        if (empty($statuses)) {
+            return response()->json([
+                'message' => 'Aucune permission active pour mettre à jour ces notifications.'
+            ], 403);
+        }
+
+        \App\Models\PassationNotification::query()
+            ->whereIn('status', $statuses)
+            ->where('is_read', false)
+            ->update([
+                'is_read'    => true,
+                'read_at'    => now(),
+                'updated_by' => $user->id,
+            ]);
+
+        return response()->json([
+            'message' => 'Toutes les notifications de passations ont été marquées comme lues avec succès.'
+        ]);
+    }
+
+    public function markAllPassationsAsRead()
+    {
+        $user = auth()->user();
+
+        $passationStatuses = [];
+        if ($user->can('view_passations_notification_pending')) $passationStatuses[] = 'pending';
+        if ($user->can('view_passations_notification_cancel')) $passationStatuses[] = 'cancel';
+        if ($user->can('view_passations_notification_in_discuss')) $passationStatuses[] = 'in_discuss';
+        if ($user->can('view_passations_notification_no_gap')) $passationStatuses[] = 'no_gap';
+        if ($user->can('view_passations_notification_with_gap')) $passationStatuses[] = 'with_gap';
+        if ($user->can('view_passations_notification_closed')) $passationStatuses[] = 'closed';
+        if ($user->can('view_passations_notification_rejected')) $passationStatuses[] = 'rejected';
+
+        $query = \App\Models\PassationNotification::query()
+            ->whereIn('status', $passationStatuses)
+            ->where('is_read', false);
+
+        if (!$user->can('mark_all_as_read_passations_notification')) {
+            $query->where('user_id', $user->id);
+        }
+
+        $query->update([
+            'is_read' => true,
+            'read_at' => now(),
+            'updated_by' => $user->id,
+        ]);
+
+        return response()->json([
+            'message' => 'Toutes les notifications de passations ont été marquées comme lues.'
+        ]);
+    }
+
+    public function markAllDecisionalPassationsAsRead()
+    {
+        $user = auth()->user();
+
+        $decisionalPassationStatuses = [];
+        if ($user->can('view_passations_notification_pending_by_admin')) $decisionalPassationStatuses[] = 'pending';
+        if ($user->can('view_passations_notification_cancel_by_admin')) $decisionalPassationStatuses[] = 'cancel';
+        if ($user->can('view_passations_notification_in_discuss_by_admin')) $decisionalPassationStatuses[] = 'in_discuss';
+        if ($user->can('view_passations_notification_no_gap_by_admin')) $decisionalPassationStatuses[] = 'no_gap';
+        if ($user->can('view_passations_notification_with_gap_by_admin')) $decisionalPassationStatuses[] = 'with_gap';
+        if ($user->can('view_passations_notification_closed_by_admin')) $decisionalPassationStatuses[] = 'closed';
+        if ($user->can('view_passations_notification_rejected_by_admin')) $decisionalPassationStatuses[] = 'rejected';
+
+        $query = \App\Models\PassationDecisionnelle::query()
+            ->whereIn('status', $decisionalPassationStatuses)
+            ->where('is_read', false);
+
+        if (!$user->can('mark_all_as_read_decisional_passations_notification')) {
+            $query->where('user_id', $user->id);
+        }
+
+        $query->update([
+            'is_read' => true,
+            'read_at' => now(),
+            'updated_by' => $user->id,
+        ]);
+
+        return response()->json([
+            'message' => 'Toutes les notifications décisionnelles de passations ont été marquées comme lues.'
         ]);
     }
 

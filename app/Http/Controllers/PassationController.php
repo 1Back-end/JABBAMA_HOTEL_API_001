@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\DTO\PassationsFilterData;
 use App\DTO\StockAdjustmentFilterData;
+use App\Enums\PassationStatus;
 use App\Exports\PassationsStocksExport;
 use App\Exports\StockAdjustmentsExport;
 use App\Models\Passation;
@@ -133,6 +134,27 @@ class PassationController extends Controller
         ]);
     }
 
+    private function sendPassationNotifications(
+        string $passationUuid,
+        int $userId,
+        string $status,
+        string $message,
+        string $target
+    ) {
+        $commonData = [
+            'passation_uuid' => $passationUuid,
+            'status' => $status,
+            'message' => $message,
+            'target' => $target,
+            'user_id' => $userId,
+            'is_read' => false,
+            'created_by' => auth()->id(),
+        ];
+
+        \App\Models\PassationNotification::create($commonData);
+        \App\Models\PassationDecisionnelle::create($commonData);
+    }
+
 
     /**
      * Display a listing of the resource.
@@ -202,6 +224,14 @@ class PassationController extends Controller
                 ]);
             }
 
+            $this->sendPassationNotifications(
+                passationUuid: $passation->uuid,
+                userId: $manager->id,
+                status: 'pending',
+                message: "Une nouvelle passation de stock a été initiée pour l'entrepôt {$warehouse->name} et nécessite votre validation.",
+                target: 'manager_dashboard'
+            );
+
             DB::commit();
 
             return response()->json([
@@ -268,6 +298,14 @@ class PassationController extends Controller
                 ]);
             }
 
+            $this->sendPassationNotifications(
+                passationUuid: $passation->uuid,
+                userId: $auth->id,
+                status: 'pending',
+                message: "La passation de stock pour l'entrepôt {$warehouse->name} a été mise à jour et nécessite votre attention.",
+                target: 'manager_dashboard'
+            );
+
             DB::commit();
 
             return response()->json([
@@ -308,19 +346,18 @@ class PassationController extends Controller
             ->with('product')
             ->join('produits', 'passation_items.product_uuid', '=', 'produits.uuid')
             ->orderBy('produits.name', 'asc')
-            ->select('passation_items.*');
-
-        if ($search) {
-            $itemsQuery->where(function ($q) use ($search) {
-                $q->where('passation_items.quantity_sent', 'like', "%{$search}%")
-                    ->orWhere('passation_items.quantity_counted', 'like', "%{$search}%")
-                    ->orWhere('passation_items.difference', 'like', "%{$search}%")
-                    ->orWhereHas('product', function ($qp) use ($search) {
-                        $qp->where('name', 'like', "%{$search}%")
-                            ->orWhere('code', 'like', "%{$search}%");
-                    });
+            ->select('passation_items.*')
+            ->when($search, function ($query, $search) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('passation_items.quantity_sent', 'like', "%{$search}%")
+                        ->orWhere('passation_items.quantity_counted', 'like', "%{$search}%")
+                        ->orWhere('passation_items.difference', 'like', "%{$search}%")
+                        ->orWhereHas('product', function ($qp) use ($search) {
+                            $qp->where('name', 'like', "%{$search}%")
+                                ->orWhere('code', 'like', "%{$search}%");
+                        });
+                });
             });
-        }
 
         $paginated = $itemsQuery->paginate($perPage, ['*'], 'page', $page);
 
@@ -389,25 +426,42 @@ class PassationController extends Controller
                     $hasGap = true;
                 }
 
+                $itemStatus = $difference === 0
+                    ? PassationStatus::NO_GAP->value
+                    : PassationStatus::IN_DISCUSS->value;
+
                 $item->update([
                     'quantity_counted' => $qteCounted,
                     'difference' => $difference,
-                    'status' => $difference === 0 ? 'ok' : 'in_discuss',
+                    'status' => $itemStatus,
                     'validated_at' => now(),
                     'validated_by' => $auth->id,
                     'updated_by' => $auth->id,
                 ]);
             }
 
-            $passationStatus = 'in_discuss';
+            $passationEnum = $hasGap ? PassationStatus::WITH_GAP : PassationStatus::NO_GAP;
 
             $passation->update([
-                'status' => $passationStatus,
+                'status' => $passationEnum->value,
                 'validated_at' => now(),
                 'validated_by' => $auth->id,
                 'updated_by' => $auth->id,
                 'reason_validated' => 'Validation par comptage',
             ]);
+
+            $warehouseName = $passation->warehouse?->name ?? '';
+            $message = $hasGap
+                ? "Validation effectuée avec écarts : le contrôle d'inventaire de l'entrepôt {$warehouseName} a été soumis par {$auth->nom_utilisateur}. Une vérification est requise."
+                : "Validation confirmée sans écart : le comptage de l'entrepôt {$warehouseName} a été approuvé par {$auth->nom_utilisateur}.";
+
+            $this->sendPassationNotifications(
+                passationUuid: $passation->uuid,
+                userId: $passation->created_by ?? $auth->id,
+                status: $passationEnum->value,
+                message: $message,
+                target: 'manager_dashboard'
+            );
 
             DB::commit();
 
@@ -456,7 +510,7 @@ class PassationController extends Controller
         DB::beginTransaction();
 
         try {
-            $passation = Passation::with('items.product')
+            $passation = Passation::with(['items.product', 'warehouse'])
                 ->where('uuid', $uuid)
                 ->firstOrFail();
 
@@ -486,25 +540,43 @@ class PassationController extends Controller
                     $hasGap = true;
                 }
 
+                $itemStatus = $difference === 0
+                    ? PassationStatus::NO_GAP->value
+                    : PassationStatus::IN_DISCUSS->value;
+
                 $item->update([
                     'quantity_counted' => $qteCounted,
                     'difference' => $difference,
-                    'status' => $difference === 0 ? 'ok' : 'in_discuss',
+                    'status' => $itemStatus,
                     'validated_at' => now(),
                     'validated_by' => $auth->id,
                     'updated_by' => $auth->id,
                 ]);
             }
 
-            $passationStatus = 'in_discuss';
+            $passationEnum = $hasGap ? PassationStatus::WITH_GAP : PassationStatus::NO_GAP;
 
             $passation->update([
-                'status' => $passationStatus,
+                'status' => $passationEnum->value,
                 'validated_at' => now(),
                 'validated_by' => $auth->id,
                 'updated_by' => $auth->id,
                 'reason_validated' => 'Validation modifiée par comptage',
             ]);
+
+            $warehouseName = $passation->warehouse?->name ?? 'inconnu';
+
+            $message = $hasGap
+                ? "Mise à jour de validation avec écarts : le contrôle de l'entrepôt {$warehouseName} a été modifié par {$auth->nom_utilisateur}."
+                : "Mise à jour de validation sans écart : le comptage de l'entrepôt {$warehouseName} a été validé par {$auth->nom_utilisateur}.";
+
+            $this->sendPassationNotifications(
+                passationUuid: $passation->uuid,
+                userId: $passation->created_by ?? $auth->id,
+                status: $passationEnum->value,
+                message: $message,
+                target: 'manager_dashboard'
+            );
 
             DB::commit();
 
@@ -537,27 +609,56 @@ class PassationController extends Controller
      * @code STOCK
      * @permission_desc Annuler une passation de stocks
      */
-    public function cancel_passations(Request $request, string $uuid){
+    public function cancel_passations(Request $request, string $uuid)
+    {
         $auth = auth()->user();
 
         $validated = $request->validate([
             'reason_cancelled' => 'required|string|min:3',
-        ],[
+        ], [
             'reason_cancelled.required' => 'Le motif du rejet est obligatoire.',
         ]);
-        $passation = Passation::findOrFail($uuid);
-        $passation->update([
-            'status' => 'cancel',
-            'updated_by' => $auth->id,
-            'cancelled_by' => $auth->id,
-            'reason_cancelled' => $validated['reason_cancelled'],
-            'cancelled_at' => now(),
-        ]);
 
-        return response()->json([
-            'message' => "La passation de stocks a été annulée avec succès.",
-            'passation' => $passation
-        ]);
+        DB::beginTransaction();
+
+        try {
+            $passation = Passation::with('warehouse')->where('uuid', $uuid)->firstOrFail();
+
+            $passation->update([
+                'status' => PassationStatus::CANCEL->value,
+                'updated_by' => $auth->id,
+                'cancelled_by' => $auth->id,
+                'reason_cancelled' => $validated['reason_cancelled'],
+                'cancelled_at' => now(),
+            ]);
+
+            $warehouseName = $passation->warehouse?->name ?? 'inconnu';
+
+            $this->sendPassationNotifications(
+                passationUuid: $passation->uuid,
+                userId: $passation->created_by ?? $auth->id,
+                status: PassationStatus::CANCEL->value,
+                message: "Passation annulée : la procédure pour l'entrepôt {$warehouseName} a été annulée par {$auth->nom_utilisateur}. Motif : {$validated['reason_cancelled']}",
+                target: 'manager_dashboard'
+            );
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => "La passation de stocks a été annulée avec succès.",
+                'passation' => $passation->load('warehouse', 'agentFrom', 'agentTo', 'items.product')
+            ]);
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'status' => 'error',
+                'message' => "Erreur lors de l'annulation de la passation.",
+                'details' => $e->getMessage(),
+            ], 500);
+        }
     }
 
 
@@ -577,13 +678,13 @@ class PassationController extends Controller
             'reason_reject.required' => 'Le motif du rejet est obligatoire.',
         ]);
 
-        $passation = Passation::with('items')->where('uuid', $uuid)->firstOrFail();
-
         DB::beginTransaction();
 
         try {
+            $passation = Passation::with(['items', 'warehouse'])->where('uuid', $uuid)->firstOrFail();
+
             $passation->update([
-                'status'        => 'rejected',
+                'status'        => PassationStatus::REJECTED->value,
                 'rejected_at'   => now(),
                 'rejected_by'   => $auth->id,
                 'updated_by'    => $auth->id,
@@ -600,6 +701,16 @@ class PassationController extends Controller
                     'updated_by' => $auth->id,
                 ]);
             }
+
+            $warehouseName = $passation->warehouse?->name ?? 'inconnu';
+
+            $this->sendPassationNotifications(
+                passationUuid: $passation->uuid,
+                userId: $passation->created_by ?? $auth->id,
+                status: PassationStatus::REJECTED->value,
+                message: "Passation rejetée : la procédure pour l'entrepôt {$warehouseName} a été rejetée par {$auth->nom_utilisateur}. Motif : {$validated['reason_reject']}",
+                target: 'manager_dashboard'
+            );
 
             DB::commit();
 
@@ -777,34 +888,63 @@ class PassationController extends Controller
             ], 422);
         }
 
-        $passation = Passation::with('items')
-            ->where('uuid', $uuid)
-            ->firstOrFail();
+        DB::beginTransaction();
 
-        $hasGap = $passation->items
-                ->where('difference', '>', 0)
-                ->count() > 0;
+        try {
+            $passation = Passation::with(['items', 'warehouse'])
+                ->where('uuid', $uuid)
+                ->firstOrFail();
 
-        $finalStatus = $hasGap ? 'with_gap' : 'no_gap';
+            $hasGap = $passation->items
+                    ->where('difference', '>', 0)
+                    ->count() > 0;
 
-        $passation->update([
-            'status'       => $finalStatus,
-            'approved_by'  => $auth->id,
-            'approved_at'  => now(),
-            'updated_by'   => $auth->id,
-            'closed_at'    => now(),
-        ]);
+            $finalStatusEnum = $hasGap ? PassationStatus::WITH_GAP : PassationStatus::NO_GAP;
 
-        return response()->json([
-            'status'    => 'success',
-            'message'   => 'Passation validée définitivement par le super administrateur.',
-            'passation' => $passation->load(
-                'items.product',
-                'agentFrom',
-                'agentTo',
-                'warehouse'
-            ),
-        ]);
+            $passation->update([
+                'status'       => $finalStatusEnum->value,
+                'approved_by'  => $auth->id,
+                'approved_at'  => now(),
+                'updated_by'   => $auth->id,
+                'closed_at'    => now(),
+            ]);
+
+            $warehouseName = $passation->warehouse?->name ?? 'inconnu';
+
+            $message = $hasGap
+                ? "Validation définitive (avec écarts) : la passation de l'entrepôt {$warehouseName} a été approuvée par l'administration ({$auth->nom_utilisateur})."
+                : "Validation définitive (sans écart) : la passation de l'entrepôt {$warehouseName} a été clôturée avec succès par {$auth->nom_utilisateur}.";
+
+            $this->sendPassationNotifications(
+                passationUuid: $passation->uuid,
+                userId: $passation->created_by ?? $auth->id,
+                status: $finalStatusEnum->value,
+                message: $message,
+                target: 'manager_dashboard'
+            );
+
+            DB::commit();
+
+            return response()->json([
+                'status'    => 'success',
+                'message'   => 'Passation validée définitivement par le super administrateur.',
+                'passation' => $passation->load(
+                    'items.product',
+                    'agentFrom',
+                    'agentTo',
+                    'warehouse'
+                ),
+            ]);
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Erreur lors de la validation définitive de la passation.',
+                'details' => $e->getMessage(),
+            ], 500);
+        }
     }
 
 

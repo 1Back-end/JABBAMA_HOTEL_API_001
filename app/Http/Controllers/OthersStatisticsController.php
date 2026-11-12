@@ -21,19 +21,8 @@ class OthersStatisticsController extends Controller
 {
     public function menusIndex(Request $request)
     {
-        if ($request->filled('start_date')) {
-            $startDate = Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay();
-        } else {
-            $firstOrderDate = OrderMenuRestaurant::min('created_at');
-            $startDate = $firstOrderDate
-                ? Carbon::parse($firstOrderDate)->startOfDay()
-                : now()->startOfDay();
-        }
-        if ($request->filled('end_date')) {
-            $endDate = Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay();
-        } else {
-            $endDate = now()->subDay()->endOfDay();
-        }
+        $startDate = Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay();
+        $endDate = Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay();
 
         $ordersHosted = OrderMenuRestaurant::where('is_used_restaurant_rooms', true)
             ->whereIn('type_clients_for_payment', [
@@ -118,19 +107,8 @@ class OthersStatisticsController extends Controller
 
     public function drinksIndex(Request $request)
     {
-        if ($request->filled('start_date')) {
-            $startDate = Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay();
-        } else {
-            $firstOrderDate = OrderMenuRestaurant::min('created_at');
-            $startDate = $firstOrderDate
-                ? Carbon::parse($firstOrderDate)->startOfDay()
-                : now()->startOfDay();
-        }
-        if ($request->filled('end_date')) {
-            $endDate = Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay();
-        } else {
-            $endDate = now()->subDay()->endOfDay();
-        }
+        $startDate = Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay();
+        $endDate = Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay();
 
         $ordersHosted = OrderMenuRestaurant::where('is_used_restaurant_rooms', true)
             ->whereIn('type_clients_for_payment', [
@@ -203,20 +181,8 @@ class OthersStatisticsController extends Controller
     public function print_menusIndex_and_drinksIndex(Request $request)
     {
         try {
-            if ($request->filled('start_date')) {
-                $startDate = Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay();
-            } else {
-                $firstOrderDate = OrderMenuRestaurant::min('created_at');
-                $startDate = $firstOrderDate
-                    ? Carbon::parse($firstOrderDate)->startOfDay()
-                    : now()->startOfDay();
-            }
-
-            if ($request->filled('end_date')) {
-                $endDate = Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay();
-            } else {
-                $endDate = now()->subDay()->endOfDay();
-            }
+            $startDate = Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay();
+            $endDate = Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay();
 
             $ordersHostedMenu = OrderMenuRestaurant::where('is_used_restaurant_rooms', true)
                 ->whereIn('type_clients_for_payment', [
@@ -401,25 +367,8 @@ class OthersStatisticsController extends Controller
 
     public function topSellingItemsIndex(Request $request)
     {
-        if ($request->filled('start_date')) {
-            $startDate = Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay();
-        } else {
-            $firstItemDate = OrderMenuRestaurantItem::min('created_at');
-            $firstDrinkDate = OrderRestaurantDrink::min('created_at');
-            $firstCompDate = OrderMenuRestaurantItemComplement::min('created_at');
-
-            $firstDate = collect([$firstItemDate, $firstDrinkDate, $firstCompDate])->filter()->sort()->first();
-
-            $startDate = $firstDate
-                ? Carbon::parse($firstDate)->startOfDay()
-                : Carbon::minValue();
-        }
-
-        if ($request->filled('end_date')) {
-            $endDate = Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay();
-        } else {
-            $endDate = Carbon::yesterday()->endOfDay();
-        }
+        $startDate = Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay();
+        $endDate = Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay();
 
         $paymentTypes = [
             TypeClientsForPaiment::DEBTOR->value,
@@ -558,25 +507,8 @@ class OthersStatisticsController extends Controller
     public function print_topSellingItemsIndex(Request $request)
     {
         try {
-            if ($request->filled('start_date')) {
-                $startDate = Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay();
-            } else {
-                $firstItemDate = OrderMenuRestaurantItem::min('created_at');
-                $firstDrinkDate = OrderRestaurantDrink::min('created_at');
-                $firstCompDate = OrderMenuRestaurantItemComplement::min('created_at');
-
-                $firstDate = collect([$firstItemDate, $firstDrinkDate, $firstCompDate])->filter()->sort()->first();
-
-                $startDate = $firstDate
-                    ? Carbon::parse($firstDate)->startOfDay()
-                    : Carbon::minValue();
-            }
-
-            if ($request->filled('end_date')) {
-                $endDate = Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay();
-            } else {
-                $endDate = Carbon::yesterday()->endOfDay();
-            }
+            $startDate = Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay();
+            $endDate = Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay();
 
             $paymentTypes = [
                 TypeClientsForPaiment::DEBTOR->value,
@@ -753,24 +685,12 @@ class OthersStatisticsController extends Controller
 
     public function get_defective_statistics(Request $request)
     {
-        if ($request->filled('start_date')) {
-            $startDate = Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay();
-        } else {
-            $firstItemDate = OrderMenuRestaurantDefectiveItem::min('created_at');
-            $firstDrinkDate = OrderMenuRestaurantDefectiveDrink::min('created_at');
-
-            $firstDate = collect([$firstItemDate, $firstDrinkDate])->filter()->sort()->first();
-
-            $startDate = $firstDate
-                ? Carbon::parse($firstDate)->startOfDay()
-                : now()->startOfDay();
-        }
-        if ($request->filled('end_date')) {
-            $endDate = Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay();
-        } else {
-            $endDate = now()->subDay()->endOfDay();
-        }
+        $startDate = Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay();
+        $endDate = Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay();
         $userId = $request->input('created_by') ?? $request->input('user_id');
+
+        $menuUuidFilter = $request->input('menu_uuid');
+        $drinkUuidFilter = $request->input('drink_uuid');
 
 
         $defectiveItems = OrderMenuRestaurantDefectiveItem::with([
@@ -780,6 +700,11 @@ class OthersStatisticsController extends Controller
             ->whereBetween('created_at', [$startDate, $endDate])
             ->where('is_deleted', true)
             ->when($userId, fn($query) => $query->where('created_by', $userId))
+            ->when($menuUuidFilter, function($query) use ($menuUuidFilter) {
+                $query->whereHas('item', function($q) use ($menuUuidFilter) {
+                    $q->withTrashed()->where('menus_restaurant_uuid', $menuUuidFilter);
+                });
+            })
             ->get()
             ->filter(fn($defective) => $defective->item?->menu !== null);
 
@@ -806,6 +731,8 @@ class OthersStatisticsController extends Controller
                 $menu = $first->item->menu;
 
                 $totalDefectiveQuantity = (int) $group->sum('quantity');
+
+                // Correction de la syntaxe de multiplication ici (*)
                 $totalRevenue = (float) $group->sum(fn($def) => $def->quantity * ($def->item->unit_price ?? 0));
 
                 $orderStats = $orderStatsPerMenu[$menuUuid] ?? null;
@@ -843,6 +770,11 @@ class OthersStatisticsController extends Controller
             ->where('is_deleted', true)
             ->whereBetween('created_at', [$startDate, $endDate])
             ->when($userId, fn($query) => $query->where('created_by', $userId))
+            ->when($drinkUuidFilter, function($query) use ($drinkUuidFilter) {
+                $query->whereHas('drink', function($q) use ($drinkUuidFilter) {
+                    $q->withTrashed()->where('drink_restaurant_uuid', $drinkUuidFilter);
+                });
+            })
             ->get();
 
         $defectiveDrinksItems = $rawDefectiveDrinks->filter(fn($def) => $def->drink?->drinkConfig !== null);
@@ -869,6 +801,8 @@ class OthersStatisticsController extends Controller
                 $drinkConfig = $first->drink->drinkConfig;
 
                 $totalDefectiveQuantity = (int) $group->sum('quantity');
+
+                // Correction de la syntaxe de multiplication ici (*)
                 $totalRevenue = (float) $group->sum(fn($def) => $def->quantity * ($def->drink->unit_price ?? 0));
 
                 $stats = $drinkOrderStats[$drinkUuid] ?? null;
@@ -910,24 +844,8 @@ class OthersStatisticsController extends Controller
     public function print_get_defective_statistics(Request $request)
     {
         try {
-            if ($request->filled('start_date')) {
-                $startDate = Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay();
-            } else {
-                $firstItemDate = OrderMenuRestaurantDefectiveItem::min('created_at');
-                $firstDrinkDate = OrderMenuRestaurantDefectiveDrink::min('created_at');
-
-                $firstDate = collect([$firstItemDate, $firstDrinkDate])->filter()->sort()->first();
-
-                $startDate = $firstDate
-                    ? Carbon::parse($firstDate)->startOfDay()
-                    : now()->startOfDay();
-            }
-
-            if ($request->filled('end_date')) {
-                $endDate = Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay();
-            } else {
-                $endDate = now()->subDay()->endOfDay();
-            }
+            $startDate = Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay();
+            $endDate = Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay();
 
             $userId = $request->input('created_by') ?? $request->input('user_id');
 
@@ -1099,21 +1017,8 @@ class OthersStatisticsController extends Controller
 
     public function clientConsumptionHistory(Request $request)
     {
-        if ($request->filled('start_date')) {
-            $startDate = Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay();
-        } else {
-            $firstOrderDate = OrderMenuRestaurant::min('created_at');
-
-            $startDate = $firstOrderDate
-                ? Carbon::parse($firstOrderDate)->startOfDay()
-                : Carbon::minValue();
-        }
-
-        if ($request->filled('end_date')) {
-            $endDate = Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay();
-        } else {
-            $endDate = Carbon::yesterday()->endOfDay();
-        }
+        $startDate = Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay();
+        $endDate = Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay();
 
         $query = OrderMenuRestaurant::query()
             ->whereIn('type_clients_for_payment', [
@@ -1238,22 +1143,8 @@ class OthersStatisticsController extends Controller
     public function print_clientConsumptionHistory(Request $request)
     {
         try {
-            if ($request->filled('start_date')) {
-                $startDate = Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay();
-            } else {
-                $firstOrderDate = OrderMenuRestaurant::min('created_at');
-
-                $startDate = $firstOrderDate
-                    ? Carbon::parse($firstOrderDate)->startOfDay()
-                    : Carbon::minValue();
-            }
-
-            // Date de fin : par défaut jusqu'à la journée N-1 (hier)
-            if ($request->filled('end_date')) {
-                $endDate = Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay();
-            } else {
-                $endDate = Carbon::yesterday()->endOfDay();
-            }
+            $startDate = Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay();
+            $endDate = Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay();
 
             $query = OrderMenuRestaurant::query()
                 ->whereIn('type_clients_for_payment', [

@@ -57,7 +57,10 @@ class OrderRestaurantDrink extends Model
         'rejected_after_validation_by',
         'rejected_after_validation_at',
         'price_for_room_service',
-        'is_room_service'
+        'is_room_service',
+        'snapshot_additional_cost',
+        'snapshot_composition_cost',
+        'snapshot_complements_cost',
     ];
 
     protected $casts = [

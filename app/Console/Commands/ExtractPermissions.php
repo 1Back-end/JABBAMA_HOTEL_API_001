@@ -18,6 +18,113 @@ class ExtractPermissions extends Command
 
 
     protected array $manualPermissions = [
+        'view_passations_notification_pending' => [
+            'description' => 'Afficher les notifications de passations en attente',
+            'category' => 'Notifications de passations de stocks',
+            'modules' => ['Gestion des stocks'],
+        ],
+        'view_passations_notification_cancel' => [
+            'description' => 'Afficher les notifications de passations annulées',
+            'category' => 'Notifications de passations de stocks',
+            'modules' => ['Gestion des stocks'],
+        ],
+        'view_passations_notification_in_discuss' => [
+            'description' => 'Afficher les notifications de passations en discussion',
+            'category' => 'Notifications de passations de stocks',
+            'modules' => ['Gestion des stocks'],
+        ],
+        'view_passations_notification_no_gap' => [
+            'description' => 'Afficher les notifications de passations sans écart',
+            'category' => 'Notifications de passations de stocks',
+            'modules' => ['Gestion des stocks'],
+        ],
+        'view_passations_notification_with_gap' => [
+            'description' => 'Afficher les notifications de passations avec écart',
+            'category' => 'Notifications de passations de stocks',
+            'modules' => ['Gestion des stocks'],
+        ],
+        'view_passations_notification_closed' => [
+            'description' => 'Afficher les notifications de passations clôturées',
+            'category' => 'Notifications de passations de stocks',
+            'modules' => ['Gestion des stocks'],
+        ],
+        'view_passations_notification_rejected' => [
+            'description' => 'Afficher les notifications de passations rejetées',
+            'category' => 'Notifications de passations de stocks',
+            'modules' => ['Gestion des stocks'],
+        ],
+        'view_icons_passations_notification' => [
+            'description' => 'Afficher l\'icône des notifications de passations',
+            'category' => 'Notifications de passations de stocks',
+            'modules' => ['Gestion des stocks'],
+        ],
+        'mark_as_read_passations_notification' => [
+            'description' => 'Marquer une notification de passation comme lue',
+            'category' => 'Notifications de passations de stocks',
+            'modules' => ['Gestion des stocks'],
+        ],
+        'mark_all_as_read_passations_notification' => [
+            'description' => 'Marquer toutes les notifications de passations comme lues',
+            'category' => 'Notifications de passations de stocks',
+            'modules' => ['Gestion des stocks'],
+        ],
+
+        'view_decisional_passations_notifications' => [
+            'description' => 'Afficher toutes les notifications décisionnelles de passations de stocks',
+            'category' => 'Notifications décisionnelles de passations',
+            'modules' => ['Gestion des stocks'],
+        ],
+        'view_passations_notification_pending_by_admin' => [
+            'description' => 'Afficher les notifications décisionnelles de passations en attente',
+            'category' => 'Notifications décisionnelles de passations',
+            'modules' => ['Gestion des stocks'],
+        ],
+        'view_passations_notification_cancel_by_admin' => [
+            'description' => 'Afficher les notifications décisionnelles de passations annulées',
+            'category' => 'Notifications décisionnelles de passations',
+            'modules' => ['Gestion des stocks'],
+        ],
+        'view_passations_notification_in_discuss_by_admin' => [
+            'description' => 'Afficher les notifications décisionnelles de passations en discussion',
+            'category' => 'Notifications décisionnelles de passations',
+            'modules' => ['Gestion des stocks'],
+        ],
+        'view_passations_notification_no_gap_by_admin' => [
+            'description' => 'Afficher les notifications décisionnelles de passations sans écart',
+            'category' => 'Notifications décisionnelles de passations',
+            'modules' => ['Gestion des stocks'],
+        ],
+        'view_passations_notification_with_gap_by_admin' => [
+            'description' => 'Afficher les notifications décisionnelles de passations avec écart',
+            'category' => 'Notifications décisionnelles de passations',
+            'modules' => ['Gestion des stocks'],
+        ],
+        'view_passations_notification_closed_by_admin' => [
+            'description' => 'Afficher les notifications décisionnelles de passations clôturées',
+            'category' => 'Notifications décisionnelles de passations',
+            'modules' => ['Gestion des stocks'],
+        ],
+        'view_passations_notification_rejected_by_admin' => [
+            'description' => 'Afficher les notifications décisionnelles de passations rejetées',
+            'category' => 'Notifications décisionnelles de passations',
+            'modules' => ['Gestion des stocks'],
+        ],
+        'view_icons_decisional_passations_notification' => [
+            'description' => 'Afficher l\'icône des notifications décisionnelles de passations',
+            'category' => 'Notifications décisionnelles de passations',
+            'modules' => ['Gestion des stocks'],
+        ],
+        'mark_as_read_decisional_passations_notification' => [
+            'description' => 'Marquer une notification décisionnelle de passation comme lue',
+            'category' => 'Notifications décisionnelles de passations',
+            'modules' => ['Gestion des stocks'],
+        ],
+        'mark_all_as_read_decisional_passations_notification' => [
+            'description' => 'Marquer toutes les notifications décisionnelles de passations comme lues',
+            'category' => 'Notifications décisionnelles de passations',
+            'modules' => ['Gestion des stocks'],
+        ],
+
         'view_role_related_data' => [
             'description' => 'Partager les mêmes informations entre utilisateurs ayant le même rôle.',
             'category' => 'Gestion des utilisateurs',

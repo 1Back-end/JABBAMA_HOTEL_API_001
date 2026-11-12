@@ -202,6 +202,8 @@ class RestaurantDrinkConfigurationController extends Controller
                 'prices_for_clients_partner' => ['nullable', 'array'],
                 'prices_for_clients_free' => ['nullable', 'array'],
                 'description' => ['nullable', 'string'],
+                'production_cost' => ['nullable', 'numeric'],
+                'additional_cost' => ['nullable', 'numeric'],
                 'is_active' => ['nullable', 'boolean'],
                 'quantity' => ['nullable', 'integer', 'min:0'],
             ]);
@@ -312,6 +314,8 @@ class RestaurantDrinkConfigurationController extends Controller
                 'prices_for_clients_partner' => ['nullable', 'array'],
                 'prices_for_clients_free' => ['nullable', 'array'],
                 'description' => ['nullable', 'string'],
+                'production_cost' => ['nullable', 'numeric'],
+                'additional_cost' => ['nullable', 'numeric'],
                 'is_active' => ['nullable', 'boolean'],
             ]);
 

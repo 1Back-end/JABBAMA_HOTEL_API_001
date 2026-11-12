@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\OrderMenuRestaurantItem;
+use App\Models\OrderRestaurantDrink;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -177,6 +178,165 @@ class OthersReportsController extends Controller
             ], 422);
         } catch (\Exception $e) {
             Log::error('[Menu Cost Analysis] Erreur critique inattendue', [
+                'message' => $e->getMessage(),
+                'trace'   => $e->getTraceAsString(),
+            ]);
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Une erreur est survenue lors du calcul.',
+                'error'   => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function indexDrinks(Request $request)
+    {
+        try {
+            $request->validate([
+                'drink_uuid' => 'required|uuid|exists:restaurant_drink_configurations,uuid',
+                'start_date' => 'required|date_format:d-m-Y',
+                'end_date'   => 'required|date_format:d-m-Y|after_or_equal:start_date',
+            ]);
+
+            $drinkRestaurantUuid = $request->input('drink_uuid');
+            $startDateInput = $request->input('start_date');
+            $endDateInput = $request->input('end_date');
+
+            $startDate = Carbon::createFromFormat('d-m-Y', $startDateInput)->format('Y-m-d');
+            $endDate = Carbon::createFromFormat('d-m-Y', $endDateInput)->format('Y-m-d');
+
+            $items = OrderRestaurantDrink::with(['order', 'drinkConfig'])
+                ->where('drink_restaurant_uuid', $drinkRestaurantUuid)
+                ->where('status', \App\Enums\OrderMenuRestaurantItemStatus::DELIVERED->value)
+                ->whereHas('order', function ($query) use ($startDate, $endDate) {
+                    $query->whereBetween('order_menu_restaurant_date', [$startDate, $endDate])
+                        ->where('status', \App\Enums\MenuOrderStatus::FACTURATE->value);
+                })
+                ->get();
+
+
+            $totalNumerator = 0;
+            $totalDenominatorWeightedSum = 0;
+            $totalQuantity = 0;
+            $itemsDetails = [];
+
+            $numeratorPartsText = [];
+            $salesPartsText = [];
+            $qtyPartsText = [];
+            $intermediateNumeratorParts = [];
+
+            foreach ($items as $item) {
+                $quantitySold = $item->quantity_exactly ?? $item->quantity ?? 0;
+                $unitSellingPrice = $item->unit_price ?? 0;
+
+                if ($quantitySold <= 0 || $unitSellingPrice <= 0) {
+                    Log::warning('[Drink Cost Analysis] Item ignoré (quantité ou prix <= 0)', [
+                        'item_uuid' => $item->uuid ?? null,
+                    ]);
+                    continue;
+                }
+
+                $additionalCost     = $item->snapshot_additional_cost ?? 0;
+                $drinkProductionCost = $item->snapshot_composition_cost ?? 0;
+
+                $unitProductionCost = $drinkProductionCost;
+                $lineNumerator = $quantitySold * $unitProductionCost;
+                $totalNumerator += $lineNumerator;
+
+                $lineDenominator = $quantitySold * $unitSellingPrice;
+                $totalDenominatorWeightedSum += $lineDenominator;
+                $totalQuantity += $quantitySold;
+
+                $orderCode = $item->order->code ?? '';
+                $drinkName = $item->drinkConfig->display_name ?? 'Boisson';
+
+                $numeratorPartsText[] = "{$quantitySold}x [{$drinkProductionCost} (prix de production de la boisson {$drinkName})](fact#{$orderCode})";
+                $salesPartsText[] = "{$unitSellingPrice}x{$quantitySold}";
+                $qtyPartsText[] = $quantitySold;
+                $intermediateNumeratorParts[] = $lineNumerator;
+
+                $itemsDetails[] = [
+                    'order_code'                 => $orderCode,
+                    'order_date'                 => $item->order->order_menu_restaurant_date ?? '',
+                    'quantity_sold'              => $quantitySold,
+                    'drink_production_cost'      => $drinkProductionCost,
+                    'additional_cost'            => $additionalCost,
+                    'composition_items_cost'     => $drinkProductionCost - $additionalCost,
+                    'unit_production_cost'       => $unitProductionCost,
+                    'total_line_production_cost' => $lineNumerator,
+                    'unit_selling_price'         => $unitSellingPrice,
+                    'total_line_sales'           => $lineDenominator,
+                ];
+            }
+
+            if ($totalQuantity <= 0 || $totalDenominatorWeightedSum <= 0) {
+                return response()->json([
+                    'status' => 'success',
+                    'filters' => [
+                        'drink_uuid' => $drinkRestaurantUuid,
+                        'start_date' => $startDateInput,
+                        'end_date'   => $endDateInput,
+                    ],
+                    'data' => [
+                        'total_production_cost_numerator'  => 0,
+                        'total_weighted_sales_denominator' => 0,
+                        'total_quantity_sold'              => 0,
+                        'total_margin_amount'              => 0,
+                        'production_cost_percentage'       => 0,
+                        'margin_percentage'                => 0,
+                        'drink_composition_items'          => [],
+                        'items_details'                    => [],
+                        'formula_breakdown'                => null,
+                    ],
+                ]);
+            }
+
+            $averageWeightedPrice = $totalDenominatorWeightedSum / $totalQuantity;
+            $denominatorFinal = $totalQuantity * $averageWeightedPrice;
+
+            $productionCostRatio = ($totalNumerator / $denominatorFinal) * 100;
+            $marginRatio = 100 - $productionCostRatio;
+            $totalMarginAmount = $denominatorFinal - $totalNumerator;
+
+            $numeratorString = '{' . implode(' + ', $numeratorPartsText) . '}';
+            $qtyString = '[' . implode('+', $qtyPartsText) . ']';
+            $salesString = '[' . implode(' +', $salesPartsText) . ']';
+            $intermediateNumeratorString = '{' . implode('+ ', $intermediateNumeratorParts) . '}';
+
+            $formulaFormatted = "{$numeratorString}\n"
+                . "/ { {$qtyString} (quantité respective vendu) X {{$salesString} (somme des prix de vente de vente respectif X les ponderations respective de chaque vente)\n"
+                . "/{$qtyString} (somme ponderations respective de chaque vente)}} x 100%\n\n"
+                . "= {$intermediateNumeratorString}/ {{$totalQuantity}X ({$totalDenominatorWeightedSum}/{$totalQuantity})} x 100%\n"
+                . "={$totalNumerator}/{$denominatorFinal} x 100%";
+
+            return response()->json([
+                'status' => 'success',
+                'filters' => [
+                    'drink_uuid' => $drinkRestaurantUuid,
+                    'start_date' => $startDateInput,
+                    'end_date'   => $endDateInput,
+                ],
+                'data' => [
+                    'total_production_cost_numerator'  => $totalNumerator,
+                    'total_weighted_sales_denominator' => $denominatorFinal,
+                    'total_quantity_sold'              => $totalQuantity,
+                    'total_margin_amount'              => $totalMarginAmount,
+                    'production_cost_percentage'       => round($productionCostRatio, 2),
+                    'margin_percentage'                => round($marginRatio, 2),
+                    'drink_composition_items'          => [],
+                    'items_details'                    => $itemsDetails,
+                    'formula_breakdown'                => $formulaFormatted,
+                ]
+            ]);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            Log::error('[Drink Cost Analysis] Erreur de validation', ['errors' => $e->errors()]);
+            return response()->json([
+                'status' => 'validation_error',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('[Drink Cost Analysis] Erreur critique inattendue', [
                 'message' => $e->getMessage(),
                 'trace'   => $e->getTraceAsString(),
             ]);

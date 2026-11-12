@@ -12,3 +12,7 @@ Route::post('/purchase_orders/notifications/{uuid}/read', [\App\Http\Controllers
 Route::post('/purchase_orders/notifications/read_all', [\App\Http\Controllers\NotificationController::class, 'markAllAsReadNotificationForPurchaseOrders']);
 Route::patch('/notifications/decisional_stock/{uuid}/read', [\App\Http\Controllers\NotificationController::class, 'markAsReadDecisionalStockNotification']);
 Route::post('/notifications/decisional_stock/mark_all_read', [\App\Http\Controllers\NotificationController::class, 'markAllAsReadDecisionalStockNotification']);
+Route::patch('/passations/notifications/{uuid}/read', [\App\Http\Controllers\NotificationController::class, 'markAsReadPassationNotification']);
+Route::patch('/passations/decisional-notifications/{uuid}/read', [\App\Http\Controllers\NotificationController::class, 'markAsReadDecisionalPassationNotification']);
+Route::post('/passations/notifications/read_all', [\App\Http\Controllers\NotificationController::class, 'markAllPassationsAsRead']);
+Route::post('/passations/decisional-notifications/mark_all_as_read', [\App\Http\Controllers\NotificationController::class, 'markAllDecisionalPassationsAsRead']);
