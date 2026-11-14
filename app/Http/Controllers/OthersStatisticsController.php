@@ -372,7 +372,8 @@ class OthersStatisticsController extends Controller
 
         $paymentTypes = [
             TypeClientsForPaiment::DEBTOR->value,
-            TypeClientsForPaiment::PARTNER->value
+            TypeClientsForPaiment::PARTNER->value,
+            TypeClientsForPaiment::FREE->value
         ];
 
         $allTopMenus = OrderMenuRestaurantItem::whereBetween('created_at', [$startDate, $endDate])
@@ -512,7 +513,8 @@ class OthersStatisticsController extends Controller
 
             $paymentTypes = [
                 TypeClientsForPaiment::DEBTOR->value,
-                TypeClientsForPaiment::PARTNER->value
+                TypeClientsForPaiment::PARTNER->value,
+                TypeClientsForPaiment::FREE->value
             ];
 
             $allTopMenus = OrderMenuRestaurantItem::whereBetween('created_at', [$startDate, $endDate])
@@ -732,7 +734,6 @@ class OthersStatisticsController extends Controller
 
                 $totalDefectiveQuantity = (int) $group->sum('quantity');
 
-                // Correction de la syntaxe de multiplication ici (*)
                 $totalRevenue = (float) $group->sum(fn($def) => $def->quantity * ($def->item->unit_price ?? 0));
 
                 $orderStats = $orderStatsPerMenu[$menuUuid] ?? null;
@@ -802,7 +803,6 @@ class OthersStatisticsController extends Controller
 
                 $totalDefectiveQuantity = (int) $group->sum('quantity');
 
-                // Correction de la syntaxe de multiplication ici (*)
                 $totalRevenue = (float) $group->sum(fn($def) => $def->quantity * ($def->drink->unit_price ?? 0));
 
                 $stats = $drinkOrderStats[$drinkUuid] ?? null;

@@ -137,7 +137,7 @@ class RestaurantDrinkConfiguration extends Model
         if (isset($this->is_finished_product) && $this->is_finished_product) {
             $latestSupplyItem = DB::table('supply_items as si')
                 ->join('supplies as s', 's.uuid', '=', 'si.supply_uuid')
-                ->where('si.product_uuid', $this->uuid)
+                ->where('si.product_uuid', $this->product_uuid)
                 ->whereNotNull('si.unit_price')
                 ->whereNull('si.deleted_at')
                 ->whereIn('s.status', [

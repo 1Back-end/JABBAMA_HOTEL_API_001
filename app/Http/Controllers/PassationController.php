@@ -426,14 +426,10 @@ class PassationController extends Controller
                     $hasGap = true;
                 }
 
-                $itemStatus = $difference === 0
-                    ? PassationStatus::NO_GAP->value
-                    : PassationStatus::IN_DISCUSS->value;
-
                 $item->update([
                     'quantity_counted' => $qteCounted,
                     'difference' => $difference,
-                    'status' => $itemStatus,
+                    'status' => $difference === 0 ? 'ok' : 'in_discuss',
                     'validated_at' => now(),
                     'validated_by' => $auth->id,
                     'updated_by' => $auth->id,
@@ -540,14 +536,10 @@ class PassationController extends Controller
                     $hasGap = true;
                 }
 
-                $itemStatus = $difference === 0
-                    ? PassationStatus::NO_GAP->value
-                    : PassationStatus::IN_DISCUSS->value;
-
                 $item->update([
                     'quantity_counted' => $qteCounted,
                     'difference' => $difference,
-                    'status' => $itemStatus,
+                    'status' => $difference === 0 ? 'ok' : 'in_discuss',
                     'validated_at' => now(),
                     'validated_by' => $auth->id,
                     'updated_by' => $auth->id,
@@ -557,7 +549,7 @@ class PassationController extends Controller
             $passationStatus = 'in_discuss';
 
             $passation->update([
-                'status' => 'in_discuss',
+                'status' => $passationStatus,
                 'validated_at' => now(),
                 'validated_by' => $auth->id,
                 'updated_by' => $auth->id,

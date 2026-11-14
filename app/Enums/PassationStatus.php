@@ -16,6 +16,7 @@ enum PassationStatus: string
     CASE REJECTED = 'rejected';
 
 
+
     public function label(): string
     {
         return match ($this) {
