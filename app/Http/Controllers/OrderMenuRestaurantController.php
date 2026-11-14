@@ -69,9 +69,13 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 /**
  * @permission_category Gestion des commandes du restaurant
  * @permission_module Gestion du restaurant
+ * @code_module RESTAURANT
+ * @permission_module Gestion du bar
+ * @code_module BAR
  */
 class OrderMenuRestaurantController extends Controller
 {
+
     private function checkStockComplement(
         $productUuid,
         $warehouseUuid,
@@ -131,7 +135,6 @@ class OrderMenuRestaurantController extends Controller
 
         return $availableStock;
     }
-
 
     public function check_stock_form_complement(Request $request)
     {
@@ -315,7 +318,6 @@ class OrderMenuRestaurantController extends Controller
         }
     }
 
-
     public function getSavedComplements(Request $request)
     {
         $validated = $request->validate([
@@ -377,8 +379,6 @@ class OrderMenuRestaurantController extends Controller
             ], 500);
         }
     }
-
-
 
     public function check_stock_form_complement_to_new(Request $request)
     {
@@ -539,9 +539,6 @@ class OrderMenuRestaurantController extends Controller
         }
     }
 
-
-
-
     public function check_stock_form_complement_update(Request $request)
     {
         $auth = auth()->user();
@@ -688,9 +685,6 @@ class OrderMenuRestaurantController extends Controller
             ], 500);
         }
     }
-
-
-
     public function updateActivity(Request $request)
     {
         $request->validate([
@@ -721,7 +715,6 @@ class OrderMenuRestaurantController extends Controller
             'status' => 'success'
         ]);
     }
-
     public function updateActivityForOrder(Request $request)
     {
         $request->validate([
@@ -738,7 +731,6 @@ class OrderMenuRestaurantController extends Controller
             'status' => 'success'
         ]);
     }
-
     private function getLogoutMinutes()
     {
         $setting = SettingRestaurant::where('key', 'logout_period')
@@ -746,7 +738,6 @@ class OrderMenuRestaurantController extends Controller
             ->first();
         return $setting ? (int)$setting->value : 30;
     }
-
     public function removeReservationItem(Request $request)
     {
         $auth = auth()->user();
@@ -793,7 +784,6 @@ class OrderMenuRestaurantController extends Controller
             'deleted_rows' => $deleted
         ]);
     }
-
     private function verifyBarStock(array $drinks, string $warehouseDrinkUuid, string $warehouseTransformationUuid, ?string $reservationUuid = null): array {
         $stockErrors = [];
 
@@ -940,7 +930,6 @@ class OrderMenuRestaurantController extends Controller
 
         return $stockErrors;
     }
-
     private function verifyMenuStock(array $menus, string $warehouseUuid): array
     {
         $stockErrors = [];
@@ -1356,8 +1345,6 @@ class OrderMenuRestaurantController extends Controller
         }
     }
 
-
-
     private function getDrinkAvailableStock($productUuid, $warehouseUuid, $quantity, $reservationUuid = null, $orderUuid = null) {
         $realStock = (float) ProductPoint::where('produit_uuid', $productUuid)
             ->where('point_uuid', $warehouseUuid)
@@ -1398,7 +1385,6 @@ class OrderMenuRestaurantController extends Controller
         }
         return $availableStock;
     }
-
 
     public function forceReleaseStock(Request $request)
     {
@@ -1570,7 +1556,6 @@ class OrderMenuRestaurantController extends Controller
 
         ]);
     }
-
 
     public function appendDrinksToOrder(Request $request)
     {
@@ -1814,7 +1799,6 @@ class OrderMenuRestaurantController extends Controller
         }
     }
 
-
     public function appendMenusToOrder(Request $request)
     {
         $auth = auth()->user();
@@ -1917,8 +1901,6 @@ class OrderMenuRestaurantController extends Controller
 
         ]);
     }
-
-
     public function checkDrinksStockByOrder(Request $request)
     {
         $auth = auth()->user();
@@ -2273,8 +2255,6 @@ class OrderMenuRestaurantController extends Controller
         return $availableStock;
     }
 
-
-
     public function reserveStock($orderUuid, $itemUuid, $itemType, $productUuid, $quantity, $auth, $warehouseUuid, $quantityUsed) {
         $realStock = (float) ProductPoint::where('produit_uuid', $productUuid)
             ->where('point_uuid', $warehouseUuid)
@@ -2619,6 +2599,7 @@ class OrderMenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::store
+     * @code BAR, RESTAURANT
      * @permission_desc Créer une commande
      */
     public function store(Request $request)
@@ -3403,6 +3384,7 @@ class OrderMenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::addItemsToOrder
+     * @code BAR, RESTAURANT
      * @permission_desc Editer la commande(Ajout , Suppression , Modification)
      */
     public function addItemsToOrder(Request $request, string $uuid)
@@ -6028,6 +6010,7 @@ class OrderMenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::index
+     * @code BAR, RESTAURANT
      * @permission_desc Afficher l'interface de prises des commandes
      */
     public function index(Request $request)
@@ -6187,6 +6170,7 @@ class OrderMenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::show
+     * @code BAR, RESTAURANT
      * @permission_desc Afficher les détails d'une commande
      */
     public function show($uuid)
@@ -6261,6 +6245,7 @@ class OrderMenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::rejectMenuItems
+     * @code RESTAURANT
      * @permission_desc Rejetter les plats selectionnées d'une commande
      */
     public function rejectMenuItems(Request $request, $uuid)
@@ -6385,6 +6370,7 @@ class OrderMenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::getItemsStatuses
+     * @code RESTAURANT
      * @permission_desc Afficher l'historique des statuts d’un item de commande
      */
     public function getItemsStatuses(Request $request, $orderUuid)
@@ -6442,6 +6428,7 @@ class OrderMenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::rejectDrinks
+     * @code BAR
      * @permission_desc Rejetter les boissons selectionnées d'une commande
      */
     public function rejectDrinks(Request $request, $uuid)
@@ -6585,6 +6572,7 @@ class OrderMenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::SetItemsInPreparation
+     * @code RESTAURANT
      * @permission_desc Mettre en cours de préparation les plats selectionnées d'une commande
      */
     public function validateItemMenusInPreparation(Request $request, $uuid)
@@ -6734,6 +6722,7 @@ class OrderMenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::transferRejectedItems
+     * @code RESTAURANT
      * @permission_desc Remettre en transféré les plats rejettés d'une commande
      */
     public function transferRejectedItems(Request $request, string $uuid)
@@ -6820,6 +6809,7 @@ class OrderMenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::GenerateFacture
+     * @code RESTAURANT,BAR
      * @permission_desc Génerer la facture d'une commande
      */
     public function GenerateFacture(Request $request, string $uuid)
@@ -7098,6 +7088,7 @@ class OrderMenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::transferRejectedDrinks
+     * @code BAR
      * @permission_desc Remettre en transféré les boissons rejettés d'une commande
      */
     public function transferRejectedDrinks(Request $request, string $uuid)
@@ -7191,6 +7182,7 @@ class OrderMenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::SetDrinksInPreparation
+     * @code BAR
      * @permission_desc Mettre en cours de préparation les boissons selectionnées d'une commande
      */
     public function SetDrinksInPreparation(Request $request, $uuid)
@@ -7357,6 +7349,7 @@ class OrderMenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::CancelOrderMenuRestaurant
+     * @code RESTAURANT,BAR
      * @permission_desc Annuler une commande
      */
     public function CancelOrderMenuRestaurant(Request $request, string $uuid)
@@ -7400,6 +7393,7 @@ class OrderMenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::CancelOrderMenuRestaurantBySuperAdmin
+     * @code RESTAURANT,BAR
      * @permission_desc Annuler une commande par le SUPER ADMIN
      */
     public function CancelOrderMenuRestaurantBySuperAdmin(Request $request, string $uuid)
@@ -7568,6 +7562,7 @@ class OrderMenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::validateMenusForOrder
+     * @code RESTAURANT
      * @permission_desc Mettre en prêt les plats selectionnées d'une commande
      */
     public function validateMenusForOrder(Request $request, string $uuid)
@@ -7712,6 +7707,7 @@ class OrderMenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::validateDrinksForOrder
+     * @code BAR
      * @permission_desc Mettre en prêt les boissons selectionnés d'une commande
      */
     public function validateDrinksForOrder(Request $request, string $uuid)
@@ -8288,6 +8284,7 @@ class OrderMenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::validateAndDeductStockMenus
+     * @code RESTAURANT
      * @permission_desc Mettre en servie les plats selectionnés d'une commande
      */
     public function validateAndDeductStockMenus(Request $request ,string $orderUuid)
@@ -8378,6 +8375,7 @@ class OrderMenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::validateAndDeductStockDrinks
+     * @code BAR
      * @permission_desc Mettre en servie les boissons d'une commande marqué prête
      */
     public function validateAndDeductStockDrinks(Request $request, string $orderUuid)
@@ -8480,6 +8478,7 @@ class OrderMenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::cancelMenuValidation
+     * @code RESTAURANT
      * @permission_desc Rejetter les plats d'une commande marqué prêt(s)
      */
     public function cancelMenuValidation(Request $request, string $orderUuid)
@@ -8569,6 +8568,7 @@ class OrderMenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::cancelMenuValidationAfterValidation
+     * @code RESTAURANT
      * @permission_desc Rejetter les plats d'une commande déjà servi(s)
      */
     public function cancelMenuValidationAfterValidation(Request $request, string $orderUuid)
@@ -8656,6 +8656,7 @@ class OrderMenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::cancelDrinkValidationAfterValidation
+     * @code BAR
      * @permission_desc Rejetter les boissons d'une commande déjà servie(s)
      */
     public function cancelDrinkValidationAfterValidation(Request $request, string $orderUuid)
@@ -8755,6 +8756,7 @@ class OrderMenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::cancelDrinkValidation
+     * @code BAR
      * @permission_desc Rejetter les boissons d'une commande marqué comme prêt
      */
     public function cancelDrinkValidation(Request $request, string $orderUuid)
@@ -8855,7 +8857,6 @@ class OrderMenuRestaurantController extends Controller
      * Rafraîchit le statut global d'une commande.
      * @param string $type Type d'items à considérer ('menu' ou 'drink')
      */
-
     private function checkIfAllOrderIsDelivered($allItems): string
     {
         // Si la commande est vide, elle n'est pas livrée
@@ -8951,14 +8952,10 @@ class OrderMenuRestaurantController extends Controller
         $order->save();
     }
 
-
-
-
-
-
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::markItemsDefective
+     * @code RESTAURANT
      * @permission_desc Mettre les plats d'une commande selectionnées en défectieux
      */
     public function markItemsDefective(Request $request, string $uuid)
@@ -9157,10 +9154,10 @@ class OrderMenuRestaurantController extends Controller
         });
     }
 
-
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::restoreDefectiveItems
+     * @code RESTAURANT
      * @permission_desc Restaurer les plats d'une commande selectionnées en défectieux
      */
     public function restoreDefectiveItems(Request $request, string $uuid)
@@ -9358,10 +9355,10 @@ class OrderMenuRestaurantController extends Controller
     }
 
 
-
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::restoreDefectiveDrinks
+     * @code BAR
      * @permission_desc Restaurer les boissons d'une commande selectionnées en défectieux
      */
     public function restoreDefectiveDrinks(Request $request, string $uuid)
@@ -9562,11 +9559,10 @@ class OrderMenuRestaurantController extends Controller
         return 1.0;
     }
 
-
-
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::markDrinksDefective
+     * @code BAR
      * @permission_desc Mettre les boissons d'une commande selectionnées en défectieux
      */
     public function markDrinksDefective(Request $request, string $uuid)
@@ -9802,6 +9798,7 @@ class OrderMenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::deleteDefectiveItems
+     * @code RESTAURANT
      * @permission_desc Supprimer les plats d'une commande marqués défectieux
      */
     public function deleteDefectiveItems(Request $request, string $uuid)
@@ -10089,6 +10086,7 @@ class OrderMenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::deleteDefectiveDrinks
+     * @code BAR
      * @permission_desc Supprimer les boissons d'une commande marqués défectieux
      */
     public function deleteDefectiveDrinks(Request $request, string $uuid)
@@ -10281,6 +10279,7 @@ class OrderMenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::destroy
+     * @code RESTAURANT,BAR
      * @permission_desc Supprimer définitivement une commande
      */
     public function destroy(Request $request, string $uuid)
@@ -10362,6 +10361,7 @@ class OrderMenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::generate_facture
+     * @code RESTAURANT,BAR
      * @permission_desc Imprimer les factures des commandes
      */
     public function generate_facture(Request $request, string $uuid)
@@ -10476,8 +10476,6 @@ class OrderMenuRestaurantController extends Controller
     }
 
 
-
-
     public function generate_factureA4(Request $request, string $uuid)
     {
         $auth = auth()->user();
@@ -10587,7 +10585,6 @@ class OrderMenuRestaurantController extends Controller
             ], 500);
         }
     }
-
 
     public function get_facture_for_clients(Request $request)
     {
@@ -10951,6 +10948,7 @@ class OrderMenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::addAllocation
+     * @code RESTAURANT,BAR
      * @permission_desc Enregistrer le montant des arrhes pour chaque facture
      */
     public function addAllocation(Request $request)
@@ -11012,6 +11010,7 @@ class OrderMenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::export_orders
+     * @code RESTAURANT,BAR
      * @permission_desc Exporter les commandes au format Excel
      */
     public function export_orders(Request $request)
@@ -11030,10 +11029,10 @@ class OrderMenuRestaurantController extends Controller
         ]);
     }
 
-
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::get_historics_recouvrements
+     * @code RESTAURANT,BAR
      * @permission_desc Afficher l'historique de facturations des commandes
      */
     public function get_historics_recouvrements(Request $request)
@@ -11162,10 +11161,10 @@ class OrderMenuRestaurantController extends Controller
         ]);
     }
 
-
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::getByItem
+     * @code RESTAURANT
      * @permission_desc Afficher l'historique de facturation d'un menu
      */
     public function getByItem($orderUuid, $itemUuid): JsonResponse
@@ -11209,10 +11208,10 @@ class OrderMenuRestaurantController extends Controller
         ]);
     }
 
-
     /**
      * Display a listing of the resource.
      * @permission OrderMenuRestaurantController::getByDrinks
+     * @code BAR
      * @permission_desc Afficher l'historique de facturation d'une boisson
      */
     public function getByDrinks($orderUuid, $itemUuid): JsonResponse

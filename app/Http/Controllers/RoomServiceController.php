@@ -8,12 +8,16 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 /**
  * @permission_category Tarifaire du Room Service
  * @permission_module Gestion du restaurant
+ * @code_module RESTAURANT
+ * @permission_module Gestion du bar
+ * @code_module BAR
  */
 class RoomServiceController extends Controller
 {
     /**
      * Display a listing of the resource.
      * @permission RoomServiceController::index
+     * @code BAR, RESTAURANT
      * @permission_desc Afficher le tarifaire du room service
      */
     public function index(Request $request): JsonResponse
@@ -47,6 +51,7 @@ class RoomServiceController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RoomServiceController::store
+     * @code BAR, RESTAURANT
      * @permission_desc Créer le tarifaire du room service
      */
     public function store(Request $request): JsonResponse
@@ -79,6 +84,12 @@ class RoomServiceController extends Controller
     }
 
 
+    /**
+     * Display a listing of the resource.
+     * @permission RoomServiceController::show
+     * @code BAR, RESTAURANT
+     * @permission_desc Afficher les détails du room service
+     */
     public function show(RoomService $roomService): JsonResponse
     {
         return response()->json([
@@ -90,6 +101,7 @@ class RoomServiceController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RoomServiceController::update
+     * @code BAR, RESTAURANT
      * @permission_desc Modifier le tarifaire du room service
      */
     public function update(Request $request, $uuid): JsonResponse

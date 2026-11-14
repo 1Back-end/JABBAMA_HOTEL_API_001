@@ -14,6 +14,9 @@ use Illuminate\Support\Facades\Log;
 /**
  * @permission_category Gestion des dépenses
  * @permission_module Gestion du restaurant
+ * @code_module RESTAURANT
+ * @permission_module Gestion du bar
+ * @code_module BAR
  */
 class RestaurantExpenseController extends Controller
 {
@@ -21,6 +24,7 @@ class RestaurantExpenseController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantExpenseController::index
+     * @code BAR, RESTAURANT
      * @permission_desc Afficher la liste des dépenses
      */
     public function index(Request $request)
@@ -65,6 +69,7 @@ class RestaurantExpenseController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantExpenseController::show
+     * @code BAR, RESTAURANT
      * @permission_desc Afficher les détails d'une dépense
      */
     public function show(string $uuid)
@@ -94,6 +99,7 @@ class RestaurantExpenseController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantExpenseController::store
+     * @code BAR, RESTAURANT
      * @permission_desc Créer une dépense
      */
     public function store(Request $request)
@@ -250,13 +256,13 @@ class RestaurantExpenseController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantExpenseController::update
+     * @code BAR, RESTAURANT
      * @permission_desc Modifier une dépense
      */
     public function update_restaurant_expense_details(Request $request, $uuid)
     {
         $auth = auth()->user();
 
-        // 1. Recherche de la dépense
         $expense = ExpensePayment::where('uuid', $uuid)->firstOrFail();
 
         $request->validate([
@@ -429,6 +435,7 @@ class RestaurantExpenseController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantExpenseController::cancel
+     * @code BAR, RESTAURANT
      * @permission_desc Annuler le libéllé d'une dépense
      */
     public function cancel(Request $request, $uuid)
@@ -498,6 +505,7 @@ class RestaurantExpenseController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantExpenseController::cancelGroup
+     * @code BAR, RESTAURANT
      * @permission_desc Annuler la catégorie d'une dépense
      */
     public function cancelGroup(Request $request)
@@ -566,6 +574,7 @@ class RestaurantExpenseController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantExpenseController::cancelFamily
+     * @code BAR, RESTAURANT
      * @permission_desc Annuler la sous-catégorie d'une dépense
      */
     public function cancelFamily(Request $request)

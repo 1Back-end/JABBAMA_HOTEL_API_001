@@ -14,6 +14,7 @@ use Illuminate\Support\Str;
 /**
  * @permission_category Gestion des catégories de menus
  * @permission_module Gestion du restaurant
+ * @code_module RESTAURANT
  */
 class MenuCategoryController extends Controller
 {
@@ -21,6 +22,7 @@ class MenuCategoryController extends Controller
     /**
      * Display a listing of the resource.
      * @permission MenuCategoryController::store
+     * @code RESTAURANT
      * @permission_desc Créer les catégories de menus
      */
     public function store(Request $request)
@@ -79,6 +81,7 @@ class MenuCategoryController extends Controller
     /**
      * Display a listing of the resource.
      * @permission MenuCategoryController::update
+     * @code RESTAURANT
      * @permission_desc Modifier les catégories de menus
      */
     public function update(Request $request, string $uuid)
@@ -157,6 +160,7 @@ class MenuCategoryController extends Controller
     /**
      * Display a listing of the resource.
      * @permission MenuCategoryController::show
+     * @code RESTAURANT
      * @permission_desc Afficher les détails d'une catégories de menus
      */
     public function show(string $uuid)
@@ -187,6 +191,7 @@ class MenuCategoryController extends Controller
     /**
      * Display a listing of the resource.
      * @permission MenuCategoryController::update_status
+     * @code RESTAURANT
      * @permission_desc Activer/Désactiver les catégories de menus
      */
     public function update_status(Request $request, string $uuid)
@@ -232,12 +237,11 @@ class MenuCategoryController extends Controller
     /**
      * Display a listing of the resource.
      * @permission MenuCategoryController::index
+     * @code RESTAURANT
      * @permission_desc Afficher la liste des catégories de menus
      */
     public function index(Request $request)
     {
-        $auth = auth()->user();
-        $roleIds = $auth->roles->pluck('id');
         $perPage = $request->input('limit', 5);
         $page = $request->input('page', 1);
 
@@ -249,14 +253,6 @@ class MenuCategoryController extends Controller
         if ($request->has('is_active')) {
             $isActive = $request->input('is_active') === 'true' ? true : false;
             $query->where('is_active', $isActive);
-        }
-
-        if (!$auth->is_super_admin) {
-            $query->where(function ($q) use ($auth, $roleIds) {
-                if ($auth->can('view_role_related_data')) {
-                    $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
-                }
-            });
         }
 
         if ($search = trim($request->input('search'))) {
@@ -272,7 +268,6 @@ class MenuCategoryController extends Controller
             });
         }
 
-        // 🔹 Pagination et tri par position
         $data = $query->orderBy('position', 'asc')->paginate($perPage, ['*'], 'page', $page);
 
         return response()->json([
@@ -286,6 +281,7 @@ class MenuCategoryController extends Controller
     /**
      * Display a listing of the resource.
      * @permission MenuCategoryController::destroy
+     * @code RESTAURANT
      * @permission_desc Supprimer les catégories de menus
      */
     public function destroy(Request $request, string $uuid)
@@ -298,7 +294,6 @@ class MenuCategoryController extends Controller
             'password.string'   => 'Le mot de passe doit être une chaîne de caractères.'
         ]);
 
-        // 🔹 Vérification du mot de passe
         if (!Hash::check($request->password, $auth->password)) {
             return response()->json([
                 'success' => false,

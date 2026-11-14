@@ -7,12 +7,16 @@ use Illuminate\Http\Request;
 /**
  * @permission_category Gestion du service des étages
  * @permission_module Gestion du restaurant
+ * @code_module RESTAURANT
+ * @permission_module Gestion du bar
+ * @code_module BAR
  */
 class FloorController extends Controller
 {
     /**
      * Display a listing of the resource.
      * @permission FloorController::store
+     * @code BAR, RESTAURANT
      * @permission_desc Créer le service des étages
      */
     public function store(Request $request)
@@ -54,6 +58,7 @@ class FloorController extends Controller
     /**
      * Display a listing of the resource.
      * @permission FloorController::update
+     * @code BAR, RESTAURANT
      * @permission_desc Modifier le service des étages
      */
     public function update(Request $request,string $uuid)
@@ -84,6 +89,7 @@ class FloorController extends Controller
     /**
      * Display a listing of the resource.
      * @permission FloorController::updateStatus
+     * @code BAR, RESTAURANT
      * @permission_desc Activer/Désactiver le service des étages
      */
     public function updateStatus(Request $request,string $uuid)
@@ -91,7 +97,6 @@ class FloorController extends Controller
         $auth = auth()->user();
         $floor = Floor::where('uuid', $uuid)->firstOrFail();
 
-        // Inverser le statut actif
         $floor->is_active = ! $floor->is_active;
         $floor->updated_by = $auth->id;
         $floor->save();
@@ -107,6 +112,7 @@ class FloorController extends Controller
     /**
      * Display a listing of the resource.
      * @permission FloorController::index
+     * @code BAR, RESTAURANT
      * @permission_desc Afficher la liste de service des étages
      */
     public function index(Request $request)
@@ -126,15 +132,6 @@ class FloorController extends Controller
             $query->where('is_active', $isActive);
         }
 
-
-        if (!$auth->is_super_admin) {
-            $query->where(function ($q) use ($auth, $roleIds) {
-                if ($auth->can('view_role_related_data')) {
-                    $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
-                }
-            });
-        }
-
         if ($search = trim($request->input('search'))) {
             $query->where(function ($q) use ($search) {
                 $q->where('uuid', 'like', "%{$search}%")
@@ -148,8 +145,6 @@ class FloorController extends Controller
                     });
             });
         }
-
-        // 🔹 Pagination
         $data = $query->latest()->paginate($perPage, ['*'], 'page', $page);
         return response()->json([
             'data'         => $data->items(),

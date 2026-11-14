@@ -17,7 +17,11 @@ use Symfony\Component\HttpFoundation\Response;
 /**
  * @permission_category Gestion des roles
  * @permission_module Gestion des stocks
+ * @code_module STOCK
  * @permission_module Gestion du restaurant
+ * @code_module RESTAURANT
+ * @permission_module Gestion du bar
+ * @code_module BAR
  */
 class RoleController extends Controller
 {
@@ -25,6 +29,7 @@ class RoleController extends Controller
      * @return JsonResponse
      *
      * @permission RoleController::index
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Liste de tous les roles
      */
     public function index(Request $request): JsonResponse
@@ -70,6 +75,7 @@ class RoleController extends Controller
      * @return JsonResponse
      *
      * @permission RoleController::store
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Créer un role
      * @throws \Throwable
      */
@@ -110,6 +116,7 @@ class RoleController extends Controller
      * @return JsonResponse
      *
      * @permission RoleController::show
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Afficher un role
      */
     public function show(Role $role)
@@ -125,6 +132,7 @@ class RoleController extends Controller
      * @return JsonResponse
      *
      * @permission RoleController::update
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Mise à jour d’un rôle
      * @throws \Throwable
      */
@@ -196,6 +204,7 @@ class RoleController extends Controller
      * @return JsonResponse
      *
      * @permission RoleController::activate
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Désactiver / Activer un rôle
      */
     public function activate(Role $role, int $activate)
@@ -215,6 +224,7 @@ class RoleController extends Controller
      * @return JsonResponse
      *
      * @permission RoleController::assignRoleToPermission
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Assigner un rôle à un ou plusieurs permissions
      */
     public function assignRoleToPermission(Role $role, Request $request)
@@ -240,6 +250,7 @@ class RoleController extends Controller
      * @return JsonResponse
      *
      * @permission RoleController::activateRoleToPermission
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Activate / Désactiver un rôle à une permission
      */
     public function activateRoleToPermission(Role $role, Permission $permission, int $activate)
@@ -260,6 +271,7 @@ class RoleController extends Controller
      * @return JsonResponse
      *
      * @permission RoleController::assignRoleToUser
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Assigner un rôle à un ou plusieurs utilisateurs
      */
     public function assignRoleToUser(Role $role, Request $request)
@@ -285,6 +297,7 @@ class RoleController extends Controller
      * @return JsonResponse
      *
      * @permission RoleController::activateRoleToUser
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Activate / Désactiver un rôle à un utilisateur
      */
     public function activateRoleToUser(Role $role, User $user, int $activate)

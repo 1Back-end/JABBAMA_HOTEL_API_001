@@ -14,14 +14,16 @@ use Illuminate\Validation\Rules\Enum;
 /**
  * @permission_category Gestion des chambres
  * @permission_module Gestion du restaurant
+ * @code_module RESTAURANT
+ * @permission_module Gestion du bar
+ * @code_module BAR
  */
 class RestaurantRoomController extends Controller
 {
-
-
     /**
      * Display a listing of the resource.
      * @permission RestaurantRoomController::store
+     * @code BAR, RESTAURANT
      * @permission_desc Créer une chambre
      */
     public function store(Request $request)
@@ -56,8 +58,6 @@ class RestaurantRoomController extends Controller
         } catch (\Illuminate\Validation\ValidationException $e) {
             DB::rollBack();
 
-            Log::warning('Erreur de validation lors de la création d’une chambre', $e->errors());
-
             return response()->json([
                 'status' => 'validation_error',
                 'errors' => $e->errors(),
@@ -65,11 +65,6 @@ class RestaurantRoomController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-
-            Log::error('Exception lors de la création d’une chambre', [
-                'message' => $e->getMessage(),
-                'trace'   => $e->getTraceAsString(),
-            ]);
 
             return response()->json([
                 'status'  => 'error',
@@ -83,6 +78,7 @@ class RestaurantRoomController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantRoomController::update
+     * @code BAR, RESTAURANT
      * @permission_desc Modifier une chambre
      */
     public function update(Request $request, string $uuid)
@@ -105,12 +101,10 @@ class RestaurantRoomController extends Controller
 
             $validated['updated_by'] = $auth->id;
 
-            // 🔹 Mise à jour
             $room->update($validated);
 
             DB::commit();
 
-            Log::info("Chambre mise à jour avec succès: {$room->rooms_number}");
 
             return response()->json([
                 'status'  => 'success',
@@ -121,8 +115,6 @@ class RestaurantRoomController extends Controller
         } catch (\Illuminate\Validation\ValidationException $e) {
             DB::rollBack();
 
-            Log::warning('Erreur de validation lors de la mise à jour d’une chambre', $e->errors());
-
             return response()->json([
                 'status' => 'validation_error',
                 'errors' => $e->errors(),
@@ -130,11 +122,6 @@ class RestaurantRoomController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-
-            Log::error('Exception lors de la mise à jour d’une chambre', [
-                'message' => $e->getMessage(),
-                'trace'   => $e->getTraceAsString(),
-            ]);
 
             return response()->json([
                 'status'  => 'error',
@@ -148,6 +135,7 @@ class RestaurantRoomController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantRoomController::update_status
+     * @code BAR, RESTAURANT
      * @permission_desc Activer/Désactiver une chambre
      */
     public function update_status(Request $request, string $uuid)
@@ -165,9 +153,6 @@ class RestaurantRoomController extends Controller
                 'is_active' => $validated['is_active'],
                 'updated_by' => $auth->id,
             ]);
-
-            \Log::info("Statut de la chambre {$room->rooms_number} mis à jour: " . ($room->is_active ? 'actif' : 'inactif'));
-
             return response()->json([
                 'status' => 'success',
                 'message' => 'Statut de la chambre mis à jour avec succès.',
@@ -181,11 +166,6 @@ class RestaurantRoomController extends Controller
             ], 422);
 
         } catch (\Exception $e) {
-            \Log::error('Erreur lors de la mise à jour du statut de chambre', [
-                'message' => $e->getMessage(),
-                'uuid' => $uuid
-            ]);
-
             return response()->json([
                 'status' => 'error',
                 'message' => 'Impossible de mettre à jour le statut de la chambre.',
@@ -198,12 +178,12 @@ class RestaurantRoomController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantRoomController::show
+     * @code BAR, RESTAURANT
      * @permission_desc Afficher les détails d'une chambre
      */
     public function show(string $uuid)
     {
         try {
-            // 🔹 Récupérer la chambre
             $room = RestaurantRoom::with(['creator', 'updater','floor'])->findOrFail($uuid);
 
             return response()->json([
@@ -236,12 +216,12 @@ class RestaurantRoomController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantRoomController::index
+     * @code BAR, RESTAURANT
      * @permission_desc Afficher la liste des chambres
      */
     public function index(Request $request)
     {
         $auth = auth()->user();
-        $roleIds = $auth->roles->pluck('id');
         $perPage = $request->input('limit', 25);
         $page = $request->input('page', 1);
 
@@ -255,7 +235,6 @@ class RestaurantRoomController extends Controller
             $isActive = $request->input('is_active') === 'true' ? true : false;
             $query->where('is_active', $isActive);
         }
-
 
         if ($search = trim($request->input('search'))) {
             $query->where(function ($q) use ($search) {

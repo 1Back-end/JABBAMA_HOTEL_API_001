@@ -12,6 +12,9 @@ use Illuminate\Support\Str;
 /**
  * @permission_category Gestion des catégories de dépenses
  * @permission_module Gestion du restaurant
+ * @code_module RESTAURANT
+ * @permission_module Gestion du bar
+ * @code_module BAR
  */
 class RestaurantExpenseTypeController extends Controller
 {
@@ -19,6 +22,7 @@ class RestaurantExpenseTypeController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantExpenseTypeController::index
+     * @code BAR, RESTAURANT
      * @permission_desc Afficher la liste des catégories de dépenses
      */
     public function index(Request $request)
@@ -53,6 +57,7 @@ class RestaurantExpenseTypeController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantExpenseTypeController::store
+     * @code BAR, RESTAURANT
      * @permission_desc Créer une catégorie de dépenses
      */
     public function store(Request $request)
@@ -88,6 +93,7 @@ class RestaurantExpenseTypeController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantExpenseTypeController::update
+     * @code BAR, RESTAURANT
      * @permission_desc Modifier une catégorie de dépenses
      */
     public function update(Request $request, string $uuid)
@@ -124,6 +130,7 @@ class RestaurantExpenseTypeController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantExpenseTypeController::updateStatus
+     * @code BAR, RESTAURANT
      * @permission_desc Activer/Désactiver une catégorie de dépenses
      */
     public function updateStatus(Request $request, string $uuid)
@@ -148,6 +155,7 @@ class RestaurantExpenseTypeController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantExpenseTypeController::storeSubFamily
+     * @code BAR, RESTAURANT
      * @permission_desc Créer les sous catégories de dépenses
      */
     public function storeSubFamily(Request $request)
@@ -258,6 +266,7 @@ class RestaurantExpenseTypeController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantExpenseTypeController::Update_Sub_Family
+     * @code BAR, RESTAURANT
      * @permission_desc Modifier les sous catégories de dépenses
      */
     public function Update_Sub_Family(Request $request)
@@ -393,6 +402,7 @@ class RestaurantExpenseTypeController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantExpenseTypeController::get_all_sub_families
+     * @code BAR, RESTAURANT
      * @permission_desc Afficher la liste des sous catégories de dépenses
      */
     public function get_all_sub_families(Request $request)
@@ -469,6 +479,7 @@ class RestaurantExpenseTypeController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantExpenseTypeController::updateStatusFamilyAndSubFamily
+     * @code BAR, RESTAURANT
      * @permission_desc Activer/Désactiver les sous catégories de dépenses
      */
     public function updateStatusFamilyAndSubFamily(Request $request, $uuid)
@@ -504,7 +515,6 @@ class RestaurantExpenseTypeController extends Controller
 
             $this->toggleChildren($family->uuid, $newStatus, $userId);
 
-            // 🔥 update parent lui-même
             $family->update([
                 'is_used' => $newStatus,
                 'updated_by' => $userId,

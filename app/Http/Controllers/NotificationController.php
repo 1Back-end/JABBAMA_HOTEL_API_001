@@ -11,12 +11,6 @@ use App\Models\PurchaseOrderNotification;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\JsonResponse;
 
-/**
- * @permission_category Gestion des notifications du restaurant
- * @permission_module Gestion du restaurant
- * @permission_module Gestion des stocks
- */
-
 
 class NotificationController extends Controller
 {
@@ -466,12 +460,6 @@ class NotificationController extends Controller
             'data' => $notification
         ]);
     }
-
-    /**
-     * Display a listing of the resource.
-     * @permission NotificationController::markAsRead
-     * @permission_desc Marquer comme lues les notifications des postes opérationnels un à un
-     */
     public function markAsRead(string $uuid)
     {
         $user = auth()->user();

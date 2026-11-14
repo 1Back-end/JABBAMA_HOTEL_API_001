@@ -19,17 +19,18 @@ use Illuminate\Support\Facades\Log;
 /**
  * @permission_category Compléments des menus
  * @permission_module Gestion du restaurant
+ * @code_module RESTAURANT
  */
 class ConfigurationsComplementController extends Controller
 {
     /**
      * Display a listing of the resource.
      * @permission ConfigurationsComplementController::index
+     * @code RESTAURANT
      * @permission_desc Afficher la liste des compléments des menus
      */
     public function index(Request $request)
     {
-        $auth = auth()->user();
         $perPage = $request->input('limit', 25);
         $page = $request->input('page', 1);
 
@@ -81,6 +82,7 @@ class ConfigurationsComplementController extends Controller
     /**
      * Display a listing of the resource.
      * @permission ConfigurationsComplementController::store
+     * @code RESTAURANT
      * @permission_desc Créer un complément
      */
     public function store(Request $request)
@@ -195,6 +197,7 @@ class ConfigurationsComplementController extends Controller
     /**
      * Display a listing of the resource.
      * @permission ConfigurationsComplementController::show
+     * @code RESTAURANT
      * @permission_desc Afficher les détails d'un complément
      */
     public function show(string $uuid)
@@ -232,6 +235,7 @@ class ConfigurationsComplementController extends Controller
     /**
      * Display a listing of the resource.
      * @permission ConfigurationsComplementController::updateStatus
+     * @code RESTAURANT
      * @permission_desc Activer/Désactiver un complément
      */
     public function updateStatus(Request $request, string $uuid)
@@ -300,6 +304,7 @@ class ConfigurationsComplementController extends Controller
     /**
      * Display a listing of the resource.
      * @permission ConfigurationsComplementController::update
+     * @code RESTAURANT
      * @permission_desc Modifier un complément
      */
     public function update(Request $request, $uuid)
@@ -456,7 +461,8 @@ class ConfigurationsComplementController extends Controller
     /**
      * Display a listing of the resource.
      * @permission ConfigurationsComplementController::upsert
-     * @permission_desc Effectuer la confection des compléments et boissons
+     * @code RESTAURANT
+     * @permission_desc Effectuer la confection des compléments et boissons chaudes
      */
     public function upsert(Request $request, string $commplements_restaurant_uuid)
     {

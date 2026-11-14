@@ -11,12 +11,16 @@ use Illuminate\Validation\Rule;
 /**
  * @permission_category Gestion des rubriques de ventes
  * @permission_module Gestion du restaurant
+ * @code_module RESTAURANT
+ * @permission_module Gestion du bar
+ * @code_module BAR
  */
 class SalesCategoryController extends Controller
 {
     /**
      * Display a listing of the resource.
      * @permission SalesCategoryController::index
+     * @code BAR, RESTAURANT
      * @permission_desc Afficher la liste des rubriques de ventes
      */
     public function index(Request $request)
@@ -80,6 +84,7 @@ class SalesCategoryController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SalesCategoryController::store
+     * @code BAR, RESTAURANT
      * @permission_desc Créer une rubrique de ventes
      */
     public function store(Request $request)
@@ -150,12 +155,6 @@ class SalesCategoryController extends Controller
 
         } catch (\Exception $e) {
 
-            \Log::error('SALES CATEGORY STORE ERROR', [
-                'message' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-            ]);
-
             return response()->json([
                 'status' => 'error',
                 'message' => 'Une erreur est survenue lors de la création de la rubrique.'
@@ -168,6 +167,7 @@ class SalesCategoryController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SalesCategoryController::update
+     * @code BAR, RESTAURANT
      * @permission_desc Modifier une rubrique de ventes
      */
     public function update(Request $request, string $uuid)
@@ -251,12 +251,6 @@ class SalesCategoryController extends Controller
 
         } catch (\Exception $e) {
 
-            \Log::error('SALES CATEGORY UPDATE ERROR', [
-                'message' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'uuid' => $uuid
-            ]);
 
             return response()->json([
                 'status' => 'error',
@@ -269,6 +263,7 @@ class SalesCategoryController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SalesCategoryController::updateStatus
+     * @code BAR, RESTAURANT
      * @permission_desc Activer/Désactiver une rubrique de ventes
      */
     public function updateStatus(Request $request, string $uuid)
@@ -308,6 +303,7 @@ class SalesCategoryController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SalesCategoryController::show
+     * @code BAR, RESTAURANT
      * @permission_desc Afficher les détails d'une rubrique de ventes
      */
     public function show(string $uuid)

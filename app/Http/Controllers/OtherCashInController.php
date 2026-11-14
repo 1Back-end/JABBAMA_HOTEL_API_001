@@ -13,12 +13,16 @@ use Illuminate\Support\Str;
 /**
  * @permission_category Gestion des autres encaissements
  * @permission_module Gestion du restaurant
+ * @code_module RESTAURANT
+ * @permission_module Gestion du bar
+ * @code_module BAR
  */
 class OtherCashInController extends Controller
 {
     /**
      * Display a listing of the resource.
      * @permission OtherCashInController::index
+     * @code BAR, RESTAURANT
      * @permission_desc Afficher la liste des autres encaissements
      */
     public function index(Request $request)
@@ -63,6 +67,7 @@ class OtherCashInController extends Controller
     /**
      * Store a newly created resource in storage.
      * @permission OtherCashInController::store
+     * @code BAR, RESTAURANT
      * @permission_desc Créer un autre encaissement
      */
     public function store(Request $request)
@@ -154,6 +159,7 @@ class OtherCashInController extends Controller
     /**
      * Store a newly created resource in storage.
      * @permission OtherCashInController::update_other_cash_ins
+     * @code BAR, RESTAURANT
      * @permission_desc Modifier un autre encaissement
      */
     public function update_other_cash_ins(Request $request, $uuid)
@@ -243,6 +249,7 @@ class OtherCashInController extends Controller
     /**
      * Store a newly created resource in storage.
      * @permission OtherCashInController::cancel
+     * @code BAR, RESTAURANT
      * @permission_desc Annuler le libéllé d'un autre encaissement
      */
     public function cancel(Request $request, $uuid)
@@ -281,6 +288,7 @@ class OtherCashInController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OtherCashInController::cancelGroup
+     * @code BAR, RESTAURANT
      * @permission_desc Annuler la catégorie d'un autre encaissement
      */
     public function cancelGroup(Request $request)
@@ -342,6 +350,7 @@ class OtherCashInController extends Controller
     /**
      * Display a listing of the resource.
      * @permission OtherCashInController::cancelFamily
+     * @code BAR, RESTAURANT
      * @permission_desc Annuler la famille ou sous-famille d'un autre encaissement
      */
     public function cancelFamily(Request $request)
@@ -404,6 +413,7 @@ class OtherCashInController extends Controller
     /**
      * Store a newly created resource in storage.
      * @permission OtherCashInController::show
+     * @code BAR, RESTAURANT
      * @permission_desc Afficher les détails d'un autre encaissement
      */
     public function show($uuid)

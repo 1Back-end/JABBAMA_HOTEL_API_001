@@ -26,17 +26,13 @@ use Maatwebsite\Excel\Facades\Excel;
  * @permission_category Gestion des entrepôts
  * @permission_module Gestion des stocks
  * @code_module STOCK
- * @permission_module Gestion du restaurant
- * @code_module RESTAURANT
- * @permission_module Gestion du bar
- * @code_module BAR
  */
 class WarehouseController extends Controller
 {
     /**
      * Display a listing of the resource.
      * @permission WarehouseController::index
-     * @code STOCK, BAR, RESTAURANT
+     * @code STOCK
      * @permission_desc Afficher la liste des entrepôts
      */
     public function index(Request $request)
@@ -99,7 +95,7 @@ class WarehouseController extends Controller
     /**
      * Display a listing of the resource.
      * @permission WarehouseController::store
-     * @code STOCK, BAR, RESTAURANT
+     * @code STOCK
      * @permission_desc Créer des entrepôts
      */
     public function store(Request $request)
@@ -210,7 +206,7 @@ class WarehouseController extends Controller
     /**
      * Display a listing of the resource.
      * @permission WarehouseController::show
-     * @code STOCK,BAR, RESTAURANT
+     * @code STOCK
      * @permission_desc Afficher les détails des entrepôts
      */
     public function show(string $uuid)
@@ -235,7 +231,7 @@ class WarehouseController extends Controller
     /**
      * Display a listing of the resource.
      * @permission WarehouseController::update
-     * @code STOCK,BAR, RESTAURANT
+     * @code STOCK
      * @permission_desc Modifier des entrepôts
      */
     public function update(Request $request, $uuid)
@@ -369,7 +365,7 @@ class WarehouseController extends Controller
     /**
      * Display a listing of the resource.
      * @permission WarehouseController::update_status
-     * @code STOCK,BAR, RESTAURANT
+     * @code STOCK
      * @permission_desc Activer/Désactiver des entrepôts
      */
     public function update_status(Request $request, $uuid){
@@ -394,7 +390,7 @@ class WarehouseController extends Controller
     /**
      * Display a listing of the resource.
      * @permission WarehouseController::get_products_by_warehouse
-     * @code STOCK,BAR, RESTAURANT
+     * @code STOCK
      * @permission_desc Afficher les articles par entrepôts
      */
     public function get_products_by_warehouse($uuid, Request $request)
@@ -445,7 +441,7 @@ class WarehouseController extends Controller
     /**
      * Display a listing of the resource.
      * @permission WarehouseController::get_managers_by_warehouse
-     * @code STOCK,BAR, RESTAURANT
+     * @code STOCK
      * @permission_desc Afficher les managers par entrepôts
      */
     public function get_managers_by_warehouse(string $uuid, Request $request)
@@ -483,7 +479,7 @@ class WarehouseController extends Controller
     /**
      * Display a listing of the resource.
      * @permission WarehouseController::export_warehouse
-     * @code STOCK,BAR, RESTAURANT
+     * @code STOCK
      * @permission_desc Exporter la liste des entrepôts en Excel
      */
     public function export_warehouse(Request $request)

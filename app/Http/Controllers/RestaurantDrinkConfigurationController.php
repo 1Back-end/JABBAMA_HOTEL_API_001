@@ -419,7 +419,6 @@ class RestaurantDrinkConfigurationController extends Controller
     {
         $auth = auth()->user();
 
-        // 🔹 Valider le statut à mettre à jour
         $validated = $request->validate([
             'is_active' => ['required', 'boolean'],
         ]);
@@ -708,6 +707,7 @@ class RestaurantDrinkConfigurationController extends Controller
     /**
      * Display a listing of the resource.
      * @permission RestaurantDrinkConfigurationController::updateTransformableByName
+     * @code BAR
      * @permission_desc Modifier les boissons de transformation
      */
     public function updateTransformableByName(Request $request, $uuid)

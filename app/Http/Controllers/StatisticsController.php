@@ -20,12 +20,14 @@ use Illuminate\Support\Facades\DB;
 /**
  * @permission_category Gestion des statistiques
  * @permission_module Gestion des stocks
+ * @code_module STOCK
  */
 class StatisticsController extends Controller
 {
     /**
      * Display a listing of the resource.
      * @permission StatisticsController::topConsumedProducts
+     * @code STOCK
      * @permission_desc Statistiques sur les articles les plus consommées
      */
     public function topConsumedProducts(Request $request)
@@ -132,6 +134,7 @@ class StatisticsController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StatisticsController::menu_statistics
+     * @code STOCK
      * @permission_desc Afficher le menu des rapports de stocks
      */
     public function menu_statistics(Request $request)
@@ -143,6 +146,7 @@ class StatisticsController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StatisticsController::suppliesOrders
+     * @code STOCK
      * @permission_desc Statistiques sur le journal des commandes
      */
     public function suppliesOrders(Request $request)
@@ -226,6 +230,7 @@ class StatisticsController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StatisticsController::suppliesJournal
+     * @code STOCK
      * @permission_desc Statistiques sur le journal des approvisionnements
      */
     public function suppliesJournal(Request $request)
@@ -306,6 +311,7 @@ class StatisticsController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StatisticsController::StockAdjustmentsJournal
+     * @code STOCK
      * @permission_desc Statistiques sur le journal des régularisations de stocks
      */
     public function StockAdjustmentsJournal(Request $request)
@@ -391,6 +397,7 @@ class StatisticsController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StatisticsController::print_suppliesOrders
+     * @code STOCK
      * @permission_desc Imprimer le journal des commandes en PDF
      */
     public function print_suppliesOrders(Request $request)
@@ -511,6 +518,7 @@ class StatisticsController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StatisticsController::print_suppliesJournal
+     * @code STOCK
      * @permission_desc Imprimer le journal des approvisionnements en PDF
      */
     public function print_suppliesJournal(Request $request)
@@ -647,6 +655,7 @@ class StatisticsController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StatisticsController::get_statictic_by_variation_supply_price
+     * @code STOCK
      * @permission_desc Statistiques sur la variation sur les prix unitaires
      */
     public function get_statictic_by_variation_supply_price(Request $request, string $productUuid)
@@ -719,6 +728,7 @@ class StatisticsController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StatisticsController::get_statitics_by_variation_quantity
+     * @code STOCK
      * @permission_desc Statistiques sur la variation sur les quantités
      */
     public function get_statitics_by_variation_quantity(Request $request, string $productUuid)
@@ -866,6 +876,7 @@ class StatisticsController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StatisticsController::get_statistics_by_avaries_products
+     * @code STOCK
      * @permission_desc Statistiques sur le taux d'avaries des articles
      */
     public function get_statistics_by_avaries_products(Request $request, string $productUuid)
@@ -931,6 +942,7 @@ class StatisticsController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StatisticsController::print_all_data_for_dashboard
+     * @code STOCK
      * @permission_desc Imprimer le tableau de bord complet
      */
     public function print_all_data_for_dashboard(Request $request)

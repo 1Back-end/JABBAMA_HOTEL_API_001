@@ -19,8 +19,9 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Enum;
 
 /**
- * @permission_category Composition des menus du restaurant
+ * @permission_category Fiche technique des menus
  * @permission_module Gestion du restaurant
+ * @code_module RESTAURANT
  */
 class MenuOrdersController extends Controller
 {
@@ -45,7 +46,8 @@ class MenuOrdersController extends Controller
     /**
      * Display a listing of the resource.
      * @permission MenuOrdersController::storeOrUpdateMenu
-     * @permission_desc Effectuer la composition des plats des menus du restaurant
+     * @code RESTAURANT
+     * @permission_desc Enregistrer la fiche technique d'un menu
      */
     public function storeOrUpdateMenu(Request $request, string $menus_restaurant_uuid)
     {
@@ -204,7 +206,8 @@ class MenuOrdersController extends Controller
     /**
      * Display a listing of the resource.
      * @permission MenuOrdersController::show
-     * @permission_desc Afficher les détails de la composition d'un menu du restaurant
+     * @code RESTAURANT
+     * @permission_desc Afficher les détails de la fiche technique d'un menu
      */
     public function showByMenu(string $menus_restaurant_uuid)
     {
@@ -230,127 +233,6 @@ class MenuOrdersController extends Controller
         ]);
     }
 
-
-
-    /**
-     * Display a listing of the resource.
-     * @permission MenuOrdersController::index
-     * @permission_desc Afficher la liste des compositions de menus du restaurant
-     */
-    public function index(Request $request)
-    {
-        $auth = auth()->user();
-
-        $perPage = $request->input('limit', 25);
-        $page = $request->input('page', 1);
-        $roleIds = $auth->roles->pluck('id');
-        $start_date = Carbon::parse($request->input('start_date'))->startOfDay();
-        $end_date = Carbon::parse($request->input('end_date'))->endOfDay();
-
-        $query = MenuOrder::with([
-            'menus_restaurant',
-            'warehouse',
-            'validator',
-            'items.product',
-            'rejector',
-            'bufferItems',
-            'creator',
-            'updater',
-        ]);
-
-        if ($request->filled('menus_restaurant_uuid')) {
-            $query->where('menus_restaurant_uuid', $request->menus_restaurant_uuid);
-        }
-
-        if ($request->filled('warehouse_uuid')) {
-            $query->where('warehouse_uuid', $request->warehouse_uuid);
-        }
-
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
-        }
-        if ($request->filled('start_date') && $request->filled('end_date')) {
-            $query->whereBetween('created_at', [$start_date, $end_date]);
-        }
-
-        if (!$auth->is_super_admin) {
-            $query->where(function ($q) use ($auth, $roleIds) {
-                if ($auth->can('view_role_related_data')) {
-                    $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
-                }
-            });
-        }
-
-        if ($search = trim($request->input('search'))) {
-            $query->where(function ($q) use ($search) {
-                $q->where('code', 'like', "%{$search}%")
-                    ->orWhere('uuid', 'like', "%{$search}%")
-                    ->orWhere('status', 'like', "%{$search}%")
-                    ->orWhere('description', 'like', "%{$search}%")
-                    ->orWhere('menus_restaurant_uuid', 'like', "%{$search}%")
-                    ->orWhere('warehouse_uuid', 'like', "%{$search}%")
-
-                    // 🔹 Fournisseur
-                    ->orWhereHas('supplier', function ($qs) use ($search) {
-                        $qs->where('first_name', 'like', "%{$search}%")
-                            ->orWhere('last_name', 'like', "%{$search}%")
-                            ->orWhere('company_name', 'like', "%{$search}%")
-                            ->orWhere('email', 'like', "%{$search}%")
-                            ->orWhere('phone_number', 'like', "%{$search}%")
-                            ->orWhere('address', 'like', "%{$search}%");
-                    })
-
-                    ->orWhereHas('purchaseOrder', function ($qpr) use ($search) {
-                        $qpr->where('reference', 'like', "%{$search}%")
-                            ->orWhere('type', 'like', "%{$search}%")
-                            ->orWhere('status', 'like', "%{$search}%")
-                            ->orWhere('warehouse_from', 'like', "%{$search}%")
-                            ->orWhere('warehouse_to', 'like', "%{$search}%")
-                            ->orWhere('supplier_uuid', 'like', "%{$search}%");
-                    })
-
-                    // 🔹 Entrepôts
-                    ->orWhereHas('warehouse', function ($qw) use ($search) {
-                        $qw->where('ref', 'like', "%{$search}%")
-                            ->orWhere('name', 'like', "%{$search}%")
-                            ->orWhere('stock_type', 'like', "%{$search}%")
-                            ->orWhere('address', 'like', "%{$search}%");
-                    })
-
-                    ->orWhereHas('menus_restaurant', function ($mr) use ($search) {
-                        $mr->where('uuid', 'like', "%{$search}%")
-                            ->orWhere('code', 'like', "%{$search}%")
-                            ->orWhere('description', 'like', "%{$search}%");
-                    })
-
-                    ->orWhereHas('creator', function ($qc) use ($search) {
-                        $qc->where('nom_utilisateur', 'like', "%{$search}%")
-                            ->orWhere('email', 'like', "%{$search}%");
-                    })
-
-                    ->orWhereHas('validator', function ($qv) use ($search) {
-                        $qv->where('nom_utilisateur', 'like', "%{$search}%")
-                            ->orWhere('email', 'like', "%{$search}%");
-                    })
-
-                    // 🔹 Produits
-                    ->orWhereHas('items.product', function ($qp) use ($search) {
-                        $qp->where('name', 'like', "%{$search}%")
-                            ->orWhere('code', 'like', "%{$search}%")
-                            ->orWhere('description', 'like', "%{$search}%");
-                    });
-            });
-        }
-        $data = $query->latest()->paginate($perPage, ['*'], 'page', $page);
-
-        return response()->json([
-            'data'         => $data->items(),
-            'current_page' => $data->currentPage(),
-            'last_page'    => $data->lastPage(),
-            'total'        => $data->total(),
-        ]);
-
-    }
 
     public function show(string $uuid)
     {

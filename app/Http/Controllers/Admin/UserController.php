@@ -14,12 +14,14 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Symfony\Component\HttpFoundation\Response;
-
-
 /**
  * @permission_category Gestion des utilisateurs
  * @permission_module Gestion des stocks
+ * @code_module STOCK
  * @permission_module Gestion du restaurant
+ * @code_module RESTAURANT
+ * @permission_module Gestion du bar
+ * @code_module BAR
  */
 class UserController extends Controller
 {
@@ -28,6 +30,7 @@ class UserController extends Controller
      * @return JsonResponse
      *
      * @permission UserController::index
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Afficher la liste des utilisateurs
      */
     public function index(Request $request): JsonResponse
@@ -83,6 +86,7 @@ class UserController extends Controller
      * @return JsonResponse
      *
      * @permission UserController::get_users_where_role_is_gestionnaire_stock
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Afficher la liste des gestionnaires stocks
      */
     public function get_users_where_role_is_gestionnaire_stock(Request $request): JsonResponse
@@ -105,11 +109,9 @@ class UserController extends Controller
                         ->orWhere('prenom', 'like', "%{$search}%");
                 });
             })
-            // Filtre par statut si fourni (boolean)
             ->when($request->has('status'), function ($query) use ($request) {
                 $query->where('status', $request->boolean('status'));
             })
-            // Exclure SYSTEM et admin
             ->whereNot('login', ['SYSTEM', 'admin'])
             ->with([
                 'roles:id,name',
@@ -133,17 +135,14 @@ class UserController extends Controller
     public function get_users_where_role_is_cuisinier(Request $request): JsonResponse
     {
         $users = User::query()
-            // Filtre uniquement les utilisateurs ayant le rôle GESTIONNAIRE STOCK
             ->whereHas('roles', function ($q) {
                 $q->where('name', 'CUISINIER');
             })
-            // Filtre par permissions si fourni
             ->when($request->input('permissions'), function ($query) use ($request) {
                 $query->whereHas('permissions', function ($q) use ($request) {
                     $q->whereIn('id', $request->input('permissions'));
                 });
             })
-            // Filtre par recherche texte
             ->when($request->input('search'), function ($query) use ($request) {
                 $search = $request->input('search');
                 $query->where(function ($q) use ($search) {
@@ -153,11 +152,9 @@ class UserController extends Controller
                         ->orWhere('prenom', 'like', "%{$search}%");
                 });
             })
-            // Filtre par statut si fourni (boolean)
             ->when($request->has('status'), function ($query) use ($request) {
                 $query->where('status', $request->boolean('status'));
             })
-            // Exclure SYSTEM et admin
             ->whereNot('login', ['SYSTEM', 'admin'])
             ->with([
                 'roles:id,name',
@@ -183,6 +180,7 @@ class UserController extends Controller
      * @return JsonResponse
      *
      * @permission UserController::store
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Créer un utilisateur
      * @throws \Throwable
      */
@@ -234,6 +232,7 @@ class UserController extends Controller
      * @return JsonResponse
      *
      * @permission UserController::show
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Afficher les détails d'un utilisateur
      */
     public function show(User $user): JsonResponse
@@ -249,6 +248,7 @@ class UserController extends Controller
      * @return JsonResponse
      *
      * @permission UserController::update
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Modifier un utilisateur
      */
     public function update(UserRequest $request, User $user): JsonResponse
@@ -291,6 +291,7 @@ class UserController extends Controller
      * @return JsonResponse
      *
      * @permission UserController::changeStatus
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Activer/Désactiver utilisateur
      */
     public function changeStatus(Request $request, User $user): JsonResponse

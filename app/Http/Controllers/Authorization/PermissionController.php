@@ -12,11 +12,14 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
-
 /**
  * @permission_category Gestion des permissions
  * @permission_module Gestion des stocks
+ * @code_module STOCK
  * @permission_module Gestion du restaurant
+ * @code_module RESTAURANT
+ * @permission_module Gestion du bar
+ * @code_module BAR
  */
 class PermissionController extends Controller
 {
@@ -24,6 +27,7 @@ class PermissionController extends Controller
      * @return JsonResponse
      *
      * @permission PermissionController::index
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Afficher les permissions
      */
     public function index(Request $request): JsonResponse
@@ -32,7 +36,6 @@ class PermissionController extends Controller
         $page = $request->get("page");
         $search = $request->get("search");
 
-        // Base query
         $query = Permission::with([
             'roles:id,name',
             'createdBy:id,nom_utilisateur',
@@ -48,7 +51,6 @@ class PermissionController extends Controller
             });
         }
         $query->orderBy('name', 'asc');
-        // Si la pagination est demandée
         if ($perPage && $page) {
             $permissions = $query->paginate(perPage: $perPage, page: $page);
         } else {
@@ -65,61 +67,82 @@ class PermissionController extends Controller
      * @return JsonResponse
      *
      * @permission PermissionController::permissionsByCategory
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Afficher les permissions par catégories
      */
     public function permissionsByCategory(Request $request): JsonResponse
     {
-        $search = $request->input('search');
+        \Log::info('--- DEBUT permissionsByCategory ---');
+        \Log::info('Paramètres bruts reçus :', $request->all());
+
         $moduleUuids = $request->input('module_uuids');
 
         if (is_string($moduleUuids)) {
-            $moduleUuids = array_filter(explode(',', $moduleUuids));
+            $moduleUuids = array_values(array_filter(explode(',', $moduleUuids)));
+        } elseif (!is_array($moduleUuids)) {
+            $moduleUuids = [];
+        } else {
+            $moduleUuids = array_values(array_filter($moduleUuids));
         }
 
-        $categories = PermissionCategory::where('libelle', '!=', 'Autres')
-            ->with(['permissions' => function($query) use ($search, $moduleUuids) {
-                $query->orderBy('name', 'asc');
+        $moduleCodes = [];
+        if (!empty($moduleUuids)) {
+            $moduleCodes = \DB::table('modules_applications')
+                ->whereIn('uuid', $moduleUuids)
+                ->whereNotNull('code')
+                ->pluck('code')
+                ->toArray();
+        }
 
-                if ($search) {
-                    $query->where(function($q) use ($search) {
-                        $q->where('name', 'like', "%{$search}%")
-                            ->orWhere('description', 'like', "%{$search}%");
-                    });
-                }
+        if (empty($moduleCodes) && !empty($moduleUuids)) {
+            $moduleCodes = $moduleUuids;
+        }
 
-                if (!empty($moduleUuids)) {
-                    $query->where(function($q) use ($moduleUuids) {
-                        $q->whereIn('module_uuid', $moduleUuids)
-                            ->orWhereHas('modules', function($subQ) use ($moduleUuids) {
-                                $subQ->whereIn('modules_applications.uuid', $moduleUuids);
-                            });
-                    });
-                }
-            }])
-            ->when($search, function($query) use ($search) {
-                $query->where(function($q) use ($search) {
-                    $q->where('libelle', 'like', "%{$search}%")
-                        ->orWhere('description', 'like', "%{$search}%");
+        \Log::info('Codes de modules identifiés pour le filtre :', $moduleCodes);
+
+        // Définition de la règle de filtrage conditionnelle
+        $filterPermissions = function ($query) use ($moduleCodes) {
+            $query->whereNotNull('code');
+
+            // Si des modules sont spécifiés, on applique le filtre LIKE / OR
+            if (!empty($moduleCodes)) {
+                $query->where(function ($q) use ($moduleCodes) {
+                    foreach ($moduleCodes as $index => $moduleCode) {
+                        $code = trim((string) $moduleCode);
+                        if ($code === '') continue;
+
+                        $method = $index === 0 ? 'where' : 'orWhere';
+
+                        $q->{$method}(function ($sub) use ($code) {
+                            $sub->where('code', '=', $code)
+                                ->orWhere('code', 'LIKE', "{$code},%")
+                                ->orWhere('code', 'LIKE', "%, {$code}%")
+                                ->orWhere('code', 'LIKE', "%,{$code}%");
+                        });
+                    }
                 });
-            })
-            ->whereHas('permissions', function($query) use ($search, $moduleUuids) {
-                if ($search) {
-                    $query->where(function($q) use ($search) {
-                        $q->where('name', 'like', "%{$search}%")
-                            ->orWhere('description', 'like', "%{$search}%");
-                    });
-                }
-                if (!empty($moduleUuids)) {
-                    $query->where(function($q) use ($moduleUuids) {
-                        $q->whereIn('module_uuid', $moduleUuids)
-                            ->orWhereHas('modules', function($subQ) use ($moduleUuids) {
-                                $subQ->whereIn('modules_applications.uuid', $moduleUuids);
-                            });
-                    });
-                }
-            })
+            }
+            // S'il n'y a aucun module, on ne met aucun filtre supplémentaire -> tout passe !
+        };
+
+        $categoriesQuery = PermissionCategory::whereNotNull('libelle')
+            ->where('libelle', '!=', 'Autres');
+
+        // Si des modules sont demandés, on filtre aussi les catégories pour ne garder que celles qui ont des permissions correspondantes
+        if (!empty($moduleCodes)) {
+            $categoriesQuery->whereHas('permissions', $filterPermissions);
+        }
+
+        $categories = $categoriesQuery
+            ->with(['permissions' => function ($query) use ($filterPermissions) {
+                $query->orderBy('name', 'asc');
+                $filterPermissions($query);
+            }])
             ->orderBy('libelle', 'asc')
             ->get();
+
+        \Log::info('Nombre de catégories trouvées : ' . $categories->count());
+        \Log::info('--- FIN permissionsByCategory ---');
 
         return response()->json([
             'categories' => $categories,
@@ -131,6 +154,7 @@ class PermissionController extends Controller
      * @return JsonResponse
      *
      * @permission PermissionController::store
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Créer une permission
      */
     public function store(PermissionRequest $request)
@@ -147,6 +171,7 @@ class PermissionController extends Controller
      * @return JsonResponse
      *
      * @permission PermissionController::show
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Afficher une permission
      */
     public function show(Permission $permission)
@@ -160,6 +185,7 @@ class PermissionController extends Controller
      * @return JsonResponse
      *
      * @permission PermissionController::update
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Mise à jour d’une permission
      */
     public function update(PermissionRequest $request, Permission $permission)
@@ -179,6 +205,7 @@ class PermissionController extends Controller
      * @return JsonResponse
      *
      * @permission PermissionController::activate
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Activer / Désactiver une permission
      */
     public function activate(Permission $permission, int $activate)
@@ -198,6 +225,7 @@ class PermissionController extends Controller
      * @return JsonResponse
      *
      * @permission PermissionController::assignPermissionToRole
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Assigner une permission à un ou plusieurs roles
      */
     public function assignPermissionToRole(Permission $permission, Request $request)
@@ -223,6 +251,7 @@ class PermissionController extends Controller
      * @return JsonResponse
      *
      * @permission PermissionController::activatePermissionToRole
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Activate / Désactiver une permission à un rôle
      */
     public function activatePermissionToRole(Role $role, Permission $permission, int $activate)
@@ -243,6 +272,7 @@ class PermissionController extends Controller
      * @return JsonResponse
      *
      * @permission PermissionController::assignPermissionToUser
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Assigner un rôle à un ou plusieurs utilisateurs
      */
     public function assignPermissionToUser(Permission $permission, Request $request)
@@ -286,6 +316,7 @@ class PermissionController extends Controller
      * @return JsonResponse
      *
      * @permission PermissionController::activatePermissionToUser
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Activate / Désactiver une permission à un utilisateur
      */
     public function activatePermissionToUser(Permission $permission, User $user, int $activate)

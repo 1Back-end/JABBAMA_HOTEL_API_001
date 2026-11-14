@@ -19,6 +19,7 @@ use Illuminate\Validation\Rules\Enum;
 /**
  * @permission_category Gestion des menus du restaurant
  * @permission_module Gestion du restaurant
+ * @code_module RESTAURANT
  */
 class MenuRestaurantController extends Controller
 {
@@ -26,6 +27,7 @@ class MenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission MenuRestaurantController::index
+     * @code RESTAURANT
      * @permission_desc Afficher la liste des menus du restaurant
      */
     public function index(Request $request)
@@ -91,6 +93,7 @@ class MenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission MenuRestaurantController::store
+     * @code RESTAURANT
      * @permission_desc Créer les menus du restaurant
      */
     public function store(Request $request)
@@ -221,6 +224,7 @@ class MenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission MenuRestaurantController::update
+     * @code RESTAURANT
      * @permission_desc Modifier les menus du restaurant
      */
     public function update_menus(Request $request, string $uuid)
@@ -362,6 +366,7 @@ class MenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission MenuRestaurantController::show
+     * @code RESTAURANT
      * @permission_desc Afficher les détails d'un menu du restaurant
      */
     public function show(string $uuid)
@@ -383,6 +388,7 @@ class MenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission MenuRestaurantController::updateStatus
+     * @code RESTAURANT
      * @permission_desc Activer/Désactiver les menus du restaurant
      */
 
@@ -406,13 +412,13 @@ class MenuRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission MenuRestaurantController::destroy
+     * @code RESTAURANT
      * @permission_desc Supprimer les menus du restaurant
      */
     public function destroy(Request $request, string $uuid)
     {
         $auth = auth()->user();
 
-        // 🔹 Validation du mot de passe
         $request->validate([
             'password' => 'required|string'
         ], [
@@ -420,18 +426,13 @@ class MenuRestaurantController extends Controller
             'password.string'   => 'Le mot de passe doit être une chaîne de caractères.'
         ]);
 
-        // 🔹 Vérification du mot de passe
         if (!Hash::check($request->password, $auth->password)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Mot de passe incorrect.'
             ], 422);
         }
-
-        // 🔹 Récupère le menu restaurant ou renvoie 404
         $menu_restaurant = MenuRestaurant::findOrFail($uuid);
-
-        // 🔹 Suppression soft
         $menu_restaurant->delete();
 
         return response()->json([

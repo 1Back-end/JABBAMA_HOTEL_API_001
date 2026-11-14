@@ -7,13 +7,19 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 /**
  * @permission_category Paramètres de facturations
+ * @permission_module Gestion des stocks
+ * @code_module STOCK
  * @permission_module Gestion du restaurant
+ * @code_module RESTAURANT
+ * @permission_module Gestion du bar
+ * @code_module BAR
  */
 class SettingRestaurantController extends Controller
 {
     /**
      * Display a listing of the resource.
      * @permission SettingRestaurantController::store
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Créer les paramètres de facturations
      */
     public function store(Request $request) {
@@ -39,6 +45,7 @@ class SettingRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SettingRestaurantController::update
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Modifier les paramètres de facturations
      */
     public function update(Request $request, $uuid)
@@ -68,6 +75,7 @@ class SettingRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SettingRestaurantController::index
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Afficher la liste des paramètres de facturations
      */
     public function index(Request $request)
@@ -104,6 +112,7 @@ class SettingRestaurantController extends Controller
     /**
      * Display a listing of the resource.
      * @permission SettingRestaurantController::toggleActive
+     * @code STOCK, BAR, RESTAURANT
      * @permission_desc Activer/Désactiver les paramètres de facturations
      */
     public function toggleActive($uuid)

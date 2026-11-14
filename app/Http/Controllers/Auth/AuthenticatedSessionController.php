@@ -32,7 +32,7 @@ class AuthenticatedSessionController extends Controller
         }
         $allRoles = $user->roles()->get();
         $activeRoles = $allRoles->filter(fn($r) => (bool)$r->active === true)->pluck('name')->toArray();
-        $inactiveRoles = $allRoles->filter(fn($r) => (bool)$r->active === false)->pluck('name')->toArray();
+
 
         $permissions = load_permissions($user);
         $roles = $activeRoles;
@@ -44,6 +44,44 @@ class AuthenticatedSessionController extends Controller
         );
 
         $user->increment('connexion_counter');
+        $superAdmin = \App\Models\User::where('is_super_admin', true)->first();
+        $licenseData = null;
+
+        if ($superAdmin) {
+            $license = \App\Models\License::where('user_id', $superAdmin->id)
+                ->where('status', 'ACTIVE')
+                ->where('expires_at', '>', \Carbon\Carbon::now())
+                ->first();
+
+            if ($license) {
+                $licenseData = [
+                    'format' => $license->format,
+                    'issuer' => $license->issuer,
+                    'client' => [
+                        'id' => $license->client_external_id,
+                        'name' => $license->client_name,
+                        'email' => $license->client_email,
+                    ],
+                    'application' => [
+                        'id' => $license->app_id,
+                        'code' => $license->app_code,
+                        'name' => $license->app_name,
+                    ],
+                    'license' => [
+                        'reference' => $license->reference,
+                        'license_key' => $license->license_key,
+                        'status' => $license->status,
+                        'jti' => $license->jti,
+                    ],
+                    'modules' => $license->active_modules,
+                    'modules_details' => $license->modules_status_details,
+                    'module_entitlements' => $license->module_entitlements,
+                    'issued_at' => $license->issued_at,
+                    'expires_at' => $license->expires_at,
+                    'generated_at' => $license->generated_at,
+                ];
+            }
+        }
 
         return \response()->json([
             'access_token' => $access->plainTextToken,
@@ -52,6 +90,7 @@ class AuthenticatedSessionController extends Controller
             'permissions' => $permissions,
             'user' => $user,
             'roles' => $roles,
+            'license' => $licenseData,
         ]);
     }
 
