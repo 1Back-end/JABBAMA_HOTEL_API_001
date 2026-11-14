@@ -78,7 +78,6 @@ class ExtractPermissions extends Command
             'modules' => ['Gestion des stocks'],
             'code' => 'STOCK',
         ],
-
         'view_decisional_passations_notifications' => [
             'description' => 'Afficher toutes les notifications décisionnelles de passations de stocks',
             'category' => 'Notifications décisionnelles de passations',
@@ -151,6 +150,31 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des utilisateurs',
             'modules' => ['Gestion des stocks', 'Gestion du restaurant','Gestion du bar'],
             'code' => 'RESTAURANT,BAR,STOCK',
+        ],
+        'view_decisional_post' => [
+            'description' => 'Afficher et accéder au module du Poste Décisionnel.',
+            'category' => 'Navigation et Administration',
+            'modules' => ['Gestion des stocks', 'Gestion du restaurant', 'Gestion du bar'],
+            'code' => 'RESTAURANT,BAR,STOCK',
+        ],
+
+        'view_functional_posts' => [
+            'description' => 'Afficher et gérer les postes fonctionnels.',
+            'category' => 'Navigation et Administration',
+            'modules' => ['Gestion des stocks', 'Gestion du restaurant', 'Gestion du bar'],
+            'code' => 'RESTAURANT,BAR,STOCK',
+        ],
+        'view_settings_menu' => [
+            'description' => 'Accéder aux paramètres généraux de l’application.',
+            'category' => 'Navigation et Administration',
+            'modules' => ['Gestion des stocks', 'Gestion du restaurant', 'Gestion du bar'],
+            'code' => 'RESTAURANT,BAR,STOCK',
+        ],
+        'view_restaurant_bar_reports' => [
+            'description' => 'Afficher et consulter les rapports de la gestion du restaurant et du bar.',
+            'category' => 'Navigation et Administration',
+            'modules' => ['Gestion du restaurant', 'Gestion du bar'],
+            'code' => 'RESTAURANT,BAR',
         ],
         'view_transferred_orders' => [
             'description' => 'Permettre aux gestionnaires de stock de voir toutes les commandes qui leur ont été transférées.',

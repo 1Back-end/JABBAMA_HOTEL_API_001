@@ -440,10 +440,10 @@ class PassationController extends Controller
                 ]);
             }
 
-            $passationEnum = $hasGap ? PassationStatus::WITH_GAP : PassationStatus::NO_GAP;
+            $passationStatus = 'in_discuss';
 
             $passation->update([
-                'status' => $passationEnum->value,
+                'status' => $passationStatus,
                 'validated_at' => now(),
                 'validated_by' => $auth->id,
                 'updated_by' => $auth->id,
@@ -458,7 +458,7 @@ class PassationController extends Controller
             $this->sendPassationNotifications(
                 passationUuid: $passation->uuid,
                 userId: $passation->created_by ?? $auth->id,
-                status: $passationEnum->value,
+                status: 'in_discuss',
                 message: $message,
                 target: 'manager_dashboard'
             );
@@ -554,10 +554,10 @@ class PassationController extends Controller
                 ]);
             }
 
-            $passationEnum = $hasGap ? PassationStatus::WITH_GAP : PassationStatus::NO_GAP;
+            $passationStatus = 'in_discuss';
 
             $passation->update([
-                'status' => $passationEnum->value,
+                'status' => 'in_discuss',
                 'validated_at' => now(),
                 'validated_by' => $auth->id,
                 'updated_by' => $auth->id,
@@ -573,7 +573,7 @@ class PassationController extends Controller
             $this->sendPassationNotifications(
                 passationUuid: $passation->uuid,
                 userId: $passation->created_by ?? $auth->id,
-                status: $passationEnum->value,
+                status: 'in_discuss',
                 message: $message,
                 target: 'manager_dashboard'
             );
