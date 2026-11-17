@@ -134,6 +134,18 @@ class PassationController extends Controller
         ]);
     }
 
+    private function createAndMarkAsRead(array $data)
+    {
+        $data['is_read'] = true;
+        $data['read_at'] = now();
+
+        $data['purchase_order_uuid'] = $data['purchase_order_uuid'] ?? null;
+        $data['stock_adjustments_uuid'] = $data['stock_adjustments_uuid'] ?? null;
+
+        \App\Models\PurchaseOrderNotification::create($data);
+        \App\Models\DecisionalNotification::create($data);
+    }
+
     private function sendPassationNotifications(
         string $passationUuid,
         int $userId,
@@ -153,6 +165,8 @@ class PassationController extends Controller
 
         \App\Models\PassationNotification::create($commonData);
         \App\Models\PassationDecisionnelle::create($commonData);
+
+        $this->createAndMarkAsRead($commonData);
     }
 
 
@@ -166,7 +180,6 @@ class PassationController extends Controller
     {
         $auth = auth()->user();
 
-        // Validation
         $validated = $request->validate([
             'warehouse_uuid' => 'required|exists:warehouses,uuid',
         ]);
@@ -209,6 +222,16 @@ class PassationController extends Controller
                 ]);
             }
 
+            $target = 'manager_dashboard';
+
+            if ($warehouse->is_used_for_restaurant) {
+                $target = 'restaurant_manager_dashboard';
+            } elseif ($warehouse->is_bar_warehouse) {
+                $target = 'bar_manager_dashboard';
+            } elseif ($warehouse->is_used_for_drinks_transformation) {
+                $target = 'transformation_manager_dashboard';
+            }
+
             foreach ($managers as $manager) {
                 if ($manager->id == $auth->id) {
                     continue;
@@ -226,10 +249,10 @@ class PassationController extends Controller
 
             $this->sendPassationNotifications(
                 passationUuid: $passation->uuid,
-                userId: $manager->id,
+                userId: $auth->id,
                 status: 'pending',
                 message: "Une nouvelle passation de stock a été initiée pour l'entrepôt {$warehouse->name} et nécessite votre validation.",
-                target: 'manager_dashboard'
+                target: $target
             );
 
             DB::commit();
@@ -298,12 +321,22 @@ class PassationController extends Controller
                 ]);
             }
 
+            $target = 'manager_dashboard';
+
+            if ($warehouse->is_used_for_restaurant) {
+                $target = 'restaurant_manager_dashboard';
+            } elseif ($warehouse->is_bar_warehouse) {
+                $target = 'bar_manager_dashboard';
+            } elseif ($warehouse->is_used_for_drinks_transformation) {
+                $target = 'transformation_manager_dashboard';
+            }
+
             $this->sendPassationNotifications(
                 passationUuid: $passation->uuid,
                 userId: $auth->id,
                 status: 'pending',
                 message: "La passation de stock pour l'entrepôt {$warehouse->name} a été mise à jour et nécessite votre attention.",
-                target: 'manager_dashboard'
+                target: $target
             );
 
             DB::commit();
@@ -446,17 +479,30 @@ class PassationController extends Controller
                 'reason_validated' => 'Validation par comptage',
             ]);
 
-            $warehouseName = $passation->warehouse?->name ?? '';
+            $warehouse = $passation->warehouse;
+            $warehouseName = $warehouse?->name ?? '';
+
+            $target = 'manager_dashboard';
+
+            if ($warehouse) {
+                if ($warehouse->is_used_for_restaurant) {
+                    $target = 'restaurant_manager_dashboard';
+                } elseif ($warehouse->is_bar_warehouse) {
+                    $target = 'bar_manager_dashboard';
+                } elseif ($warehouse->is_used_for_drinks_transformation) {
+                    $target = 'transformation_manager_dashboard';
+                }
+            }
             $message = $hasGap
                 ? "Validation effectuée avec écarts : le contrôle d'inventaire de l'entrepôt {$warehouseName} a été soumis par {$auth->nom_utilisateur}. Une vérification est requise."
                 : "Validation confirmée sans écart : le comptage de l'entrepôt {$warehouseName} a été approuvé par {$auth->nom_utilisateur}.";
 
             $this->sendPassationNotifications(
                 passationUuid: $passation->uuid,
-                userId: $passation->created_by ?? $auth->id,
+                userId: $auth->id,
                 status: 'in_discuss',
                 message: $message,
-                target: 'manager_dashboard'
+                target: $target
             );
 
             DB::commit();
@@ -556,7 +602,20 @@ class PassationController extends Controller
                 'reason_validated' => 'Validation modifiée par comptage',
             ]);
 
-            $warehouseName = $passation->warehouse?->name ?? 'inconnu';
+            $warehouse = $passation->warehouse;
+            $warehouseName = $warehouse?->name ?? '';
+
+            $target = 'manager_dashboard';
+
+            if ($warehouse) {
+                if ($warehouse->is_used_for_restaurant) {
+                    $target = 'restaurant_manager_dashboard';
+                } elseif ($warehouse->is_bar_warehouse) {
+                    $target = 'bar_manager_dashboard';
+                } elseif ($warehouse->is_used_for_drinks_transformation) {
+                    $target = 'transformation_manager_dashboard';
+                }
+            }
 
             $message = $hasGap
                 ? "Mise à jour de validation avec écarts : le contrôle de l'entrepôt {$warehouseName} a été modifié par {$auth->nom_utilisateur}."
@@ -564,10 +623,10 @@ class PassationController extends Controller
 
             $this->sendPassationNotifications(
                 passationUuid: $passation->uuid,
-                userId: $passation->created_by ?? $auth->id,
+                userId: $auth->id,
                 status: 'in_discuss',
                 message: $message,
-                target: 'manager_dashboard'
+                target: $target
             );
 
             DB::commit();
@@ -624,14 +683,27 @@ class PassationController extends Controller
                 'cancelled_at' => now(),
             ]);
 
-            $warehouseName = $passation->warehouse?->name ?? 'inconnu';
+            $warehouse = $passation->warehouse;
+            $warehouseName = $warehouse?->name ?? '';
+
+            $target = 'manager_dashboard';
+
+            if ($warehouse) {
+                if ($warehouse->is_used_for_restaurant) {
+                    $target = 'restaurant_manager_dashboard';
+                } elseif ($warehouse->is_bar_warehouse) {
+                    $target = 'bar_manager_dashboard';
+                } elseif ($warehouse->is_used_for_drinks_transformation) {
+                    $target = 'transformation_manager_dashboard';
+                }
+            }
 
             $this->sendPassationNotifications(
                 passationUuid: $passation->uuid,
-                userId: $passation->created_by ?? $auth->id,
+                userId: $auth->id,
                 status: PassationStatus::CANCEL->value,
                 message: "Passation annulée : la procédure pour l'entrepôt {$warehouseName} a été annulée par {$auth->nom_utilisateur}. Motif : {$validated['reason_cancelled']}",
-                target: 'manager_dashboard'
+                target: $target
             );
 
             DB::commit();
@@ -694,14 +766,27 @@ class PassationController extends Controller
                 ]);
             }
 
-            $warehouseName = $passation->warehouse?->name ?? 'inconnu';
+            $warehouse = $passation->warehouse;
+            $warehouseName = $warehouse?->name ?? '';
+
+            $target = 'manager_dashboard';
+
+            if ($warehouse) {
+                if ($warehouse->is_used_for_restaurant) {
+                    $target = 'restaurant_manager_dashboard';
+                } elseif ($warehouse->is_bar_warehouse) {
+                    $target = 'bar_manager_dashboard';
+                } elseif ($warehouse->is_used_for_drinks_transformation) {
+                    $target = 'transformation_manager_dashboard';
+                }
+            }
 
             $this->sendPassationNotifications(
                 passationUuid: $passation->uuid,
-                userId: $passation->created_by ?? $auth->id,
+                userId: $auth->id,
                 status: PassationStatus::REJECTED->value,
                 message: "Passation rejetée : la procédure pour l'entrepôt {$warehouseName} a été rejetée par {$auth->nom_utilisateur}. Motif : {$validated['reason_reject']}",
-                target: 'manager_dashboard'
+                target: $target
             );
 
             DB::commit();
@@ -901,7 +986,20 @@ class PassationController extends Controller
                 'closed_at'    => now(),
             ]);
 
-            $warehouseName = $passation->warehouse?->name ?? 'inconnu';
+            $warehouse = $passation->warehouse;
+            $warehouseName = $warehouse?->name ?? '';
+
+            $target = 'manager_dashboard';
+
+            if ($warehouse) {
+                if ($warehouse->is_used_for_restaurant) {
+                    $target = 'restaurant_manager_dashboard';
+                } elseif ($warehouse->is_bar_warehouse) {
+                    $target = 'bar_manager_dashboard';
+                } elseif ($warehouse->is_used_for_drinks_transformation) {
+                    $target = 'transformation_manager_dashboard';
+                }
+            }
 
             $message = $hasGap
                 ? "Validation définitive (avec écarts) : la passation de l'entrepôt {$warehouseName} a été approuvée par l'administration ({$auth->nom_utilisateur})."
@@ -909,10 +1007,10 @@ class PassationController extends Controller
 
             $this->sendPassationNotifications(
                 passationUuid: $passation->uuid,
-                userId: $passation->created_by ?? $auth->id,
+                userId: $auth->id,
                 status: $finalStatusEnum->value,
                 message: $message,
-                target: 'manager_dashboard'
+                target: $target
             );
 
             DB::commit();

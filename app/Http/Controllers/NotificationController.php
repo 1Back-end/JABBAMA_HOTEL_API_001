@@ -15,74 +15,6 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 class NotificationController extends Controller
 {
 
-    public function index()
-    {
-        $user = auth()->user();
-
-        $query = \App\Models\OrderNotification::with([
-            'creator',
-            'updater',
-            'order',
-        ]);
-
-
-        $statuses = [];
-
-        if ($user->can('view_all_notification_in_preparation')) $statuses[] = 'in_preparation';
-        if ($user->can('view_all_notification_transferred')) $statuses[] = 'transferred';
-        if ($user->can('view_all_notification_rejected')) $statuses[] = 'rejected';
-        if ($user->can('view_all_notification_in_defective')) $statuses[] = 'defective';
-        if ($user->can('view_all_notification_in_ready')) $statuses[] = 'ready';
-        if ($user->can('view_all_notification_in_delivered')) $statuses[] = 'delivered';
-        if ($user->can('view_all_notification_in_rejected_after_validation')) $statuses[] = 'rejected_after_validation';
-        if ($user->can('view_all_notification_in_cancel_for_new_update')) $statuses[] = 'cancel_for_new_update';
-        if ($user->can('view_all_notification_in_partial_completed')) $statuses[] = 'partial_completed';
-        if ($user->can('view_all_notification_in_partial_delivered')) $statuses[] = 'partial_delivered';
-
-        if (empty($statuses)) {
-
-            return response()->json([
-                'status' => 'success',
-                'data' => []
-            ]);
-        }
-
-        $query->whereIn('status', $statuses);
-
-        $query->where(function ($q) use ($user) {
-
-            if ($user->can('view_kitchen_notifications')) {
-                $q->orWhere(function ($sub) {
-                    $sub->whereIn('target', ['all', 'kitchen'])
-                        ->orWhere(function ($q2) {
-                            $q2->where('target', 'kitchen')
-                                ->whereHas('order', function ($order) {
-                                    $order->whereHas('items');
-                                });
-                        });
-                });
-            }
-
-            if ($user->can('view_bar_notifications')) {
-                $q->orWhere(function ($sub) {
-                    $sub->whereIn('target', ['all', 'bar'])
-                        ->orWhere(function ($q2) {
-                            $q2->where('target', 'bar')
-                                ->whereHas('order', function ($order) {
-                                    $order->whereHas('drinks');
-                                });
-                        });
-                });
-            }
-
-        });
-        $notifications = $query->latest()->limit(50)->get();
-
-        return response()->json([
-            'status' => 'success',
-            'data' => $notifications
-        ]);
-    }
 
     public function decisionalIndex()
     {
@@ -133,7 +65,7 @@ class NotificationController extends Controller
     }
 
 
-    private const STREAM_LIMIT = 50;
+    private const STREAM_LIMIT = 100;
     private const ORDER_STATUS_PERMISSIONS = [
         'in_preparation'            => 'view_all_notification_in_preparation',
         'transferred'               => 'view_all_notification_transferred',
@@ -213,20 +145,22 @@ class NotificationController extends Controller
         );
 
         return response()->json([
-            'notifications'     => $this->streamOrderNotifications(
+            'notifications'         => $this->streamOrderNotifications(
                 $user,
                 $allowedStatuses(self::ORDER_STATUS_PERMISSIONS)
             ),
-            'decisional'        => $this->streamDecisionalNotifications(
+            'decisional'            => $this->streamDecisionalNotifications(
                 $allowedStatuses(self::DECISIONAL_STATUS_PERMISSIONS)
             ),
-            'stocks'            => $this->streamStockNotifications(
+            'stocks'                => $this->streamStockNotifications(
+                $user,
                 $allowedStatuses(self::STOCK_STATUS_PERMISSIONS)
             ),
-            'decisional_stocks' => $this->streamDecisionalStockNotifications(
+            'decisional_stocks'     => $this->streamDecisionalStockNotifications(
                 $allowedStatuses(self::DECISIONAL_STOCK_STATUS_PERMISSIONS)
             ),
-            'passations'          => $this->streamPassationNotifications(
+            'passations'            => $this->streamPassationNotifications(
+                $user,
                 $allowedStatuses(self::PASSATION_STATUS_PERMISSIONS)
             ),
             'decisional_passations' => $this->streamDecisionalPassationNotifications(
@@ -234,7 +168,6 @@ class NotificationController extends Controller
             ),
         ]);
     }
-
     private function streamOrderNotifications($user, array $statuses)
     {
         if (empty($statuses)) {
@@ -261,11 +194,11 @@ class NotificationController extends Controller
         ])
             ->whereIn('status', $statuses)
             ->whereIn('target', $targets)
+            ->where('created_by', '!=', $user->id)
             ->latest()
             ->limit(self::STREAM_LIMIT)
             ->get();
     }
-
     private function streamDecisionalNotifications(array $statuses): array
     {
         if (empty($statuses)) {
@@ -284,8 +217,7 @@ class NotificationController extends Controller
 
         return ['data' => $data];
     }
-
-    private function streamStockNotifications(array $statuses)
+    private function streamStockNotifications($user, array $statuses)
     {
         if (empty($statuses)) {
             return [];
@@ -297,11 +229,11 @@ class NotificationController extends Controller
             'purchaseOrder:uuid,reference',
         ])
             ->whereIn('status', $statuses)
+            ->where('created_by', '!=', $user->id)
             ->latest()
             ->limit(self::STREAM_LIMIT)
             ->get();
     }
-
     private function streamDecisionalStockNotifications(array $statuses): array
     {
         if (empty($statuses)) {
@@ -320,26 +252,41 @@ class NotificationController extends Controller
 
         return ['data' => $data];
     }
-
-    private function streamPassationNotifications(array $statuses)
+    private function streamPassationNotifications($user, array $statuses)
     {
         if (empty($statuses)) {
-            return ['data' => []];
+            return [];
         }
+        $targets = [];
+        if ($user->can('view_notification_restaurant_manager_dashboard')) {
+            $targets[] = 'restaurant_manager_dashboard';
+        }
+        if ($user->can('view_notification_restaurant_bar_manager_dashboard')) {
+            $targets[] = 'bar_manager_dashboard';
+        }
+        if ($user->can('view_notification_transformation_manager_dashboard')) {
+            $targets[] = 'transformation_manager_dashboard';
+        }
+
+        if (empty($targets)) {
+            return [];
+        }
+        $targets[] = 'manager_dashboard';
 
         $data = PassationNotification::with([
             'creator:id,nom_utilisateur',
             'updater:id,nom_utilisateur',
-            'passation:uuid',
         ])
             ->whereIn('status', $statuses)
+            ->whereIn('target', array_unique($targets))
+            ->where('created_by', '!=', $user->id)
             ->latest()
             ->limit(self::STREAM_LIMIT)
             ->get();
 
+
         return ['data' => $data];
     }
-
     private function streamDecisionalPassationNotifications(array $statuses)
     {
         if (empty($statuses)) {
@@ -358,8 +305,6 @@ class NotificationController extends Controller
 
         return ['data' => $data];
     }
-
-
     public function markAllAsReadNotificationDecisional()
     {
         $user = auth()->user();

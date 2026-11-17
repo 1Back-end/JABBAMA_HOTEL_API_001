@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class DeletedOrderMenuRestaurantItem extends Model
 {
-    use HasFactory,SoftDeletes,HasUuids;
+    use HasFactory,HasUuids;
     protected $table = 'deleted_order_menu_restaurant_items';
 
     protected $primaryKey = 'uuid';

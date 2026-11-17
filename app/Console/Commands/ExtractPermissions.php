@@ -24,6 +24,24 @@ class ExtractPermissions extends Command
             'modules' => ['Gestion des stocks'],
             'code' => 'STOCK',
         ],
+        'view_notification_restaurant_manager_dashboard' => [
+            'description' => 'Afficher les notifications de passations de stocks en cuisine',
+            'category'    => 'Notifications de passations de stocks',
+            'modules'     => ['Gestion des stocks'],
+            'code'        => 'STOCK',
+        ],
+        'view_notification_restaurant_bar_manager_dashboard' => [
+            'description' => 'Afficher les notifications de passations de stocks du bar Distribution',
+            'category'    => 'Notifications de passations de stocks',
+            'modules'     => ['Gestion des stocks'],
+            'code'        => 'STOCK',
+        ],
+        'view_notification_transformation_manager_dashboard' => [
+            'description' => 'Afficher les notifications de passations de stocks du bar transformation',
+            'category'    => 'Notifications de passations de stocks',
+            'modules'     => ['Gestion des stocks'],
+            'code'        => 'STOCK',
+        ],
         'view_passations_notification_cancel' => [
             'description' => 'Afficher les notifications de passations annulées',
             'category' => 'Notifications de passations de stocks',
@@ -60,12 +78,7 @@ class ExtractPermissions extends Command
             'modules' => ['Gestion des stocks'],
             'code' => 'STOCK',
         ],
-        'view_icons_passations_notification' => [
-            'description' => 'Afficher l\'icône des notifications de passations',
-            'category' => 'Notifications de passations de stocks',
-            'modules' => ['Gestion des stocks'],
-            'code' => 'STOCK',
-        ],
+
         'mark_as_read_passations_notification' => [
             'description' => 'Marquer une notification de passation comme lue',
             'category' => 'Notifications de passations de stocks',
@@ -126,12 +139,6 @@ class ExtractPermissions extends Command
             'modules' => ['Gestion des stocks'],
             'code' => 'STOCK',
         ],
-        'view_icons_decisional_passations_notification' => [
-            'description' => 'Afficher l\'icône des notifications décisionnelles de passations',
-            'category' => 'Notifications décisionnelles de passations',
-            'modules' => ['Gestion des stocks'],
-            'code' => 'STOCK',
-        ],
         'mark_as_read_decisional_passations_notification' => [
             'description' => 'Marquer une notification décisionnelle de passation comme lue',
             'category' => 'Notifications décisionnelles de passations',
@@ -144,7 +151,6 @@ class ExtractPermissions extends Command
             'modules' => ['Gestion des stocks'],
             'code' => 'STOCK',
         ],
-
         'view_role_related_data' => [
             'description' => 'Partager les mêmes informations entre utilisateurs ayant le même rôle.',
             'category' => 'Gestion des utilisateurs',
@@ -382,6 +388,12 @@ class ExtractPermissions extends Command
         ],
         'view_extended_cash_register_date_recovery' => [
             'description' => 'Afficher l\'interface de recouvrements des factures',
+            'category' => 'Gestion des encaissements',
+            'modules' => ['Gestion du restaurant', 'Gestion du bar'],
+            'code' => 'RESTAURANT,BAR',
+        ],
+        'view_defective_history' => [
+            'description' => 'Afficher l\'historique de la suppression des défectieux',
             'category' => 'Gestion des encaissements',
             'modules' => ['Gestion du restaurant', 'Gestion du bar'],
             'code' => 'RESTAURANT,BAR',

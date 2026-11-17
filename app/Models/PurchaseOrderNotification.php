@@ -21,6 +21,8 @@ class PurchaseOrderNotification extends Model
 
     protected $fillable = [
         'purchase_order_uuid',
+        'passation_uuid',
+        'stock_adjustments_uuid',
         'status',
         'message',
         'target',
@@ -59,6 +61,14 @@ class PurchaseOrderNotification extends Model
     public function purchaseOrder(): BelongsTo
     {
         return $this->belongsTo(PurchaseOrder::class, 'purchase_order_uuid', 'uuid');
+    }
+    public function stock_adjustments():BelongsTo
+    {
+        return $this->belongsTo(StockAdjustment::class, 'stock_adjustments_uuid', 'uuid');
+    }
+    public function passations():BelongsTo
+    {
+        return $this->belongsTo(Passation::class, 'passation_uuid', 'uuid');
     }
     public function user(): BelongsTo
     {

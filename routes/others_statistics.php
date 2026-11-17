@@ -6,6 +6,8 @@ Route::get('/restaurant/print_menusIndex_and_drinksIndex', [\App\Http\Controller
 Route::get('/restaurant/menus/top_selling', [\App\Http\Controllers\OthersStatisticsController::class, 'topSellingItemsIndex']);
 Route::get('/restaurant/print_topSellingItemsIndex', [\App\Http\Controllers\OthersStatisticsController::class, 'print_topSellingItemsIndex']);
 Route::get('/restaurant/menus/defective_stats', [\App\Http\Controllers\OthersStatisticsController::class, 'get_defective_statistics']);
+Route::get('/restaurant/menus/get_deleted_statistics', [\App\Http\Controllers\OthersStatisticsController::class, 'get_deleted_statistics']);
 Route::get('/restaurant/print_get_defective_statistics', [\App\Http\Controllers\OthersStatisticsController::class, 'print_get_defective_statistics']);
 Route::get('/restaurant/sales/client_history_detailed', [\App\Http\Controllers\OthersStatisticsController::class, 'clientConsumptionHistory']);
 Route::get('/restaurant/print_clientConsumptionHistory', [\App\Http\Controllers\OthersStatisticsController::class, 'print_clientConsumptionHistory']);
+Route::get('/restaurant/free-items', [\App\Http\Controllers\OthersStatisticsController::class, 'get_free_statistics']);
