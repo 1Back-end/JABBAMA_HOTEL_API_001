@@ -28,7 +28,7 @@ use Illuminate\Validation\Rule;
 use Maatwebsite\Excel\Facades\Excel;
 
 /**
- * @permission_category Gestion des commandes
+ * @permission_category Gestion des Commandes de Stock
  * @permission_module Gestion des stocks
  * @code_module STOCK
  */
@@ -479,7 +479,7 @@ class PurchaseOrderController extends Controller
      * Display a listing of the resource.
      * @permission PurchaseOrderController::show
      * @code STOCK
-     * @permission_desc Afficher les détails des commandes
+     * @permission_desc Afficher les détails d'une commande
      */
     public function show($uuid)
     {
@@ -531,7 +531,7 @@ class PurchaseOrderController extends Controller
      * Display a listing of the resource.
      * @permission PurchaseOrderController::update_orders
      * @code STOCK
-     * @permission_desc Modifier les commandes
+     * @permission_desc Modifier une commande
      */
     public function update_orders(Request $request, $uuid)
     {
@@ -677,7 +677,7 @@ class PurchaseOrderController extends Controller
      * Display a listing of the resource.
      * @permission PurchaseOrderController::destroy
      * @code STOCK
-     * @permission_desc Suppression des commandes
+     * @permission_desc Supprimer une commande
      */
     public function destroy(Request $request, string $uuid)
     {
@@ -1548,7 +1548,7 @@ class PurchaseOrderController extends Controller
      * Display a listing of the resource.
      * @permission PurchaseOrderController::print_orders
      * @code STOCK
-     * @permission_desc Imprimer une commande au format PDF
+     * @permission_desc Imprimer les details d'une commande au format PDF
      */
     public function print_orders(Request $request, string $uuid)
     {

@@ -271,13 +271,6 @@ class FreeClientRestaurantController extends Controller
 
 
     }
-
-    /**
-     * Display a listing of the resource.
-     * @permission FreeClientRestaurantController::allocateAmount
-     * @code BAR, RESTAURANT
-     * @permission_desc Enregistrer le montant des arrhes
-     */
     public function allocateAmount(Request $request, $uuid)
     {
         $request->validate([

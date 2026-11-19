@@ -94,7 +94,7 @@ class MenuRestaurantController extends Controller
      * Display a listing of the resource.
      * @permission MenuRestaurantController::store
      * @code RESTAURANT
-     * @permission_desc Créer les menus du restaurant
+     * @permission_desc Créer un menu du restaurant
      */
     public function store(Request $request)
     {
@@ -225,7 +225,7 @@ class MenuRestaurantController extends Controller
      * Display a listing of the resource.
      * @permission MenuRestaurantController::update
      * @code RESTAURANT
-     * @permission_desc Modifier les menus du restaurant
+     * @permission_desc Modifier un menu du restaurant
      */
     public function update_menus(Request $request, string $uuid)
     {
@@ -389,7 +389,7 @@ class MenuRestaurantController extends Controller
      * Display a listing of the resource.
      * @permission MenuRestaurantController::updateStatus
      * @code RESTAURANT
-     * @permission_desc Activer/Désactiver les menus du restaurant
+     * @permission_desc Activer/Désactiver un menu du restaurant
      */
 
     public function updateStatus(string $uuid)
@@ -413,7 +413,7 @@ class MenuRestaurantController extends Controller
      * Display a listing of the resource.
      * @permission MenuRestaurantController::destroy
      * @code RESTAURANT
-     * @permission_desc Supprimer les menus du restaurant
+     * @permission_desc Supprimer un menu du restaurant
      */
     public function destroy(Request $request, string $uuid)
     {

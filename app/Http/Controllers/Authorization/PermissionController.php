@@ -28,7 +28,7 @@ class PermissionController extends Controller
      *
      * @permission PermissionController::index
      * @code STOCK, BAR, RESTAURANT
-     * @permission_desc Afficher les permissions
+     * @permission_desc Afficher la liste des permissions
      */
     public function index(Request $request): JsonResponse
     {
@@ -72,9 +72,6 @@ class PermissionController extends Controller
      */
     public function permissionsByCategory(Request $request): JsonResponse
     {
-        \Log::info('--- DEBUT permissionsByCategory ---');
-        \Log::info('Paramètres bruts reçus :', $request->all());
-
         $moduleUuids = $request->input('module_uuids');
 
         if (is_string($moduleUuids)) {
@@ -97,14 +94,8 @@ class PermissionController extends Controller
         if (empty($moduleCodes) && !empty($moduleUuids)) {
             $moduleCodes = $moduleUuids;
         }
-
-        \Log::info('Codes de modules identifiés pour le filtre :', $moduleCodes);
-
-        // Définition de la règle de filtrage conditionnelle
         $filterPermissions = function ($query) use ($moduleCodes) {
             $query->whereNotNull('code');
-
-            // Si des modules sont spécifiés, on applique le filtre LIKE / OR
             if (!empty($moduleCodes)) {
                 $query->where(function ($q) use ($moduleCodes) {
                     foreach ($moduleCodes as $index => $moduleCode) {
@@ -122,13 +113,10 @@ class PermissionController extends Controller
                     }
                 });
             }
-            // S'il n'y a aucun module, on ne met aucun filtre supplémentaire -> tout passe !
         };
 
         $categoriesQuery = PermissionCategory::whereNotNull('libelle')
             ->where('libelle', '!=', 'Autres');
-
-        // Si des modules sont demandés, on filtre aussi les catégories pour ne garder que celles qui ont des permissions correspondantes
         if (!empty($moduleCodes)) {
             $categoriesQuery->whereHas('permissions', $filterPermissions);
         }
@@ -140,82 +128,8 @@ class PermissionController extends Controller
             }])
             ->orderBy('libelle', 'asc')
             ->get();
-
-        \Log::info('Nombre de catégories trouvées : ' . $categories->count());
-        \Log::info('--- FIN permissionsByCategory ---');
-
         return response()->json([
             'categories' => $categories,
-        ]);
-    }
-
-    /**
-     * @param PermissionRequest $request
-     * @return JsonResponse
-     *
-     * @permission PermissionController::store
-     * @code STOCK, BAR, RESTAURANT
-     * @permission_desc Créer une permission
-     */
-    public function store(PermissionRequest $request)
-    {
-        Permission::create($request->validated());
-
-        return response()->json([
-            'message' => __("Permission crée avec succès !")
-        ]);
-    }
-
-    /**
-     * @param Permission $permission
-     * @return JsonResponse
-     *
-     * @permission PermissionController::show
-     * @code STOCK, BAR, RESTAURANT
-     * @permission_desc Afficher une permission
-     */
-    public function show(Permission $permission)
-    {
-        return response()->json($permission);
-    }
-
-    /**
-     * @param Permission $permission
-     * @param PermissionRequest $request
-     * @return JsonResponse
-     *
-     * @permission PermissionController::update
-     * @code STOCK, BAR, RESTAURANT
-     * @permission_desc Mise à jour d’une permission
-     */
-    public function update(PermissionRequest $request, Permission $permission)
-    {
-        $data = $permission->system ? $request->except('name') : $request->validated();
-
-        $permission->update($data);
-
-        return response()->json([
-            'message' => __("Permission mis à jour avec succès !")
-        ], Response::HTTP_ACCEPTED);
-    }
-
-    /**
-     * @param Permission $permission
-     * @param int $activate
-     * @return JsonResponse
-     *
-     * @permission PermissionController::activate
-     * @code STOCK, BAR, RESTAURANT
-     * @permission_desc Activer / Désactiver une permission
-     */
-    public function activate(Permission $permission, int $activate)
-    {
-        $permission->update([
-            'active' => $activate,
-        ]);
-
-        return \response()->json([
-            'message' => __("Le permission a été " . $activate ? 'activé' : 'désactivé' . " avec succès !"),
         ]);
     }
 
@@ -252,7 +166,7 @@ class PermissionController extends Controller
      *
      * @permission PermissionController::activatePermissionToRole
      * @code STOCK, BAR, RESTAURANT
-     * @permission_desc Activate / Désactiver une permission à un rôle
+     * @permission_desc Activer / Désactiver une permission à un rôle
      */
     public function activatePermissionToRole(Role $role, Permission $permission, int $activate)
     {

@@ -45,7 +45,7 @@ class StockAdjustmentController extends Controller
      * Display a listing of the resource.
      * @permission StockAdjustmentController::store
      * @code STOCK
-     * @permission_desc Enregistrer une régularisation de stocks
+     * @permission_desc Créer une régularisation de stocks
      */
     public function store(Request $request)
     {
@@ -638,7 +638,7 @@ class StockAdjustmentController extends Controller
      * Display a listing of the resource.
      * @permission StockAdjustmentController::export_stock_adjustment
      * @code STOCK
-     * @permission_desc Exporter la régularisation des stocks en Excel
+     * @permission_desc Exporter les régularisations de stocks en Excel
      */
     public function export_stock_adjustment(Request $request)
     {
@@ -667,11 +667,8 @@ class StockAdjustmentController extends Controller
     {
         try {
             $action = (int) $request->input('action');
-            Log::info("Action reçue : {$action}");
 
-            // Vérification action via l'enum
             if (!array_key_exists($action, StockAdjustmentAction::TO_ARRAY())) {
-                Log::warning("Action invalide : {$action}");
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Action invalide.'
@@ -695,8 +692,6 @@ class StockAdjustmentController extends Controller
                 })
                 ->get();
 
-            Log::info("Nombre de régularisations trouvées : " . $stock_adjustments->count());
-
             if ($stock_adjustments->isEmpty()) {
                 Log::warning("Aucune régularisation trouvée pour action={$action} entre {$start_date} et {$end_date}");
                 return response()->json([
@@ -704,8 +699,6 @@ class StockAdjustmentController extends Controller
                     'message' => 'Aucune régularisation trouvée pour cette action et cette période.'
                 ], 404);
             }
-
-            // Nom du fichier
             $actionLabel = StockAdjustmentAction::LABEL($action);
             $fileName = 'RAPPORTS-REGULARISATION-STOCKS-' . $actionLabel . '-' . now()->format('YmdHis') . '.pdf';
             $folderPath = 'storage/rapports_stock_adjustment/' . strtolower($actionLabel);
@@ -762,19 +755,14 @@ class StockAdjustmentController extends Controller
      * Display a listing of the resource.
      * @permission StockAdjustmentController::print_stock_adjustments
      * @code STOCK
-     * @permission_desc Imprimer les rapports de régularisations de stocks en PDF
+     * @permission_desc Imprimer la liste des régularisations de stock en PDF
      */
     public function print_stock_adjustments(Request $request)
     {
         try {
-            // 🔹 Création de l'objet filter depuis la requête
             $filter = StockAdjustmentFilterData::fromRequestStockAdjustmentFilterData($request);
-
-            // 🔹 Dates par défaut
             $startDate = $filter->start_date ? Carbon::parse($filter->start_date)->startOfDay() : null;
             $endDate   = $filter->end_date ? Carbon::parse($filter->end_date)->endOfDay() : null;
-
-            // 🔹 Construction de la requête avec filtres
             $query = StockAdjustment::with([
                 'warehouse',
                 'items.product',
@@ -804,18 +792,14 @@ class StockAdjustmentController extends Controller
 
             $warehouse = $filter->warehouse_uuid ? Warehouse::find($filter->warehouse_uuid) : null;
 
-            // 🔹 Nom du fichier
             $actionLabel = $filter->action ? StockAdjustmentAction::LABEL($filter->action) : 'TOUS';
             $fileName    = 'RAPPORTS-REGULARISATION-STOCKS-' . $actionLabel . '-' . now()->format('YmdHis') . '.pdf';
             $folderPath  = 'storage/stock_adjustment/' . strtolower($actionLabel);
             $filePath    = $folderPath . '/' . $fileName;
 
-            // 🔹 Création du dossier si inexistant
             if (!is_dir(public_path($folderPath))) {
                 mkdir(public_path($folderPath), 0755, true);
             }
-
-            // 🔹 Préparation des données pour le PDF
             $data = [
                 'stock_adjustments' => $stock_adjustments,
                 'action_label'      => $actionLabel,
@@ -827,8 +811,6 @@ class StockAdjustmentController extends Controller
             ];
 
             $footer = 'pdfs.reports.factures.footer';
-
-            // 🔹 Génération du PDF
             save_browser_shot_pdf(
                 view: 'pdfs.stock_adjustment.stock_adjustment',
                 data: $data,

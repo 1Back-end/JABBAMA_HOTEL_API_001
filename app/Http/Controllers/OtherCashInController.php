@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 /**
- * @permission_category Gestion des autres encaissements
+ * @permission_category Gestion de la fiche de Caisse
  * @permission_module Gestion du restaurant
  * @code_module RESTAURANT
  * @permission_module Gestion du bar
@@ -250,7 +250,7 @@ class OtherCashInController extends Controller
      * Store a newly created resource in storage.
      * @permission OtherCashInController::cancel
      * @code BAR, RESTAURANT
-     * @permission_desc Annuler le libéllé d'un autre encaissement
+     * @permission_desc Annuler un libellé d'un autre encaissement
      */
     public function cancel(Request $request, $uuid)
     {
@@ -289,7 +289,7 @@ class OtherCashInController extends Controller
      * Display a listing of the resource.
      * @permission OtherCashInController::cancelGroup
      * @code BAR, RESTAURANT
-     * @permission_desc Annuler la catégorie d'un autre encaissement
+     * @permission_desc Annuler une catégorie d'un autre encaissement
      */
     public function cancelGroup(Request $request)
     {

@@ -7,7 +7,7 @@ use App\Models\RegulationMethod;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 /**
- *  @permission_category Gestion des modes de règlements
+ *  @permission_category Gestion de la fiche de Caisse
  * @permission_module Gestion du restaurant
  * @code_module RESTAURANT
  * @permission_module Gestion du bar

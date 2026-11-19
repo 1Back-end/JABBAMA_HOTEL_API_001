@@ -207,7 +207,7 @@ class WarehouseController extends Controller
      * Display a listing of the resource.
      * @permission WarehouseController::show
      * @code STOCK
-     * @permission_desc Afficher les détails des entrepôts
+     * @permission_desc Afficher les détails d'un entrepôt
      */
     public function show(string $uuid)
     {
@@ -366,7 +366,7 @@ class WarehouseController extends Controller
      * Display a listing of the resource.
      * @permission WarehouseController::update_status
      * @code STOCK
-     * @permission_desc Activer/Désactiver des entrepôts
+     * @permission_desc Activer/Désactiver un entrepôt
      */
     public function update_status(Request $request, $uuid){
         $auth = auth()->user();

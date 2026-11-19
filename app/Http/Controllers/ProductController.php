@@ -120,7 +120,7 @@ class ProductController extends Controller
      * Display a listing of the resource.
      * @permission ProductController::store
      * @code STOCK
-     * @permission_desc Créer les articles
+     * @permission_desc Créer un article
      */
     public function store(Request $request)
     {
@@ -230,12 +230,11 @@ class ProductController extends Controller
         }
     }
 
-
     /**
      * Display a listing of the resource.
      * @permission ProductController::update_status
      * @code STOCK
-     * @permission_desc Activer/Désactiver des articles
+     * @permission_desc Activer/Désactiver un article
      */
     public function update_status(Request $request, $uuid)
     {
@@ -290,7 +289,7 @@ class ProductController extends Controller
      * Display a listing of the resource.
      * @permission ProductController::show
      * @code STOCK
-     * @permission_desc Afficher les détails des articles
+     * @permission_desc Afficher le détail d'un article
      */
     public function show($uuid)
     {
@@ -324,7 +323,7 @@ class ProductController extends Controller
      * Display a listing of the resource.
      * @permission ProductController::update
      * @code STOCK
-     * @permission_desc Modifier des articles
+     * @permission_desc Modifier un article
      */
     public function update_products(Request $request, $uuid)
     {
@@ -332,12 +331,9 @@ class ProductController extends Controller
         DB::beginTransaction();
 
         try {
-            // 1. Trouver le produit par UUID ou échouer
             $product = Product::where('uuid', $uuid)->firstOrFail();
 
-            // 2. Validation des champs
             $validated = $request->validate([
-                // On ignore l'ID actuel pour le nom unique
                 'name' => 'required|string|max:255|unique:produits,name,' . $product->uuid . ',uuid',
                 'description' => 'nullable|string',
                 'category_uuid' => 'nullable|exists:categories,uuid',
@@ -362,8 +358,6 @@ class ProductController extends Controller
             ]);
 
             $validated['updated_by'] = $auth->id;
-
-            // 3. Mise à jour des données de base du produit
             $product->update($validated);
 
 
@@ -482,7 +476,7 @@ class ProductController extends Controller
      * Display a listing of the resource.
      * @permission ProductController::destroy
      * @code STOCK
-     * @permission_desc Supprimer des articles
+     * @permission_desc Supprimer un article
      */
     public function destroy(Request $request, string $uuid)
     {

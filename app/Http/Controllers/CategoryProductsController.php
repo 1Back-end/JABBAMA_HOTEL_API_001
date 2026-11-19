@@ -51,7 +51,7 @@ class CategoryProductsController extends Controller
      * Display a listing of the resource.
      * @permission CategoryProductsController::store
      * @code STOCK
-     * @permission_desc Créer les catégories d'articles
+     * @permission_desc Créer une catégorie d'articles
      */
     public function store(Request $request)
     {
@@ -86,7 +86,7 @@ class CategoryProductsController extends Controller
      * Display a listing of the resource.
      * @permission CategoryProductsController::show
      * @code STOCK
-     * @permission_desc Afficher les détails des catégories d'articles
+     * @permission_desc Afficher les détails d'une catégorie d'article
      */
     public function show(string $uuid)
     {
@@ -103,7 +103,7 @@ class CategoryProductsController extends Controller
      * Display a listing of the resource.
      * @permission CategoryProductsController::update
      * @code STOCK
-     * @permission_desc Modifier les catégories d'articles
+     * @permission_desc Modifier une catégorie d'articles
      */
     public function update(Request $request, string $uuid)
     {
@@ -137,7 +137,7 @@ class CategoryProductsController extends Controller
      * Display a listing of the resource.
      * @permission CategoryProductsController::destroy
      * @code STOCK
-     * @permission_desc Supprimer les catégories d'articles
+     * @permission_desc Supprimer une catégorie d'articles
      */
     public function destroy(Request $request, string $uuid)
     {
@@ -147,7 +147,6 @@ class CategoryProductsController extends Controller
             'password' => 'required|string'
         ]);
 
-        // Vérification du mot de passe
         if (!Hash::check($request->password, $auth->password)) {
             return response()->json([
                 'status'  => 'error',
@@ -158,7 +157,6 @@ class CategoryProductsController extends Controller
         try {
             $category = Category::findOrFail($uuid);
 
-            // Vérifier si la catégorie est utilisée dans des produits
             $isUsed = \App\Models\Product::where('category_uuid', $uuid)->exists();
             if ($isUsed) {
                 return response()->json([
@@ -195,7 +193,7 @@ class CategoryProductsController extends Controller
      * Display a listing of the resource.
      * @permission CategoryProductsController::update_status
      * @code STOCK
-     * @permission_desc Activer/Désactiver les catégories d'articles
+     * @permission_desc Activer/Désactiver une catégorie d'articles
      */
     public function update_status(Request $request, $uuid){
         $auth = auth()->user();

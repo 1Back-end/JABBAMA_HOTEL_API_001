@@ -23,7 +23,7 @@ class MenuCategoryController extends Controller
      * Display a listing of the resource.
      * @permission MenuCategoryController::store
      * @code RESTAURANT
-     * @permission_desc Créer les catégories de menus
+     * @permission_desc Créer une catégorie de menus
      */
     public function store(Request $request)
     {
@@ -82,7 +82,7 @@ class MenuCategoryController extends Controller
      * Display a listing of the resource.
      * @permission MenuCategoryController::update
      * @code RESTAURANT
-     * @permission_desc Modifier les catégories de menus
+     * @permission_desc Modifier une catégorie de menus
      */
     public function update(Request $request, string $uuid)
     {
@@ -192,7 +192,7 @@ class MenuCategoryController extends Controller
      * Display a listing of the resource.
      * @permission MenuCategoryController::update_status
      * @code RESTAURANT
-     * @permission_desc Activer/Désactiver les catégories de menus
+     * @permission_desc Activer/Désactiver une catégorie de menus
      */
     public function update_status(Request $request, string $uuid)
     {
@@ -282,7 +282,7 @@ class MenuCategoryController extends Controller
      * Display a listing of the resource.
      * @permission MenuCategoryController::destroy
      * @code RESTAURANT
-     * @permission_desc Supprimer les catégories de menus
+     * @permission_desc Supprimer une catégorie de menus
      */
     public function destroy(Request $request, string $uuid)
     {

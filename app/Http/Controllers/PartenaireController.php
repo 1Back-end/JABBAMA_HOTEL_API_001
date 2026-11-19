@@ -301,12 +301,6 @@ class PartenaireController extends Controller
     }
 
 
-    /**
-     * Display a listing of the resource.
-     * @permission PartenaireController::allocateAmount
-     * @code BAR, RESTAURANT
-     * @permission_desc Enregistrer le montant des arrhes
-     */
     public function allocateAmount(Request $request, $uuid)
     {
         $request->validate([

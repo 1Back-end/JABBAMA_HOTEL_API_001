@@ -28,7 +28,7 @@ class StockDeductionController extends Controller
      * Display a listing of the resource.
      * @permission StockDeductionController::print_stocks_deductions
      * @code STOCK
-     * @permission_desc Imprimer les détails de déductions de stocks en PDF
+     * @permission_desc Imprimer les détails d'une déduction de stocks en PDF
      */
     public function print_stocks_deductions(Request $request, string $uuid)
     {

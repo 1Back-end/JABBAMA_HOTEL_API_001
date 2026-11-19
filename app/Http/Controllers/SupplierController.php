@@ -237,7 +237,7 @@ class SupplierController extends Controller
      * Display a listing of the resource.
      * @permission SupplierController::update_status
      * @code STOCK
-     * @permission_desc Activer / Désactiver le compte d'un fournisseur
+     * @permission_desc Activer / Désactiver un fournisseur
      */
     public function update_status(Request $request, $uuid)
     {
@@ -277,7 +277,7 @@ class SupplierController extends Controller
      * Display a listing of the resource.
      * @permission SupplierController::export_suppliers
      * @code STOCK
-     * @permission_desc Exporer les fournisseurs au format Excel
+     * @permission_desc Exporter les fournisseurs au format Excel
      */
     public function export_suppliers()
     {

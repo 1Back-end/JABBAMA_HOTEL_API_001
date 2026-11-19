@@ -50,7 +50,7 @@ class NatureEntrepotController extends Controller
      * Display a listing of the resource.
      * @permission NatureEntrepotController::store
      * @code STOCK
-     * @permission_desc Créer des natures d'entrepôts
+     * @permission_desc Créer une nature d'entrepôt
      */
     public function store(Request $request)
     {
@@ -83,7 +83,7 @@ class NatureEntrepotController extends Controller
      * Display a listing of the resource.
      * @permission NatureEntrepotController::show
      * @code STOCK
-     * @permission_desc Afficher les détails des natures d'entrepôts
+     * @permission_desc Afficher les détails d'une nature d'entrepôt
      */
     public function show(string $uuid)
     {
@@ -101,7 +101,7 @@ class NatureEntrepotController extends Controller
      * Display a listing of the resource.
      * @permission NatureEntrepotController::update
      * @code STOCK
-     * @permission_desc Modifier les natures d'entrepôts
+     * @permission_desc Modifier une nature d'entrepôt
      */
     public function update(Request $request, $uuid)
     {
@@ -135,7 +135,7 @@ class NatureEntrepotController extends Controller
      * Display a listing of the resource.
      * @permission NatureEntrepotController::destroy
      * @code STOCK
-     * @permission_desc Supprimer les natures d'entrepôts
+     * @permission_desc Supprimer une nature d'entrepôt
      */
     public function destroy(Request $request, string $uuid)
     {
@@ -165,7 +165,7 @@ class NatureEntrepotController extends Controller
      * Display a listing of the resource.
      * @permission NatureEntrepotController::update_status
      * @code STOCK
-     * @permission_desc Activer/Désactiver les natures d'entrepôts
+     * @permission_desc Activer/Désactiver une nature d'entrepôts
      */
     public function update_status(string $uuid, Request $request)
     {

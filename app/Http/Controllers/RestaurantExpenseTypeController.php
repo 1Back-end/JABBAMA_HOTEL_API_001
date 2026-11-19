@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
- * @permission_category Gestion des catégories de dépenses
+ * @permission_category Gestion de la fiche de Caisse
  * @permission_module Gestion du restaurant
  * @code_module RESTAURANT
  * @permission_module Gestion du bar
@@ -131,7 +131,7 @@ class RestaurantExpenseTypeController extends Controller
      * Display a listing of the resource.
      * @permission RestaurantExpenseTypeController::updateStatus
      * @code BAR, RESTAURANT
-     * @permission_desc Activer/Désactiver une catégorie de dépenses
+     * @permission_desc Activer/Désactiver une sous-catégorie de dépenses
      */
     public function updateStatus(Request $request, string $uuid)
     {
@@ -156,7 +156,7 @@ class RestaurantExpenseTypeController extends Controller
      * Display a listing of the resource.
      * @permission RestaurantExpenseTypeController::storeSubFamily
      * @code BAR, RESTAURANT
-     * @permission_desc Créer les sous catégories de dépenses
+     * @permission_desc Créer une sous-catégories de dépenses
      */
     public function storeSubFamily(Request $request)
     {
@@ -267,7 +267,7 @@ class RestaurantExpenseTypeController extends Controller
      * Display a listing of the resource.
      * @permission RestaurantExpenseTypeController::Update_Sub_Family
      * @code BAR, RESTAURANT
-     * @permission_desc Modifier les sous catégories de dépenses
+     * @permission_desc Modifier une sous-catégorie de dépenses
      */
     public function Update_Sub_Family(Request $request)
     {

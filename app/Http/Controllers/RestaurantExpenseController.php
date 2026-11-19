@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 /**
- * @permission_category Gestion des dépenses
+ * @permission_category Gestion de la fiche de Caisse
  * @permission_module Gestion du restaurant
  * @code_module RESTAURANT
  * @permission_module Gestion du bar

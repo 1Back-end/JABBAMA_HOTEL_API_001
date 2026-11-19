@@ -33,7 +33,7 @@ class StockPerformanceCriterionController extends Controller
      * Display a listing of the resource.
      * @permission StockPerformanceCriterionController::store
      * @code STOCK
-     * @permission_desc Créer un critère de performances
+     * @permission_desc Créer un critère de performance
      */
     public function store(Request $request)
     {
@@ -96,7 +96,7 @@ class StockPerformanceCriterionController extends Controller
      * Display a listing of the resource.
      * @permission StockPerformanceCriterionController::show
      * @code STOCK
-     * @permission_desc Afficher les détails d'un critère de performances
+     * @permission_desc Afficher les détails d'un critère de performance
      */
     public function show($uuid)
     {
@@ -118,7 +118,7 @@ class StockPerformanceCriterionController extends Controller
      * Display a listing of the resource.
      * @permission StockPerformanceCriterionController::update
      * @code STOCK
-     * @permission_desc Modifier un critère de performances
+     * @permission_desc Modifier un critère de performance
      */
     public function update(Request $request, $uuid)
     {
@@ -185,7 +185,7 @@ class StockPerformanceCriterionController extends Controller
      * Display a listing of the resource.
      * @permission StockPerformanceCriterionController::updateStatus
      * @code STOCK
-     * @permission_desc Activer/Désactiver un critère de performances
+     * @permission_desc Activer/Désactiver un critère de performance
      */
     public function updateStatus(Request $request, $uuid)
     {

@@ -590,7 +590,7 @@ class SupplyController extends Controller
      * Display a listing of the resource.
      * @permission SupplyController::update_supplies
      * @code STOCK
-     * @permission_desc Modifier les approvisionnements
+     * @permission_desc Modifier un approvisionnement
      */
     public function update_supplies(Request $request, string $uuid)
     {
@@ -759,15 +759,11 @@ class SupplyController extends Controller
         }
     }
 
-
-
-
-
     /**
      * Display a listing of the resource.
      * @permission SupplyController::destroy
      * @code STOCK
-     * @permission_desc Supprimer les approvisionnements
+     * @permission_desc Supprimer un approvisionnement
      */
     public function destroy(Request $request, string $uuid)
     {
@@ -834,7 +830,7 @@ class SupplyController extends Controller
      * Display a listing of the resource.
      * @permission SupplyController::rejected_supplies
      * @code STOCK
-     * @permission_desc Rejetter les approvisionnements
+     * @permission_desc Rejetter un approvisionnement
      */
     public function rejected_supplies(Request $request, string $uuid)
     {
@@ -887,7 +883,7 @@ class SupplyController extends Controller
      * Display a listing of the resource.
      * @permission SupplyController::validate_supply
      * @code STOCK
-     * @permission_desc Valider les approvisionnements
+     * @permission_desc Valider un approvisionnement
      */
     public function validate_supply(Request $request, string $uuid)
     {
@@ -1085,13 +1081,11 @@ class SupplyController extends Controller
             ], 500);
         }
     }
-
-
     /**
      * Display a listing of the resource.
      * @permission SupplyController::cancel_supply
      * @code STOCK
-     * @permission_desc Annuler les approvisionnements
+     * @permission_desc Annuler un approvisionnement
      */
     public function cancel_supply(Request $request, string $uuid)
     {
@@ -1170,13 +1164,11 @@ class SupplyController extends Controller
             ], 500);
         }
     }
-
-
     /**
      * Display a listing of the resource.
      * @permission SupplyController::print_supplies
      * @code STOCK
-     * @permission_desc Exporter les détails de l'approvisionnement en PDF
+     * @permission_desc Imprimer le détails d'un approvisionnement en PDF
      */
     public function print_supplies(Request $request, string $uuid)
     {
@@ -1279,7 +1271,6 @@ class SupplyController extends Controller
         }
     }
 
-
     /**
      * Display a listing of the resource.
      * @permission SupplyController::reject_supply_by_super_admin
@@ -1337,7 +1328,7 @@ class SupplyController extends Controller
      * Display a listing of the resource.
      * @permission SupplyController::export_supply
      * @code STOCK
-     * @permission_desc Exporter les approvisionnements au format Excel
+     * @permission_desc Exporter des approvisionnements au format Excel
      */
     public function export_supply(Request $request)
     {
@@ -1354,12 +1345,11 @@ class SupplyController extends Controller
         ]);
 
     }
-
     /**
      * Display a listing of the resource.
      * @permission SupplyController::transfer_supply
      * @code STOCK
-     * @permission_desc Transférer les approvisionnements
+     * @permission_desc Transférer un approvisionnement
      */
     public function transfer_supply(Request $request, string $uuid)
     {

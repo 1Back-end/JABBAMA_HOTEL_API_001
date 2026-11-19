@@ -13,7 +13,7 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 /**
- * @permission_category Gestion des catégories d'encaissements
+ * @permission_category Gestion de la fiche de Caisse
  * @permission_module Gestion du restaurant
  * @code_module RESTAURANT
  * @permission_module Gestion du bar
@@ -60,7 +60,7 @@ class CashReceiptTypeController extends Controller
      * Display a listing of the resource.
      * @permission CashReceiptTypeController::store
      * @code BAR, RESTAURANT
-     * @permission_desc Créer les catégories d'encaissements
+     * @permission_desc Créer une catégorie d'encaissement
      */
     public function store(Request $request)
     {
@@ -104,7 +104,7 @@ class CashReceiptTypeController extends Controller
      * Display a listing of the resource.
      * @permission CashReceiptTypeController::update
      * @code BAR, RESTAURANT
-     * @permission_desc Modifier les catégories d'encaissements
+     * @permission_desc Modifier une catégorie d'encaissement
      */
     public function update(Request $request, string $uuid)
     {
@@ -178,7 +178,7 @@ class CashReceiptTypeController extends Controller
      * Display a listing of the resource.
      * @permission CashReceiptTypeController::updateStatus
      * @code BAR, RESTAURANT
-     * @permission_desc Acriver/Désactiver les catégories d'encaissements
+     * @permission_desc Activer/Désactiver une catégorie d'encaissement
      */
     public function updateStatus(Request $request, string $uuid)
     {
@@ -203,7 +203,7 @@ class CashReceiptTypeController extends Controller
      * Display a listing of the resource.
      * @permission CashReceiptTypeController::store_family
      * @code BAR, RESTAURANT
-     * @permission_desc Créer une sous catégorie d'encaissement pour les activités liées au restaurant
+     * @permission_desc Créer une sous catégorie d'encaissement pour les produits du restaurant
      */
     public function store_family(Request $request)
     {
@@ -283,7 +283,7 @@ class CashReceiptTypeController extends Controller
      * Display a listing of the resource.
      * @permission CashReceiptTypeController::update_family
      * @code BAR, RESTAURANT
-     * @permission_desc Modifier une sous catégorie d'encaissement pour les activités liées au restaurant
+     * @permission_desc Modifier une sous catégorie d'encaissement pour les produits du restaurant
      */
     public function update_family(Request $request)
     {
@@ -380,7 +380,7 @@ class CashReceiptTypeController extends Controller
      * Display a listing of the resource.
      * @permission CashReceiptTypeController::store_sub_family
      * @code BAR, RESTAURANT
-     * @permission_desc Créer une sous catégorie d'encaissement pour les activités non liées au restaurant
+     * @permission_desc Créer une autre sous-catégorie d'encaissement non liée à l'activité
      */
     public function store_sub_family(Request $request)
     {
@@ -460,7 +460,7 @@ class CashReceiptTypeController extends Controller
      * Display a listing of the resource.
      * @permission CashReceiptTypeController::Update_Sub_Family
      * @code BAR, RESTAURANT
-     * @permission_desc Modifier une sous catégorie d'encaissement pour les activités non liées au restaurant
+     * @permission_desc Modifier une sous catégorie d'encaissement non liée à l'activité
      */
     public function Update_Sub_Family(Request $request)
     {
@@ -617,7 +617,7 @@ class CashReceiptTypeController extends Controller
      * Display a listing of the resource.
      * @permission CashReceiptTypeController::updateStatusFamilyAndSubFamily
      * @code BAR, RESTAURANT
-     * @permission_desc Activer/Désactiver sous catégorie d'encaissement
+     * @permission_desc Activer/Désactiver une sous-catégorie d'encaissement
      */
     public function updateStatusFamilyAndSubFamily(Request $request, $uuid)
     {
