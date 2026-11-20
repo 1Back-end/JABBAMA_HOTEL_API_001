@@ -54,7 +54,7 @@ class UnitController extends Controller
      * Display a listing of the resource.
      * @permission UnitController::store
      * @code STOCK
-     * @permission_desc Créer les unités d'articles
+     * @permission_desc Créer une unité d'articles
      */
     public function store(Request $request)
     {
@@ -86,7 +86,7 @@ class UnitController extends Controller
      * Display a listing of the resource.
      * @permission UnitController::update
      * @code STOCK
-     * @permission_desc Modifier les unités d'articles
+     * @permission_desc Modifier une unité d'articles
      */
     public function update(Request $request, string $uuid)
     {
@@ -121,7 +121,7 @@ class UnitController extends Controller
      * Display a listing of the resource.
      * @permission UnitController::show
      * @code STOCK
-     * @permission_desc Afficher les détails des unités d'articles
+     * @permission_desc Afficher les détails d'une unité d'articles
      */
     public function show(string $uuid)
     {
@@ -138,7 +138,7 @@ class UnitController extends Controller
      * Display a listing of the resource.
      * @permission UnitController::destroy
      * @code STOCK
-     * @permission_desc Supprimer des unités d'articles
+     * @permission_desc Supprimer une unité d'articles
      */
     public function destroy(Request $request, string $uuid)
     {
@@ -194,7 +194,7 @@ class UnitController extends Controller
      * Display a listing of the resource.
      * @permission UnitController::update_status
      * @code STOCK
-     * @permission_desc Activer/Désactiver les unités d'articles
+     * @permission_desc Activer/Désactiver une unité d'articles
      */
     public function update_status(Request $request, $uuid){
         $auth = auth()->user();

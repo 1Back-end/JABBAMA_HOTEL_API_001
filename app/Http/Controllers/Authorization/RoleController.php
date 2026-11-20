@@ -30,7 +30,7 @@ class RoleController extends Controller
      *
      * @permission RoleController::index
      * @code STOCK, BAR, RESTAURANT
-     * @permission_desc Liste de tous les roles
+     * @permission_desc Afficher la liste des roles
      */
     public function index(Request $request): JsonResponse
     {
@@ -111,14 +111,7 @@ class RoleController extends Controller
     }
 
 
-    /**
-     * @param Role $role
-     * @return JsonResponse
-     *
-     * @permission RoleController::show
-     * @code STOCK, BAR, RESTAURANT
-     * @permission_desc Afficher un role
-     */
+
     public function show(Role $role)
     {
         return response()->json([
@@ -133,7 +126,7 @@ class RoleController extends Controller
      *
      * @permission RoleController::update
      * @code STOCK, BAR, RESTAURANT
-     * @permission_desc Mise à jour d’un rôle
+     * @permission_desc Modifier un role
      * @throws \Throwable
      */
     public function update(RoleRequest $request, Role $role)
@@ -205,7 +198,7 @@ class RoleController extends Controller
      *
      * @permission RoleController::activate
      * @code STOCK, BAR, RESTAURANT
-     * @permission_desc Désactiver / Activer un rôle
+     * @permission_desc Activer / Désactiver un role
      */
     public function activate(Role $role, int $activate)
     {
@@ -218,15 +211,6 @@ class RoleController extends Controller
         ]);
     }
 
-    /**
-     * @param Role $role
-     * @param Request $request
-     * @return JsonResponse
-     *
-     * @permission RoleController::assignRoleToPermission
-     * @code STOCK, BAR, RESTAURANT
-     * @permission_desc Assigner un rôle à un ou plusieurs permissions
-     */
     public function assignRoleToPermission(Role $role, Request $request)
     {
         $request->validate([
@@ -243,16 +227,6 @@ class RoleController extends Controller
         ]);
     }
 
-    /**
-     * @param Role $role
-     * @param Permission $permission
-     * @param int $activate
-     * @return JsonResponse
-     *
-     * @permission RoleController::activateRoleToPermission
-     * @code STOCK, BAR, RESTAURANT
-     * @permission_desc Activate / Désactiver un rôle à une permission
-     */
     public function activateRoleToPermission(Role $role, Permission $permission, int $activate)
     {
         $role->permissions()->updateExistingPivot($permission->id, [

@@ -17,20 +17,8 @@ class AgentStockFlowController extends Controller
 {
     public function index(Request $request)
     {
-        if ($request->filled('start_date')) {
-            $startDate = Carbon::createFromFormat('d-m-Y', $request->input('start_date'))->startOfDay();
-        } else {
-            $firstOrderDate = OrderMenuRestaurantItem::min('created_at');
-            $startDate = $firstOrderDate
-                ? Carbon::parse($firstOrderDate)->startOfDay()
-                : now()->startOfDay();
-        }
-
-        if ($request->filled('end_date')) {
-            $endDate = Carbon::createFromFormat('d-m-Y', $request->input('end_date'))->endOfDay();
-        } else {
-            $endDate = now()->subDay()->endOfDay();
-        }
+        $startDate = \Carbon\Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay();
+        $endDate = Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay();
 
         $agentId = $request->input('agent_id');
 
@@ -75,7 +63,6 @@ class AgentStockFlowController extends Controller
             $globalPlafondMax = 1;
         }
 
-        // Variables globales pour cumuler les données et la formule de tous les agents
         $sumTotalPlatsVendus = 0;
         $sumTotalPointsReels = 0;
         $sumTotalPointsMax = 0;
@@ -147,14 +134,12 @@ class AgentStockFlowController extends Controller
                     $calculPointMax = $quantiteVendue * $qteDansRecette * $plafondArticle;
                     $pointsMaximumPossibles += $calculPointMax;
 
-                    // Morceaux pour l'agent
                     $partNum = "({$quantiteVendue} * {$qteDansRecette} * {$stockInitialArt})";
                     $partDen = "({$quantiteVendue} * {$qteDansRecette} * {$plafondArticle})";
 
                     $strNumeratorParts[] = $partNum;
                     $strDenominatorParts[] = $partDen;
 
-                    // Morceaux cumulés pour la formule globale de tous les agents
                     $globalNumeratorParts[] = $partNum;
                     $globalDenominatorParts[] = $partDen;
 
@@ -177,7 +162,6 @@ class AgentStockFlowController extends Controller
 
             $evaluation = $this->evaluatePerformance($tauxEcoulementGlobal);
 
-            // Cumul pour la moyenne générale
             $sumTotalPlatsVendus += $totalPlatsVendus;
             $sumTotalPointsReels += $pointsReelsAgent;
             $sumTotalPointsMax += $pointsMaximumPossibles;
@@ -203,13 +187,26 @@ class AgentStockFlowController extends Controller
             ];
         }
 
-        // Calcul de la ligne globale / moyenne générale de tous les agents
+        usort($report, function ($a, $b) {
+            $rateA = is_numeric(rtrim((string) ($a['taux_ecoulement'] ?? ''), '%'))
+                ? (float) rtrim((string) $a['taux_ecoulement'], '%')
+                : -1;
+            $rateB = is_numeric(rtrim((string) ($b['taux_ecoulement'] ?? ''), '%'))
+                ? (float) rtrim((string) $b['taux_ecoulement'], '%')
+                : -1;
+
+            if ($rateA === $rateB) {
+                return ($b['points_reels'] ?? 0) <=> ($a['points_reels'] ?? 0);
+            }
+
+            return $rateB <=> $rateA;
+        });
+
         $globalTauxEcoulement = $sumTotalPointsMax > 0
             ? round(($sumTotalPointsReels / $sumTotalPointsMax) * 100, 2)
             : 0;
         $globalEvaluation = $this->evaluatePerformance($globalTauxEcoulement);
 
-        // Construction de la formule globale combinant toutes les transactions de tous les agents
         $globalFormuleString = !empty($globalNumeratorParts)
             ? "[(" . implode(' + ', $globalNumeratorParts) . ") / (" . implode(' + ', $globalDenominatorParts) . ")] * 100%"
             : "N/A";
@@ -219,7 +216,7 @@ class AgentStockFlowController extends Controller
             'total_points_reels' => round($sumTotalPointsReels, 2),
             'total_points_max' => round($sumTotalPointsMax, 2),
             'taux_ecoulement_global' => $globalTauxEcoulement . '%',
-            'formule_appliquee' => $globalFormuleString, // Ajout de la formule globale
+            'formule_appliquee' => $globalFormuleString,
             'statut' => $globalEvaluation['message'],
             'badge_color' => $globalEvaluation['badge_color']
         ];
@@ -243,22 +240,8 @@ class AgentStockFlowController extends Controller
     }
     public function indexBarDistribution(Request $request)
     {
-        // 1. Gestion de la date de début (Début de l'app si non renseigné)
-        if ($request->filled('start_date')) {
-            $startDate = Carbon::createFromFormat('d-m-Y', $request->input('start_date'))->startOfDay();
-        } else {
-            $firstOrderDate = OrderRestaurantDrink::min('created_at');
-            $startDate = $firstOrderDate
-                ? Carbon::parse($firstOrderDate)->startOfDay()
-                : now()->startOfDay();
-        }
-
-        // 2. Gestion de la date de fin (Fin de la journée d'hier / journée n-1 si non renseigné)
-        if ($request->filled('end_date')) {
-            $endDate = Carbon::createFromFormat('d-m-Y', $request->input('end_date'))->endOfDay();
-        } else {
-            $endDate = now()->subDay()->endOfDay();
-        }
+        $startDate = \Carbon\Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay();
+        $endDate = Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay();
 
         $agentId = $request->input('agent_id');
         $today = now()->toDateString();
@@ -350,7 +333,6 @@ class AgentStockFlowController extends Controller
 
         $report = [];
 
-        // Variables pour le calcul de la moyenne générale
         $sumTotalBoissonsVendues = 0;
         $sumTotalPointsReels = 0;
         $sumTotalPointsMax = 0;
@@ -399,7 +381,6 @@ class AgentStockFlowController extends Controller
 
                 $stockReferenceArticles[strtolower($nomProduit)] = $stockInitialArt;
 
-                // --- CALCULS CORRIGÉS AVEC DES OPÉRATEURS DE MULTIPLICATION VALIDES (*) ---
                 $calculPointArt = $quantiteVendue * $qteDansRecette * $stockInitialArt;
                 $pointsReelsAgent += $calculPointArt;
 
@@ -412,7 +393,6 @@ class AgentStockFlowController extends Controller
                 $strNumeratorParts[] = $partNum;
                 $strDenominatorParts[] = $partDen;
 
-                // Cumul global
                 $globalNumeratorParts[] = $partNum;
                 $globalDenominatorParts[] = $partDen;
 
@@ -433,7 +413,6 @@ class AgentStockFlowController extends Controller
             $formuleString = "[(" . implode(' + ', $strNumeratorParts) . ") / (" . implode(' + ', $strDenominatorParts) . ")] * 100%";
             $evaluation = $this->evaluatePerformance($tauxEcoulementGlobal);
 
-            // Cumul pour les totaux généraux
             $sumTotalBoissonsVendues += $totalBoissonsVendues;
             $sumTotalPointsReels += $pointsReelsAgent;
             $sumTotalPointsMax += $pointsMaximumPossibles;
@@ -458,8 +437,21 @@ class AgentStockFlowController extends Controller
                 'badge_color' => $evaluation['badge_color']
             ];
         }
+        usort($report, function ($a, $b) {
+            $rateA = is_numeric(rtrim((string) ($a['taux_ecoulement'] ?? ''), '%'))
+                ? (float) rtrim((string) $a['taux_ecoulement'], '%')
+                : -1;
+            $rateB = is_numeric(rtrim((string) ($b['taux_ecoulement'] ?? ''), '%'))
+                ? (float) rtrim((string) $b['taux_ecoulement'], '%')
+                : -1;
 
-        // Calcul de la ligne globale / moyenne générale de tous les agents
+            if ($rateA === $rateB) {
+                return ($b['points_reels'] ?? 0) <=> ($a['points_reels'] ?? 0);
+            }
+
+            return $rateB <=> $rateA;
+        });
+
         $globalTauxEcoulement = $sumTotalPointsMax > 0
             ? round(($sumTotalPointsReels / $sumTotalPointsMax) * 100, 2)
             : 0;
@@ -498,22 +490,8 @@ class AgentStockFlowController extends Controller
 
     public function indexBarTransformation(Request $request)
     {
-        // 1. Gestion de la date de début (Début de l'app si non renseigné)
-        if ($request->filled('start_date')) {
-            $startDate = Carbon::createFromFormat('d-m-Y', $request->input('start_date'))->startOfDay();
-        } else {
-            $firstOrderDate = OrderRestaurantDrink::min('created_at');
-            $startDate = $firstOrderDate
-                ? Carbon::parse($firstOrderDate)->startOfDay()
-                : now()->startOfDay();
-        }
-
-        // 2. Gestion de la date de fin (Fin de la journée d'hier / journée n-1 si non renseigné)
-        if ($request->filled('end_date')) {
-            $endDate = Carbon::createFromFormat('d-m-Y', $request->input('end_date'))->endOfDay();
-        } else {
-            $endDate = now()->subDay()->endOfDay();
-        }
+        $startDate = \Carbon\Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay();
+        $endDate = Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay();
 
         $agentId = $request->input('agent_id');
         $today = now()->toDateString();
@@ -617,7 +595,6 @@ class AgentStockFlowController extends Controller
 
         $report = [];
 
-        // Variables globales pour le calcul de la moyenne générale
         $sumTotalBoissonsVendues = 0;
         $sumTotalPointsReels = 0;
         $sumTotalPointsMax = 0;
@@ -743,6 +720,21 @@ class AgentStockFlowController extends Controller
                 }
             }
 
+            usort($report, function ($a, $b) {
+                $rateA = is_numeric(rtrim((string) ($a['taux_ecoulement'] ?? ''), '%'))
+                    ? (float) rtrim((string) $a['taux_ecoulement'], '%')
+                    : -1;
+                $rateB = is_numeric(rtrim((string) ($b['taux_ecoulement'] ?? ''), '%'))
+                    ? (float) rtrim((string) $b['taux_ecoulement'], '%')
+                    : -1;
+
+                if ($rateA === $rateB) {
+                    return ($b['points_reels'] ?? 0) <=> ($a['points_reels'] ?? 0);
+                }
+
+                return $rateB <=> $rateA;
+            });
+
             $tauxEcoulementGlobal = $pointsMaximumPossibles > 0
                 ? round(($pointsReelsAgent / $pointsMaximumPossibles) * 100, 2)
                 : 0;
@@ -840,29 +832,14 @@ class AgentStockFlowController extends Controller
     public function print(Request $request)
     {
         try {
-            // 1. Gestion des dates (Début de l'app jusqu'à hier par défaut)
-            if ($request->filled('start_date')) {
-                $startDate = Carbon::createFromFormat('d-m-Y', $request->input('start_date'))->startOfDay();
-            } else {
-                $firstOrderDate = OrderMenuRestaurantItem::min('created_at');
-                $startDate = $firstOrderDate
-                    ? Carbon::parse($firstOrderDate)->startOfDay()
-                    : now()->startOfDay();
-            }
 
-            if ($request->filled('end_date')) {
-                $endDate = Carbon::createFromFormat('d-m-Y', $request->input('end_date'))->endOfDay();
-            } else {
-                $endDate = now()->subDay()->endOfDay();
-            }
+            $startDate = \Carbon\Carbon::createFromFormat('d-m-Y', $request->start_date)->startOfDay();
+            $endDate = Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay();
 
             $agentId = $request->input('agent_id');
             $today = now()->toDateString();
 
 
-            // ==========================================
-            // SECTION 1 : CUISINE
-            // ==========================================
             $agentIdsQueryKitchen = OrderMenuRestaurantItem::whereBetween('created_at', [$startDate, $endDate])
                 ->whereHas('order', fn($q) => $q->where('status', MenuOrderStatus::FACTURATE->value))
                 ->whereNotNull('updated_by');
@@ -977,9 +954,6 @@ class AgentStockFlowController extends Controller
             ];
 
 
-            // ==========================================
-            // SECTION 2 : BAR DISTRIBUTION
-            // ==========================================
             $warehouseDist = Warehouse::where('is_bar_warehouse', true)->first();
             $warehouseDistUuid = $warehouseDist?->uuid;
             $globalPlafondMaxDist = 1; $globalNomProduitMaxDist = 'N/A'; $snapshotsToday = [];
@@ -1078,9 +1052,6 @@ class AgentStockFlowController extends Controller
             ];
 
 
-            // ==========================================
-            // SECTION 3 : BAR TRANSFORMATION
-            // ==========================================
             $warehouseTrans = Warehouse::where('is_used_for_drinks_transformation', true)->first();
             $warehouseTransUuid = $warehouseTrans?->uuid;
             $globalPlafondMaxTrans = 1; $globalNomProduitMaxTrans = 'N/A';

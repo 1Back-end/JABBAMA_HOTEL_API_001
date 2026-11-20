@@ -184,13 +184,13 @@ class ExtractPermissions extends Command
         ],
         'view_transferred_orders' => [
             'description' => 'Permettre aux gestionnaires de stock de voir toutes les commandes qui leur ont été transférées.',
-            'category' => 'Gestion des commandes',
+            'category' => 'Gestion des Commandes de Stock',
             'modules' => ['Gestion des stocks'],
             'code' => 'STOCK',
         ],
         'view_orders_in_draft' => [
             'description' => 'Permettre aux gestionnaires de stock de voir toutes les commandes en Brouillon.',
-            'category' => 'Gestion des commandes',
+            'category' => 'Gestion des Commandes de Stock',
             'modules' => ['Gestion des stocks'],
             'code' => 'STOCK',
         ],
@@ -199,12 +199,6 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des approvisionnements',
             'modules' => ['Gestion des stocks'],
             'code' => 'STOCK',
-        ],
-        'view_access_setting' => [
-            'description' => 'Accéder aux paramètrages d\'accès (Utilisateurs,Permissions,Rôle)',
-            'category' => 'Gestion des utilisateurs',
-            'modules' => ['Gestion des stocks', 'Gestion du restaurant','Gestion du bar'],
-            'code' => 'RESTAURANT,BAR,STOCK',
         ],
         'view_access_setting_restaurants' => [
             'description' => 'Accéder aux paramètres du restaurant et du Bar',
@@ -219,7 +213,7 @@ class ExtractPermissions extends Command
             'code' => 'STOCK',
         ],
         'view_access_for_dashboard' => [
-            'description' => 'Accéder au tableau dashboard',
+            'description' => "Afficher le tableau de bord",
             'category' => 'Gestion des statistiques',
             'modules' => ['Gestion des stocks'],
             'code' => 'RESTAURANT,BAR,STOCK',
@@ -259,18 +253,6 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des entrepôts',
             'modules' => ['Gestion des stocks'],
             'code' => 'STOCK',
-        ],
-        'see_menus_for_order_restaurant' => [
-            'description' => 'Afficher les commandes contenant des menus',
-            'category' => 'Gestion des commandes du restaurant',
-            'modules' => ['Gestion du restaurant'],
-            'code' => 'RESTAURANT',
-        ],
-        'see_drinks_for_order_restaurant' => [
-            'description' => 'Afficher les boissons d\'une commande',
-            'category' => 'Gestion des commandes du restaurant',
-            'modules' => ['Gestion du bar'],
-            'code' => 'BAR',
         ],
         'view_all_notification_transferred' => [
             'description' => 'Afficher les notifications en transférée',
@@ -827,7 +809,7 @@ class ExtractPermissions extends Command
         ],
         'view_past_simple_orders' => [
             'description' => 'Afficher les dates antérieures des listes commandes',
-            'category' => 'Gestion des commandes',
+            'category' => 'Gestion des Commandes de Stock',
             'modules' => ['Gestion des stocks'],
             'code' => 'STOCK',
         ],
@@ -850,7 +832,7 @@ class ExtractPermissions extends Command
             'code' => 'STOCK',
         ],
         'view_past_stocks_regulations' => [
-            'description' => 'Permettre d\'afficher les données antérieures des régulations de stocks',
+            'description' => "Afficher les dates antérieures de la liste des régularisations de stocks",
             'category' => 'Gestion des régularisations de stocks',
             'modules' => ['Gestion des stocks'],
             'code' => 'STOCK',
@@ -879,6 +861,20 @@ class ExtractPermissions extends Command
             'modules' => ['Gestion du restaurant', 'Gestion du bar'],
             'code' => 'RESTAURANT,BAR',
         ],
+        'MenuOrdersController::storeOrUpdateMenu' => [
+            'description' => "Confectionner des menus",
+            'category' => 'Gestion des menus du restaurant',
+            'modules' => ['Gestion du restaurant', 'Gestion du bar'],
+            'code' => 'RESTAURANT,BAR',
+        ],
+        'UserController::get_users_where_role_is_gestionnaire_stock' => [
+            'description' => "Afficher la liste des gestionnaires stocks",
+            'category' => 'Gestion des Commandes de Stock',
+            'modules' => ['Gestion des stocks'],
+            'code' => 'STOCK',
+        ],
+
+
 
     ];
 

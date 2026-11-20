@@ -22,7 +22,7 @@ class RestaurantDrinkConfigurationController extends Controller
      * Display a listing of the resource.
      * @permission RestaurantDrinkConfigurationController::index
      * @code BAR
-     * @permission_desc Afficher la liste boissons
+     * @permission_desc Afficher la liste des boissons prêtes à boire et à préparer
      */
     public function index(Request $request)
     {
@@ -135,46 +135,6 @@ class RestaurantDrinkConfigurationController extends Controller
         ]);
     }
 
-    /**
-     * Display a listing of the resource.
-     * @permission RestaurantDrinkConfigurationController::transformableProducts
-     * @code BAR
-     * @permission_desc Afficher la liste des boissons transformables
-     */
-    public function transformableProducts(Request $request)
-    {
-        $perPage = $request->input('limit', 25);
-        $page = $request->input('page', 1);
-
-        $query = RestaurantDrinkConfiguration::with(['creator', 'updater', 'product'])
-            ->where('is_transformable_product', true)
-
-            ->when($request->filled('is_active'), function ($query) use ($request) {
-                $query->where(
-                    'is_active',
-                    filter_var($request->input('is_active'), FILTER_VALIDATE_BOOLEAN)
-                );
-            });
-
-        if ($search = trim($request->input('search'))) {
-            $query->where(function ($q) use ($search) {
-                $q->where('code', 'like', "%{$search}%")
-                    ->orWhere('uuid', 'like', "%{$search}%")
-                    ->orWhere('product_uuid', 'like', "%{$search}%")
-                    ->orWhere('description', 'like', "%{$search}%");
-            });
-        }
-
-        $data = $query->latest()->paginate($perPage, ['*'], 'page', $page);
-
-        return response()->json([
-            'data'         => $data->items(),
-            'current_page' => $data->currentPage(),
-            'last_page'    => $data->lastPage(),
-            'total'        => $data->total(),
-        ]);
-    }
-
     private function getLastSellPrice(string $product_uuid): ?float
     {
         return SupplyItem::where('product_uuid', $product_uuid)
@@ -187,7 +147,7 @@ class RestaurantDrinkConfigurationController extends Controller
      * Display a listing of the resource.
      * @permission RestaurantDrinkConfigurationController::store
      * @code BAR
-     * @permission_desc Créer les boissons de consommation directeq
+     * @permission_desc Créer une boisson prête à boire
      */
     public function store(Request $request)
     {
@@ -291,14 +251,12 @@ class RestaurantDrinkConfigurationController extends Controller
         }
     }
 
-
     /**
      * Display a listing of the resource.
      * @permission RestaurantDrinkConfigurationController::update
      * @code BAR
-     * @permission_desc Modifier les boissons de consommation directes
+     * @permission_desc Modifier une boisson prête à boire
      */
-
     public function update(Request $request, string $uuid)
     {
         $auth = auth()->user();
@@ -413,7 +371,7 @@ class RestaurantDrinkConfigurationController extends Controller
      * Display a listing of the resource.
      * @permission RestaurantDrinkConfigurationController::update_status
      * @code BAR
-     * @permission_desc Activer/Désactiver les boissons
+     * @permission_desc Activer/Désactiver une boisson
      */
     public function update_status(Request $request, string $uuid)
     {
@@ -454,7 +412,7 @@ class RestaurantDrinkConfigurationController extends Controller
      * Display a listing of the resource.
      * @permission RestaurantDrinkConfigurationController::show
      * @code BAR
-     * @permission_desc Afficher les détails des boissons
+     * @permission_desc Afficher les détails d'une boisson prête à boire et à préparer
      */
     public function show(string $uuid)
     {
@@ -504,7 +462,7 @@ class RestaurantDrinkConfigurationController extends Controller
      * Display a listing of the resource.
      * @permission RestaurantDrinkConfigurationController::upsert
      * @code BAR
-     * @permission_desc Effectuer la confection des boissons de transformation
+     * @permission_desc Confectionner une boisson à préparer
      */
     public function upsert(Request $request, $drinks_restaurant_uuid)
     {
@@ -598,14 +556,11 @@ class RestaurantDrinkConfigurationController extends Controller
         ]);
     }
 
-
-
-
     /**
      * Display a listing of the resource.
      * @permission RestaurantDrinkConfigurationController::storeTransformableByName
      * @code BAR
-     * @permission_desc Enregistrer les boissons de transformation
+     * @permission_desc Créer une boisson à préparer
      */
     public function storeTransformableByName(Request $request)
     {
@@ -703,12 +658,11 @@ class RestaurantDrinkConfigurationController extends Controller
         }
     }
 
-
     /**
      * Display a listing of the resource.
      * @permission RestaurantDrinkConfigurationController::updateTransformableByName
      * @code BAR
-     * @permission_desc Modifier les boissons de transformation
+     * @permission_desc Modifier une boisson à préparer
      */
     public function updateTransformableByName(Request $request, $uuid)
     {

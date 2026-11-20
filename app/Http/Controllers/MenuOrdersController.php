@@ -18,11 +18,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Enum;
 
-/**
- * @permission_category Fiche technique des menus
- * @permission_module Gestion du restaurant
- * @code_module RESTAURANT
- */
 class MenuOrdersController extends Controller
 {
 
@@ -42,13 +37,6 @@ class MenuOrdersController extends Controller
         ]);
     }
 
-
-    /**
-     * Display a listing of the resource.
-     * @permission MenuOrdersController::storeOrUpdateMenu
-     * @code RESTAURANT
-     * @permission_desc Enregistrer la fiche technique d'un menu
-     */
     public function storeOrUpdateMenu(Request $request, string $menus_restaurant_uuid)
     {
         $auth = auth()->user();
@@ -202,13 +190,6 @@ class MenuOrdersController extends Controller
     }
 
 
-
-    /**
-     * Display a listing of the resource.
-     * @permission MenuOrdersController::show
-     * @code RESTAURANT
-     * @permission_desc Afficher les détails de la fiche technique d'un menu
-     */
     public function showByMenu(string $menus_restaurant_uuid)
     {
         $menuOrder = MenuOrder::with([

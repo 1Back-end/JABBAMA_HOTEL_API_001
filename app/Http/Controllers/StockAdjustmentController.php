@@ -535,7 +535,7 @@ class StockAdjustmentController extends Controller
      * Display a listing of the resource.
      * @permission StockAdjustmentController::print_stock_adjustment
      * @code STOCK
-     * @permission_desc Imprimer une régularisation de stocks en PDF
+     * @permission_desc Imprimer le détail d'une régularisation de stocks en PDF
      */
     public function print_stock_adjustment(Request $request, string $uuid)
     {
@@ -656,13 +656,6 @@ class StockAdjustmentController extends Controller
         ]);
     }
 
-
-    /**
-     * Display a listing of the resource.
-     * @permission StockAdjustmentController::print_stock_adjustments_by_action
-     * @code STOCK
-     * @permission_desc Imprimer les rapports de régularisations de stocks par action
-     */
     public function print_stock_adjustments_by_action(Request $request)
     {
         try {
@@ -747,9 +740,6 @@ class StockAdjustmentController extends Controller
             ], 500);
         }
     }
-
-
-
 
     /**
      * Display a listing of the resource.
@@ -839,9 +829,4 @@ class StockAdjustmentController extends Controller
         }
     }
 
-
-
-
-
-    //
 }

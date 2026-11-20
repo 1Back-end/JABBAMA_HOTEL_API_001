@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * @permission_category Compléments des menus
+ * @permission_category Compléments des menus et Boissons chaudes
  * @permission_module Gestion du restaurant
  * @code_module RESTAURANT
  */
@@ -27,7 +27,7 @@ class ConfigurationsComplementController extends Controller
      * Display a listing of the resource.
      * @permission ConfigurationsComplementController::index
      * @code RESTAURANT
-     * @permission_desc Afficher la liste des compléments des menus
+     * @permission_desc Afficher la liste des compléments des menus et boissons chaudes
      */
     public function index(Request $request)
     {
@@ -83,7 +83,7 @@ class ConfigurationsComplementController extends Controller
      * Display a listing of the resource.
      * @permission ConfigurationsComplementController::store
      * @code RESTAURANT
-     * @permission_desc Créer un complément
+     * @permission_desc Créer un complément ou une boisson chaude
      */
     public function store(Request $request)
     {
@@ -198,7 +198,7 @@ class ConfigurationsComplementController extends Controller
      * Display a listing of the resource.
      * @permission ConfigurationsComplementController::show
      * @code RESTAURANT
-     * @permission_desc Afficher les détails d'un complément
+     * @permission_desc Afficher les détails d'un complément ou une boisson chaude
      */
     public function show(string $uuid)
     {
@@ -236,7 +236,7 @@ class ConfigurationsComplementController extends Controller
      * Display a listing of the resource.
      * @permission ConfigurationsComplementController::updateStatus
      * @code RESTAURANT
-     * @permission_desc Activer/Désactiver un complément
+     * @permission_desc Activer/Désactiver un complément ou une boisson chaude
      */
     public function updateStatus(Request $request, string $uuid)
     {
@@ -305,7 +305,7 @@ class ConfigurationsComplementController extends Controller
      * Display a listing of the resource.
      * @permission ConfigurationsComplementController::update
      * @code RESTAURANT
-     * @permission_desc Modifier un complément
+     * @permission_desc Modifier un complément ou une boisson chaude
      */
     public function update(Request $request, $uuid)
     {
@@ -399,7 +399,6 @@ class ConfigurationsComplementController extends Controller
                 ]
             );
 
-            Log::info('MENU SYNC DONE', ['uuid' => $config->uuid]);
 
             return response()->json([
                 'status' => 'success',
@@ -417,11 +416,6 @@ class ConfigurationsComplementController extends Controller
 
         } catch (\Exception $e) {
 
-            Log::error('UPDATE COMPLEMENT ERROR', [
-                'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-
             return response()->json([
                 'status' => 'error',
                 'message' => 'Erreur serveur',
@@ -430,8 +424,7 @@ class ConfigurationsComplementController extends Controller
         }
     }
 
-
-    public function   getCompositionByComplementUuid(string $commplements_restaurant_uuid)
+    public function  getCompositionByComplementUuid(string $commplements_restaurant_uuid)
     {
         $composition = ComplementComposition::with([
             'complement',
@@ -462,7 +455,7 @@ class ConfigurationsComplementController extends Controller
      * Display a listing of the resource.
      * @permission ConfigurationsComplementController::upsert
      * @code RESTAURANT
-     * @permission_desc Effectuer la confection des compléments et boissons chaudes
+     * @permission_desc Confectionner un complément ou une boisson chaude
      */
     public function upsert(Request $request, string $commplements_restaurant_uuid)
     {

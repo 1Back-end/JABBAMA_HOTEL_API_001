@@ -80,15 +80,6 @@ class UserController extends Controller
         ]);
     }
 
-
-    /**
-     * @param Request $request
-     * @return JsonResponse
-     *
-     * @permission UserController::get_users_where_role_is_gestionnaire_stock
-     * @code STOCK, BAR, RESTAURANT
-     * @permission_desc Afficher la liste des gestionnaires stocks
-     */
     public function get_users_where_role_is_gestionnaire_stock(Request $request): JsonResponse
     {
         $users = User::query()
@@ -292,7 +283,7 @@ class UserController extends Controller
      *
      * @permission UserController::changeStatus
      * @code STOCK, BAR, RESTAURANT
-     * @permission_desc Activer/Désactiver utilisateur
+     * @permission_desc Activer/Désactiver un utilisateur
      */
     public function changeStatus(Request $request, User $user): JsonResponse
     {

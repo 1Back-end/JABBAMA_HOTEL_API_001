@@ -1129,8 +1129,6 @@ class PassationController extends Controller
         }
     }
 
-
-
     /**
      * Display a listing of the resource.
      * @permission PassationController::export_passations_stocks
@@ -1153,13 +1151,6 @@ class PassationController extends Controller
         ]);
     }
 
-
-    /**
-     * Display a listing of the resource.
-     * @permission PassationController::print_passations_by_filter
-     * @code STOCK
-     * @permission_desc Imprimer la liste des  passations de stocks en PDF
-     */
     public function print_passations_by_filter(Request $request)
     {
         try {

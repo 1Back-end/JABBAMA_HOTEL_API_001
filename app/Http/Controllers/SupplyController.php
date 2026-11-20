@@ -101,21 +101,13 @@ class SupplyController extends Controller
         }
 
         if (!$auth->is_super_admin) {
-
-            $roleIds = $auth->roles->pluck('id');
-
-            $query->where(function ($q) use ($auth, $roleIds) {
-
-                if ($auth->can('view_role_related_data')) {
-                    $q->whereHas('purchaseOrder.creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
-                }
+            $query->where(function ($q) use ($auth) {
                 if ($auth->can('view_transferred_supplies')) {
                     $q->orWhereHas('purchaseOrder', fn($po) => $po->whereNotNull('transfered_by'));
                 }
-                if (!$auth->can('view_role_related_data') && !$auth->can('view_transferred_supplies')) {
+                if (!$auth->can('view_transferred_supplies')) {
                     $q->orWhereHas('purchaseOrder', fn($po) => $po->where('created_by', $auth->id));
                 }
-
             });
         }
 
@@ -146,8 +138,6 @@ class SupplyController extends Controller
                             ->orWhere('warehouse_to', 'like', "%{$search}%")
                             ->orWhere('supplier_uuid', 'like', "%{$search}%");
                     })
-
-                    // 🔹 Entrepôts
                     ->orWhereHas('warehouse', function ($qw) use ($search) {
                         $qw->where('ref', 'like', "%{$search}%")
                             ->orWhere('name', 'like', "%{$search}%")
@@ -165,7 +155,6 @@ class SupplyController extends Controller
                             ->orWhere('email', 'like', "%{$search}%");
                     })
 
-                    // 🔹 Produits
                     ->orWhereHas('items.product', function ($qp) use ($search) {
                         $qp->where('name', 'like', "%{$search}%")
                             ->orWhere('code', 'like', "%{$search}%")
@@ -298,7 +287,7 @@ class SupplyController extends Controller
      * Display a listing of the resource.
      * @permission SupplyController::store
      * @code STOCK
-     * @permission_desc Approvisionner les commandes
+     * @permission_desc Approvisionner une commande
      */
     public function store(Request $request)
     {

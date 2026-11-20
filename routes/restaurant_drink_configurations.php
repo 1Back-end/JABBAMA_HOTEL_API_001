@@ -1,7 +1,6 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-Route::get('restaurant_drink_configurations/transformable_products', [\App\Http\Controllers\RestaurantDrinkConfigurationController::class, 'transformableProducts']);
 Route::get('restaurant_drink_configurations/get_sall_drinks_for_restaurants', [\App\Http\Controllers\RestaurantDrinkConfigurationController::class, 'get_sall_drinks_for_restaurants']);
 Route::get('restaurant_drink_configurations/transformable_products/{uuid}', [\App\Http\Controllers\RestaurantDrinkConfigurationController::class, 'getTransformableProductByUuid']);
 Route::apiResource('restaurant_drink_configurations', \App\Http\Controllers\RestaurantDrinkConfigurationController::class);

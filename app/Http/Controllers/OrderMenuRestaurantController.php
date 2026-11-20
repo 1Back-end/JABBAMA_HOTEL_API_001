@@ -6085,28 +6085,15 @@ class OrderMenuRestaurantController extends Controller
         if (
             !$auth->is_super_admin
         ) {
-            $roleIds = $auth->roles->pluck('id');
-
-            $query->where(function ($q) use ($auth, $roleIds) {
-
+            $query->where(function ($q) use ($auth) {
                 $hasVisibilityPermission = false;
-
-                if ($auth->can('view_role_related_data')) {
-                    $q->whereHas('creator.roles', function ($qr) use ($roleIds) {
-                        $qr->whereIn('roles.id', $roleIds);
-                    });
-
-                    $hasVisibilityPermission = true;
-                }
 
                 if ($auth->can('view_kitchen_orders')) {
                     $hasVisibilityPermission
                         ? $q->orWhereNotNull('kitchen_user_id')
                         : $q->whereNotNull('kitchen_user_id');
-
                     $hasVisibilityPermission = true;
                 }
-
                 if ($auth->can('view_bar_orders')) {
                     $hasVisibilityPermission
                         ? $q->orWhereNotNull('bar_user_id')

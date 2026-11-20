@@ -5,7 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Floor;
 use Illuminate\Http\Request;
 /**
- * @permission_category Gestion du service des étages
+ * @permission_category Gestion des étages
  * @permission_module Gestion du restaurant
  * @code_module RESTAURANT
  * @permission_module Gestion du bar
@@ -17,7 +17,7 @@ class FloorController extends Controller
      * Display a listing of the resource.
      * @permission FloorController::store
      * @code BAR, RESTAURANT
-     * @permission_desc Créer le service des étages
+     * @permission_desc Créer un étage
      */
     public function store(Request $request)
     {
@@ -59,7 +59,7 @@ class FloorController extends Controller
      * Display a listing of the resource.
      * @permission FloorController::update
      * @code BAR, RESTAURANT
-     * @permission_desc Modifier le service des étages
+     * @permission_desc Modifier un étage
      */
     public function update(Request $request,string $uuid)
     {
@@ -90,7 +90,7 @@ class FloorController extends Controller
      * Display a listing of the resource.
      * @permission FloorController::updateStatus
      * @code BAR, RESTAURANT
-     * @permission_desc Activer/Désactiver le service des étages
+     * @permission_desc Activer/Désactiver un étage
      */
     public function updateStatus(Request $request,string $uuid)
     {
@@ -113,12 +113,12 @@ class FloorController extends Controller
      * Display a listing of the resource.
      * @permission FloorController::index
      * @code BAR, RESTAURANT
-     * @permission_desc Afficher la liste de service des étages
+     * @permission_desc Afficher la liste des étages
      */
     public function index(Request $request)
     {
         $auth = auth()->user();
-        $roleIds = $auth->roles->pluck('id');
+
         $perPage = $request->input('limit', 5);
         $page = $request->input('page', 1);
 

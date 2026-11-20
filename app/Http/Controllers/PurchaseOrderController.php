@@ -93,18 +93,14 @@ class PurchaseOrderController extends Controller
         }
 
         if (!$auth->is_super_admin) {
-            $roleIds = $auth->roles->pluck('id');
-            $query->where(function ($q) use ($auth, $roleIds) {
-                if ($auth->can('view_role_related_data')) {
-                    $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
-                }
+            $query->where(function ($q) use ($auth) {
                 if ($auth->can('view_transferred_orders')) {
                     $q->orWhereNotNull('transfered_by');
                 }
                 if ($auth->can('view_orders_in_draft')) {
                     $q->orWhereNull('transfered_by');
                 }
-                if (!$auth->can('view_role_related_data') && !$auth->can('view_transferred_orders') && !$auth->can('view_orders_in_draft')) {
+                if (!$auth->can('view_transferred_orders') && !$auth->can('view_orders_in_draft')) {
                     $q->orWhere('created_by', $auth->id);
                 }
             });
@@ -346,7 +342,7 @@ class PurchaseOrderController extends Controller
      * Display a listing of the resource.
      * @permission PurchaseOrderController::store
      * @code STOCK
-     * @permission_desc Création des commandes
+     * @permission_desc Créer des commandes
      */
     public function store(Request $request)
     {

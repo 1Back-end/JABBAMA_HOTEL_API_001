@@ -68,7 +68,7 @@ class SubCategoryController extends Controller
      * Display a listing of the resource.
      * @permission SubCategoryController::store
      * @code STOCK
-     * @permission_desc Création des sous-catégories d'articles
+     * @permission_desc Créer une sous-catégorie d'articles
      */
     public function store(Request $request)
     {
@@ -130,7 +130,7 @@ class SubCategoryController extends Controller
      * Display a listing of the resource.
      * @permission SubCategoryController::show
      * @code STOCK
-     * @permission_desc Afficher les détails des sous-catégories d'articles
+     * @permission_desc Afficher les détails d'une sous-catégorie d'articles
      */
     public function show(string $uuid)
     {
@@ -155,7 +155,7 @@ class SubCategoryController extends Controller
      * Display a listing of the resource.
      * @permission SubCategoryController::update_status
      * @code STOCK
-     * @permission_desc Activation/Désactivation des sous-catégories d'articles
+     * @permission_desc Activer / Désactiver une sous-catégorie d'articles
      */
     public function update_status(Request $request, string $uuid)
     {
@@ -191,7 +191,7 @@ class SubCategoryController extends Controller
      * Display a listing of the resource.
      * @permission SubCategoryController::update
      * @code STOCK
-     * @permission_desc Mise à jour des sous-catégories d'articles
+     * @permission_desc Modifier une sous-catégorie d'articles
      */
     public function update(Request $request, string $uuid)
     {
@@ -258,7 +258,7 @@ class SubCategoryController extends Controller
      * Display a listing of the resource.
      * @permission SubCategoryController::destroy
      * @code STOCK
-     * @permission_desc Suppression des sous-catégories d'articles
+     * @permission_desc Supprimer une sous-catégorie d'articles
      */
     public function destroy(Request $request, string $uuid)
     {

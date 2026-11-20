@@ -1480,48 +1480,130 @@ class OthersStatisticsController extends Controller
 
         $menuUuidFilter = $request->input('menu_uuid');
         $drinkUuidFilter = $request->input('drink_uuid');
+        $freeClientUuidFilter = $request->input('free_client_uuid') ?? $request->input('free_client_for_restaurant_uuid');
 
         $paymentTypes = [
             \App\Enums\TypeClientsForPaiment::FREE->value
         ];
 
+        $applyOrderFilters = function ($q) use ($paymentTypes, $freeClientUuidFilter) {
+            $q->whereIn('type_clients_for_payment', $paymentTypes)
+                ->when($freeClientUuidFilter, fn($query) => $query->where('free_client_for_restaurant_uuid', $freeClientUuidFilter));
+        };
+
+        $resolveFullName = function ($freeClient): ?string {
+            if (!$freeClient) {
+                return null;
+            }
+
+            if (!empty($freeClient->full_name)) {
+                return $freeClient->full_name;
+            }
+
+            $combined = trim(($freeClient->first_name ?? '') . ' ' . ($freeClient->last_name ?? ''));
+            return $combined !== '' ? $combined : null;
+        };
+
         $freeItems = OrderMenuRestaurantItem::with([
             'menu' => fn($query) => $query->withTrashed(),
-            'creator' => fn($query) => $query->withTrashed()
+            'creator' => fn($query) => $query->withTrashed(),
+            'order.free_client_for_restaurant',
         ])
             ->whereBetween('created_at', [$startDate, $endDate])
-            ->whereHas('order', fn($q) => $q->whereIn('type_clients_for_payment', $paymentTypes))
+            ->whereHas('order', $applyOrderFilters)
             ->when($userId, fn($query) => $query->where('created_by', $userId))
-            ->when($menuUuidFilter, function($query) use ($menuUuidFilter) {
+            ->when($menuUuidFilter, function ($query) use ($menuUuidFilter) {
                 $query->where('menus_restaurant_uuid', $menuUuidFilter);
             })
             ->get()
             ->filter(fn($item) => $item->menu !== null);
 
         $processedMenus = collect();
+        $clientTotalsMap = [];
+
+        $registerClientEntry = function (
+            ?string $clientUuid,
+            ?string $fullName,
+            int $qty,
+            int $timesOrdered,
+            float $salePrice,
+            float $productionCost,
+            float $globalProdCost
+        ) use (&$clientTotalsMap) {
+            $key = $clientUuid ?? '__unknown__';
+
+            if (!isset($clientTotalsMap[$key])) {
+                $clientTotalsMap[$key] = [
+                    'free_client_uuid' => $clientUuid,
+                    'full_name' => $fullName ?: '',
+                    'total_times_ordered' => 0,
+                    'total_ordered_quantity' => 0,
+                    'total_revenue_loss' => 0.0,
+                    'total_production_cost' => 0.0,
+                    'global_production_cost' => 0.0,
+                ];
+            } elseif (empty($clientTotalsMap[$key]['full_name']) && !empty($fullName)) {
+                $clientTotalsMap[$key]['full_name'] = $fullName;
+            }
+
+            $clientTotalsMap[$key]['total_times_ordered'] += $timesOrdered;
+            $clientTotalsMap[$key]['total_ordered_quantity'] += $qty;
+            $clientTotalsMap[$key]['total_revenue_loss'] += $salePrice;
+            $clientTotalsMap[$key]['total_production_cost'] += $productionCost;
+            $clientTotalsMap[$key]['global_production_cost'] += $globalProdCost;
+        };
 
         if ($freeItems->isNotEmpty()) {
-            // Regroupement STRICTEMENT par menu_uuid (sans séparer par utilisateur)
-            $processedMenus = $freeItems->groupBy('menus_restaurant_uuid')->map(function ($group) {
+            foreach ($freeItems as $item) {
+                $order = $item->order;
+                $freeClient = $order?->free_client_for_restaurant;
+                $clientUuid = $order?->free_client_for_restaurant_uuid;
+                $fullName = $resolveFullName($freeClient);
+
+                $qty = (int) ($item->quantity_exactly ?? 0);
+                $salePrice = (float) ($qty * ($item->unit_price ?? 0));
+                $unitProdCost = (float) ($item->menu->calculated_production_cost ?? $item->menu->production_cost_final ?? $item->menu->production_cost ?? 0);
+                $prodCost = (float) ($qty * $unitProdCost);
+                $globalProdCost = (float) (($salePrice - $unitProdCost) * $qty);
+
+                $registerClientEntry($clientUuid, $fullName, $qty, 1, $salePrice, $prodCost, $globalProdCost);
+            }
+
+            $processedMenus = $freeItems->groupBy('menus_restaurant_uuid')->map(function ($group) use ($resolveFullName) {
                 $first = $group->first();
                 $menuUuid = $first->menus_restaurant_uuid;
                 $menu = $first->menu;
                 $user = $first->creator;
+                $freeClient = $first->order?->free_client_for_restaurant;
 
                 $totalQuantity = (int) $group->sum('quantity_exactly');
-                $totalRevenue = (float) $group->sum(fn($item) => $item->quantity_exactly * ($item->unit_price ?? 0));
+                $totalSalePrice = (float) $group->sum(fn($item) => $item->quantity_exactly * ($item->unit_price ?? 0));
                 $totalTimesOrdered = $group->count();
+
+                $calculatedProductionCost = (float) ($menu->calculated_production_cost ?? $menu->production_cost_final ?? $menu->production_cost ?? 0);
+                $totalProductionCost = (float) ($totalQuantity * $calculatedProductionCost);
+                $globalProductionCost = (float) (($totalSalePrice - $calculatedProductionCost) * $totalQuantity);
+
+                $ratio = $totalTimesOrdered > 0 ? round($totalQuantity / $totalTimesOrdered, 4) : 0;
+                $ratioPercentage = $totalTimesOrdered > 0 ? round(($totalQuantity / $totalTimesOrdered) * 100, 2) : 0;
 
                 return [
                     'uuid' => $menuUuid,
                     'name' => $menu->name,
                     'code' => $menu->code,
                     'type_menu' => $menu->type_menu,
+                    'free_client_uuid' => $first->order?->free_client_for_restaurant_uuid,
+                    'free_client_full_name' => $resolveFullName($freeClient),
                     'user_id' => $user?->id ?? $first->created_by,
                     'user_name' => $user?->nom_utilisateur ?? 'Inconnu',
                     'total_times_ordered' => $totalTimesOrdered,
                     'total_ordered_quantity' => $totalQuantity,
-                    'total_revenue_loss' => $totalRevenue,
+                    'total_revenue_loss' => round($totalSalePrice, 2),
+                    'calculated_production_cost' => round($calculatedProductionCost, 2),
+                    'total_production_cost' => round($totalProductionCost, 2),
+                    'global_production_cost' => round($globalProductionCost, 2),
+                    'ratio' => $ratio,
+                    'ratio_percentage' => $ratioPercentage,
                 ];
             });
         }
@@ -1532,12 +1614,13 @@ class OthersStatisticsController extends Controller
 
         $rawFreeDrinks = OrderRestaurantDrink::with([
             'drinkConfig' => fn($query) => $query->withTrashed(),
-            'creator' => fn($query) => $query->withTrashed()
+            'creator' => fn($query) => $query->withTrashed(),
+            'order.free_client_for_restaurant',
         ])
             ->whereBetween('created_at', [$startDate, $endDate])
-            ->whereHas('order', fn($q) => $q->whereIn('type_clients_for_payment', $paymentTypes))
+            ->whereHas('order', $applyOrderFilters)
             ->when($userId, fn($query) => $query->where('created_by', $userId))
-            ->when($drinkUuidFilter, function($query) use ($drinkUuidFilter) {
+            ->when($drinkUuidFilter, function ($query) use ($drinkUuidFilter) {
                 $query->where('drink_restaurant_uuid', $drinkUuidFilter);
             })
             ->get();
@@ -1546,29 +1629,89 @@ class OthersStatisticsController extends Controller
         $topOthersMenu = collect();
 
         if ($freeDrinksItems->isNotEmpty()) {
-            // Regroupement STRICTEMENT par drink_restaurant_uuid (sans séparer par utilisateur)
-            $topOthersMenu = $freeDrinksItems->groupBy('drink_restaurant_uuid')->map(function ($group) {
+            foreach ($freeDrinksItems as $drinkItem) {
+                $order = $drinkItem->order;
+                $freeClient = $order?->free_client_for_restaurant;
+                $clientUuid = $order?->free_client_for_restaurant_uuid;
+                $fullName = $resolveFullName($freeClient);
+
+                $qty = (int) ($drinkItem->quantity_exactly ?? 0);
+                $salePrice = (float) ($qty * ($drinkItem->unit_price ?? 0));
+                $unitProdCost = (float) ($drinkItem->drinkConfig->calculated_production_cost ?? $drinkItem->drinkConfig->production_cost_final ?? $drinkItem->drinkConfig->production_cost ?? 0);
+                $prodCost = (float) ($qty * $unitProdCost);
+                $globalProdCost = (float) (($salePrice - $unitProdCost) * $qty);
+
+                $registerClientEntry($clientUuid, $fullName, $qty, 1, $salePrice, $prodCost, $globalProdCost);
+            }
+
+            $topOthersMenu = $freeDrinksItems->groupBy('drink_restaurant_uuid')->map(function ($group) use ($resolveFullName) {
                 $first = $group->first();
                 $drinkUuid = $first->drink_restaurant_uuid;
                 $drinkConfig = $first->drinkConfig;
                 $user = $first->creator;
+                $freeClient = $first->order?->free_client_for_restaurant;
 
                 $totalQuantity = (int) $group->sum('quantity_exactly');
-                $totalRevenue = (float) $group->sum(fn($def) => $def->quantity_exactly * ($def->unit_price ?? 0));
+                $totalSalePrice = (float) $group->sum(fn($def) => $def->quantity_exactly * ($def->unit_price ?? 0));
                 $totalTimesOrdered = $group->count();
+
+                $calculatedProductionCost = (float) ($drinkConfig->calculated_production_cost ?? $drinkConfig->production_cost_final ?? $drinkConfig->production_cost ?? 0);
+                $totalProductionCost = (float) ($totalQuantity * $calculatedProductionCost);
+                $globalProductionCost = (float) (($totalSalePrice - $calculatedProductionCost) * $totalQuantity);
+
+                $ratio = $totalTimesOrdered > 0 ? round($totalQuantity / $totalTimesOrdered, 4) : 0;
+                $ratioPercentage = $totalTimesOrdered > 0 ? round(($totalQuantity / $totalTimesOrdered) * 100, 2) : 0;
 
                 return [
                     'uuid' => $drinkUuid,
                     'name' => $drinkConfig->display_name,
                     'code' => null,
+                    'free_client_uuid' => $first->order?->free_client_for_restaurant_uuid,
+                    'free_client_full_name' => $resolveFullName($freeClient),
                     'user_id' => $user?->id ?? $first->created_by,
                     'user_name' => $user?->nom_utilisateur ?? 'Inconnu',
                     'total_times_ordered' => $totalTimesOrdered,
                     'total_ordered_quantity' => $totalQuantity,
-                    'total_revenue_loss' => $totalRevenue,
+                    'total_revenue_loss' => round($totalSalePrice, 2),
+                    'calculated_production_cost' => round($calculatedProductionCost, 2),
+                    'total_production_cost' => round($totalProductionCost, 2),
+                    'global_production_cost' => round($globalProductionCost, 2),
+                    'ratio' => $ratio,
+                    'ratio_percentage' => $ratioPercentage,
                 ];
             })->sortByDesc('total_ordered_quantity')->values();
         }
+
+        $freeClientsSummary = collect($clientTotalsMap)->map(function ($entry) {
+            $qty = $entry['total_ordered_quantity'];
+            $times = $entry['total_times_ordered'];
+
+            return [
+                'free_client_uuid' => $entry['free_client_uuid'],
+                'full_name' => $entry['full_name'],
+                'total_times_ordered' => $times,
+                'total_ordered_quantity' => $qty,
+                'total_revenue_loss' => round($entry['total_revenue_loss'], 2),
+                'total_production_cost' => round($entry['total_production_cost'], 2),
+                'global_production_cost' => round($entry['global_production_cost'], 2),
+                'ratio' => $times > 0 ? round($qty / $times, 4) : 0,
+                'ratio_percentage' => $times > 0 ? round(($qty / $times) * 100, 2) : 0,
+            ];
+        })->sortByDesc('total_production_cost')->values();
+
+        $selectedFreeClientCost = $freeClientUuidFilter
+            ? ($freeClientsSummary->firstWhere('free_client_uuid', $freeClientUuidFilter) ?? [
+                'free_client_uuid' => $freeClientUuidFilter,
+                'full_name' => $resolveFullName(FreeClientRestaurant::withTrashed()->find($freeClientUuidFilter)),
+                'total_times_ordered' => 0,
+                'total_ordered_quantity' => 0,
+                'total_revenue_loss' => 0,
+                'total_production_cost' => 0,
+                'global_production_cost' => 0,
+                'ratio' => 0,
+                'ratio_percentage' => 0,
+            ])
+            : null;
 
         return response()->json([
             'success' => true,
@@ -1576,6 +1719,9 @@ class OthersStatisticsController extends Controller
             'data' => [
                 'start_date' => $startDate->format('d-m-Y'),
                 'end_date' => $endDate->format('d-m-Y'),
+                'free_client_uuid' => $freeClientUuidFilter,
+                'selected_free_client_cost' => $selectedFreeClientCost,
+                'free_clients_summary' => $freeClientsSummary,
                 'top_free_menus' => $topMenus,
                 'top_free_complements' => $topComplements,
                 'top_free_drinks' => $topDrinks,
