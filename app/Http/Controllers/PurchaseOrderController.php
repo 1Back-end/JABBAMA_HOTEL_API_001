@@ -116,7 +116,6 @@ class PurchaseOrderController extends Controller
                     ->orWhere('warehouse_to', 'like', "%{$search}%")
                     ->orWhere('supplier_uuid', 'like', "%{$search}%")
 
-                    // 🔹 Entrepôts
                     ->orWhereHas('warehouseTo', function ($qw) use ($search) {
                         $qw->where('ref', 'like', "%{$search}%")
                             ->orWhere('name', 'like', "%{$search}%")
@@ -130,13 +129,11 @@ class PurchaseOrderController extends Controller
                             ->orWhere('address', 'like', "%{$search}%");
                     })
 
-                    // 🔹 Créateur
                     ->orWhereHas('creator', function ($qc) use ($search) {
                         $qc->where('nom_utilisateur', 'like', "%{$search}%")
                             ->orWhere('email', 'like', "%{$search}%");
                     })
 
-                    // 🔹 Produits
                     ->orWhereHas('items.product', function ($qp) use ($search) {
                         $qp->where('name', 'like', "%{$search}%")
                             ->orWhere('code', 'like', "%{$search}%")
@@ -145,7 +142,6 @@ class PurchaseOrderController extends Controller
             });
         }
 
-        // 🔹 Pagination
         $data = $query->latest()->paginate($perPage, ['*'], 'page', $page);
 
         return response()->json([
@@ -183,7 +179,6 @@ class PurchaseOrderController extends Controller
             PurchaseOrdersStatus::PARTIALLY_CLOSED
         ]);
 
-        // 🔹 Filtrage par type et statut
         if ($request->filled('type')) {
             $query->where('type', $request->type);
         }
@@ -199,22 +194,17 @@ class PurchaseOrderController extends Controller
             $query->whereBetween('created_at', [$start_date, $end_date]);
         }
 
-        if (!$auth->hasRole('SUPER_ADMIN')) {
-
-            $roleIds = $auth->roles->pluck('id');
-
-            $query->where(function ($q) use ($auth, $roleIds) {
-
-                if ($auth->can('view_role_related_data')) {
-                    $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
-                }
+        if (!$auth->is_super_admin) {
+            $query->where(function ($q) use ($auth) {
                 if ($auth->can('view_transferred_orders')) {
                     $q->orWhereNotNull('transfered_by');
                 }
-                if (!$auth->can('view_role_related_data') && !$auth->can('view_transferred_orders')) {
+                if ($auth->can('view_orders_in_draft')) {
+                    $q->orWhereNull('transfered_by');
+                }
+                if (!$auth->can('view_transferred_orders') && !$auth->can('view_orders_in_draft')) {
                     $q->orWhere('created_by', $auth->id);
                 }
-
             });
         }
 
@@ -272,36 +262,37 @@ class PurchaseOrderController extends Controller
         string $status,
         string $message,
         ?int $userId = null,
-        ?string $target = null
+        ?string $target = null,
+        ?int $managerId = null,
+        ?string $warehouseUuid = null
     ): void {
         $auth = auth()->user();
 
         PurchaseOrderNotification::create([
             'purchase_order_uuid' => $order->uuid,
-            'status' => $status,
-            'message' => $message,
-            'target' => $target,
-            'user_id' => $userId,
-            'is_read' => false,
-            'created_by' => $auth ? $auth->id : null,
-            'updated_by' => $auth ? $auth->id : null,
-            'is_for_orders' => true
+            'status'              => $status,
+            'message'             => $message,
+            'target'              => $target,
+            'user_id'             => $userId,
+            'manager_id'          => $managerId,
+            'warehouse_uuid'      => $warehouseUuid,
+            'is_read'             => false,
+            'created_by'          => $auth ? $auth->id : null,
+            'updated_by'          => $auth ? $auth->id : null,
+            'is_for_orders'       => true,
         ]);
 
         DecisionalNotification::create([
             'purchase_order_uuid' => $order->uuid,
-            'status' => $status,
-            'message' => $message,
-            'target' => $target,
-            'user_id' => $userId,
-            'is_read' => false,
-            'created_by' => $auth ? $auth->id : null,
-            'updated_by' => $auth ? $auth->id : null,
-            'is_for_orders' => true
+            'status'              => $status,
+            'message'             => $message,
+            'target'              => $target,
+            'user_id'             => $userId,
+            'is_read'             => false,
+            'created_by'          => $auth ? $auth->id : null,
+            'updated_by'          => $auth ? $auth->id : null,
+            'is_for_orders'       => true,
         ]);
-
-        // TODO (Optionnel) : Si vous utilisez Laravel Reverb / Pusher pour le temps réel,
-        // vous pouvez déclencher un BroadcastEvent ici pour faire sonner le front.
     }
 
 
@@ -349,13 +340,13 @@ class PurchaseOrderController extends Controller
         $auth = auth()->user();
 
         $request->validate([
-            'type' => ['required', Rule::enum(PurchaseOrderType::class)],
-            'supplier_uuid' => 'nullable|exists:suppliers,uuid',
-            'warehouse_from' => 'nullable|exists:warehouses,uuid',
-            'notes' => 'nullable|string',
-            'items' => 'required|array|min:1',
+            'type'                 => ['required', Rule::enum(PurchaseOrderType::class)],
+            'supplier_uuid'        => 'nullable|exists:suppliers,uuid',
+            'warehouse_from'       => 'nullable|exists:warehouses,uuid',
+            'notes'                => 'nullable|string',
+            'items'                => 'required|array|min:1',
             'items.*.product_uuid' => 'required|exists:produits,uuid',
-            'items.*.quantity' => 'required|numeric|min:0.001',
+            'items.*.quantity'     => 'required|numeric|min:0.001',
         ], [
             'items.required' => 'Vous devez ajouter au moins un produit à la commande.',
         ]);
@@ -364,28 +355,24 @@ class PurchaseOrderController extends Controller
         $warehouseFromUuid = null;
         $warehouseToUuid = null;
         $warehouseFrom = null;
-
+        $targetManagerId = null;
+        $notifWarehouseUuid = null;
 
         if ($request->type === PurchaseOrderType::INTERNAL->value) {
-            $warehouseFrom = Warehouse::find($request->warehouse_from);
+            $warehouseFrom = Warehouse::with(['managers' => function ($q) {
+                $q->whereNull('warehouse_managers.deleted_at');
+            }])->where('uuid', $request->warehouse_from)->first();
+
             if (!$warehouseFrom) {
                 return response()->json(['message' => 'Entrepôt source introuvable.'], 404);
             }
 
-            if (!$auth->can('view_role_related_data')) {
-                $isManager = $warehouseFrom->managers()->where('user_id', $auth->id)->exists();
-            } else {
-                $roleIds = $auth->roles->pluck('id');
-                $isManager = $warehouseFrom->managers()
-                    ->whereHas('roles', function ($q) use ($roleIds) {
-                        $q->whereIn('roles.id', $roleIds);
-                    })
-                    ->exists();
-            }
+            $isManager = $warehouseFrom->managers->contains('id', $auth->id);
 
             if (!$isManager) {
                 return response()->json([
-                    'message' => 'Vous ne pouvez créer une commande interne que depuis un entrepôt que vous gérez ou partagé avec votre rôle.'
+                    'status'  => 'error',
+                    'message' => 'Vous ne pouvez créer une commande interne que depuis un entrepôt auquel vous êtes affecté.',
                 ], 403);
             }
 
@@ -396,6 +383,22 @@ class PurchaseOrderController extends Controller
 
             $warehouseFromUuid = $warehouseFrom->uuid;
             $warehouseToUuid = $warehouseTo->uuid;
+            $notifWarehouseUuid = $warehouseFromUuid;
+
+            $targetManager = $warehouseFrom->managers->firstWhere('id', '!=', $auth->id)
+                ?? $warehouseFrom->managers->first();
+            $targetManagerId = $targetManager?->id;
+        } else {
+            $primaryWarehouse = Warehouse::with(['managers' => function ($q) {
+                $q->whereNull('warehouse_managers.deleted_at');
+            }])->where('is_primary', true)->first();
+
+            if ($primaryWarehouse) {
+                $notifWarehouseUuid = $primaryWarehouse->uuid;
+                $targetManager = $primaryWarehouse->managers->firstWhere('id', '!=', $auth->id)
+                    ?? $primaryWarehouse->managers->first();
+                $targetManagerId = $targetManager?->id;
+            }
         }
 
         foreach ($request->items as $item) {
@@ -416,26 +419,34 @@ class PurchaseOrderController extends Controller
             }
         }
 
-        return DB::transaction(function () use ($request, $auth, $supplierUuid, $warehouseFromUuid, $warehouseToUuid) {
+        return DB::transaction(function () use (
+            $request,
+            $auth,
+            $supplierUuid,
+            $warehouseFromUuid,
+            $warehouseToUuid,
+            $targetManagerId,
+            $notifWarehouseUuid
+        ) {
             try {
                 $order = PurchaseOrder::create([
-                    'type' => $request->type,
-                    'status' => 'draft',
-                    'supplier_uuid' => $supplierUuid,
+                    'type'           => $request->type,
+                    'status'         => 'draft',
+                    'supplier_uuid'  => $supplierUuid,
                     'warehouse_from' => $warehouseFromUuid,
-                    'warehouse_to' => $warehouseToUuid,
-                    'notes' => $request->notes,
-                    'created_by' => $auth->id,
-                    'updated_by' => $auth->id,
-                    'added_by' => $auth->id,
+                    'warehouse_to'   => $warehouseToUuid,
+                    'notes'          => $request->notes,
+                    'created_by'     => $auth->id,
+                    'updated_by'     => $auth->id,
+                    'added_by'       => $auth->id,
                 ]);
 
                 foreach ($request->items as $item) {
                     $order->items()->create([
                         'product_uuid' => $item['product_uuid'],
-                        'quantity' => $item['quantity'],
-                        'created_by' => $auth->id,
-                        'added_by' => $auth->id,
+                        'quantity'     => $item['quantity'],
+                        'created_by'   => $auth->id,
+                        'added_by'     => $auth->id,
                     ]);
 
                     $this->createPurchaseOrderStatistic($order, $item, $auth, [
@@ -443,7 +454,7 @@ class PurchaseOrderController extends Controller
                     ]);
                 }
 
-                $notifMessage = $request->type === 'external'
+                $notifMessage = $request->type === PurchaseOrderType::EXTERNAL->value
                     ? "Une nouvelle commande externe (Référence : {$order->reference}) a été créée."
                     : "Une nouvelle commande interne (Référence : {$order->reference}) a été créée.";
 
@@ -451,17 +462,19 @@ class PurchaseOrderController extends Controller
                     order: $order,
                     status: PurchaseOrdersStatus::DRAFT->value,
                     message: $notifMessage,
-                    userId:  $auth->id,
+                    userId: $auth->id,
                     target: 'purchases_orders',
+                    managerId: $targetManagerId,
+                    warehouseUuid: $notifWarehouseUuid
                 );
 
-                $message = $request->type === 'external'
+                $message = $request->type === PurchaseOrderType::EXTERNAL->value
                     ? "Commande externe créée avec succès."
                     : "Commande interne créée avec succès entre les entrepôts.";
 
                 return response()->json([
                     'message' => $message,
-                    'order' => $order->load(['items'])
+                    'order'   => $order->load(['items']),
                 ], 201);
 
             } catch (\Exception $e) {
@@ -539,131 +552,161 @@ class PurchaseOrderController extends Controller
                 return response()->json(['message' => 'Commande introuvable.'], 404);
             }
 
-
             $request->validate([
-                'type' => 'required|in:external,internal',
-                'supplier_uuid' => 'nullable|exists:suppliers,uuid',
-                'warehouse_from' => 'required_if:type,internal|nullable|exists:warehouses,uuid',
-                'warehouse_to' => 'nullable|exists:warehouses,uuid',
-                'notes' => 'nullable|string',
-                'items' => 'required|array|min:1',
+                'type'                 => 'required|in:external,internal',
+                'supplier_uuid'        => 'nullable|exists:suppliers,uuid',
+                'warehouse_from'       => 'required_if:type,internal|nullable|exists:warehouses,uuid',
+                'warehouse_to'         => 'nullable|exists:warehouses,uuid',
+                'notes'                => 'nullable|string',
+                'items'                => 'required|array|min:1',
                 'items.*.product_uuid' => 'required|exists:produits,uuid',
-                'items.*.quantity' => 'required|numeric|min:0.001',
+                'items.*.quantity'     => 'required|numeric|min:0.001',
             ], [
                 'warehouse_from.required_if' => 'Vous devez sélectionner l’entrepôt source pour une commande interne.',
-                'items.required' => 'Vous devez ajouter au moins un produit à la commande.',
+                'items.required'             => 'Vous devez ajouter au moins un produit à la commande.',
             ]);
 
             $supplierUuid = $request->type === 'external' ? $request->supplier_uuid : null;
             $warehouseFromUuid = null;
             $warehouseToUuid = null;
             $warehouseFrom = null;
+            $targetManagerId = null;
+            $notifWarehouseUuid = null;
 
             if ($request->type === 'internal') {
-                $warehouseFrom = Warehouse::where('uuid', $request->warehouse_from)->first();
+                $warehouseFrom = Warehouse::with(['managers' => function ($q) {
+                    $q->whereNull('warehouse_managers.deleted_at');
+                }])->where('uuid', $request->warehouse_from)->first();
+
                 if (!$warehouseFrom) {
                     return response()->json(['message' => 'Entrepôt source introuvable.'], 404);
                 }
 
-
-                if (!$auth->can('view_role_related_data')) {
-                    $isManager = $warehouseFrom->managers()->where('user_id', $auth->id)->exists();
-
-                } else {
-                    $roleIds = $auth->roles->pluck('id');
-                    $isManager = $warehouseFrom->managers()
-                        ->whereHas('roles', function ($q) use ($roleIds) {
-                            $q->whereIn('roles.id', $roleIds);
-                        })
-                        ->exists();
-                }
-
+                $isManager = $warehouseFrom->managers->contains('id', $auth->id);
 
                 if (!$isManager) {
                     return response()->json([
-                        'message' => 'Vous ne pouvez créer une commande interne que depuis un entrepôt que vous gérez ou partagé avec votre rôle.'
+                        'status'  => 'error',
+                        'message' => 'Vous ne pouvez modifier une commande interne que depuis un entrepôt auquel vous êtes affecté.',
                     ], 403);
                 }
 
-                $warehouseTo = Warehouse::where('is_primary', true)->firstOrFail();
+                $warehouseTo = Warehouse::where('is_primary', true)->first();
+                if (!$warehouseTo) {
+                    return response()->json(['message' => 'Entrepôt principal introuvable.'], 404);
+                }
 
                 $warehouseFromUuid = $warehouseFrom->uuid;
                 $warehouseToUuid = $warehouseTo->uuid;
+                $notifWarehouseUuid = $warehouseFromUuid;
+
+                $targetManager = $warehouseFrom->managers->firstWhere('id', '!=', $auth->id)
+                    ?? $warehouseFrom->managers->first();
+                $targetManagerId = $targetManager?->id;
+            } else {
+                $primaryWarehouse = Warehouse::with(['managers' => function ($q) {
+                    $q->whereNull('warehouse_managers.deleted_at');
+                }])->where('is_primary', true)->first();
+
+                if ($primaryWarehouse) {
+                    $notifWarehouseUuid = $primaryWarehouse->uuid;
+                    $targetManager = $primaryWarehouse->managers->firstWhere('id', '!=', $auth->id)
+                        ?? $primaryWarehouse->managers->first();
+                    $targetManagerId = $targetManager?->id;
+                }
             }
 
+            return DB::transaction(function () use (
+                $request,
+                $auth,
+                $order,
+                $supplierUuid,
+                $warehouseFromUuid,
+                $warehouseToUuid,
+                $warehouseFrom,
+                $targetManagerId,
+                $notifWarehouseUuid
+            ) {
+                foreach ($request->items as $item) {
+                    $product = Product::where('uuid', $item['product_uuid'])->first();
+                    $productName = $product ? $product->name : $item['product_uuid'];
 
-            $order->update([
-                'type' => $request->type,
-                'supplier_uuid' => $supplierUuid,
-                'warehouse_from' => $warehouseFromUuid,
-                'warehouse_to' => $warehouseToUuid,
-                'notes' => $request->notes,
-                'updated_by' => $auth->id,
-                'status' => 'draft'
-            ]);
+                    if ($request->type === 'internal' && $warehouseFrom) {
+                        $available = Product::where('uuid', $item['product_uuid'])
+                            ->whereHas('points', function ($q) use ($warehouseFrom) {
+                                $q->where('point_uuid', $warehouseFrom->uuid);
+                            })->exists();
 
-            $order->items()->delete();
-
-            foreach ($request->items as $item) {
-                $product = Product::where('uuid', $item['product_uuid'])->first();
-                $productName = $product ? $product->name : $item['product_uuid'];
-
-                if ($request->type === 'internal' && $warehouseFrom) {
-                    $available = Product::where('uuid', $item['product_uuid'])
-                        ->whereHas('points', function ($q) use ($warehouseFrom) {
-                            $q->where('point_uuid', $warehouseFrom->uuid);
-                        })->exists();
-
-                    if (!$available) {
-                        return response()->json([
-                            'message' => "Le produit {$productName} n'est pas disponible dans l'entrepôt source."
-                        ], 403);
+                        if (!$available) {
+                            abort(response()->json([
+                                'message' => "Le produit {$productName} n'est pas disponible dans l'entrepôt source."
+                            ], 403));
+                        }
                     }
                 }
 
-                $order->items()->create([
-                    'product_uuid' => $item['product_uuid'],
-                    'quantity' => $item['quantity'],
-                    'created_by' => $auth->id,
-                    'added_by' => $auth->id,
+                $order->update([
+                    'type'           => $request->type,
+                    'supplier_uuid'  => $supplierUuid,
+                    'warehouse_from' => $warehouseFromUuid,
+                    'warehouse_to'   => $warehouseToUuid,
+                    'notes'          => $request->notes,
+                    'updated_by'     => $auth->id,
+                    'status'         => 'draft',
                 ]);
-            }
 
-            \App\Models\PurchaseOrderNotification::where('purchase_order_uuid', $order->uuid)
-                ->where('status', PurchaseOrdersStatus::DRAFT->value)
-                ->delete();
+                $order->items()->delete();
 
-            $notifMessage = $request->type === 'external'
-                ? "Une commande externe (Référence : {$order->reference}) a été mise à jour."
-                : "Une commande interne (Référence : {$order->reference}) a été mise à jour.";
+                foreach ($request->items as $item) {
+                    $order->items()->create([
+                        'product_uuid' => $item['product_uuid'],
+                        'quantity'     => $item['quantity'],
+                        'created_by'   => $auth->id,
+                        'added_by'     => $auth->id,
+                    ]);
+                }
 
-            $this->sendNotification(
-                order: $order,
-                status: PurchaseOrdersStatus::DRAFT->value,
-                message: $notifMessage,
-                userId: $auth->id,
-                target: 'purchases_orders',
-            );
+                \App\Models\PurchaseOrderNotification::where('purchase_order_uuid', $order->uuid)
+                    ->where('status', PurchaseOrdersStatus::DRAFT->value)
+                    ->delete();
 
-            $message = $request->type === 'external'
-                ? "Commande externe mise à jour avec succès."
-                : "Commande interne mise à jour avec succès.";
+                $notifMessage = $request->type === 'external'
+                    ? "Une commande externe (Référence : {$order->reference}) a été mise à jour."
+                    : "Une commande interne (Référence : {$order->reference}) a été mise à jour.";
 
-            return response()->json([
-                'message' => $message,
-                'order' => $order->load(['items'])
-            ], 200);
+                $this->sendNotification(
+                    order: $order,
+                    status: PurchaseOrdersStatus::DRAFT->value,
+                    message: $notifMessage,
+                    userId: $auth->id,
+                    target: 'purchases_orders',
+                    managerId: $targetManagerId,
+                    warehouseUuid: $notifWarehouseUuid
+                );
+
+                $message = $request->type === 'external'
+                    ? "Commande externe mise à jour avec succès."
+                    : "Commande interne mise à jour avec succès.";
+
+                return response()->json([
+                    'message' => $message,
+                    'order'   => $order->load(['items']),
+                ], 200);
+            });
+
+        } catch (\Illuminate\Http\Exceptions\HttpResponseException $e) {
+            return $e->getResponse();
 
         } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
                 'message' => 'Erreur de validation.',
-                'errors' => $e->errors()
+                'errors'  => $e->errors(),
             ], 422);
 
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Une erreur est survenue lors de la mise à jour de la commande.',
-                'error' => $e->getMessage()
+                'error'   => $e->getMessage(),
             ], 500);
         }
     }
@@ -755,23 +798,34 @@ class PurchaseOrderController extends Controller
             ], 422);
         }
 
-        $order = PurchaseOrder::with('items')->where('uuid', $uuid)->firstOrFail();
+        $order = PurchaseOrder::with(['items', 'warehouseFrom.managers' => function ($q) {
+            $q->whereNull('warehouse_managers.deleted_at');
+        }])->where('uuid', $uuid)->firstOrFail();
 
-        return DB::transaction(function () use ($auth, $order) {
+        $warehouse = $order->type === PurchaseOrderType::EXTERNAL->value
+            ? Warehouse::with(['managers' => function ($q) {
+                $q->whereNull('warehouse_managers.deleted_at');
+            }])->where('is_primary', true)->first()
+            : $order->warehouseFrom;
+
+        $warehouseUuid = $warehouse?->uuid;
+        $targetManagerId = $warehouse?->managers->firstWhere('id', '!=', $auth->id)?->id
+            ?? $warehouse?->managers->first()?->id;
+
+        return DB::transaction(function () use ($auth, $order, $targetManagerId, $warehouseUuid) {
             try {
                 $order->update([
-                    'status' => PurchaseOrdersStatus::CANCEL->value,
+                    'status'     => PurchaseOrdersStatus::CANCEL->value,
                     'updated_by' => $auth->id,
-                    'closed_at' => now(),
+                    'closed_at'  => now(),
                 ]);
 
                 \App\Models\PurchaseOrderNotification::where('purchase_order_uuid', $order->uuid)
                     ->delete();
 
-
                 foreach ($order->items as $item) {
                     $this->createPurchaseOrderStatistic($order, $item, $auth, [
-                        'status' => PurchaseOrdersStatus::CANCEL->value,
+                        'status'       => PurchaseOrdersStatus::CANCEL->value,
                         'cancelled_by' => $auth->id,
                         'cancelled_at' => now(),
                     ]);
@@ -785,11 +839,13 @@ class PurchaseOrderController extends Controller
                     message: $notifMessage,
                     userId: $auth->id,
                     target: 'purchases_orders',
+                    managerId: $targetManagerId,
+                    warehouseUuid: $warehouseUuid
                 );
 
                 return response()->json([
                     'message' => "La commande a été annulée avec succès.",
-                    'order' => $order->load(['items'])
+                    'order'   => $order->load(['items'])
                 ], 200);
 
             } catch (\Exception $e) {
@@ -821,14 +877,26 @@ class PurchaseOrderController extends Controller
             ], 422);
         }
 
-        $order = PurchaseOrder::with('items')->where('uuid', $uuid)->firstOrFail();
+        $order = PurchaseOrder::with(['items', 'warehouseFrom.managers' => function ($q) {
+            $q->whereNull('warehouse_managers.deleted_at');
+        }])->where('uuid', $uuid)->firstOrFail();
 
-        return DB::transaction(function () use ($auth, $order) {
+        $warehouse = $order->type === PurchaseOrderType::EXTERNAL->value
+            ? Warehouse::with(['managers' => function ($q) {
+                $q->whereNull('warehouse_managers.deleted_at');
+            }])->where('is_primary', true)->first()
+            : $order->warehouseFrom;
+
+        $warehouseUuid = $warehouse?->uuid;
+        $targetManagerId = $warehouse?->managers->firstWhere('id', '!=', $auth->id)?->id
+            ?? $warehouse?->managers->first()?->id;
+
+        return DB::transaction(function () use ($auth, $order, $targetManagerId, $warehouseUuid) {
             try {
                 $order->update([
-                    'status' => PurchaseOrdersStatus::CANCEL->value,
+                    'status'     => PurchaseOrdersStatus::CANCEL->value,
                     'updated_by' => $auth->id,
-                    'closed_at' => now(),
+                    'closed_at'  => now(),
                 ]);
 
                 \App\Models\PurchaseOrderNotification::where('purchase_order_uuid', $order->uuid)
@@ -836,7 +904,7 @@ class PurchaseOrderController extends Controller
 
                 foreach ($order->items as $item) {
                     $this->createPurchaseOrderStatistic($order, $item, $auth, [
-                        'status' => PurchaseOrdersStatus::CANCEL->value,
+                        'status'       => PurchaseOrdersStatus::CANCEL->value,
                         'cancelled_by' => $auth->id,
                         'cancelled_at' => now(),
                     ]);
@@ -850,11 +918,13 @@ class PurchaseOrderController extends Controller
                     message: $notifMessage,
                     userId: $auth->id,
                     target: 'purchases_orders',
+                    managerId: $targetManagerId,
+                    warehouseUuid: $warehouseUuid
                 );
 
                 return response()->json([
                     'message' => "La commande a été annulée avec succès.",
-                    'order' => $order->load(['items'])
+                    'order'   => $order->load(['items'])
                 ], 200);
 
             } catch (\Exception $e) {
@@ -887,26 +957,37 @@ class PurchaseOrderController extends Controller
             ], 422);
         }
 
-        $order = PurchaseOrder::with('items')->where('uuid', $uuid)->firstOrFail();
+        $order = PurchaseOrder::with(['items', 'warehouseFrom.managers' => function ($q) {
+            $q->whereNull('warehouse_managers.deleted_at');
+        }])->where('uuid', $uuid)->firstOrFail();
 
-        return DB::transaction(function () use ($auth, $order) {
+        $warehouse = $order->type === PurchaseOrderType::EXTERNAL->value
+            ? Warehouse::with(['managers' => function ($q) {
+                $q->whereNull('warehouse_managers.deleted_at');
+            }])->where('is_primary', true)->first()
+            : $order->warehouseFrom;
+
+        $warehouseUuid = $warehouse?->uuid;
+        $targetManagerId = $warehouse?->managers->firstWhere('id', '!=', $auth->id)?->id
+            ?? $warehouse?->managers->first()?->id;
+
+        return DB::transaction(function () use ($auth, $order, $targetManagerId, $warehouseUuid) {
             try {
                 $order->update([
-                    'status' => PurchaseOrdersStatus::VALIDATED->value,
-                    'updated_by' => $auth->id,
+                    'status'      => PurchaseOrdersStatus::VALIDATED->value,
+                    'updated_by'  => $auth->id,
                     'approved_by' => $auth->id,
                     'approved_at' => now(),
-                    'closed_at' => now()
+                    'closed_at'   => now(),
                 ]);
 
                 \App\Models\PurchaseOrderNotification::where('purchase_order_uuid', $order->uuid)
                     ->where('status', PurchaseOrdersStatus::VALIDATED->value)
                     ->delete();
 
-                // 🔹 Enregistrement des statistiques pour chaque article lors de la validation
                 foreach ($order->items as $item) {
                     $this->createPurchaseOrderStatistic($order, $item, $auth, [
-                        'status' => PurchaseOrdersStatus::VALIDATED->value,
+                        'status'       => PurchaseOrdersStatus::VALIDATED->value,
                         'validated_by' => $auth->id,
                         'validated_at' => now(),
                     ]);
@@ -920,11 +1001,13 @@ class PurchaseOrderController extends Controller
                     message: $notifMessage,
                     userId: $auth->id,
                     target: 'purchases_orders',
+                    managerId: $targetManagerId,
+                    warehouseUuid: $warehouseUuid
                 );
 
                 return response()->json([
                     'message' => "La commande a été validée avec succès.",
-                    'order' => $order->load(['items'])
+                    'order'   => $order->load(['items']),
                 ], 200);
 
             } catch (\Exception $e) {
@@ -948,18 +1031,30 @@ class PurchaseOrderController extends Controller
             'motif_rejet' => 'required|string',
         ], [
             'motif_rejet.required' => "La raison du rejet est obligatoire.",
-            'motif_rejet.string' => "La raison doit être une chaîne de caractères.",
+            'motif_rejet.string'   => "La raison doit être une chaîne de caractères.",
         ]);
 
-        $order = PurchaseOrder::with('items')->where('uuid', $uuid)->firstOrFail();
+        $order = PurchaseOrder::with(['items', 'warehouseFrom.managers' => function ($q) {
+            $q->whereNull('warehouse_managers.deleted_at');
+        }])->where('uuid', $uuid)->firstOrFail();
 
-        return DB::transaction(function () use ($request, $auth, $order, $validated) {
+        $warehouse = $order->type === PurchaseOrderType::EXTERNAL->value
+            ? Warehouse::with(['managers' => function ($q) {
+                $q->whereNull('warehouse_managers.deleted_at');
+            }])->where('is_primary', true)->first()
+            : $order->warehouseFrom;
+
+        $warehouseUuid = $warehouse?->uuid;
+        $targetManagerId = $warehouse?->managers->firstWhere('id', '!=', $auth->id)?->id
+            ?? $warehouse?->managers->first()?->id;
+
+        return DB::transaction(function () use ($auth, $order, $validated, $targetManagerId, $warehouseUuid) {
             try {
                 $order->update([
-                    'status' => PurchaseOrdersStatus::REJECTED->value,
+                    'status'      => PurchaseOrdersStatus::REJECTED->value,
                     'motif_rejet' => $validated['motif_rejet'],
-                    'updated_by' => $auth->id,
-                    'closed_at' => now()
+                    'updated_by'  => $auth->id,
+                    'closed_at'   => now(),
                 ]);
 
                 \App\Models\PurchaseOrderNotification::where('purchase_order_uuid', $order->uuid)
@@ -968,7 +1063,7 @@ class PurchaseOrderController extends Controller
 
                 foreach ($order->items as $item) {
                     $this->createPurchaseOrderStatistic($order, $item, $auth, [
-                        'status' => PurchaseOrdersStatus::REJECTED->value,
+                        'status'      => PurchaseOrdersStatus::REJECTED->value,
                         'rejected_by' => $auth->id,
                         'rejected_at' => now(),
                     ]);
@@ -982,11 +1077,13 @@ class PurchaseOrderController extends Controller
                     message: $notifMessage,
                     userId: $auth->id,
                     target: 'purchases_orders',
+                    managerId: $targetManagerId,
+                    warehouseUuid: $warehouseUuid
                 );
 
                 return response()->json([
                     'message' => "La commande a été rejetée avec succès.",
-                    'order' => $order->load(['items'])
+                    'order'   => $order->load(['items']),
                 ], 200);
 
             } catch (\Exception $e) {
@@ -1010,17 +1107,31 @@ class PurchaseOrderController extends Controller
             'user_id' => 'required|exists:users,id',
         ], [
             'user_id.required' => "L'utilisateur destinataire est obligatoire.",
-            'user_id.exists' => "L'utilisateur sélectionné est introuvable.",
+            'user_id.exists'   => "L'utilisateur sélectionné est introuvable.",
         ]);
 
-        $order = PurchaseOrder::with('items')->where('uuid', $uuid)->firstOrFail();
+        $order = PurchaseOrder::with(['items', 'warehouseFrom.managers' => function ($q) {
+            $q->whereNull('warehouse_managers.deleted_at');
+        }])->where('uuid', $uuid)->firstOrFail();
+
         $recipient = User::findOrFail($validated['user_id']);
 
-        return DB::transaction(function () use ($auth, $order, $recipient) {
+        $warehouse = $order->type === PurchaseOrderType::EXTERNAL->value
+            ? Warehouse::with(['managers' => function ($q) {
+                $q->whereNull('warehouse_managers.deleted_at');
+            }])->where('is_primary', true)->first()
+            : $order->warehouseFrom;
+
+        $warehouseUuid = $warehouse?->uuid;
+        $targetManagerId = $warehouse?->managers->firstWhere('id', '!=', $auth->id)?->id
+            ?? $warehouse?->managers->first()?->id
+            ?? $recipient->id;
+
+        return DB::transaction(function () use ($auth, $order, $recipient, $targetManagerId, $warehouseUuid) {
             try {
                 $order->update([
-                    'status' => PurchaseOrdersStatus::OPEN->value,
-                    'updated_by' => $auth->id,
+                    'status'        => PurchaseOrdersStatus::OPEN->value,
+                    'updated_by'    => $auth->id,
                     'transfered_by' => $recipient->id,
                     'transfered_at' => now(),
                 ]);
@@ -1031,8 +1142,8 @@ class PurchaseOrderController extends Controller
 
                 foreach ($order->items as $item) {
                     $this->createPurchaseOrderStatistic($order, $item, $auth, [
-                        'status' => PurchaseOrdersStatus::OPEN->value,
-                        'transfered_by' =>$auth->id,
+                        'status'        => PurchaseOrdersStatus::OPEN->value,
+                        'transfered_by' => $auth->id,
                         'transfered_at' => now(),
                     ]);
                 }
@@ -1043,13 +1154,15 @@ class PurchaseOrderController extends Controller
                     order: $order,
                     status: PurchaseOrdersStatus::OPEN->value,
                     message: $notifMessage,
-                    userId:  $auth->id,
+                    userId: $auth->id,
                     target: 'purchases_orders',
+                    managerId: $targetManagerId,
+                    warehouseUuid: $warehouseUuid
                 );
 
                 return response()->json([
                     'message' => "Commande transférée avec succès à {$recipient->nom_utilisateur}.",
-                    'order' => $order->load(['items'])
+                    'order'   => $order->load(['items']),
                 ], 200);
 
             } catch (\Exception $e) {
@@ -1073,18 +1186,30 @@ class PurchaseOrderController extends Controller
             'motif_rejet' => 'required|string',
         ], [
             'motif_rejet.required' => "La raison du rejet est obligatoire.",
-            'motif_rejet.string' => "La raison doit être une chaîne de caractères.",
+            'motif_rejet.string'   => "La raison doit être une chaîne de caractères.",
         ]);
 
-        $order = PurchaseOrder::with('items')->where('uuid', $uuid)->firstOrFail();
+        $order = PurchaseOrder::with(['items', 'warehouseFrom.managers' => function ($q) {
+            $q->whereNull('warehouse_managers.deleted_at');
+        }])->where('uuid', $uuid)->firstOrFail();
 
-        return DB::transaction(function () use ($request, $auth, $order, $validated) {
+        $warehouse = $order->type === PurchaseOrderType::EXTERNAL->value
+            ? Warehouse::with(['managers' => function ($q) {
+                $q->whereNull('warehouse_managers.deleted_at');
+            }])->where('is_primary', true)->first()
+            : $order->warehouseFrom;
+
+        $warehouseUuid = $warehouse?->uuid;
+        $targetManagerId = $warehouse?->managers->firstWhere('id', '!=', $auth->id)?->id
+            ?? $warehouse?->managers->first()?->id;
+
+        return DB::transaction(function () use ($auth, $order, $validated, $targetManagerId, $warehouseUuid) {
             try {
                 $order->update([
-                    'status' => PurchaseOrdersStatus::REJECTED->value,
+                    'status'      => PurchaseOrdersStatus::REJECTED->value,
                     'motif_rejet' => $validated['motif_rejet'],
-                    'updated_by' => $auth->id,
-                    'closed_at' => now()
+                    'updated_by'  => $auth->id,
+                    'closed_at'   => now(),
                 ]);
 
                 \App\Models\PurchaseOrderNotification::where('purchase_order_uuid', $order->uuid)
@@ -1093,7 +1218,7 @@ class PurchaseOrderController extends Controller
 
                 foreach ($order->items as $item) {
                     $this->createPurchaseOrderStatistic($order, $item, $auth, [
-                        'status' => PurchaseOrdersStatus::REJECTED->value,
+                        'status'      => PurchaseOrdersStatus::REJECTED->value,
                         'rejected_by' => $auth->id,
                         'rejected_at' => now(),
                     ]);
@@ -1107,11 +1232,13 @@ class PurchaseOrderController extends Controller
                     message: $notifMessage,
                     userId: $auth->id,
                     target: 'purchases_orders',
+                    managerId: $targetManagerId,
+                    warehouseUuid: $warehouseUuid
                 );
 
                 return response()->json([
                     'message' => "La commande a été rejetée avec succès.",
-                    'order' => $order->load(['items'])
+                    'order'   => $order->load(['items']),
                 ], 200);
 
             } catch (\Exception $e) {
@@ -1234,96 +1361,130 @@ class PurchaseOrderController extends Controller
 
         $parentOrder = PurchaseOrder::where('uuid', $uuid)->firstOrFail();
 
-        if (!$parentOrder->is_parent) {
-            $parentOrder->update([
-                'is_parent' => true
-            ]);
-        }
-
         try {
             DB::beginTransaction();
 
+            if (!$parentOrder->is_parent) {
+                $parentOrder->update([
+                    'is_parent' => true
+                ]);
+            }
+
             // 🔹 Validation des données
             $request->validate([
-                'type' => 'required|in:external,internal',
-                'supplier_uuid' => 'nullable|exists:suppliers,uuid',
-                'warehouse_from' => 'nullable|exists:warehouses,uuid',
-                'notes' => 'nullable|string',
-                'items' => 'required|array|min:1',
+                'type'                 => 'required|in:external,internal',
+                'supplier_uuid'        => 'nullable|exists:suppliers,uuid',
+                'warehouse_from'       => 'nullable|exists:warehouses,uuid',
+                'notes'                => 'nullable|string',
+                'items'                => 'required|array|min:1',
                 'items.*.product_uuid' => 'required|exists:produits,uuid',
-                'items.*.quantity' => 'required|numeric|min:0.001',
+                'items.*.quantity'     => 'required|numeric|min:0.001',
             ], [
                 'items.required' => 'Vous devez ajouter au moins un produit à la commande.',
             ]);
 
-            // 🔹 Préparer entrepôts et fournisseur
+            // 🔹 Préparer entrepôts, fournisseur et manager cible
             $supplierUuid = $request->type === 'external' ? $request->supplier_uuid : null;
             $warehouseFromUuid = null;
             $warehouseToUuid = null;
+            $warehouseFrom = null;
+            $targetManagerId = null;
+            $notifWarehouseUuid = null;
 
             if ($request->type === 'internal') {
-                $warehouseFrom = Warehouse::findOrFail($request->warehouse_from);
+                $warehouseFrom = Warehouse::with(['managers' => function ($q) {
+                    $q->whereNull('warehouse_managers.deleted_at');
+                }])->where('uuid', $request->warehouse_from)->first();
 
-                // Vérifier que l'utilisateur est manager de l'entrepôt
-                $isManager = $warehouseFrom->managers()->where('user_id', $auth->id)->exists();
-                if (!$isManager) {
+                if (!$warehouseFrom) {
+                    DB::rollBack();
+
                     return response()->json([
-                        'message' => 'Vous ne pouvez créer une commande interne que depuis un entrepôt que vous gérez.'
+                        'message' => 'Entrepôt source introuvable.'
+                    ], 404);
+                }
+
+                $isManager = $warehouseFrom->managers->contains('id', $auth->id);
+                if (!$isManager) {
+                    DB::rollBack();
+
+                    return response()->json([
+                        'status'  => 'error',
+                        'message' => 'Vous ne pouvez créer une commande interne que depuis un entrepôt auquel vous êtes affecté.'
                     ], 403);
                 }
 
                 $warehouseTo = Warehouse::where('is_primary', true)->firstOrFail();
                 $warehouseFromUuid = $warehouseFrom->uuid;
                 $warehouseToUuid = $warehouseTo->uuid;
+                $notifWarehouseUuid = $warehouseFromUuid;
+
+                $targetManager = $warehouseFrom->managers->firstWhere('id', '!=', $auth->id)
+                    ?? $warehouseFrom->managers->first();
+                $targetManagerId = $targetManager?->id;
+            } else {
+                $primaryWarehouse = Warehouse::with(['managers' => function ($q) {
+                    $q->whereNull('warehouse_managers.deleted_at');
+                }])->where('is_primary', true)->first();
+
+                if ($primaryWarehouse) {
+                    $notifWarehouseUuid = $primaryWarehouse->uuid;
+                    $targetManager = $primaryWarehouse->managers->firstWhere('id', '!=', $auth->id)
+                        ?? $primaryWarehouse->managers->first();
+                    $targetManagerId = $targetManager?->id;
+                }
             }
 
             // 🔹 Création du bon de commande enfant
             $childOrder = PurchaseOrder::create([
-                'parent_uuid' => $parentOrder->uuid,
-                'type' => $request->type,
-                'status' => 'draft',
-                'supplier_uuid' => $supplierUuid,
+                'parent_uuid'    => $parentOrder->uuid,
+                'type'           => $request->type,
+                'status'         => 'draft',
+                'supplier_uuid'  => $supplierUuid,
                 'warehouse_from' => $warehouseFromUuid,
-                'warehouse_to' => $warehouseToUuid,
-                'notes' => $request->notes,
-                'created_by' => $auth->id,
-                'updated_by' => $auth->id,
-                'added_by' => $auth->id,
-                'is_parent' => false,
+                'warehouse_to'   => $warehouseToUuid,
+                'notes'          => $request->notes,
+                'created_by'     => $auth->id,
+                'updated_by'     => $auth->id,
+                'added_by'       => $auth->id,
+                'is_parent'      => false,
             ]);
 
             // 🔹 Ajout des produits
-            foreach ($request->items as $index => $item) {
-                $product = Product::find($item['product_uuid']);
+            foreach ($request->items as $item) {
+                $product = Product::where('uuid', $item['product_uuid'])->first();
                 $productName = $product ? $product->name : $item['product_uuid'];
 
-                // Vérification disponibilité pour commandes internes
-                if ($request->type === 'internal') {
+                if ($request->type === 'internal' && $warehouseFrom) {
                     $available = Product::where('uuid', $item['product_uuid'])
                         ->whereHas('points', function ($q) use ($warehouseFrom) {
                             $q->where('point_uuid', $warehouseFrom->uuid);
                         })->exists();
 
                     if (!$available) {
+                        DB::rollBack();
+
                         return response()->json([
                             'message' => "Le produit {$productName} n'est pas disponible dans l'entrepôt."
                         ], 403);
                     }
                 }
 
-                // Vérifier que le produit existe dans la commande parent
                 $parentItem = PurchaseOrderItem::where('purchase_order_uuid', $parentOrder->uuid)
                     ->where('product_uuid', $item['product_uuid'])
                     ->first();
 
                 if (!$parentItem) {
+                    DB::rollBack();
+
                     return response()->json([
                         'message' => "Le produit {$productName} n'existe pas dans la commande parent."
                     ], 422);
                 }
 
-                // Vérifier la quantité restante
                 if ($item['quantity'] > $parentItem->quantity_remaining) {
+                    DB::rollBack();
+
                     return response()->json([
                         'message' => "La quantité demandée pour le produit {$productName} ({$item['quantity']}) dépasse la quantité restante dans la commande parent ({$parentItem->quantity_remaining})."
                     ], 422);
@@ -1335,12 +1496,11 @@ class PurchaseOrderController extends Controller
                     'quantity_remaining' => $rest,
                 ]);
 
-                // Création de l'article enfant
                 $childOrder->items()->create([
                     'product_uuid' => $item['product_uuid'],
-                    'quantity' => $item['quantity'],
-                    'created_by' => $auth->id,
-                    'added_by' => $auth->id,
+                    'quantity'     => $item['quantity'],
+                    'created_by'   => $auth->id,
+                    'added_by'     => $auth->id,
                 ]);
             }
 
@@ -1352,6 +1512,8 @@ class PurchaseOrderController extends Controller
                 message: $notifMessage,
                 userId: $auth->id,
                 target: 'purchases_orders',
+                managerId: $targetManagerId,
+                warehouseUuid: $notifWarehouseUuid
             );
 
             DB::commit();
@@ -1362,20 +1524,23 @@ class PurchaseOrderController extends Controller
 
             return response()->json([
                 'message' => $message,
-                'order' => $childOrder->load(['items', 'parent'])
+                'order'   => $childOrder->load(['items', 'parent'])
             ], 201);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollBack();
+
             return response()->json([
                 'message' => 'Erreur de validation.',
-                'errors' => $e->errors()
+                'errors'  => $e->errors()
             ], 422);
 
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json([
                 'message' => 'Une erreur est survenue lors de la création de la commande.',
-                'error' => $e->getMessage()
+                'error'   => $e->getMessage()
             ], 500);
         }
     }
@@ -1391,22 +1556,24 @@ class PurchaseOrderController extends Controller
     {
         $auth = auth()->user();
 
-        $childOrder = PurchaseOrder::where('uuid', $uuid)->firstOrFail();
+        $childOrder = PurchaseOrder::with('items')->where('uuid', $uuid)->firstOrFail();
 
-        $parentOrder = $childOrder->parent_uuid ? PurchaseOrder::where('uuid', $childOrder->parent_uuid)->first() : null;
+        $parentOrder = $childOrder->parent_uuid
+            ? PurchaseOrder::where('uuid', $childOrder->parent_uuid)->first()
+            : null;
 
         try {
             DB::beginTransaction();
 
             // 🔹 Validation des données
             $request->validate([
-                'type' => 'required|in:external,internal',
-                'supplier_uuid' => 'nullable|exists:suppliers,uuid',
-                'warehouse_from' => 'nullable|exists:warehouses,uuid',
-                'notes' => 'nullable|string',
-                'items' => 'required|array|min:1',
+                'type'                 => 'required|in:external,internal',
+                'supplier_uuid'        => 'nullable|exists:suppliers,uuid',
+                'warehouse_from'       => 'nullable|exists:warehouses,uuid',
+                'notes'                => 'nullable|string',
+                'items'                => 'required|array|min:1',
                 'items.*.product_uuid' => 'required|exists:produits,uuid',
-                'items.*.quantity' => 'required|numeric|min:0.001',
+                'items.*.quantity'     => 'required|numeric|min:0.001',
             ], [
                 'items.required' => 'Vous devez ajouter au moins un produit à la commande.',
             ]);
@@ -1414,20 +1581,52 @@ class PurchaseOrderController extends Controller
             $supplierUuid = $request->type === 'external' ? $request->supplier_uuid : null;
             $warehouseFromUuid = null;
             $warehouseToUuid = null;
+            $warehouseFrom = null;
+            $targetManagerId = null;
+            $notifWarehouseUuid = null;
 
             if ($request->type === 'internal') {
-                $warehouseFrom = Warehouse::findOrFail($request->warehouse_from);
+                $warehouseFrom = Warehouse::with(['managers' => function ($q) {
+                    $q->whereNull('warehouse_managers.deleted_at');
+                }])->where('uuid', $request->warehouse_from)->first();
 
-                $isManager = $warehouseFrom->managers()->where('user_id', $auth->id)->exists();
-                if (!$isManager) {
+                if (!$warehouseFrom) {
+                    DB::rollBack();
+
                     return response()->json([
-                        'message' => 'Vous ne pouvez mettre à jour une commande interne que depuis un entrepôt que vous gérez.'
+                        'message' => 'Entrepôt source introuvable.'
+                    ], 404);
+                }
+
+                $isManager = $warehouseFrom->managers->contains('id', $auth->id);
+                if (!$isManager) {
+                    DB::rollBack();
+
+                    return response()->json([
+                        'status'  => 'error',
+                        'message' => 'Vous ne pouvez mettre à jour une commande interne que depuis un entrepôt auquel vous êtes affecté.'
                     ], 403);
                 }
 
                 $warehouseTo = Warehouse::where('is_primary', true)->firstOrFail();
                 $warehouseFromUuid = $warehouseFrom->uuid;
                 $warehouseToUuid = $warehouseTo->uuid;
+                $notifWarehouseUuid = $warehouseFromUuid;
+
+                $targetManager = $warehouseFrom->managers->firstWhere('id', '!=', $auth->id)
+                    ?? $warehouseFrom->managers->first();
+                $targetManagerId = $targetManager?->id;
+            } else {
+                $primaryWarehouse = Warehouse::with(['managers' => function ($q) {
+                    $q->whereNull('warehouse_managers.deleted_at');
+                }])->where('is_primary', true)->first();
+
+                if ($primaryWarehouse) {
+                    $notifWarehouseUuid = $primaryWarehouse->uuid;
+                    $targetManager = $primaryWarehouse->managers->firstWhere('id', '!=', $auth->id)
+                        ?? $primaryWarehouse->managers->first();
+                    $targetManagerId = $targetManager?->id;
+                }
             }
 
             if ($parentOrder) {
@@ -1447,26 +1646,28 @@ class PurchaseOrderController extends Controller
             $childOrder->items()->delete();
 
             $childOrder->update([
-                'type' => $request->type,
-                'supplier_uuid' => $supplierUuid,
+                'type'           => $request->type,
+                'supplier_uuid'  => $supplierUuid,
                 'warehouse_from' => $warehouseFromUuid,
-                'warehouse_to' => $warehouseToUuid,
-                'notes' => $request->notes,
-                'updated_by' => $auth->id,
-                'status' => 'draft',
+                'warehouse_to'   => $warehouseToUuid,
+                'notes'          => $request->notes,
+                'updated_by'     => $auth->id,
+                'status'         => 'draft',
             ]);
 
             foreach ($request->items as $item) {
-                $product = Product::find($item['product_uuid']);
+                $product = Product::where('uuid', $item['product_uuid'])->first();
                 $productName = $product ? $product->name : $item['product_uuid'];
 
-                if ($request->type === 'internal') {
+                if ($request->type === 'internal' && $warehouseFrom) {
                     $available = Product::where('uuid', $item['product_uuid'])
                         ->whereHas('points', function ($q) use ($warehouseFrom) {
                             $q->where('point_uuid', $warehouseFrom->uuid);
                         })->exists();
 
                     if (!$available) {
+                        DB::rollBack();
+
                         return response()->json([
                             'message' => "Le produit {$productName} n'est pas disponible dans l'entrepôt."
                         ], 403);
@@ -1479,12 +1680,16 @@ class PurchaseOrderController extends Controller
                         ->first();
 
                     if (!$parentItem) {
+                        DB::rollBack();
+
                         return response()->json([
                             'message' => "Le produit {$productName} n'existe pas dans la commande parent."
                         ], 422);
                     }
 
                     if ($item['quantity'] > $parentItem->quantity_remaining) {
+                        DB::rollBack();
+
                         return response()->json([
                             'message' => "La quantité demandée pour le produit {$productName} ({$item['quantity']}) dépasse la quantité restante dans la commande parent ({$parentItem->quantity_remaining})."
                         ], 422);
@@ -1497,12 +1702,11 @@ class PurchaseOrderController extends Controller
 
                 $childOrder->items()->create([
                     'product_uuid' => $item['product_uuid'],
-                    'quantity' => $item['quantity'],
-                    'created_by' => $auth->id,
-                    'added_by' => $auth->id,
+                    'quantity'     => $item['quantity'],
+                    'created_by'   => $auth->id,
+                    'added_by'     => $auth->id,
                 ]);
             }
-
 
             $notifMessage = "La commande enfant (Référence : {$childOrder->reference}) a été mise à jour.";
 
@@ -1512,6 +1716,8 @@ class PurchaseOrderController extends Controller
                 message: $notifMessage,
                 userId: $auth->id,
                 target: 'purchases_orders',
+                managerId: $targetManagerId,
+                warehouseUuid: $notifWarehouseUuid
             );
 
             DB::commit();
@@ -1522,20 +1728,23 @@ class PurchaseOrderController extends Controller
 
             return response()->json([
                 'message' => $message,
-                'order' => $childOrder->load(['items', 'parent'])
+                'order'   => $childOrder->load(['items', 'parent'])
             ], 200);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollBack();
+
             return response()->json([
                 'message' => 'Erreur de validation.',
-                'errors' => $e->errors()
+                'errors'  => $e->errors()
             ], 422);
 
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json([
                 'message' => 'Une erreur est survenue lors de la mise à jour de la commande.',
-                'error' => $e->getMessage()
+                'error'   => $e->getMessage()
             ], 500);
         }
     }

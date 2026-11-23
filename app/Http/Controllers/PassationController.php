@@ -71,21 +71,19 @@ class PassationController extends Controller
             $end_date = \Illuminate\Support\Carbon::parse($request->input('end_date'))->endOfDay();
 
             $query->whereBetween('created_at', [$start_date, $end_date]);
+        } else {
+            $query->whereBetween('created_at', [now()->startOfDay(), now()->endOfDay()]);
         }
 
         if (!$auth->is_super_admin) {
-            $query->whereHas('warehouse.managers', function($qw) use ($auth) {
+            $query->whereHas('warehouse.managers', function ($qw) use ($auth) {
                 $qw->where('warehouse_managers.user_id', $auth->id)
                     ->whereNull('warehouse_managers.deleted_at');
             });
 
-            $query->where(function($q) use ($auth, $roleIds) {
-                if ($auth->can('view_role_related_data')) {
-                    $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
-                } else {
-                    $q->where('created_by', $auth->id)
-                        ->orWhereHas('managers', fn($qm) => $qm->where('manager_id', $auth->id));
-                }
+            $query->where(function ($q) use ($auth) {
+                $q->where('created_by', $auth->id)
+                    ->orWhereHas('managers', fn ($qm) => $qm->where('manager_id', $auth->id));
             });
         }
 
@@ -151,22 +149,32 @@ class PassationController extends Controller
         int $userId,
         string $status,
         string $message,
-        string $target
-    ) {
-        $commonData = [
-            'passation_uuid' => $passationUuid,
-            'status' => $status,
-            'message' => $message,
-            'target' => $target,
-            'user_id' => $userId,
-            'is_read' => false,
-            'created_by' => auth()->id(),
-        ];
+        array $managerIds = [],
+        ?string $warehouseUuid = null
+    ): void {
+        if (empty($managerIds)) {
+            return;
+        }
 
-        \App\Models\PassationNotification::create($commonData);
-        \App\Models\PassationDecisionnelle::create($commonData);
+        $createdBy = auth()->id() ?? $userId;
 
-        $this->createAndMarkAsRead($commonData);
+        foreach ($managerIds as $managerId) {
+            $notificationData = [
+                'passation_uuid' => $passationUuid,
+                'warehouse_uuid' => $warehouseUuid,
+                'manager_id'     => $managerId,
+                'status'         => $status,
+                'message'        => $message,
+                'user_id'        => $userId,
+                'is_read'        => false,
+                'created_by'     => $createdBy,
+            ];
+
+            \App\Models\PassationNotification::create($notificationData);
+            \App\Models\PassationDecisionnelle::create($notificationData);
+
+            $this->createAndMarkAsRead($notificationData);
+        }
     }
 
 
@@ -221,22 +229,12 @@ class PassationController extends Controller
                     'status' => 'pending',
                 ]);
             }
-
-            $target = 'manager_dashboard';
-
-            if ($warehouse->is_used_for_restaurant) {
-                $target = 'restaurant_manager_dashboard';
-            } elseif ($warehouse->is_bar_warehouse) {
-                $target = 'bar_manager_dashboard';
-            } elseif ($warehouse->is_used_for_drinks_transformation) {
-                $target = 'transformation_manager_dashboard';
-            }
+            $targetManager = $managers->firstWhere('id', '!=', $auth->id);
 
             foreach ($managers as $manager) {
                 if ($manager->id == $auth->id) {
                     continue;
                 }
-
                 DB::table('passation_managers')->insert([
                     'uuid' => \Str::uuid(),
                     'passation_uuid' => $passation->uuid,
@@ -247,12 +245,14 @@ class PassationController extends Controller
                 ]);
             }
 
+            $recipientManagerIds = $targetManager ? [$targetManager->id] : [];
             $this->sendPassationNotifications(
                 passationUuid: $passation->uuid,
                 userId: $auth->id,
                 status: 'pending',
                 message: "Une nouvelle passation de stock a été initiée pour l'entrepôt {$warehouse->name} et nécessite votre validation.",
-                target: $target
+                managerIds: $recipientManagerIds,
+                warehouseUuid: $warehouse->uuid
             );
 
             DB::commit();
@@ -290,6 +290,14 @@ class PassationController extends Controller
         $passation = Passation::where('uuid', $uuid)->firstOrFail();
 
         $warehouse = Warehouse::where('uuid', $validated['warehouse_uuid'])->firstOrFail();
+        $managers = $warehouse->managers;
+
+        if ($managers->isEmpty()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Aucun manager trouvé pour cet entrepôt.'
+            ], 404);
+        }
 
         $products = $warehouse->products()
             ->wherePivot('is_active', true)
@@ -299,7 +307,6 @@ class PassationController extends Controller
 
         DB::beginTransaction();
         try {
-
             $passation->update([
                 'warehouse_uuid' => $warehouse->uuid,
                 'quantity_sent' => $totalStock,
@@ -321,22 +328,35 @@ class PassationController extends Controller
                 ]);
             }
 
-            $target = 'manager_dashboard';
+            DB::table('passation_managers')
+                ->where('passation_uuid', $passation->uuid)
+                ->delete();
 
-            if ($warehouse->is_used_for_restaurant) {
-                $target = 'restaurant_manager_dashboard';
-            } elseif ($warehouse->is_bar_warehouse) {
-                $target = 'bar_manager_dashboard';
-            } elseif ($warehouse->is_used_for_drinks_transformation) {
-                $target = 'transformation_manager_dashboard';
+            $targetManager = $managers->firstWhere('id', '!=', $auth->id);
+
+            foreach ($managers as $manager) {
+                if ($manager->id == $auth->id) {
+                    continue;
+                }
+
+                DB::table('passation_managers')->insert([
+                    'uuid' => (string) \Str::uuid(),
+                    'passation_uuid' => $passation->uuid,
+                    'manager_id' => $manager->id,
+                    'status' => 'pending',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
             }
 
+            $recipientManagerIds = $targetManager ? [$targetManager->id] : [];
             $this->sendPassationNotifications(
                 passationUuid: $passation->uuid,
                 userId: $auth->id,
                 status: 'pending',
                 message: "La passation de stock pour l'entrepôt {$warehouse->name} a été mise à jour et nécessite votre attention.",
-                target: $target
+                managerIds: $recipientManagerIds,
+                warehouseUuid: $warehouse->uuid
             );
 
             DB::commit();
@@ -344,7 +364,7 @@ class PassationController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'Passation mise à jour avec succès.',
-                'passation' => $passation->load('items', 'warehouse'),
+                'passation' => $passation->load('items', 'managers', 'warehouse'),
             ], 200);
 
         } catch (\Exception $e) {
@@ -478,21 +498,20 @@ class PassationController extends Controller
                 'updated_by' => $auth->id,
                 'reason_validated' => 'Validation par comptage',
             ]);
+            DB::table('passation_managers')
+                ->where('passation_uuid', $passation->uuid)
+                ->where('manager_id', $auth->id)
+                ->update([
+                    'status' => 'validated',
+                    'updated_at' => now(),
+                ]);
 
             $warehouse = $passation->warehouse;
             $warehouseName = $warehouse?->name ?? '';
 
-            $target = 'manager_dashboard';
+            $targetManager = $warehouse?->managers->firstWhere('id', '!=', $auth->id);
+            $recipientManagerIds = $targetManager ? [$targetManager->id] : [];
 
-            if ($warehouse) {
-                if ($warehouse->is_used_for_restaurant) {
-                    $target = 'restaurant_manager_dashboard';
-                } elseif ($warehouse->is_bar_warehouse) {
-                    $target = 'bar_manager_dashboard';
-                } elseif ($warehouse->is_used_for_drinks_transformation) {
-                    $target = 'transformation_manager_dashboard';
-                }
-            }
             $message = $hasGap
                 ? "Validation effectuée avec écarts : le contrôle d'inventaire de l'entrepôt {$warehouseName} a été soumis par {$auth->nom_utilisateur}. Une vérification est requise."
                 : "Validation confirmée sans écart : le comptage de l'entrepôt {$warehouseName} a été approuvé par {$auth->nom_utilisateur}.";
@@ -502,7 +521,8 @@ class PassationController extends Controller
                 userId: $auth->id,
                 status: 'in_discuss',
                 message: $message,
-                target: $target
+                managerIds: $recipientManagerIds,
+                warehouseUuid: $warehouse?->uuid
             );
 
             DB::commit();
@@ -602,20 +622,19 @@ class PassationController extends Controller
                 'reason_validated' => 'Validation modifiée par comptage',
             ]);
 
+            DB::table('passation_managers')
+                ->where('passation_uuid', $passation->uuid)
+                ->where('manager_id', $auth->id)
+                ->update([
+                    'status' => 'validated',
+                    'updated_at' => now(),
+                ]);
+
             $warehouse = $passation->warehouse;
             $warehouseName = $warehouse?->name ?? '';
 
-            $target = 'manager_dashboard';
-
-            if ($warehouse) {
-                if ($warehouse->is_used_for_restaurant) {
-                    $target = 'restaurant_manager_dashboard';
-                } elseif ($warehouse->is_bar_warehouse) {
-                    $target = 'bar_manager_dashboard';
-                } elseif ($warehouse->is_used_for_drinks_transformation) {
-                    $target = 'transformation_manager_dashboard';
-                }
-            }
+            $targetManager = $warehouse?->managers->firstWhere('id', '!=', $auth->id);
+            $recipientManagerIds = $targetManager ? [$targetManager->id] : [];
 
             $message = $hasGap
                 ? "Mise à jour de validation avec écarts : le contrôle de l'entrepôt {$warehouseName} a été modifié par {$auth->nom_utilisateur}."
@@ -626,7 +645,8 @@ class PassationController extends Controller
                 userId: $auth->id,
                 status: 'in_discuss',
                 message: $message,
-                target: $target
+                managerIds: $recipientManagerIds,
+                warehouseUuid: $warehouse?->uuid
             );
 
             DB::commit();
@@ -683,27 +703,27 @@ class PassationController extends Controller
                 'cancelled_at' => now(),
             ]);
 
+            DB::table('passation_managers')
+                ->where('passation_uuid', $passation->uuid)
+                ->where('manager_id', $auth->id)
+                ->update([
+                    'status' => 'cancelled',
+                    'updated_at' => now(),
+                ]);
+
             $warehouse = $passation->warehouse;
             $warehouseName = $warehouse?->name ?? '';
 
-            $target = 'manager_dashboard';
-
-            if ($warehouse) {
-                if ($warehouse->is_used_for_restaurant) {
-                    $target = 'restaurant_manager_dashboard';
-                } elseif ($warehouse->is_bar_warehouse) {
-                    $target = 'bar_manager_dashboard';
-                } elseif ($warehouse->is_used_for_drinks_transformation) {
-                    $target = 'transformation_manager_dashboard';
-                }
-            }
+            $targetManager = $warehouse?->managers->firstWhere('id', '!=', $auth->id);
+            $recipientManagerIds = $targetManager ? [$targetManager->id] : [];
 
             $this->sendPassationNotifications(
                 passationUuid: $passation->uuid,
                 userId: $auth->id,
                 status: PassationStatus::CANCEL->value,
                 message: "Passation annulée : la procédure pour l'entrepôt {$warehouseName} a été annulée par {$auth->nom_utilisateur}. Motif : {$validated['reason_cancelled']}",
-                target: $target
+                managerIds: $recipientManagerIds,
+                warehouseUuid: $warehouse?->uuid
             );
 
             DB::commit();
@@ -766,34 +786,34 @@ class PassationController extends Controller
                 ]);
             }
 
+            DB::table('passation_managers')
+                ->where('passation_uuid', $passation->uuid)
+                ->where('manager_id', $auth->id)
+                ->update([
+                    'status'     => 'rejected',
+                    'updated_at' => now(),
+                ]);
+
             $warehouse = $passation->warehouse;
             $warehouseName = $warehouse?->name ?? '';
 
-            $target = 'manager_dashboard';
-
-            if ($warehouse) {
-                if ($warehouse->is_used_for_restaurant) {
-                    $target = 'restaurant_manager_dashboard';
-                } elseif ($warehouse->is_bar_warehouse) {
-                    $target = 'bar_manager_dashboard';
-                } elseif ($warehouse->is_used_for_drinks_transformation) {
-                    $target = 'transformation_manager_dashboard';
-                }
-            }
+            $targetManager = $warehouse?->managers->firstWhere('id', '!=', $auth->id);
+            $recipientManagerIds = $targetManager ? [$targetManager->id] : [];
 
             $this->sendPassationNotifications(
                 passationUuid: $passation->uuid,
                 userId: $auth->id,
                 status: PassationStatus::REJECTED->value,
                 message: "Passation rejetée : la procédure pour l'entrepôt {$warehouseName} a été rejetée par {$auth->nom_utilisateur}. Motif : {$validated['reason_reject']}",
-                target: $target
+                managerIds: $recipientManagerIds,
+                warehouseUuid: $warehouse?->uuid
             );
 
             DB::commit();
 
             return response()->json([
-                'status' => 'success',
-                'message' => 'Passation rejetée et tous les items remis à pending avec succès.',
+                'status'    => 'success',
+                'message'   => 'Passation rejetée et tous les items remis à pending avec succès.',
                 'passation' => $passation->load('agentFrom', 'agentTo', 'warehouse', 'items.product'),
             ]);
 
@@ -989,17 +1009,8 @@ class PassationController extends Controller
             $warehouse = $passation->warehouse;
             $warehouseName = $warehouse?->name ?? '';
 
-            $target = 'manager_dashboard';
-
-            if ($warehouse) {
-                if ($warehouse->is_used_for_restaurant) {
-                    $target = 'restaurant_manager_dashboard';
-                } elseif ($warehouse->is_bar_warehouse) {
-                    $target = 'bar_manager_dashboard';
-                } elseif ($warehouse->is_used_for_drinks_transformation) {
-                    $target = 'transformation_manager_dashboard';
-                }
-            }
+            $targetManager = $warehouse?->managers->firstWhere('id', '!=', $auth->id);
+            $recipientManagerIds = $targetManager ? [$targetManager->id] : [];
 
             $message = $hasGap
                 ? "Validation définitive (avec écarts) : la passation de l'entrepôt {$warehouseName} a été approuvée par l'administration ({$auth->nom_utilisateur})."
@@ -1010,7 +1021,8 @@ class PassationController extends Controller
                 userId: $auth->id,
                 status: $finalStatusEnum->value,
                 message: $message,
-                target: $target
+                managerIds: $recipientManagerIds,
+                warehouseUuid: $warehouse?->uuid
             );
 
             DB::commit();

@@ -6,24 +6,10 @@ use App\Models\ModuleApplications;
 use App\Models\ModulePermission;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
-/**
- * @permission_category Gestion des modules d'applications
- * @permission_module Gestion des stocks
- * @code_module STOCK
- * @permission_module Gestion du restaurant
- * @code_module RESTAURANT
- * @permission_module Gestion du bar
- * @code_module BAR
- */
+
 class ModuleApplicationsController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     *
-     * @permission ModuleApplicationsController::index
-     * @code STOCK, BAR, RESTAURANT
-     * @permission_desc Afficher la liste des modules d'applications
-     */
+
     public function index(Request $request)
     {
         $auth = auth()->user();

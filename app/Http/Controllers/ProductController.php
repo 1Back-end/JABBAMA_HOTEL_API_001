@@ -649,98 +649,123 @@ class ProductController extends Controller
                 return response()->json(['status' => 'error', 'message' => 'Entrepôt introuvable'], 404);
             }
 
-            $warehouses = Warehouse::whereIn('uuid', $warehouse_uuids)->get();
+            $warehouses = Warehouse::whereIn('uuid', $warehouse_uuids)->get()->keyBy('uuid');
 
-            $supplies = SupplyItem::whereHas('supply', function($q) use ($end_date, $warehouse_uuids) {
+            $productPoints = ProductPoint::with(['product.unitMeasure', 'product.category', 'point'])
+                ->whereIn('point_uuid', $warehouse_uuids)
+                ->whereHas('product')
+                ->get();
+
+            $makeKey = fn($whUuid, $prodUuid) => $whUuid . '|' . $prodUuid;
+
+            $supplies = SupplyItem::whereHas('supply', function ($q) use ($end_date, $warehouse_uuids) {
                 $q->whereIn('status', [SupplyStatus::VALIDATED, SupplyStatus::PARTIALLY_VALIDATED])
                     ->where('supply_date', '<=', $end_date)
                     ->where('type', '!=', 'internal')
                     ->whereIn('warehouse_uuid', $warehouse_uuids);
             })
-                ->select('product_uuid', DB::raw('SUM(quantity_supplied) as total'))
-                ->groupBy('product_uuid')
-                ->pluck('total', 'product_uuid');
+                ->join('supplies', 'supply_items.supply_uuid', '=', 'supplies.uuid')
+                ->select('supplies.warehouse_uuid', 'supply_items.product_uuid', DB::raw('SUM(supply_items.quantity_supplied) as total'))
+                ->groupBy('supplies.warehouse_uuid', 'supply_items.product_uuid')
+                ->get()
+                ->keyBy(fn($row) => $makeKey($row->warehouse_uuid, $row->product_uuid));
 
-            $adjustments = StockAdjustmentItem::whereHas('adjustment', function($q) use ($warehouse_uuids, $end_date) {
+            $adjustments = StockAdjustmentItem::whereHas('adjustment', function ($q) use ($warehouse_uuids, $end_date) {
                 $q->whereIn('warehouse_uuid', $warehouse_uuids)
                     ->where('status', StocksAdjustmentStatus::VALIDATED->value)
                     ->where('created_at', '<=', $end_date);
             })
                 ->join('stock_adjustments as adjustments', 'stock_adjustments_items.stock_adjustment_uuid', '=', 'adjustments.uuid')
-                ->select('stock_adjustments_items.product_uuid', 'adjustments.action', DB::raw('SUM(stock_adjustments_items.quantity) as total'))
-                ->groupBy('stock_adjustments_items.product_uuid', 'adjustments.action')
+                ->select('adjustments.warehouse_uuid', 'stock_adjustments_items.product_uuid', 'adjustments.action', DB::raw('SUM(stock_adjustments_items.quantity) as total'))
+                ->groupBy('adjustments.warehouse_uuid', 'stock_adjustments_items.product_uuid', 'adjustments.action')
                 ->get()
-                ->groupBy('product_uuid');
+                ->groupBy(fn($row) => $makeKey($row->warehouse_uuid, $row->product_uuid));
 
-            $deductions = StockDeductionItem::whereHas('stockDeduction', function($q) use ($warehouse_uuids, $end_date) {
+            $deductions = StockDeductionItem::whereHas('stockDeduction', function ($q) use ($warehouse_uuids, $end_date) {
                 $q->whereIn('warehouse_uuid', $warehouse_uuids)
                     ->where('status', StocksDeductionsStatus::VALIDATED->value)
                     ->where('created_at', '<=', $end_date);
             })
-                ->select('product_uuid', DB::raw('SUM(quantity) as total'))
-                ->groupBy('product_uuid')
-                ->pluck('total', 'product_uuid');
+                ->join('stocks_deductions', 'stocks_deductions_items.stocks_deduction_uuid', '=', 'stocks_deductions.uuid')
+                ->select('stocks_deductions.warehouse_uuid', 'stocks_deductions_items.product_uuid', DB::raw('SUM(stocks_deductions_items.quantity) as total'))
+                ->groupBy('stocks_deductions.warehouse_uuid', 'stocks_deductions_items.product_uuid')
+                ->get()
+                ->keyBy(fn($row) => $makeKey($row->warehouse_uuid, $row->product_uuid));
 
             $sales = VirtualOrderMenuRestaurant::whereIn('warehouse_uuid', $warehouse_uuids)
                 ->where('status', MenuOrderStatus::DELIVERED->value)
                 ->where('created_at', '<=', $end_date)
-                ->select('product_uuid', DB::raw('SUM(quantity_reserved) as total'))
-                ->groupBy('product_uuid')
-                ->pluck('total', 'product_uuid');
+                ->select('warehouse_uuid', 'product_uuid', DB::raw('SUM(quantity_reserved) as total'))
+                ->groupBy('warehouse_uuid', 'product_uuid')
+                ->get()
+                ->keyBy(fn($row) => $makeKey($row->warehouse_uuid, $row->product_uuid));
 
             $complements = ComplementVirtualTemp::whereIn('warehouse_uuid', $warehouse_uuids)
                 ->where('status', MenuOrderStatus::DELIVERED->value)
                 ->where('created_at', '<=', $end_date)
-                ->select('product_uuid', DB::raw('SUM(menu_quantity) as total'))
-                ->groupBy('product_uuid')
-                ->pluck('total', 'product_uuid');
+                ->select('warehouse_uuid', 'product_uuid', DB::raw('SUM(menu_quantity) as total'))
+                ->groupBy('warehouse_uuid', 'product_uuid')
+                ->get()
+                ->keyBy(fn($row) => $makeKey($row->warehouse_uuid, $row->product_uuid));
 
-            $internalTransfersOut = SupplyItem::whereHas('supply', function($q) use ($end_date, $warehouse_uuids) {
+            $internalTransfersOut = SupplyItem::whereHas('supply', function ($q) use ($end_date, $warehouse_uuids) {
                 $q->whereIn('status', [SupplyStatus::VALIDATED, SupplyStatus::PARTIALLY_VALIDATED])
                     ->where('supply_date', '<=', $end_date)
                     ->where('type', 'internal')
                     ->whereIn('warehouse_uuid', $warehouse_uuids);
             })
-                ->select('product_uuid', DB::raw('SUM(quantity_supplied) as total'))
-                ->groupBy('product_uuid')
-                ->pluck('total', 'product_uuid');
+                ->join('supplies', 'supply_items.supply_uuid', '=', 'supplies.uuid')
+                ->select('supplies.warehouse_uuid', 'supply_items.product_uuid', DB::raw('SUM(supply_items.quantity_supplied) as total'))
+                ->groupBy('supplies.warehouse_uuid', 'supply_items.product_uuid')
+                ->get()
+                ->keyBy(fn($row) => $makeKey($row->warehouse_uuid, $row->product_uuid));
 
-            $all_products = Product::with(['unitMeasure', 'category'])->get();
+            $computedPoints = $productPoints->map(function ($pointItem) use (
+                $warehouses, $makeKey, $supplies, $adjustments, $deductions, $sales, $complements, $internalTransfersOut
+            ) {
+                $whUuid   = $pointItem->point_uuid;
+                $prodUuid = $pointItem->produit_uuid;
+                $key      = $makeKey($whUuid, $prodUuid);
+                $wh       = $warehouses->get($whUuid);
 
-            $all_products_points = $all_products->map(function($product) use ($supplies, $adjustments, $deductions, $sales, $complements, $internalTransfersOut, $warehouses, $warehouse_uuid, $end_date, $warehouse_uuids) {
-                $uuid = $product->uuid;
+                $prodExternalSupplies = (float) ($supplies->get($key)->total ?? 0);
+                $prodTransOut         = (float) ($internalTransfersOut->get($key)->total ?? 0);
+                $prodDeducted         = (float) ($deductions->get($key)->total ?? 0);
+                $prodSales            = (float) ($sales->get($key)->total ?? 0);
+                $prodComplements      = (float) ($complements->get($key)->total ?? 0);
 
-                $prodDeducted         = (float) $deductions->get($uuid, 0);
-                $prodSales            = (float) $sales->get($uuid, 0);
-                $prodComplements      = (float) $complements->get($uuid, 0);
-                $prodTransOut         = (float) $internalTransfersOut->get($uuid, 0);
-                $prodExternalSupplies = (float) $supplies->get($uuid, 0);
-
-                $prodAdjusts  = $adjustments->get($uuid, collect());
+                $prodAdjusts  = $adjustments->get($key, collect());
                 $prodAdjPlus  = (float) $prodAdjusts->where('action', StockAdjustmentAction::AJUSTEMENT_PLUS->value)->sum('total');
                 $prodAdjMinus = (float) $prodAdjusts->where('action', StockAdjustmentAction::AJUSTEMENT_MOINS->value)->sum('total');
                 $prodAvaries  = (float) $prodAdjusts->where('action', StockAdjustmentAction::AVARIE->value)->sum('total');
 
-                $isPrimary = false;
-                if ($warehouse_uuid !== 'all' && $warehouses->count() > 0) {
-                    $isPrimary = (bool) ($warehouses->first()->is_primary ?? false);
-                }
+                $isPrimary = (bool) ($wh->is_primary ?? false);
+                $baseIn    = $isPrimary ? $prodExternalSupplies : $prodTransOut;
+                $totalIn   = $baseIn + $prodAdjPlus;
+                $totalOut  = $prodAdjMinus + $prodAvaries + $prodDeducted + $prodSales + $prodComplements;
 
-                $baseIn  = $isPrimary ? $prodExternalSupplies : $prodTransOut;
-                $totalIn = $baseIn + $prodAdjPlus;
+                $finalQuantity = max(0, $totalIn - $totalOut);
 
-                $totalOut = $prodAdjMinus + $prodAvaries + $prodDeducted + $prodSales + $prodComplements;
-
-                $finalQuantity = $totalIn - $totalOut;
-
-                return (object)[
-                    'produit_uuid' => $uuid,
-                    'product'      => $product,
-                    'quantity'     => max(0, $finalQuantity),
+                return (object) [
+                    'point_uuid'   => $whUuid,
+                    'warehouse'    => $wh ?? $pointItem->point,
+                    'produit_uuid' => $prodUuid,
+                    'product'      => $pointItem->product,
+                    'quantity'     => $finalQuantity,
+                    'point_item'   => $pointItem,
                 ];
-            })->filter(function($p) {
-                return $p->product !== null;
             })->values();
+
+            $inventoriesByWarehouse = $computedPoints
+                ->groupBy('point_uuid')
+                ->map(function ($items, $whUuid) use ($warehouses) {
+                    return (object) [
+                        'warehouse'      => $warehouses->get($whUuid),
+                        'product_points' => $items->values(),
+                        'total_quantity' => $items->sum('quantity'),
+                    ];
+                })
+                ->values();
 
             $fileName = $warehouse_uuid === 'all'
                 ? 'INVENTAIRE-GLOBAL-' . now()->format('YmdHis') . '.pdf'
@@ -757,9 +782,10 @@ class ProductController extends Controller
             $filePath = $folderPath . '/' . $fileName;
 
             $data = [
-                'warehouse'      => $warehouse_uuid === 'all' ? null : $warehouses->first(),
-                'product_points' => $all_products_points,
-                'end_date'       => $end_date,
+                'warehouse'               => $warehouse_uuid === 'all' ? null : $warehouses->first(),
+                'inventories_by_warehouse' => $inventoriesByWarehouse,
+                'product_points'          => $computedPoints,
+                'end_date'                => $end_date,
             ];
 
             save_browser_shot_pdf(
@@ -767,7 +793,7 @@ class ProductController extends Controller
                 data: $data,
                 folderPath: $folderPath,
                 path: $filePath,
-                margins: [10, 10, 10, 10],
+                margins: [5, 5, 5, 5],
                 footer: 'pdfs.reports.factures.footer'
             );
 
@@ -776,15 +802,14 @@ class ProductController extends Controller
                 'base64'   => base64_encode(file_get_contents($filePath)),
                 'filename' => $fileName,
                 'url'      => $filePath,
-                'data'     => $data
+                'data'     => $data,
             ]);
-
         } catch (\Throwable $e) {
             return response()->json([
                 'status'  => 'error',
                 'message' => 'Erreur lors de la génération de l\'inventaire',
                 'details' => $e->getMessage(),
-                'line'    => $e->getLine()
+                'line'    => $e->getLine(),
             ], 500);
         }
     }

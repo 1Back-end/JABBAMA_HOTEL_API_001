@@ -23,6 +23,8 @@ class PurchaseOrderNotification extends Model
         'purchase_order_uuid',
         'passation_uuid',
         'stock_adjustments_uuid',
+        'warehouse_uuid',
+        'manager_id',
         'status',
         'message',
         'target',
@@ -83,5 +85,14 @@ class PurchaseOrderNotification extends Model
     public function updater()
     {
         return $this->belongsTo(User::class, 'updated_by');
+    }
+    public function warehouse()
+    {
+        return $this->belongsTo(Warehouse::class, 'warehouse_uuid', 'uuid');
+    }
+
+    public function manager()
+    {
+        return $this->belongsTo(User::class, 'manager_id', 'id');
     }
 }

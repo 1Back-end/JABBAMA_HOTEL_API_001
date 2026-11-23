@@ -11,8 +11,6 @@ class Warehouse extends Model
 {
     use HasFactory, SoftDeletes;
 
-
-
     protected $primaryKey = 'uuid';
     public $incrementing = false;
     protected $keyType = 'string';

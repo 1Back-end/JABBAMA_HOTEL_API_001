@@ -9,6 +9,7 @@ use App\Models\PassationDecisionnelle;
 use App\Models\PassationNotification;
 use App\Models\PurchaseOrderNotification;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\JsonResponse;
 
 
@@ -219,20 +220,29 @@ class NotificationController extends Controller
     }
     private function streamStockNotifications($user, array $statuses)
     {
-        if (empty($statuses)) {
-            return [];
+        if (empty($statuses) || !$user) {
+            return ['data' => []];
         }
+        $assignedWarehouseUuids = $user->warehouses()
+            ->whereNull('warehouse_managers.deleted_at')
+            ->pluck('warehouses.uuid')
+            ->values();
 
-        return PurchaseOrderNotification::with([
+        $data = PurchaseOrderNotification::with([
             'creator:id,nom_utilisateur',
             'updater:id,nom_utilisateur',
             'purchaseOrder:uuid,reference',
+            'warehouse',
         ])
             ->whereIn('status', $statuses)
+            ->whereIn('warehouse_uuid', $assignedWarehouseUuids)
             ->where('created_by', '!=', $user->id)
             ->latest()
             ->limit(self::STREAM_LIMIT)
             ->get();
+
+
+        return ['data' => $data];
     }
     private function streamDecisionalStockNotifications(array $statuses): array
     {
@@ -254,36 +264,27 @@ class NotificationController extends Controller
     }
     private function streamPassationNotifications($user, array $statuses)
     {
-        if (empty($statuses)) {
-            return [];
-        }
-        $targets = [];
-        if ($user->can('view_notification_restaurant_manager_dashboard')) {
-            $targets[] = 'restaurant_manager_dashboard';
-        }
-        if ($user->can('view_notification_restaurant_bar_manager_dashboard')) {
-            $targets[] = 'bar_manager_dashboard';
-        }
-        if ($user->can('view_notification_transformation_manager_dashboard')) {
-            $targets[] = 'transformation_manager_dashboard';
+
+        if (empty($statuses) || !$user) {
+            return ['data' => []];
         }
 
-        if (empty($targets)) {
-            return [];
-        }
-        $targets[] = 'manager_dashboard';
+        $assignedWarehouseUuids = $user->warehouses()
+            ->whereNull('warehouse_managers.deleted_at')
+            ->pluck('warehouses.uuid')
+            ->values();
 
         $data = PassationNotification::with([
             'creator:id,nom_utilisateur',
             'updater:id,nom_utilisateur',
+            'warehouse',
         ])
             ->whereIn('status', $statuses)
-            ->whereIn('target', array_unique($targets))
+            ->whereIn('warehouse_uuid', $assignedWarehouseUuids)
             ->where('created_by', '!=', $user->id)
             ->latest()
             ->limit(self::STREAM_LIMIT)
             ->get();
-
 
         return ['data' => $data];
     }

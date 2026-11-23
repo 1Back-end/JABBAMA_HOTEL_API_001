@@ -19,6 +19,8 @@ class PassationNotification extends Model
 
     protected $fillable = [
         'passation_uuid',
+        'warehouse_uuid',
+        'manager_id',
         'status',
         'message',
         'target',
@@ -37,6 +39,15 @@ class PassationNotification extends Model
     public function passation(): BelongsTo
     {
         return $this->belongsTo(Passation::class, 'passation_uuid', 'uuid');
+    }
+    public function warehouse()
+    {
+        return $this->belongsTo(Warehouse::class, 'warehouse_uuid', 'uuid');
+    }
+
+    public function manager()
+    {
+        return $this->belongsTo(User::class, 'manager_id', 'id');
     }
 
     public function user(): BelongsTo
