@@ -16,12 +16,6 @@ use Illuminate\Http\Request;
  */
 class SettingRestaurantController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     * @permission SettingRestaurantController::store
-     * @code STOCK, BAR, RESTAURANT
-     * @permission_desc Créer les paramètres de facturations
-     */
     public function store(Request $request) {
         $auth = auth()->user();
 
@@ -46,7 +40,7 @@ class SettingRestaurantController extends Controller
      * Display a listing of the resource.
      * @permission SettingRestaurantController::update
      * @code STOCK, BAR, RESTAURANT
-     * @permission_desc Modifier les paramètres de facturations
+     * @permission_desc Modifier un paramètre de facturation
      */
     public function update(Request $request, $uuid)
     {
@@ -113,7 +107,7 @@ class SettingRestaurantController extends Controller
      * Display a listing of the resource.
      * @permission SettingRestaurantController::toggleActive
      * @code STOCK, BAR, RESTAURANT
-     * @permission_desc Activer/Désactiver les paramètres de facturations
+     * @permission_desc Activer/Désactiver un paramètre de facturation
      */
     public function toggleActive($uuid)
     {
