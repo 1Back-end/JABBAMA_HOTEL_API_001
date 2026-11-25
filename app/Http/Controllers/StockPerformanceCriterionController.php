@@ -4,17 +4,20 @@ namespace App\Http\Controllers;
 
 use App\Models\StockPerformanceCriterion;
 use Illuminate\Http\Request;
+
 /**
  * @permission_category Gestion des critères de performances sur les stocks
- * @permission_module Gestion des stocks
- * @code_module STOCK
+ * @permission_module Gestion du restaurant
+ * @code_module RESTAURANT
+ * @permission_module Gestion du bar
+ * @code_module BAR
  */
 class StockPerformanceCriterionController extends Controller
 {
     /**
      * Display a listing of the resource.
      * @permission StockPerformanceCriterionController::index
-     * @code STOCK
+     * @code BAR, RESTAURANT
      * @permission_desc Afficher la liste des critères de performances
      */
     public function index(Request $request)
@@ -32,7 +35,7 @@ class StockPerformanceCriterionController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StockPerformanceCriterionController::store
-     * @code STOCK
+     * @code BAR, RESTAURANT
      * @permission_desc Créer un critère de performance
      */
     public function store(Request $request)
@@ -95,7 +98,7 @@ class StockPerformanceCriterionController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StockPerformanceCriterionController::show
-     * @code STOCK
+     * @code BAR, RESTAURANT
      * @permission_desc Afficher les détails d'un critère de performance
      */
     public function show($uuid)
@@ -117,7 +120,7 @@ class StockPerformanceCriterionController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StockPerformanceCriterionController::update
-     * @code STOCK
+     * @code BAR, RESTAURANT
      * @permission_desc Modifier un critère de performance
      */
     public function update(Request $request, $uuid)
@@ -184,7 +187,7 @@ class StockPerformanceCriterionController extends Controller
     /**
      * Display a listing of the resource.
      * @permission StockPerformanceCriterionController::updateStatus
-     * @code STOCK
+     * @code BAR, RESTAURANT
      * @permission_desc Activer/Désactiver un critère de performance
      */
     public function updateStatus(Request $request, $uuid)
