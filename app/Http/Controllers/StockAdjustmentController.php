@@ -40,6 +40,48 @@ class StockAdjustmentController extends Controller
             'data'   => StockAdjustmentAction::TO_ARRAY(),
         ]);
     }
+    private function createAndMarkAsRead(array $data)
+    {
+        $data['is_read'] = false;
+        $data['read_at'] = now();
+
+        $data['purchase_order_uuid'] = $data['purchase_order_uuid'] ?? null;
+        $data['stock_adjustments_uuid'] = $data['stock_adjustments_uuid'] ?? null;
+
+        \App\Models\DecisionalNotification::create($data);
+    }
+
+    private function sendStockAdjustmentNotifications(
+        string $stockAdjustmentUuid,
+        int $userId,
+        string $status,
+        string $message,
+        array $managerIds = [],
+        ?string $warehouseUuid = null
+    ): void {
+        if (empty($managerIds)) {
+            return;
+        }
+
+        $createdBy = auth()->id() ?? $userId;
+
+        foreach ($managerIds as $managerId) {
+            $notificationData = [
+                'stock_adjustments_uuid' => $stockAdjustmentUuid,
+                'warehouse_uuid'         => $warehouseUuid,
+                'manager_id'           => $managerId,
+                'status'               => $status,
+                'message'              => $message,
+                'user_id'              => $userId,
+                'is_read'              => false,
+                'is_stock_adjustment'   => true,
+                'created_by'           => $createdBy,
+            ];
+
+            \App\Models\PurchaseOrderNotification::create($notificationData);
+            $this->createAndMarkAsRead($notificationData);
+        }
+    }
 
     /**
      * Display a listing of the resource.
@@ -73,7 +115,7 @@ class StockAdjustmentController extends Controller
                 'notes'          => $data['notes'],
                 'comment'        => $data['comment'] ?? null,
                 'action'         => $data['action'],
-                'status'         => 'pending', // ⏳
+                'status'         => 'pending',
                 'created_by'     => $auth->id,
                 'updated_by'     => $auth->id,
             ]);
@@ -87,6 +129,23 @@ class StockAdjustmentController extends Controller
                     'updated_by'            => $auth->id,
                 ]);
             }
+
+            $actionLabel = StockAdjustmentAction::LABEL((int) $data['action']);
+
+            $message = sprintf(
+                'Nouvelle régularisation de stock (%s - %s) en attente de validation.',
+                $adjustment->reference ?? $adjustment->uuid,
+                $actionLabel
+            );
+
+            $this->sendStockAdjustmentNotifications(
+                stockAdjustmentUuid: $adjustment->uuid,
+                userId: $auth->id,
+                status: 'pending',
+                message: $message,
+                managerIds: [$auth->id],
+                warehouseUuid: $data['warehouse_uuid']
+            );
 
             DB::commit();
 
@@ -160,6 +219,22 @@ class StockAdjustmentController extends Controller
                     'updated_by'            => $auth->id,
                 ]);
             }
+            $actionLabel = StockAdjustmentAction::LABEL((int) $data['action']);
+
+            $message = sprintf(
+                'Régularisation de stock (%s - %s) mise à jour, en attente de validation.',
+                $adjustment->reference ?? $adjustment->uuid,
+                $actionLabel
+            );
+
+            $this->sendStockAdjustmentNotifications(
+                stockAdjustmentUuid: $adjustment->uuid,
+                userId: $auth->id,
+                status: 'pending',
+                message: $message,
+                managerIds: [$auth->id],
+                warehouseUuid: $data['warehouse_uuid']
+            );
 
             DB::commit();
 
@@ -326,32 +401,80 @@ class StockAdjustmentController extends Controller
      * @code STOCK
      * @permission_desc Annuler une régularisation de stocks
      */
-    public function cancel_stock_adjustment(Request $request, string $uuid){
+    public function cancel_stock_adjustment(Request $request, string $uuid)
+    {
         $auth = auth()->user();
+
         $request->validate([
-            'password' => 'required|string'
+            'password' => 'required|string',
         ]);
 
-        // Vérification du mot de passe
         if (!Hash::check($request->password, $auth->password)) {
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Mot de passe incorrect.'
+                'message' => 'Mot de passe incorrect.',
             ], 422);
         }
 
-        $stock_adjustment = StockAdjustment::findOrFail($uuid);
-        $stock_adjustment->update([
-            'status' => 'cancelled',
-            'updated_by' => auth()->id(),
-            'cancelled_by' => auth()->id(),
-            'cancelled_at' => now(),
-        ]);
+        $stockAdjustment = StockAdjustment::where('uuid', $uuid)->firstOrFail();
 
-        return response()->json([
-            'message' => "Ajustement de stock annulé avec succès.",
-            'order' => $stock_adjustment
-        ]);
+        if ($stockAdjustment->status === 'cancelled') {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Cet ajustement de stock est déjà annulé.',
+            ], 403);
+        }
+
+        if ($stockAdjustment->status !== 'pending') {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Impossible d\'annuler un ajustement déjà traité.',
+            ], 403);
+        }
+
+        DB::beginTransaction();
+
+        try {
+            $stockAdjustment->update([
+                'status'       => 'cancelled',
+                'updated_by'   => $auth->id,
+                'cancelled_by' => $auth->id,
+                'cancelled_at' => now(),
+            ]);
+
+            $actionLabel = StockAdjustmentAction::LABEL((int) $stockAdjustment->action);
+
+            $message = sprintf(
+                'Régularisation de stock (%s - %s) annulée.',
+                $stockAdjustment->reference ?? $stockAdjustment->uuid,
+                $actionLabel
+            );
+
+            $this->sendStockAdjustmentNotifications(
+                stockAdjustmentUuid: $stockAdjustment->uuid,
+                userId: $auth->id,
+                status: 'cancelled',
+                message: $message,
+                managerIds: [$auth->id],
+                warehouseUuid: $stockAdjustment->warehouse_uuid
+            );
+
+            DB::commit();
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Ajustement de stock annulé avec succès.',
+                'order'   => $stockAdjustment->fresh(),
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Erreur lors de l\'annulation.',
+                'details' => $e->getMessage(),
+            ], 500);
+        }
     }
 
     /**
@@ -510,6 +633,22 @@ class StockAdjustmentController extends Controller
                 'validated_by' => $auth->id,
                 'validated_at' => now(),
             ]);
+            $actionLabel = StockAdjustmentAction::LABEL((int) $adjustment->action);
+
+            $message = sprintf(
+                'Régularisation de stock (%s - %s) validée.',
+                $adjustment->reference ?? $adjustment->uuid,
+                $actionLabel
+            );
+
+            $this->sendStockAdjustmentNotifications(
+                stockAdjustmentUuid: $adjustment->uuid,
+                userId: $auth->id,
+                status: 'validated',
+                message: $message,
+                managerIds: [$auth->id],
+                warehouseUuid: $adjustment->warehouse_uuid
+            );
 
             DB::commit();
 

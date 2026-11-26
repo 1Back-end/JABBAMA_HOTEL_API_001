@@ -20,6 +20,7 @@ class PassationNotification extends Model
     protected $fillable = [
         'passation_uuid',
         'warehouse_uuid',
+        'stock_adjustments_uuid',
         'manager_id',
         'status',
         'message',

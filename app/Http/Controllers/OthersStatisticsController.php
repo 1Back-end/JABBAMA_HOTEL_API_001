@@ -8,6 +8,7 @@ use App\Enums\TypeMenu;
 use App\Models\ConfigurationsComplement;
 use App\Models\DeletedOrderMenuRestaurantItem;
 use App\Models\DeletedOrderRestaurantDrink;
+use App\Models\FreeClientRestaurant;
 use App\Models\MenuRestaurant;
 use App\Models\OrderMenuRestaurant;
 use App\Models\OrderMenuRestaurantDefectiveDrink;
@@ -1483,7 +1484,7 @@ class OthersStatisticsController extends Controller
         $freeClientUuidFilter = $request->input('free_client_uuid') ?? $request->input('free_client_for_restaurant_uuid');
 
         $paymentTypes = [
-            \App\Enums\TypeClientsForPaiment::FREE->value
+            \App\Enums\TypeClientsForPaiment::FREE->value,
         ];
 
         $applyOrderFilters = function ($q) use ($paymentTypes, $freeClientUuidFilter) {
@@ -1504,6 +1505,52 @@ class OthersStatisticsController extends Controller
             return $combined !== '' ? $combined : null;
         };
 
+        /**
+         * Calcule le ratio (quantité / occurrences) et les parts (%) sur tous les éléments.
+         * Si $negativeRatio = true (menus), le ratio est négatif.
+         */
+        $computeRatioAndShares = function (
+            int $qty,
+            int $timesOrdered,
+            float $salePrice,
+            float $prodCost,
+            int $globalQty,
+            float $globalSalePrice,
+            float $globalProdCost,
+            bool $negativeRatio = false
+        ): array {
+            $sign = $negativeRatio ? -1 : 1;
+            $baseRatio = $timesOrdered > 0 ? ($qty / $timesOrdered) : 0;
+            $ratio = round($sign * $baseRatio, 4);
+
+            $quantityShare = $globalQty > 0 ? round(($qty / $globalQty) * 100, 2) : 0;
+            $saleShare = $globalSalePrice > 0 ? round(($salePrice / $globalSalePrice) * 100, 2) : 0;
+            $costShare = $globalProdCost > 0 ? round(($prodCost / $globalProdCost) * 100, 2) : 0;
+
+            // Pourcentage basé sur la part de quantité (ou 0 si aucune donnée), négatif sur les menus
+            $ratioPercentage = $globalQty > 0 ? round($sign * (($qty / $globalQty) * 100), 2) : 0;
+
+            return [
+                'ratio' => $ratio,
+                'ratio_percentage' => $ratioPercentage,
+                'quantity_share_percentage' => $quantityShare,
+                'sale_share_percentage' => $saleShare,
+                'cost_share_percentage' => $costShare,
+            ];
+        };
+
+        $makeRubriqueBucket = fn(string $key, string $label, bool $negativeRatio = false): array => [
+            'rubrique' => $key,
+            'label' => $label,
+            'negative_ratio' => $negativeRatio,
+            'times_ordered' => 0,
+            'ordered_quantity' => 0,
+            'total_sale_price' => 0.0,
+            'total_revenue_loss' => 0.0,
+            'total_production_cost' => 0.0,
+            'global_production_cost' => 0.0,
+        ];
+
         $freeItems = OrderMenuRestaurantItem::with([
             'menu' => fn($query) => $query->withTrashed(),
             'creator' => fn($query) => $query->withTrashed(),
@@ -1517,100 +1564,6 @@ class OthersStatisticsController extends Controller
             })
             ->get()
             ->filter(fn($item) => $item->menu !== null);
-
-        $processedMenus = collect();
-        $clientTotalsMap = [];
-
-        $registerClientEntry = function (
-            ?string $clientUuid,
-            ?string $fullName,
-            int $qty,
-            int $timesOrdered,
-            float $salePrice,
-            float $productionCost,
-            float $globalProdCost
-        ) use (&$clientTotalsMap) {
-            $key = $clientUuid ?? '__unknown__';
-
-            if (!isset($clientTotalsMap[$key])) {
-                $clientTotalsMap[$key] = [
-                    'free_client_uuid' => $clientUuid,
-                    'full_name' => $fullName ?: '',
-                    'total_times_ordered' => 0,
-                    'total_ordered_quantity' => 0,
-                    'total_revenue_loss' => 0.0,
-                    'total_production_cost' => 0.0,
-                    'global_production_cost' => 0.0,
-                ];
-            } elseif (empty($clientTotalsMap[$key]['full_name']) && !empty($fullName)) {
-                $clientTotalsMap[$key]['full_name'] = $fullName;
-            }
-
-            $clientTotalsMap[$key]['total_times_ordered'] += $timesOrdered;
-            $clientTotalsMap[$key]['total_ordered_quantity'] += $qty;
-            $clientTotalsMap[$key]['total_revenue_loss'] += $salePrice;
-            $clientTotalsMap[$key]['total_production_cost'] += $productionCost;
-            $clientTotalsMap[$key]['global_production_cost'] += $globalProdCost;
-        };
-
-        if ($freeItems->isNotEmpty()) {
-            foreach ($freeItems as $item) {
-                $order = $item->order;
-                $freeClient = $order?->free_client_for_restaurant;
-                $clientUuid = $order?->free_client_for_restaurant_uuid;
-                $fullName = $resolveFullName($freeClient);
-
-                $qty = (int) ($item->quantity_exactly ?? 0);
-                $salePrice = (float) ($qty * ($item->unit_price ?? 0));
-                $unitProdCost = (float) ($item->menu->calculated_production_cost ?? $item->menu->production_cost_final ?? $item->menu->production_cost ?? 0);
-                $prodCost = (float) ($qty * $unitProdCost);
-                $globalProdCost = (float) (($salePrice - $unitProdCost) * $qty);
-
-                $registerClientEntry($clientUuid, $fullName, $qty, 1, $salePrice, $prodCost, $globalProdCost);
-            }
-
-            $processedMenus = $freeItems->groupBy('menus_restaurant_uuid')->map(function ($group) use ($resolveFullName) {
-                $first = $group->first();
-                $menuUuid = $first->menus_restaurant_uuid;
-                $menu = $first->menu;
-                $user = $first->creator;
-                $freeClient = $first->order?->free_client_for_restaurant;
-
-                $totalQuantity = (int) $group->sum('quantity_exactly');
-                $totalSalePrice = (float) $group->sum(fn($item) => $item->quantity_exactly * ($item->unit_price ?? 0));
-                $totalTimesOrdered = $group->count();
-
-                $calculatedProductionCost = (float) ($menu->calculated_production_cost ?? $menu->production_cost_final ?? $menu->production_cost ?? 0);
-                $totalProductionCost = (float) ($totalQuantity * $calculatedProductionCost);
-                $globalProductionCost = (float) (($totalSalePrice - $calculatedProductionCost) * $totalQuantity);
-
-                $ratio = $totalTimesOrdered > 0 ? round($totalQuantity / $totalTimesOrdered, 4) : 0;
-                $ratioPercentage = $totalTimesOrdered > 0 ? round(($totalQuantity / $totalTimesOrdered) * 100, 2) : 0;
-
-                return [
-                    'uuid' => $menuUuid,
-                    'name' => $menu->name,
-                    'code' => $menu->code,
-                    'type_menu' => $menu->type_menu,
-                    'free_client_uuid' => $first->order?->free_client_for_restaurant_uuid,
-                    'free_client_full_name' => $resolveFullName($freeClient),
-                    'user_id' => $user?->id ?? $first->created_by,
-                    'user_name' => $user?->nom_utilisateur ?? 'Inconnu',
-                    'total_times_ordered' => $totalTimesOrdered,
-                    'total_ordered_quantity' => $totalQuantity,
-                    'total_revenue_loss' => round($totalSalePrice, 2),
-                    'calculated_production_cost' => round($calculatedProductionCost, 2),
-                    'total_production_cost' => round($totalProductionCost, 2),
-                    'global_production_cost' => round($globalProductionCost, 2),
-                    'ratio' => $ratio,
-                    'ratio_percentage' => $ratioPercentage,
-                ];
-            });
-        }
-
-        $topMenus = $processedMenus->filter(fn($item) => $item['type_menu'] === \App\Enums\TypeMenu::MENU->value)->sortByDesc('total_ordered_quantity')->values();
-        $topComplements = $processedMenus->filter(fn($item) => $item['type_menu'] === \App\Enums\TypeMenu::COMPLEMENT->value)->sortByDesc('total_ordered_quantity')->values();
-        $topDrinks = $processedMenus->filter(fn($item) => $item['type_menu'] === \App\Enums\TypeMenu::HOT_DRINK->value)->sortByDesc('total_ordered_quantity')->values();
 
         $rawFreeDrinks = OrderRestaurantDrink::with([
             'drinkConfig' => fn($query) => $query->withTrashed(),
@@ -1626,46 +1579,174 @@ class OthersStatisticsController extends Controller
             ->get();
 
         $freeDrinksItems = $rawFreeDrinks->filter(fn($def) => $def->drinkConfig !== null);
-        $topOthersMenu = collect();
 
-        if ($freeDrinksItems->isNotEmpty()) {
-            foreach ($freeDrinksItems as $drinkItem) {
-                $order = $drinkItem->order;
+        // Totaux globaux de référence sur la période
+        $globalTotalQty = (int) $freeItems->sum(fn($i) => (int) ($i->quantity_exactly ?? 0))
+            + (int) $freeDrinksItems->sum(fn($d) => (int) ($d->quantity_exactly ?? 0));
+
+        $globalTotalTimesOrdered = $freeItems->count() + $freeDrinksItems->count();
+
+        $globalTotalSalePrice = (float) $freeItems->sum(function ($item) {
+                $qty = (int) ($item->quantity_exactly ?? 0);
+                $price = (float) ($item->unit_price ?? $item->menu->price ?? $item->menu->sale_price ?? 0);
+                return $qty * $price;
+            }) + (float) $freeDrinksItems->sum(function ($drinkItem) {
+                $qty = (int) ($drinkItem->quantity_exactly ?? 0);
+                $price = (float) ($drinkItem->unit_price ?? $drinkItem->drinkConfig->price ?? $drinkItem->drinkConfig->sale_price ?? 0);
+                return $qty * $price;
+            });
+
+        $globalTotalProdCost = (float) $freeItems->sum(function ($item) {
+                $qty = (int) ($item->quantity_exactly ?? 0);
+                $unitCost = (float) ($item->menu->calculated_production_cost ?? $item->menu->production_cost_final ?? $item->menu->production_cost ?? 0);
+                return $qty * $unitCost;
+            }) + (float) $freeDrinksItems->sum(function ($drinkItem) {
+                $qty = (int) ($drinkItem->quantity_exactly ?? 0);
+                $unitCost = (float) ($drinkItem->drinkConfig->calculated_production_cost ?? $drinkItem->drinkConfig->production_cost_final ?? $drinkItem->drinkConfig->production_cost ?? 0);
+                return $qty * $unitCost;
+            });
+
+        $processedMenus = collect();
+        $clientTotalsMap = [];
+
+        $registerClientRubrique = function (
+            ?string $clientUuid,
+            ?string $fullName,
+            string $rubriqueKey,
+            string $rubriqueLabel,
+            bool $negativeRatio,
+            int $qty,
+            int $timesOrdered,
+            float $salePrice,
+            float $productionCost,
+            float $globalProdCost
+        ) use (&$clientTotalsMap, $makeRubriqueBucket) {
+            $key = $clientUuid ?? '__unknown__';
+
+            if (!isset($clientTotalsMap[$key])) {
+                $clientTotalsMap[$key] = [
+                    'free_client_uuid' => $clientUuid,
+                    'full_name' => $fullName ?: '',
+                    'total_times_ordered' => 0,
+                    'total_ordered_quantity' => 0,
+                    'total_sale_price' => 0.0,
+                    'total_revenue_loss' => 0.0,
+                    'total_production_cost' => 0.0,
+                    'global_production_cost' => 0.0,
+                    'rubriques_map' => [
+                        'menus' => $makeRubriqueBucket('menus', 'Menus', true),
+                        'complements' => $makeRubriqueBucket('complements', 'Compléments', false),
+                        'hot_drinks' => $makeRubriqueBucket('hot_drinks', 'Boissons chaudes', false),
+                        'drinks' => $makeRubriqueBucket('drinks', 'Boissons', false),
+                    ],
+                ];
+            } elseif (empty($clientTotalsMap[$key]['full_name']) && !empty($fullName)) {
+                $clientTotalsMap[$key]['full_name'] = $fullName;
+            }
+
+            $clientTotalsMap[$key]['total_times_ordered'] += $timesOrdered;
+            $clientTotalsMap[$key]['total_ordered_quantity'] += $qty;
+            $clientTotalsMap[$key]['total_sale_price'] += $salePrice;
+            $clientTotalsMap[$key]['total_revenue_loss'] += $salePrice;
+            $clientTotalsMap[$key]['total_production_cost'] += $productionCost;
+            $clientTotalsMap[$key]['global_production_cost'] += $globalProdCost;
+
+            if (!isset($clientTotalsMap[$key]['rubriques_map'][$rubriqueKey])) {
+                $clientTotalsMap[$key]['rubriques_map'][$rubriqueKey] = $makeRubriqueBucket(
+                    $rubriqueKey,
+                    $rubriqueLabel,
+                    $negativeRatio
+                );
+            }
+
+            $bucket = &$clientTotalsMap[$key]['rubriques_map'][$rubriqueKey];
+            $bucket['times_ordered'] += $timesOrdered;
+            $bucket['ordered_quantity'] += $qty;
+            $bucket['total_sale_price'] += $salePrice;
+            $bucket['total_revenue_loss'] += $salePrice;
+            $bucket['total_production_cost'] += $productionCost;
+            $bucket['global_production_cost'] += $globalProdCost;
+        };
+
+        if ($freeItems->isNotEmpty()) {
+            foreach ($freeItems as $item) {
+                $order = $item->order;
                 $freeClient = $order?->free_client_for_restaurant;
                 $clientUuid = $order?->free_client_for_restaurant_uuid;
                 $fullName = $resolveFullName($freeClient);
 
-                $qty = (int) ($drinkItem->quantity_exactly ?? 0);
-                $salePrice = (float) ($qty * ($drinkItem->unit_price ?? 0));
-                $unitProdCost = (float) ($drinkItem->drinkConfig->calculated_production_cost ?? $drinkItem->drinkConfig->production_cost_final ?? $drinkItem->drinkConfig->production_cost ?? 0);
+                $qty = (int) ($item->quantity_exactly ?? 0);
+                $unitSalePrice = (float) ($item->unit_price ?? $item->menu->price ?? $item->menu->sale_price ?? 0);
+                $salePrice = (float) ($qty * $unitSalePrice);
+                $unitProdCost = (float) ($item->menu->calculated_production_cost ?? $item->menu->production_cost_final ?? $item->menu->production_cost ?? 0);
                 $prodCost = (float) ($qty * $unitProdCost);
-                $globalProdCost = (float) (($salePrice - $unitProdCost) * $qty);
+                $globalProdCost = (float) ($salePrice - $prodCost);
 
-                $registerClientEntry($clientUuid, $fullName, $qty, 1, $salePrice, $prodCost, $globalProdCost);
+                [$rubriqueKey, $rubriqueLabel, $negativeRatio] = match ($item->menu->type_menu) {
+                    \App\Enums\TypeMenu::MENU->value => ['menus', 'Menus', true],
+                    \App\Enums\TypeMenu::COMPLEMENT->value => ['complements', 'Compléments', false],
+                    \App\Enums\TypeMenu::HOT_DRINK->value => ['hot_drinks', 'Boissons chaudes', false],
+                    default => ['menus', 'Menus', true],
+                };
+
+                $registerClientRubrique(
+                    $clientUuid,
+                    $fullName,
+                    $rubriqueKey,
+                    $rubriqueLabel,
+                    $negativeRatio,
+                    $qty,
+                    1,
+                    $salePrice,
+                    $prodCost,
+                    $globalProdCost
+                );
             }
 
-            $topOthersMenu = $freeDrinksItems->groupBy('drink_restaurant_uuid')->map(function ($group) use ($resolveFullName) {
+            $processedMenus = $freeItems->groupBy('menus_restaurant_uuid')->map(function ($group) use (
+                $resolveFullName,
+                $computeRatioAndShares,
+                $globalTotalQty,
+                $globalTotalSalePrice,
+                $globalTotalProdCost
+            ) {
                 $first = $group->first();
-                $drinkUuid = $first->drink_restaurant_uuid;
-                $drinkConfig = $first->drinkConfig;
+                $menuUuid = $first->menus_restaurant_uuid;
+                $menu = $first->menu;
                 $user = $first->creator;
                 $freeClient = $first->order?->free_client_for_restaurant;
 
                 $totalQuantity = (int) $group->sum('quantity_exactly');
-                $totalSalePrice = (float) $group->sum(fn($def) => $def->quantity_exactly * ($def->unit_price ?? 0));
+                $unitSalePrice = (float) ($first->unit_price ?? $menu->price ?? $menu->sale_price ?? 0);
+                $totalSalePrice = (float) $group->sum(function ($item) use ($menu) {
+                    $price = (float) ($item->unit_price ?? $menu->price ?? $menu->sale_price ?? 0);
+                    return (int) ($item->quantity_exactly ?? 0) * $price;
+                });
                 $totalTimesOrdered = $group->count();
 
-                $calculatedProductionCost = (float) ($drinkConfig->calculated_production_cost ?? $drinkConfig->production_cost_final ?? $drinkConfig->production_cost ?? 0);
+                $calculatedProductionCost = (float) ($menu->calculated_production_cost ?? $menu->production_cost_final ?? $menu->production_cost ?? 0);
                 $totalProductionCost = (float) ($totalQuantity * $calculatedProductionCost);
-                $globalProductionCost = (float) (($totalSalePrice - $calculatedProductionCost) * $totalQuantity);
+                $globalProductionCost = (float) ($totalSalePrice - $totalProductionCost);
 
-                $ratio = $totalTimesOrdered > 0 ? round($totalQuantity / $totalTimesOrdered, 4) : 0;
-                $ratioPercentage = $totalTimesOrdered > 0 ? round(($totalQuantity / $totalTimesOrdered) * 100, 2) : 0;
+                $isMenu = $menu->type_menu === \App\Enums\TypeMenu::MENU->value;
+                $metrics = $computeRatioAndShares(
+                    $totalQuantity,
+                    $totalTimesOrdered,
+                    $totalSalePrice,
+                    $totalProductionCost,
+                    $globalTotalQty,
+                    $globalTotalSalePrice,
+                    $globalTotalProdCost,
+                    $isMenu
+                );
 
                 return [
-                    'uuid' => $drinkUuid,
-                    'name' => $drinkConfig->display_name,
-                    'code' => null,
+                    'uuid' => $menuUuid,
+                    'name' => $menu->name,
+                    'code' => $menu->code,
+                    'type_menu' => $menu->type_menu,
+                    'unit_price' => round($unitSalePrice, 2),
+                    'total_sale_price' => round($totalSalePrice, 2),
                     'free_client_uuid' => $first->order?->free_client_for_restaurant_uuid,
                     'free_client_full_name' => $resolveFullName($freeClient),
                     'user_id' => $user?->id ?? $first->created_by,
@@ -1676,26 +1757,185 @@ class OthersStatisticsController extends Controller
                     'calculated_production_cost' => round($calculatedProductionCost, 2),
                     'total_production_cost' => round($totalProductionCost, 2),
                     'global_production_cost' => round($globalProductionCost, 2),
-                    'ratio' => $ratio,
-                    'ratio_percentage' => $ratioPercentage,
+                    'ratio' => $metrics['ratio'],
+                    'ratio_percentage' => $metrics['ratio_percentage'],
+                    'quantity_share_percentage' => $metrics['quantity_share_percentage'],
+                    'sale_share_percentage' => $metrics['sale_share_percentage'],
+                    'cost_share_percentage' => $metrics['cost_share_percentage'],
+                ];
+            });
+        }
+
+        $topMenus = $processedMenus->filter(fn($item) => $item['type_menu'] === \App\Enums\TypeMenu::MENU->value)->sortByDesc('total_ordered_quantity')->values();
+        $topComplements = $processedMenus->filter(fn($item) => $item['type_menu'] === \App\Enums\TypeMenu::COMPLEMENT->value)->sortByDesc('total_ordered_quantity')->values();
+        $topDrinks = $processedMenus->filter(fn($item) => $item['type_menu'] === \App\Enums\TypeMenu::HOT_DRINK->value)->sortByDesc('total_ordered_quantity')->values();
+
+        $topOthersMenu = collect();
+
+        if ($freeDrinksItems->isNotEmpty()) {
+            foreach ($freeDrinksItems as $drinkItem) {
+                $order = $drinkItem->order;
+                $freeClient = $order?->free_client_for_restaurant;
+                $clientUuid = $order?->free_client_for_restaurant_uuid;
+                $fullName = $resolveFullName($freeClient);
+
+                $qty = (int) ($drinkItem->quantity_exactly ?? 0);
+                $unitSalePrice = (float) ($drinkItem->unit_price ?? $drinkItem->drinkConfig->price ?? $drinkItem->drinkConfig->sale_price ?? 0);
+                $salePrice = (float) ($qty * $unitSalePrice);
+                $unitProdCost = (float) ($drinkItem->drinkConfig->calculated_production_cost ?? $drinkItem->drinkConfig->production_cost_final ?? $drinkItem->drinkConfig->production_cost ?? 0);
+                $prodCost = (float) ($qty * $unitProdCost);
+                $globalProdCost = (float) ($salePrice - $prodCost);
+
+                $registerClientRubrique(
+                    $clientUuid,
+                    $fullName,
+                    'drinks',
+                    'Boissons',
+                    false,
+                    $qty,
+                    1,
+                    $salePrice,
+                    $prodCost,
+                    $globalProdCost
+                );
+            }
+
+            $topOthersMenu = $freeDrinksItems->groupBy('drink_restaurant_uuid')->map(function ($group) use (
+                $resolveFullName,
+                $computeRatioAndShares,
+                $globalTotalQty,
+                $globalTotalSalePrice,
+                $globalTotalProdCost
+            ) {
+                $first = $group->first();
+                $drinkUuid = $first->drink_restaurant_uuid;
+                $drinkConfig = $first->drinkConfig;
+                $user = $first->creator;
+                $freeClient = $first->order?->free_client_for_restaurant;
+
+                $totalQuantity = (int) $group->sum('quantity_exactly');
+                $unitSalePrice = (float) ($first->unit_price ?? $drinkConfig->price ?? $drinkConfig->sale_price ?? 0);
+                $totalSalePrice = (float) $group->sum(function ($def) use ($drinkConfig) {
+                    $price = (float) ($def->unit_price ?? $drinkConfig->price ?? $drinkConfig->sale_price ?? 0);
+                    return (int) ($def->quantity_exactly ?? 0) * $price;
+                });
+                $totalTimesOrdered = $group->count();
+
+                $calculatedProductionCost = (float) ($drinkConfig->calculated_production_cost ?? $drinkConfig->production_cost_final ?? $drinkConfig->production_cost ?? 0);
+                $totalProductionCost = (float) ($totalQuantity * $calculatedProductionCost);
+                $globalProductionCost = (float) ($totalSalePrice - $totalProductionCost);
+
+                $metrics = $computeRatioAndShares(
+                    $totalQuantity,
+                    $totalTimesOrdered,
+                    $totalSalePrice,
+                    $totalProductionCost,
+                    $globalTotalQty,
+                    $globalTotalSalePrice,
+                    $globalTotalProdCost,
+                    false
+                );
+
+                return [
+                    'uuid' => $drinkUuid,
+                    'name' => $drinkConfig->display_name,
+                    'code' => null,
+                    'unit_price' => round($unitSalePrice, 2),
+                    'total_sale_price' => round($totalSalePrice, 2),
+                    'free_client_uuid' => $first->order?->free_client_for_restaurant_uuid,
+                    'free_client_full_name' => $resolveFullName($freeClient),
+                    'user_id' => $user?->id ?? $first->created_by,
+                    'user_name' => $user?->nom_utilisateur ?? 'Inconnu',
+                    'total_times_ordered' => $totalTimesOrdered,
+                    'total_ordered_quantity' => $totalQuantity,
+                    'total_revenue_loss' => round($totalSalePrice, 2),
+                    'calculated_production_cost' => round($calculatedProductionCost, 2),
+                    'total_production_cost' => round($totalProductionCost, 2),
+                    'global_production_cost' => round($globalProductionCost, 2),
+                    'ratio' => $metrics['ratio'],
+                    'ratio_percentage' => $metrics['ratio_percentage'],
+                    'quantity_share_percentage' => $metrics['quantity_share_percentage'],
+                    'sale_share_percentage' => $metrics['sale_share_percentage'],
+                    'cost_share_percentage' => $metrics['cost_share_percentage'],
                 ];
             })->sortByDesc('total_ordered_quantity')->values();
         }
 
-        $freeClientsSummary = collect($clientTotalsMap)->map(function ($entry) {
-            $qty = $entry['total_ordered_quantity'];
-            $times = $entry['total_times_ordered'];
+        $freeClientsSummary = collect($clientTotalsMap)->map(function ($entry) use (
+            $computeRatioAndShares,
+            $globalTotalQty,
+            $globalTotalSalePrice,
+            $globalTotalProdCost
+        ) {
+            $qty = (int) $entry['total_ordered_quantity'];
+            $times = (int) $entry['total_times_ordered'];
+            $totalClientSalePrice = (float) $entry['total_sale_price'];
+            $totalClientProdCost = (float) $entry['total_production_cost'];
+
+            $rubriques = collect($entry['rubriques_map'])->map(function ($bucket) use (
+                $qty,
+                $totalClientSalePrice,
+                $totalClientProdCost,
+                $computeRatioAndShares
+            ) {
+                $bQty = (int) $bucket['ordered_quantity'];
+                $bTimes = (int) $bucket['times_ordered'];
+                $isNegative = !empty($bucket['negative_ratio']);
+
+                $metrics = $computeRatioAndShares(
+                    $bQty,
+                    $bTimes,
+                    (float) $bucket['total_sale_price'],
+                    (float) $bucket['total_production_cost'],
+                    $qty,
+                    $totalClientSalePrice,
+                    $totalClientProdCost,
+                    $isNegative
+                );
+
+                return [
+                    'rubrique' => $bucket['rubrique'],
+                    'label' => $bucket['label'],
+                    'times_ordered' => $bTimes,
+                    'ordered_quantity' => $bQty,
+                    'total_sale_price' => round($bucket['total_sale_price'], 2),
+                    'total_revenue_loss' => round($bucket['total_revenue_loss'], 2),
+                    'total_production_cost' => round($bucket['total_production_cost'], 2),
+                    'global_production_cost' => round($bucket['global_production_cost'], 2),
+                    'ratio' => $metrics['ratio'],
+                    'ratio_percentage' => $metrics['ratio_percentage'],
+                    'quantity_share_percentage' => $metrics['quantity_share_percentage'],
+                    'sale_share_percentage' => $metrics['sale_share_percentage'],
+                    'cost_share_percentage' => $metrics['cost_share_percentage'],
+                ];
+            })->values();
+
+            $clientMetrics = $computeRatioAndShares(
+                $qty,
+                $times,
+                $totalClientSalePrice,
+                $totalClientProdCost,
+                $globalTotalQty,
+                $globalTotalSalePrice,
+                $globalTotalProdCost,
+                false
+            );
 
             return [
                 'free_client_uuid' => $entry['free_client_uuid'],
                 'full_name' => $entry['full_name'],
                 'total_times_ordered' => $times,
                 'total_ordered_quantity' => $qty,
+                'total_sale_price' => round($entry['total_sale_price'], 2),
                 'total_revenue_loss' => round($entry['total_revenue_loss'], 2),
                 'total_production_cost' => round($entry['total_production_cost'], 2),
                 'global_production_cost' => round($entry['global_production_cost'], 2),
-                'ratio' => $times > 0 ? round($qty / $times, 4) : 0,
-                'ratio_percentage' => $times > 0 ? round(($qty / $times) * 100, 2) : 0,
+                'ratio' => $clientMetrics['ratio'],
+                'ratio_percentage' => $clientMetrics['ratio_percentage'],
+                'quantity_share_percentage' => $clientMetrics['quantity_share_percentage'],
+                'sale_share_percentage' => $clientMetrics['sale_share_percentage'],
+                'cost_share_percentage' => $clientMetrics['cost_share_percentage'],
+                'rubriques' => $rubriques,
             ];
         })->sortByDesc('total_production_cost')->values();
 
@@ -1705,11 +1945,16 @@ class OthersStatisticsController extends Controller
                 'full_name' => $resolveFullName(FreeClientRestaurant::withTrashed()->find($freeClientUuidFilter)),
                 'total_times_ordered' => 0,
                 'total_ordered_quantity' => 0,
+                'total_sale_price' => 0,
                 'total_revenue_loss' => 0,
                 'total_production_cost' => 0,
                 'global_production_cost' => 0,
                 'ratio' => 0,
                 'ratio_percentage' => 0,
+                'quantity_share_percentage' => 0,
+                'sale_share_percentage' => 0,
+                'cost_share_percentage' => 0,
+                'rubriques' => [],
             ])
             : null;
 
@@ -1726,7 +1971,7 @@ class OthersStatisticsController extends Controller
                 'top_free_complements' => $topComplements,
                 'top_free_drinks' => $topDrinks,
                 'top_free_others_drinks' => $topOthersMenu,
-            ]
+            ],
         ]);
     }
 }

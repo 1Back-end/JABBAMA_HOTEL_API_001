@@ -480,7 +480,7 @@ class RestaurantExpenseTypeController extends Controller
      * Display a listing of the resource.
      * @permission RestaurantExpenseTypeController::updateStatusFamilyAndSubFamily
      * @code BAR, RESTAURANT
-     * @permission_desc Activer/Désactiver les sous catégories de dépenses
+     * @permission_desc Activer/Désactiver une sous catégorie de dépenses
      */
     public function updateStatusFamilyAndSubFamily(Request $request, $uuid)
     {

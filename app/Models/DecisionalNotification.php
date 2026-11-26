@@ -23,6 +23,7 @@ class DecisionalNotification extends Model
         'purchase_order_uuid',
         'passation_uuid',
         'stock_adjustments_uuid',
+        'is_stock_adjustment',
         'status',
         'message',
         'target',
@@ -83,5 +84,13 @@ class DecisionalNotification extends Model
     public function updater()
     {
         return $this->belongsTo(User::class, 'updated_by');
+    }
+    public function stockAdjustment()
+    {
+        return $this->belongsTo(StockAdjustment::class, 'stock_adjustments_uuid', 'uuid');
+    }
+    public function passation()
+    {
+        return $this->belongsTo(Passation::class, 'passation_uuid', 'uuid');
     }
 }

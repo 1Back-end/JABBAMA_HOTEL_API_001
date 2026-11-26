@@ -164,9 +164,6 @@ class StockDeductionController extends Controller
         $roleIds = $auth->roles->pluck('id');
         $perPage = $request->input('limit', 25);
         $page = $request->input('page', 1);
-        $start_date = \Illuminate\Support\Carbon::parse($request->input('start_date'))->startOfDay();
-        $end_date = Carbon::parse($request->input('end_date'))->endOfDay();
-
         $deduction = StockDeduction::with([
             'items.product',
             'warehouse',
@@ -189,19 +186,6 @@ class StockDeductionController extends Controller
             $deduction->whereBetween('created_at', [$start_date, $end_date]);
         } else {
             $deduction->whereDate('created_at', Carbon::today());
-        }
-
-        if (!$auth->hasRole('SUPER_ADMIN')) {
-
-            $deduction->where(function($q) use ($auth, $roleIds) {
-                if ($auth->can('view_role_related_data')) {
-                    $q->whereHas('creator.roles', fn($qr) => $qr->whereIn('roles.id', $roleIds));
-                }
-                if (!$auth->can('view_role_related_data')) {
-                    $q->orWhere('created_by', $auth->id);
-                }
-
-            });
         }
 
         if ($search = trim($request->input('search'))) {

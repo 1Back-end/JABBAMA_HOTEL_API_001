@@ -636,142 +636,194 @@ class ProductController extends Controller
     {
         try {
             $warehouse_uuid = $warehouse_uuid ?? $request->query('warehouse_uuid');
+            $isAllWarehouses = ($warehouse_uuid === 'all');
 
             $end_date = $request->filled('end_date')
                 ? Carbon::createFromFormat('d-m-Y', $request->end_date)->endOfDay()
                 : now()->endOfDay();
 
-            $warehouse_uuids = $warehouse_uuid === 'all'
-                ? Warehouse::pluck('uuid')->toArray()
-                : Warehouse::where('uuid', $warehouse_uuid)->pluck('uuid')->toArray();
-
-            if (empty($warehouse_uuids)) {
-                return response()->json(['status' => 'error', 'message' => 'Entrepôt introuvable'], 404);
+            if ($isAllWarehouses) {
+                $warehouse_uuids = Warehouse::pluck('uuid')->toArray();
+            } else {
+                $warehouse_uuids = Warehouse::where('uuid', $warehouse_uuid)->pluck('uuid')->toArray();
+                if (empty($warehouse_uuids)) {
+                    return response()->json(['status' => 'error', 'message' => 'Entrepôt introuvable'], 404);
+                }
             }
 
             $warehouses = Warehouse::whereIn('uuid', $warehouse_uuids)->get()->keyBy('uuid');
 
-            $productPoints = ProductPoint::with(['product.unitMeasure', 'product.category', 'point'])
-                ->whereIn('point_uuid', $warehouse_uuids)
-                ->whereHas('product')
-                ->get();
+            // Tous les produits si 'all', sinon uniquement ceux liés à l'entrepôt sélectionné
+            $productPointsQuery = ProductPoint::with(['product.unitMeasure', 'product.category', 'point'])
+                ->whereHas('product');
 
-            $makeKey = fn($whUuid, $prodUuid) => $whUuid . '|' . $prodUuid;
+            if (!$isAllWarehouses) {
+                $productPointsQuery->whereIn('point_uuid', $warehouse_uuids);
+            }
 
-            $supplies = SupplyItem::whereHas('supply', function ($q) use ($end_date, $warehouse_uuids) {
-                $q->whereIn('status', [SupplyStatus::VALIDATED, SupplyStatus::PARTIALLY_VALIDATED])
+            $productPoints = $productPointsQuery->get();
+
+            // Si 'all', on prend tous les mouvements (ou ceux des entrepôts existants)
+            $whFilter = fn($query, string $column) => !$isAllWarehouses
+                ? $query->whereIn($column, $warehouse_uuids)
+                : (!empty($warehouse_uuids) ? $query->whereIn($column, $warehouse_uuids) : $query);
+
+            $supplies = SupplyItem::whereHas('supply', function ($q) use ($end_date, $whFilter) {
+                $whFilter($q->whereIn('status', [SupplyStatus::VALIDATED, SupplyStatus::PARTIALLY_VALIDATED])
                     ->where('supply_date', '<=', $end_date)
-                    ->where('type', '!=', 'internal')
-                    ->whereIn('warehouse_uuid', $warehouse_uuids);
+                    ->where('type', '!=', 'internal'), 'warehouse_uuid');
             })
                 ->join('supplies', 'supply_items.supply_uuid', '=', 'supplies.uuid')
                 ->select('supplies.warehouse_uuid', 'supply_items.product_uuid', DB::raw('SUM(supply_items.quantity_supplied) as total'))
                 ->groupBy('supplies.warehouse_uuid', 'supply_items.product_uuid')
-                ->get()
-                ->keyBy(fn($row) => $makeKey($row->warehouse_uuid, $row->product_uuid));
+                ->get();
 
-            $adjustments = StockAdjustmentItem::whereHas('adjustment', function ($q) use ($warehouse_uuids, $end_date) {
-                $q->whereIn('warehouse_uuid', $warehouse_uuids)
-                    ->where('status', StocksAdjustmentStatus::VALIDATED->value)
-                    ->where('created_at', '<=', $end_date);
+            $adjustments = StockAdjustmentItem::whereHas('adjustment', function ($q) use ($end_date, $whFilter) {
+                $whFilter($q->where('status', StocksAdjustmentStatus::VALIDATED->value)
+                    ->where('created_at', '<=', $end_date), 'warehouse_uuid');
             })
                 ->join('stock_adjustments as adjustments', 'stock_adjustments_items.stock_adjustment_uuid', '=', 'adjustments.uuid')
                 ->select('adjustments.warehouse_uuid', 'stock_adjustments_items.product_uuid', 'adjustments.action', DB::raw('SUM(stock_adjustments_items.quantity) as total'))
                 ->groupBy('adjustments.warehouse_uuid', 'stock_adjustments_items.product_uuid', 'adjustments.action')
-                ->get()
-                ->groupBy(fn($row) => $makeKey($row->warehouse_uuid, $row->product_uuid));
+                ->get();
 
-            $deductions = StockDeductionItem::whereHas('stockDeduction', function ($q) use ($warehouse_uuids, $end_date) {
-                $q->whereIn('warehouse_uuid', $warehouse_uuids)
-                    ->where('status', StocksDeductionsStatus::VALIDATED->value)
-                    ->where('created_at', '<=', $end_date);
+            $deductions = StockDeductionItem::whereHas('stockDeduction', function ($q) use ($end_date, $whFilter) {
+                $whFilter($q->where('status', StocksDeductionsStatus::VALIDATED->value)
+                    ->where('created_at', '<=', $end_date), 'warehouse_uuid');
             })
                 ->join('stocks_deductions', 'stocks_deductions_items.stocks_deduction_uuid', '=', 'stocks_deductions.uuid')
                 ->select('stocks_deductions.warehouse_uuid', 'stocks_deductions_items.product_uuid', DB::raw('SUM(stocks_deductions_items.quantity) as total'))
                 ->groupBy('stocks_deductions.warehouse_uuid', 'stocks_deductions_items.product_uuid')
-                ->get()
-                ->keyBy(fn($row) => $makeKey($row->warehouse_uuid, $row->product_uuid));
+                ->get();
 
-            $sales = VirtualOrderMenuRestaurant::whereIn('warehouse_uuid', $warehouse_uuids)
-                ->where('status', MenuOrderStatus::DELIVERED->value)
-                ->where('created_at', '<=', $end_date)
+            $salesQuery = VirtualOrderMenuRestaurant::where('status', MenuOrderStatus::DELIVERED->value)
+                ->where('created_at', '<=', $end_date);
+            $whFilter($salesQuery, 'warehouse_uuid');
+            $sales = $salesQuery
                 ->select('warehouse_uuid', 'product_uuid', DB::raw('SUM(quantity_reserved) as total'))
                 ->groupBy('warehouse_uuid', 'product_uuid')
-                ->get()
-                ->keyBy(fn($row) => $makeKey($row->warehouse_uuid, $row->product_uuid));
+                ->get();
 
-            $complements = ComplementVirtualTemp::whereIn('warehouse_uuid', $warehouse_uuids)
-                ->where('status', MenuOrderStatus::DELIVERED->value)
-                ->where('created_at', '<=', $end_date)
+            $complementsQuery = ComplementVirtualTemp::where('status', MenuOrderStatus::DELIVERED->value)
+                ->where('created_at', '<=', $end_date);
+            $whFilter($complementsQuery, 'warehouse_uuid');
+            $complements = $complementsQuery
                 ->select('warehouse_uuid', 'product_uuid', DB::raw('SUM(menu_quantity) as total'))
                 ->groupBy('warehouse_uuid', 'product_uuid')
-                ->get()
-                ->keyBy(fn($row) => $makeKey($row->warehouse_uuid, $row->product_uuid));
+                ->get();
 
-            $internalTransfersOut = SupplyItem::whereHas('supply', function ($q) use ($end_date, $warehouse_uuids) {
-                $q->whereIn('status', [SupplyStatus::VALIDATED, SupplyStatus::PARTIALLY_VALIDATED])
+            $internalTransfersOut = SupplyItem::whereHas('supply', function ($q) use ($end_date, $whFilter) {
+                $whFilter($q->whereIn('status', [SupplyStatus::VALIDATED, SupplyStatus::PARTIALLY_VALIDATED])
                     ->where('supply_date', '<=', $end_date)
-                    ->where('type', 'internal')
-                    ->whereIn('warehouse_uuid', $warehouse_uuids);
+                    ->where('type', 'internal'), 'warehouse_uuid');
             })
                 ->join('supplies', 'supply_items.supply_uuid', '=', 'supplies.uuid')
                 ->select('supplies.warehouse_uuid', 'supply_items.product_uuid', DB::raw('SUM(supply_items.quantity_supplied) as total'))
                 ->groupBy('supplies.warehouse_uuid', 'supply_items.product_uuid')
-                ->get()
-                ->keyBy(fn($row) => $makeKey($row->warehouse_uuid, $row->product_uuid));
+                ->get();
 
-            $computedPoints = $productPoints->map(function ($pointItem) use (
-                $warehouses, $makeKey, $supplies, $adjustments, $deductions, $sales, $complements, $internalTransfersOut
-            ) {
-                $whUuid   = $pointItem->point_uuid;
-                $prodUuid = $pointItem->produit_uuid;
-                $key      = $makeKey($whUuid, $prodUuid);
-                $wh       = $warehouses->get($whUuid);
+            $computeQuantityForProduct = function (string $prodUuid, ?string $singleWhUuid) use (
+                $warehouses, $supplies, $adjustments, $deductions, $sales, $complements, $internalTransfersOut
+            ): float {
+                $filterProd = fn($collection) => $collection->filter(function ($row) use ($prodUuid, $singleWhUuid) {
+                    if ($row->product_uuid !== $prodUuid) {
+                        return false;
+                    }
+                    return $singleWhUuid ? ($row->warehouse_uuid === $singleWhUuid) : true;
+                });
 
-                $prodExternalSupplies = (float) ($supplies->get($key)->total ?? 0);
-                $prodTransOut         = (float) ($internalTransfersOut->get($key)->total ?? 0);
-                $prodDeducted         = (float) ($deductions->get($key)->total ?? 0);
-                $prodSales            = (float) ($sales->get($key)->total ?? 0);
-                $prodComplements      = (float) ($complements->get($key)->total ?? 0);
+                $prodSupplies = $filterProd($supplies);
+                $prodTransOut = $filterProd($internalTransfersOut);
+                $prodDeducted = (float) $filterProd($deductions)->sum('total');
+                $prodSales = (float) $filterProd($sales)->sum('total');
+                $prodComplements = (float) $filterProd($complements)->sum('total');
 
-                $prodAdjusts  = $adjustments->get($key, collect());
-                $prodAdjPlus  = (float) $prodAdjusts->where('action', StockAdjustmentAction::AJUSTEMENT_PLUS->value)->sum('total');
+                $prodAdjusts = $filterProd($adjustments);
+                $prodAdjPlus = (float) $prodAdjusts->where('action', StockAdjustmentAction::AJUSTEMENT_PLUS->value)->sum('total');
                 $prodAdjMinus = (float) $prodAdjusts->where('action', StockAdjustmentAction::AJUSTEMENT_MOINS->value)->sum('total');
-                $prodAvaries  = (float) $prodAdjusts->where('action', StockAdjustmentAction::AVARIE->value)->sum('total');
+                $prodAvaries = (float) $prodAdjusts->where('action', StockAdjustmentAction::AVARIE->value)->sum('total');
 
-                $isPrimary = (bool) ($wh->is_primary ?? false);
-                $baseIn    = $isPrimary ? $prodExternalSupplies : $prodTransOut;
-                $totalIn   = $baseIn + $prodAdjPlus;
-                $totalOut  = $prodAdjMinus + $prodAvaries + $prodDeducted + $prodSales + $prodComplements;
+                $baseIn = 0.0;
+                foreach ($prodSupplies as $row) {
+                    $wh = $warehouses->get($row->warehouse_uuid);
+                    if ((bool) ($wh->is_primary ?? false)) {
+                        $baseIn += (float) $row->total;
+                    }
+                }
+                foreach ($prodTransOut as $row) {
+                    $wh = $warehouses->get($row->warehouse_uuid);
+                    if (!(bool) ($wh->is_primary ?? false)) {
+                        $baseIn += (float) $row->total;
+                    }
+                }
 
-                $finalQuantity = max(0, $totalIn - $totalOut);
+                $totalIn = $baseIn + $prodAdjPlus;
+                $totalOut = $prodAdjMinus + $prodAvaries + $prodDeducted + $prodSales + $prodComplements;
 
-                return (object) [
-                    'point_uuid'   => $whUuid,
-                    'warehouse'    => $wh ?? $pointItem->point,
-                    'produit_uuid' => $prodUuid,
-                    'product'      => $pointItem->product,
-                    'quantity'     => $finalQuantity,
-                    'point_item'   => $pointItem,
-                ];
-            })->values();
+                return max(0, $totalIn - $totalOut);
+            };
 
-            $inventoriesByWarehouse = $computedPoints
-                ->groupBy('point_uuid')
-                ->map(function ($items, $whUuid) use ($warehouses) {
-                    return (object) [
-                        'warehouse'      => $warehouses->get($whUuid),
-                        'product_points' => $items->values(),
-                        'total_quantity' => $items->sum('quantity'),
-                    ];
-                })
-                ->values();
+            $sortByNameAsc = fn($collection) => $collection->sortBy(
+                fn($row) => mb_strtolower(trim($row->product->name ?? '')),
+                SORT_NATURAL | SORT_FLAG_CASE
+            )->values();
 
-            $fileName = $warehouse_uuid === 'all'
-                ? 'INVENTAIRE-GLOBAL-' . now()->format('YmdHis') . '.pdf'
+            if ($isAllWarehouses) {
+                $computedPoints = $sortByNameAsc(
+                    $productPoints
+                        ->groupBy('produit_uuid')
+                        ->map(function ($groupItems, $prodUuid) use ($computeQuantityForProduct) {
+                            $firstItem = $groupItems->first();
+                            $finalQuantity = $computeQuantityForProduct($prodUuid, null);
+
+                            return (object) [
+                                'point_uuid'   => null,
+                                'warehouse'    => null,
+                                'produit_uuid' => $prodUuid,
+                                'product'      => $firstItem->product,
+                                'quantity'     => $finalQuantity,
+                                'point_item'   => $firstItem,
+                            ];
+                        })
+                );
+
+                $inventoriesByWarehouse = collect();
+            } else {
+                $computedPoints = $sortByNameAsc(
+                    $productPoints->map(function ($pointItem) use ($warehouses, $computeQuantityForProduct) {
+                        $whUuid = $pointItem->point_uuid;
+                        $prodUuid = $pointItem->produit_uuid;
+                        $wh = $warehouses->get($whUuid);
+
+                        return (object) [
+                            'point_uuid'   => $whUuid,
+                            'warehouse'    => $wh ?? $pointItem->point,
+                            'produit_uuid' => $prodUuid,
+                            'product'      => $pointItem->product,
+                            'quantity'     => $computeQuantityForProduct($prodUuid, $whUuid),
+                            'point_item'   => $pointItem,
+                        ];
+                    })
+                );
+
+                $inventoriesByWarehouse = $computedPoints
+                    ->groupBy('point_uuid')
+                    ->map(function ($items, $whUuid) use ($warehouses, $sortByNameAsc) {
+                        $sortedItems = $sortByNameAsc($items);
+                        return (object) [
+                            'warehouse'      => $warehouses->get($whUuid),
+                            'product_points' => $sortedItems,
+                            'total_quantity' => $sortedItems->sum('quantity'),
+                        ];
+                    })
+                    ->values();
+            }
+
+            $fileName = $isAllWarehouses
+                ? 'INVENTAIRE-TOUS-PRODUITS-' . now()->format('YmdHis') . '.pdf'
                 : 'INVENTAIRE-ENTREPOT-' . strtoupper($warehouses->first()->name ?? 'ENTREPOT') . '-' . now()->format('YmdHis') . '.pdf';
 
-            $folderPath = $warehouse_uuid === 'all'
+            $folderPath = $isAllWarehouses
                 ? 'storage/inventory_warehouses_day'
                 : 'storage/inventory_warehouse_day/' . $warehouses->first()->uuid;
 
@@ -782,10 +834,11 @@ class ProductController extends Controller
             $filePath = $folderPath . '/' . $fileName;
 
             $data = [
-                'warehouse'               => $warehouse_uuid === 'all' ? null : $warehouses->first(),
+                'is_all_warehouses'        => $isAllWarehouses,
+                'warehouse'                => $isAllWarehouses ? null : $warehouses->first(),
                 'inventories_by_warehouse' => $inventoriesByWarehouse,
-                'product_points'          => $computedPoints,
-                'end_date'                => $end_date,
+                'product_points'           => $computedPoints,
+                'end_date'                 => $end_date,
             ];
 
             save_browser_shot_pdf(

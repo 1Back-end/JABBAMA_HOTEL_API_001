@@ -24,6 +24,7 @@ class PurchaseOrderNotification extends Model
         'passation_uuid',
         'stock_adjustments_uuid',
         'warehouse_uuid',
+        'is_stock_adjustment',
         'manager_id',
         'status',
         'message',
@@ -94,5 +95,9 @@ class PurchaseOrderNotification extends Model
     public function manager()
     {
         return $this->belongsTo(User::class, 'manager_id', 'id');
+    }
+    public function stockAdjustment()
+    {
+        return $this->belongsTo(StockAdjustment::class, 'stock_adjustments_uuid', 'uuid');
     }
 }

@@ -134,7 +134,7 @@ class PassationController extends Controller
 
     private function createAndMarkAsRead(array $data)
     {
-        $data['is_read'] = true;
+        $data['is_read'] = false;
         $data['read_at'] = now();
 
         $data['purchase_order_uuid'] = $data['purchase_order_uuid'] ?? null;
@@ -166,13 +166,12 @@ class PassationController extends Controller
                 'status'         => $status,
                 'message'        => $message,
                 'user_id'        => $userId,
-                'is_read'        => false,
+                'is_read'        => true,
+                'read_at'        => now(),
                 'created_by'     => $createdBy,
             ];
-
             \App\Models\PassationNotification::create($notificationData);
             \App\Models\PassationDecisionnelle::create($notificationData);
-
             $this->createAndMarkAsRead($notificationData);
         }
     }

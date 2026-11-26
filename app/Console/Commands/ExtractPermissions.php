@@ -18,6 +18,42 @@ class ExtractPermissions extends Command
 
 
     protected array $manualPermissions = [
+        'view_stock_adjustments_notification_pending' => [
+            'description' => 'Afficher les notifications de régularisations de stocks en attente',
+            'category' => 'Notifications fonctionnel de régularisations de stocks',
+            'modules' => ['Gestion des stocks'],
+            'code' => 'STOCK',
+        ],
+        'view_stock_adjustments_notification_validated' => [
+            'description' => 'Afficher les notifications de régularisations de stocks validées',
+            'category' => 'Notifications fonctionnel de régularisations de stocks',
+            'modules' => ['Gestion des stocks'],
+            'code' => 'STOCK',
+        ],
+        'view_stock_adjustments_notification_cancelled' => [
+            'description' => 'Afficher les notifications de régularisations de stocks annulées',
+            'category' => 'Notifications fonctionnel de régularisations de stocks',
+            'modules' => ['Gestion des stocks'],
+            'code' => 'STOCK',
+        ],
+        'view_admin_stock_adjustments_notification_pending' => [
+            'description' => 'Afficher les notifications décisionnelles de régularisations de stocks en attente',
+            'category' => 'Notifications décisionnelles de régularisations de stocks',
+            'modules' => ['Gestion des stocks'],
+            'code' => 'STOCK',
+        ],
+        'view_admin_stock_adjustments_notification_validated' => [
+            'description' => 'Afficher les notifications décisionnelles de régularisations de stocks validées',
+            'category' => 'Notifications décisionnelles de régularisations de stocks',
+            'modules' => ['Gestion des stocks'],
+            'code' => 'STOCK',
+        ],
+        'view_admin_stock_adjustments_notification_cancelled' => [
+            'description' => 'Afficher les notifications décisionnelles de régularisations de stocks annulées',
+            'category' => 'Notifications décisionnelles de régularisations de stocks',
+            'modules' => ['Gestion des stocks'],
+            'code' => 'STOCK',
+        ],
         'view_passations_notification_pending' => [
             'description' => 'Afficher les notifications de passations en attente',
             'category' => "Notifications fonctionnel de passations de stocks",
@@ -132,12 +168,6 @@ class ExtractPermissions extends Command
             'category' => 'Gestion des utilisateurs',
             'modules' => ['Gestion des stocks', 'Gestion du restaurant','Gestion du bar'],
             'code' => 'RESTAURANT,BAR,STOCK',
-        ],
-        'view_restaurant_bar_reports' => [
-            'description' => 'Afficher et consulter les rapports de la gestion du restaurant et du bar.',
-            'category' => 'Navigation et Administration',
-            'modules' => ['Gestion du restaurant', 'Gestion du bar'],
-            'code' => 'RESTAURANT,BAR',
         ],
         'view_transferred_orders' => [
             'description' => 'Permettre aux gestionnaires de stock de voir toutes les commandes qui leur ont été transférées.',
