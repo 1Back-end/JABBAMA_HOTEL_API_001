@@ -33,7 +33,8 @@ class DecisionalNotification extends Model
         'created_by',
         'updated_by',
         'is_for_orders',
-        'is_for_approvisionnements'
+        'is_for_approvisionnements',
+        'stocks_deductions_uuid'
     ];
 
     protected $casts = [

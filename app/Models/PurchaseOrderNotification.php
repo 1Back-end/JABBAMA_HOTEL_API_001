@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
-class PurchaseOrderNotification extends Model
+class  PurchaseOrderNotification extends Model
 {
     use HasFactory, SoftDeletes;
 
@@ -35,7 +35,9 @@ class PurchaseOrderNotification extends Model
         'created_by',
         'updated_by',
         'is_for_orders',
-        'is_for_approvisionnements'
+        'is_for_approvisionnements',
+        'is_deduction_stock',
+        'stocks_deductions_uuid'
     ];
 
     protected $appends = ['status_label'];
@@ -99,5 +101,9 @@ class PurchaseOrderNotification extends Model
     public function stockAdjustment()
     {
         return $this->belongsTo(StockAdjustment::class, 'stock_adjustments_uuid', 'uuid');
+    }
+    public function stockDeduction()
+    {
+        return $this->belongsTo(StockDeduction::class, 'stocks_deductions_uuid', 'uuid');
     }
 }

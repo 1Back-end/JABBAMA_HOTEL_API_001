@@ -62,7 +62,7 @@
         @if(!empty($warehouse))
             INVENTAIRE DE STOCKS — {{ $warehouse->name }}
         @elseif($isAll)
-            INVENTAIRE GLOBAL DE TOUS LES ARTICLES
+            INVENTAIRE GLOBAL DE TOUS LES ENTREPÔTs
         @else
             INVENTAIRE DE STOCKS PAR ENTREPÔT
         @endif

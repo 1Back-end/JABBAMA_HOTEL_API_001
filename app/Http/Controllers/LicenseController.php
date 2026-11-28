@@ -6,12 +6,23 @@ use Illuminate\Http\Request;
 use App\Models\License;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
-
+/**
+ * @permission_category Gestion des certificats de licence
+ * @permission_module Gestion du restaurant
+ * @code_module RESTAURANT
+ * @permission_module Gestion du bar
+ * @code_module BAR
+ * @permission_module Gestion des stocks
+ * @code_module STOCK
+ */
 class LicenseController extends Controller
 {
 
     /**
-     * Récupérer les informations de la licence active pour l'utilisateur connecté
+     * Display a listing of the resource.
+     * @permission LicenseController::index
+     * @code BAR, RESTAURANT,STOCK
+     * @permission_desc Afficher les informations de la licence activée
      */
     public function index(Request $request)
     {
@@ -77,6 +88,12 @@ class LicenseController extends Controller
         ], 200);
     }
 
+    /**
+     * Display a listing of the resource.
+     * @permission LicenseController::store
+     * @code BAR, RESTAURANT,STOCK
+     * @permission_desc Importer un certificat de licence
+     */
     public function store(Request $request)
     {
         $request->validate([

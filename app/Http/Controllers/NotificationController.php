@@ -142,6 +142,21 @@ class NotificationController extends Controller
         'validated' => 'view_admin_stock_adjustments_notification_validated',
         'cancelled' => 'view_admin_stock_adjustments_notification_cancelled',
     ];
+    private const STOCK_DEDUCTION_STATUS_PERMISSIONS = [
+        'draft'     => 'view_stock_deductions_notification_draft',
+        'pending'   => 'view_stock_deductions_notification_pending',
+        'validated' => 'view_stock_deductions_notification_validated',
+        'rejected'  => 'view_stock_deductions_notification_rejected',
+        'cancelled' => 'view_stock_deductions_notification_cancelled',
+    ];
+
+    private const STOCK_DEDUCTION_ADMIN_STATUS_PERMISSIONS = [
+        'draft'     => 'view_admin_stock_deductions_notification_draft',
+        'pending'   => 'view_admin_stock_deductions_notification_pending',
+        'validated' => 'view_admin_stock_deductions_notification_validated',
+        'rejected'  => 'view_admin_stock_deductions_notification_rejected',
+        'cancelled' => 'view_admin_stock_deductions_notification_cancelled',
+    ];
 
     public function stream(Request $request): JsonResponse
     {
@@ -156,11 +171,12 @@ class NotificationController extends Controller
         );
 
         return response()->json([
-            'notifications'         => $this->streamOrderNotifications(
+            'notifications' => $this->streamOrderNotifications(
                 $user,
                 $allowedStatuses(self::ORDER_STATUS_PERMISSIONS)
             ),
-            'decisional'            => $this->streamDecisionalNotifications(
+            'decisional' => $this->streamDecisionalNotifications(
+                $user,
                 $allowedStatuses(self::DECISIONAL_STATUS_PERMISSIONS)
             ),
             'stock_adjustments' => $this->streamStockAdjustmentNotifications(
@@ -168,29 +184,99 @@ class NotificationController extends Controller
                 $allowedStatuses(self::STOCK_ADJUSTMENT_STATUS_PERMISSIONS)
             ),
             'decisional_stock_adjustments' => $this->streamDecisionalStockAdjustmentNotifications(
+                $user,
                 $allowedStatuses(self::STOCK_ADJUSTMENT_ADMIN_STATUS_PERMISSIONS)
             ),
             'stocks' => $this->streamStockNotifications(
                 $user,
-                $allowedStatuses(
-                    self::STOCK_STATUS_PERMISSIONS)
+                $allowedStatuses(self::STOCK_STATUS_PERMISSIONS)
             ),
             'decisional_stocks' => $this->streamDecisionalStockNotifications(
-                $allowedStatuses(
-                    self::DECISIONAL_STOCK_STATUS_PERMISSIONS)
+                $user,
+                $allowedStatuses(self::DECISIONAL_STOCK_STATUS_PERMISSIONS)
             ),
-            'passations'            => $this->streamPassationNotifications(
+            'passations' => $this->streamPassationNotifications(
                 $user,
                 $allowedStatuses(self::PASSATION_STATUS_PERMISSIONS)
             ),
             'decisional_passations' => $this->streamDecisionalPassationNotifications(
+                $user,
                 $allowedStatuses(self::DECISIONAL_PASSATION_STATUS_PERMISSIONS)
+            ),
+            'stock_deductions' => $this->streamStockDeductionNotifications(
+                $user,
+                $allowedStatuses(self::STOCK_DEDUCTION_STATUS_PERMISSIONS)
+            ),
+            'decisional_stock_deductions' => $this->streamDecisionalStockDeductionNotifications(
+                $user,
+                $allowedStatuses(self::STOCK_DEDUCTION_ADMIN_STATUS_PERMISSIONS)
             ),
         ]);
     }
+
+    private function resolvePermittedStatuses($user, array $statuses, array $permissionsMap): array
+    {
+        if (empty($statuses) || !$user) {
+            return [];
+        }
+
+        $permitted = [];
+        foreach ($statuses as $status) {
+            $permission = $permissionsMap[$status] ?? null;
+            if (!empty($permission) && $user->can($permission)) {
+                $permitted[] = $status;
+            }
+        }
+
+        return $permitted;
+    }
+
+    private function getAssignedWarehouseUuids($user)
+    {
+        return $user->warehouses()
+            ->whereNull('warehouse_managers.deleted_at')
+            ->pluck('warehouses.uuid')
+            ->values();
+    }
+
+    private function streamStockDeductionNotifications($user, array $statuses)
+    {
+        $permittedStatuses = $this->resolvePermittedStatuses(
+            $user,
+            $statuses,
+            self::STOCK_DEDUCTION_STATUS_PERMISSIONS
+        );
+
+        if (empty($permittedStatuses) || !$user) {
+            return ['data' => []];
+        }
+
+        $assignedWarehouseUuids = $this->getAssignedWarehouseUuids($user);
+        if ($assignedWarehouseUuids->isEmpty()) {
+            return ['data' => []];
+        }
+
+        $data = PurchaseOrderNotification::with([
+            'creator:id,nom_utilisateur',
+            'updater:id,nom_utilisateur',
+            'warehouse',
+            'stockDeduction',
+        ])
+            ->where('is_deduction_stock', true)
+            ->whereNotNull('stocks_deductions_uuid')
+            ->whereIn('status', $permittedStatuses)
+            ->whereIn('warehouse_uuid', $assignedWarehouseUuids)
+            ->where('created_by', '!=', $user->id)
+            ->latest()
+            ->limit(self::STREAM_LIMIT)
+            ->get();
+
+        return ['data' => $data];
+    }
+
     private function streamOrderNotifications($user, array $statuses)
     {
-        if (empty($statuses)) {
+        if (empty($statuses) || !$user) {
             return [];
         }
 
@@ -219,9 +305,16 @@ class NotificationController extends Controller
             ->limit(self::STREAM_LIMIT)
             ->get();
     }
-    private function streamDecisionalNotifications(array $statuses): array
+
+    private function streamDecisionalNotifications($user, array $statuses): array
     {
-        if (empty($statuses)) {
+        $permittedStatuses = $this->resolvePermittedStatuses(
+            $user,
+            $statuses,
+            self::DECISIONAL_STATUS_PERMISSIONS
+        );
+
+        if (empty($permittedStatuses) || !$user) {
             return ['data' => []];
         }
 
@@ -230,131 +323,45 @@ class NotificationController extends Controller
             'updatedBy:id,nom_utilisateur',
             'orderMenuRestaurant:uuid,code',
         ])
-            ->whereIn('status', $statuses)
+            ->whereIn('status', $permittedStatuses)
             ->latest()
             ->limit(self::STREAM_LIMIT)
             ->get();
 
         return ['data' => $data];
     }
+
     private function streamStockNotifications($user, array $statuses)
     {
-        if (empty($statuses) || !$user) {
+        $permittedStatuses = $this->resolvePermittedStatuses(
+            $user,
+            $statuses,
+            self::STOCK_STATUS_PERMISSIONS
+        );
+
+        if (empty($permittedStatuses) || !$user) {
             return ['data' => []];
         }
 
-        $assignedWarehouseUuids = $user->warehouses()
-            ->whereNull('warehouse_managers.deleted_at')
-            ->pluck('warehouses.uuid')
-            ->values();
-
-        $query = PurchaseOrderNotification::with([
-            'creator:id,nom_utilisateur',
-            'updater:id,nom_utilisateur',
-            'purchaseOrder:uuid,reference',
-            'stockAdjustment:uuid,reference,action',
-            'warehouse',
-        ])
-            ->whereIn('status', $statuses)
-            ->whereIn('warehouse_uuid', $assignedWarehouseUuids)
-            ->where('created_by', '!=', $user->id);
-
-        $data = $query
-            ->latest()
-            ->limit(self::STREAM_LIMIT)
-            ->get();
-
-        return ['data' => $data];
-    }
-    private function streamStockAdjustmentNotifications($user, array $statuses)
-    {
-        if (empty($statuses) || !$user) {
+        $assignedWarehouseUuids = $this->getAssignedWarehouseUuids($user);
+        if ($assignedWarehouseUuids->isEmpty()) {
             return ['data' => []];
         }
-
-        $assignedWarehouseUuids = $user->warehouses()
-            ->whereNull('warehouse_managers.deleted_at')
-            ->pluck('warehouses.uuid')
-            ->values();
-
-        $query = PurchaseOrderNotification::with([
-            'creator:id,nom_utilisateur',
-            'updater:id,nom_utilisateur',
-            'purchaseOrder:uuid,reference',
-            'stockAdjustment:uuid,reference,action',
-            'warehouse',
-        ])
-            ->where('is_stock_adjustment', true)
-            ->whereIn('status', $statuses)
-            ->whereIn('warehouse_uuid', $assignedWarehouseUuids)
-            ->where('created_by', '!=', $user->id);
-
-        $data = $query
-            ->latest()
-            ->limit(self::STREAM_LIMIT)
-            ->get();
-
-        return ['data' => $data];
-    }
-    private function streamDecisionalStockNotifications(array $statuses): array
-    {
-        if (empty($statuses)) {
-            return ['data' => []];
-        }
-
-        $data = DecisionalNotification::with([
-            'creator:id,nom_utilisateur',
-            'updater:id,nom_utilisateur',
-            'purchaseOrder:uuid,reference',
-        ])
-            ->whereIn('status', $statuses)
-            ->latest()
-            ->limit(self::STREAM_LIMIT)
-            ->get();
-
-        return ['data' => $data];
-    }
-    private function streamDecisionalStockAdjustmentNotifications(array $statuses): array
-    {
-        if (empty($statuses)) {
-            return ['data' => []];
-        }
-
-        $data = DecisionalNotification::with([
-            'creator:id,nom_utilisateur',
-            'updater:id,nom_utilisateur',
-            'purchaseOrder:uuid,reference',
-            'stockAdjustment:uuid,reference,action',
-        ])
-            ->where(function ($q) {
-                $q->where('is_stock_adjustment', false)
-                    ->orWhereNull('is_stock_adjustment');
-            })
-            ->whereIn('status', $statuses)
-            ->latest()
-            ->limit(self::STREAM_LIMIT)
-            ->get();
-
-        return ['data' => $data];
-    }
-    private function streamPassationNotifications($user, array $statuses)
-    {
-
-        if (empty($statuses) || !$user) {
-            return ['data' => []];
-        }
-
-        $assignedWarehouseUuids = $user->warehouses()
-            ->whereNull('warehouse_managers.deleted_at')
-            ->pluck('warehouses.uuid')
-            ->values();
 
         $data = PurchaseOrderNotification::with([
             'creator:id,nom_utilisateur',
             'updater:id,nom_utilisateur',
+            'purchaseOrder:uuid,reference',
+            'stockAdjustment:uuid,reference,action',
             'warehouse',
         ])
-            ->whereIn('status', $statuses)
+            ->where(function ($q) {
+                $q->where('is_stock_adjustment', false)->orWhereNull('is_stock_adjustment');
+            })
+            ->where(function ($q) {
+                $q->where('is_deduction_stock', false)->orWhereNull('is_deduction_stock');
+            })
+            ->whereIn('status', $permittedStatuses)
             ->whereIn('warehouse_uuid', $assignedWarehouseUuids)
             ->where('created_by', '!=', $user->id)
             ->latest()
@@ -363,18 +370,169 @@ class NotificationController extends Controller
 
         return ['data' => $data];
     }
-    private function streamDecisionalPassationNotifications(array $statuses)
+
+    private function streamStockAdjustmentNotifications($user, array $statuses)
     {
-        if (empty($statuses)) {
+        $permittedStatuses = $this->resolvePermittedStatuses(
+            $user,
+            $statuses,
+            self::STOCK_ADJUSTMENT_STATUS_PERMISSIONS
+        );
+
+        if (empty($permittedStatuses) || !$user) {
+            return ['data' => []];
+        }
+
+        $assignedWarehouseUuids = $this->getAssignedWarehouseUuids($user);
+        if ($assignedWarehouseUuids->isEmpty()) {
+            return ['data' => []];
+        }
+
+        $data = PurchaseOrderNotification::with([
+            'creator:id,nom_utilisateur',
+            'updater:id,nom_utilisateur',
+            'purchaseOrder:uuid,reference',
+            'stockAdjustment:uuid,reference,action',
+            'warehouse',
+        ])
+
+            ->whereNotNull('stock_adjustments_uuid')
+            ->whereIn('status', $permittedStatuses)
+            ->whereIn('warehouse_uuid', $assignedWarehouseUuids)
+            ->where('created_by', '!=', $user->id)
+            ->latest()
+            ->limit(self::STREAM_LIMIT)
+            ->get();
+
+        return ['data' => $data];
+    }
+
+    private function streamDecisionalStockNotifications($user, array $statuses): array
+    {
+        $permittedStatuses = $this->resolvePermittedStatuses(
+            $user,
+            $statuses,
+            self::DECISIONAL_STOCK_STATUS_PERMISSIONS
+        );
+
+        if (empty($permittedStatuses) || !$user) {
             return ['data' => []];
         }
 
         $data = DecisionalNotification::with([
             'creator:id,nom_utilisateur',
             'updater:id,nom_utilisateur',
-            'passation:uuid',
+            'purchaseOrder:uuid,reference',
         ])
-            ->whereIn('status', $statuses)
+            ->whereIn('status', $permittedStatuses)
+            ->latest()
+            ->limit(self::STREAM_LIMIT)
+            ->get();
+
+        return ['data' => $data];
+    }
+
+    private function streamDecisionalStockAdjustmentNotifications($user, array $statuses): array
+    {
+        $permittedStatuses = $this->resolvePermittedStatuses(
+            $user,
+            $statuses,
+            self::STOCK_ADJUSTMENT_ADMIN_STATUS_PERMISSIONS
+        );
+
+        if (empty($permittedStatuses) || !$user) {
+            return ['data' => []];
+        }
+
+        $data = DecisionalNotification::with([
+            'creator:id,nom_utilisateur',
+            'updater:id,nom_utilisateur',
+            'purchaseOrder:uuid,reference',
+            'stockAdjustment:uuid,reference,action',
+        ])
+            ->whereIn('status', $permittedStatuses)
+            ->latest()
+            ->limit(self::STREAM_LIMIT)
+            ->get();
+
+        return ['data' => $data];
+    }
+
+    private function streamPassationNotifications($user, array $statuses)
+    {
+        $permittedStatuses = $this->resolvePermittedStatuses(
+            $user,
+            $statuses,
+            self::PASSATION_STATUS_PERMISSIONS
+        );
+
+        if (empty($permittedStatuses) || !$user) {
+            return ['data' => []];
+        }
+
+        $assignedWarehouseUuids = $this->getAssignedWarehouseUuids($user);
+        if ($assignedWarehouseUuids->isEmpty()) {
+            return ['data' => []];
+        }
+
+        $data = PurchaseOrderNotification::with([
+            'creator:id,nom_utilisateur',
+            'updater:id,nom_utilisateur',
+            'warehouse',
+        ])
+            ->whereIn('status', $permittedStatuses)
+            ->whereIn('warehouse_uuid', $assignedWarehouseUuids)
+            ->where('created_by', '!=', $user->id)
+            ->latest()
+            ->limit(self::STREAM_LIMIT)
+            ->get();
+
+        return ['data' => $data];
+    }
+
+    private function streamDecisionalPassationNotifications($user, array $statuses): array
+    {
+        $permittedStatuses = $this->resolvePermittedStatuses(
+            $user,
+            $statuses,
+            self::DECISIONAL_PASSATION_STATUS_PERMISSIONS
+        );
+
+        if (empty($permittedStatuses) || !$user) {
+            return ['data' => []];
+        }
+
+        $data = DecisionalNotification::with([
+            'creator:id,nom_utilisateur',
+            'updater:id,nom_utilisateur',
+        ])
+            ->whereIn('status', $permittedStatuses)
+            ->whereNotNull('passation_uuid')
+            ->latest()
+            ->limit(self::STREAM_LIMIT)
+            ->get();
+
+        return ['data' => $data];
+    }
+
+    private function streamDecisionalStockDeductionNotifications($user, array $statuses): array
+    {
+        $permittedStatuses = $this->resolvePermittedStatuses(
+            $user,
+            $statuses,
+            self::STOCK_DEDUCTION_ADMIN_STATUS_PERMISSIONS
+        );
+
+        if (empty($permittedStatuses) || !$user) {
+            return ['data' => []];
+        }
+
+        $data = DecisionalNotification::with([
+            'creator:id,nom_utilisateur',
+            'updater:id,nom_utilisateur',
+        ])
+            ->whereIn('status', $permittedStatuses)
+            ->whereNotNull('stocks_deductions_uuid')
             ->latest()
             ->limit(self::STREAM_LIMIT)
             ->get();

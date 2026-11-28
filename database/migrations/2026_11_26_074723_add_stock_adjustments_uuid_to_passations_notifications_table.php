@@ -8,16 +8,24 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('passations_notifications', function (Blueprint $table) {
-            $table->uuid('stock_adjustments_uuid')->nullable()->index()->after('passation_uuid');
-        });
+        if (!Schema::hasColumn('passations_notifications', 'stock_adjustments_uuid')) {
+            Schema::table('passations_notifications', function (Blueprint $table) {
+                $col = $table->uuid('stock_adjustments_uuid')->nullable()->index();
+
+                if (Schema::hasColumn('passations_notifications', 'passation_uuid')) {
+                    $col->after('passation_uuid');
+                }
+            });
+        }
     }
 
     public function down(): void
     {
-        Schema::table('passations_notifications', function (Blueprint $table) {
-            $table->dropIndex(['stock_adjustments_uuid']);
-            $table->dropColumn('stock_adjustments_uuid');
-        });
+        if (Schema::hasColumn('passations_notifications', 'stock_adjustments_uuid')) {
+            Schema::table('passations_notifications', function (Blueprint $table) {
+                $table->dropIndex(['stock_adjustments_uuid']);
+                $table->dropColumn('stock_adjustments_uuid');
+            });
+        }
     }
 };

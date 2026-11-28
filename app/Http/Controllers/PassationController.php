@@ -140,7 +140,6 @@ class PassationController extends Controller
         $data['purchase_order_uuid'] = $data['purchase_order_uuid'] ?? null;
         $data['stock_adjustments_uuid'] = $data['stock_adjustments_uuid'] ?? null;
 
-        \App\Models\PurchaseOrderNotification::create($data);
         \App\Models\DecisionalNotification::create($data);
     }
 
@@ -166,12 +165,10 @@ class PassationController extends Controller
                 'status'         => $status,
                 'message'        => $message,
                 'user_id'        => $userId,
-                'is_read'        => true,
                 'read_at'        => now(),
                 'created_by'     => $createdBy,
             ];
-            \App\Models\PassationNotification::create($notificationData);
-            \App\Models\PassationDecisionnelle::create($notificationData);
+            \App\Models\PurchaseOrderNotification::create($notificationData);
             $this->createAndMarkAsRead($notificationData);
         }
     }
@@ -244,13 +241,12 @@ class PassationController extends Controller
                 ]);
             }
 
-            $recipientManagerIds = $targetManager ? [$targetManager->id] : [];
             $this->sendPassationNotifications(
                 passationUuid: $passation->uuid,
                 userId: $auth->id,
                 status: 'pending',
                 message: "Une nouvelle passation de stock a été initiée pour l'entrepôt {$warehouse->name} et nécessite votre validation.",
-                managerIds: $recipientManagerIds,
+                managerIds: [$auth->id],
                 warehouseUuid: $warehouse->uuid
             );
 
@@ -348,13 +344,12 @@ class PassationController extends Controller
                 ]);
             }
 
-            $recipientManagerIds = $targetManager ? [$targetManager->id] : [];
             $this->sendPassationNotifications(
                 passationUuid: $passation->uuid,
                 userId: $auth->id,
                 status: 'pending',
                 message: "La passation de stock pour l'entrepôt {$warehouse->name} a été mise à jour et nécessite votre attention.",
-                managerIds: $recipientManagerIds,
+                managerIds: [$auth->id],
                 warehouseUuid: $warehouse->uuid
             );
 
@@ -509,7 +504,6 @@ class PassationController extends Controller
             $warehouseName = $warehouse?->name ?? '';
 
             $targetManager = $warehouse?->managers->firstWhere('id', '!=', $auth->id);
-            $recipientManagerIds = $targetManager ? [$targetManager->id] : [];
 
             $message = $hasGap
                 ? "Validation effectuée avec écarts : le contrôle d'inventaire de l'entrepôt {$warehouseName} a été soumis par {$auth->nom_utilisateur}. Une vérification est requise."
@@ -520,7 +514,7 @@ class PassationController extends Controller
                 userId: $auth->id,
                 status: 'in_discuss',
                 message: $message,
-                managerIds: $recipientManagerIds,
+                managerIds: [$auth->id],
                 warehouseUuid: $warehouse?->uuid
             );
 
@@ -644,7 +638,7 @@ class PassationController extends Controller
                 userId: $auth->id,
                 status: 'in_discuss',
                 message: $message,
-                managerIds: $recipientManagerIds,
+                managerIds: [$auth->id],
                 warehouseUuid: $warehouse?->uuid
             );
 
@@ -721,7 +715,7 @@ class PassationController extends Controller
                 userId: $auth->id,
                 status: PassationStatus::CANCEL->value,
                 message: "Passation annulée : la procédure pour l'entrepôt {$warehouseName} a été annulée par {$auth->nom_utilisateur}. Motif : {$validated['reason_cancelled']}",
-                managerIds: $recipientManagerIds,
+                managerIds: [$auth->id],
                 warehouseUuid: $warehouse?->uuid
             );
 
@@ -804,7 +798,7 @@ class PassationController extends Controller
                 userId: $auth->id,
                 status: PassationStatus::REJECTED->value,
                 message: "Passation rejetée : la procédure pour l'entrepôt {$warehouseName} a été rejetée par {$auth->nom_utilisateur}. Motif : {$validated['reason_reject']}",
-                managerIds: $recipientManagerIds,
+                managerIds: [$auth->id],
                 warehouseUuid: $warehouse?->uuid
             );
 
@@ -1020,7 +1014,7 @@ class PassationController extends Controller
                 userId: $auth->id,
                 status: $finalStatusEnum->value,
                 message: $message,
-                managerIds: $recipientManagerIds,
+                managerIds: [$auth->id],
                 warehouseUuid: $warehouse?->uuid
             );
 

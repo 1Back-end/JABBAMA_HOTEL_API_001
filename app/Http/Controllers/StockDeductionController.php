@@ -161,7 +161,6 @@ class StockDeductionController extends Controller
     {
 
         $auth = auth()->user();
-        $roleIds = $auth->roles->pluck('id');
         $perPage = $request->input('limit', 25);
         $page = $request->input('page', 1);
         $deduction = StockDeduction::with([
@@ -242,6 +241,49 @@ class StockDeductionController extends Controller
         ]);
     }
 
+    private function createAndMarkAsRead(array $data)
+    {
+        $data['is_read'] = false;
+        $data['read_at'] = now();
+
+        $data['purchase_order_uuid'] = $data['purchase_order_uuid'] ?? null;
+        $data['stock_adjustments_uuid'] = $data['stock_adjustments_uuid'] ?? null;
+
+        \App\Models\DecisionalNotification::create($data);
+    }
+
+    private function sendStockDeductionNotifications(
+        string $stockDeductionUuid,
+        int $userId,
+        string $status,
+        string $message,
+        array $managerIds = [],
+        ?string $warehouseUuid = null
+    ): void {
+        if (empty($managerIds)) {
+            return;
+        }
+
+        $createdBy = auth()->id() ?? $userId;
+
+        foreach ($managerIds as $managerId) {
+            $notificationData = [
+                'stocks_deductions_uuid' => $stockDeductionUuid,
+                'warehouse_uuid'         => $warehouseUuid,
+                'manager_id'           => $managerId,
+                'status'               => $status,
+                'message'              => $message,
+                'user_id'              => $userId,
+                'is_read'              => false,
+                'is_deduction_stock'     => true,
+                'created_by'           => $createdBy,
+            ];
+
+            \App\Models\PurchaseOrderNotification::create($notificationData);
+            $this->createAndMarkAsRead($notificationData);
+        }
+    }
+
 
     /**
      * Display a listing of the resource.
@@ -254,42 +296,60 @@ class StockDeductionController extends Controller
         $auth = auth()->user();
 
         $request->validate([
-            'warehouse_uuid' => 'nullable|exists:warehouses,uuid',
-            'comment' => 'nullable|string',
-            'items' => 'required|array|min:1',
+            'reference'            => 'nullable|string|max:255',
+            'warehouse_uuid'       => 'nullable|exists:warehouses,uuid',
+            'comment'              => 'nullable|string',
+            'items'                => 'required|array|min:1',
             'items.*.product_uuid' => 'required|exists:produits,uuid',
-            'items.*.quantity' => 'required|integer|min:1',
+            'items.*.quantity'     => 'required|integer|min:1',
         ], [
-            'items.required' => 'Veuillez ajouter au moins un produit à la déduction.',
+            'items.required'                => 'Veuillez ajouter au moins un produit à la déduction.',
             'items.*.product_uuid.required' => 'Le produit est obligatoire.',
-            'items.*.product_uuid.exists' => 'Le produit sélectionné est invalide.',
-            'items.*.quantity.required' => 'La quantité est obligatoire.',
-            'items.*.quantity.min' => 'La quantité doit être supérieure à zéro.',
+            'items.*.product_uuid.exists'   => 'Le produit sélectionné est invalide.',
+            'items.*.quantity.required'     => 'La quantité est obligatoire.',
+            'items.*.quantity.min'          => 'La quantité doit être supérieure à zéro.',
         ]);
 
-        DB::transaction(function () use ($request, $auth) {
+        $status = StocksDeductionsStatus::DRAFT->value;
 
+        $deduction = DB::transaction(function () use ($request, $auth, $status) {
             $deduction = StockDeduction::create([
-                'reference' => $request->reference,
+                'reference'      => $request->reference,
                 'warehouse_uuid' => $request->warehouse_uuid,
-                'comment' => $request->comment,
-                'created_by' => $auth->id,
-                'status' => 'draft',
+                'comment'        => $request->comment,
+                'created_by'     => $auth->id,
+                'status'         => $status,
             ]);
 
             foreach ($request->items as $item) {
                 StockDeductionItem::create([
                     'stocks_deduction_uuid' => $deduction->uuid,
-                    'product_uuid' => $item['product_uuid'],
-                    'quantity' => $item['quantity'],
-                    'created_by' => $auth->id,
+                    'product_uuid'          => $item['product_uuid'],
+                    'quantity'              => $item['quantity'],
+                    'created_by'            => $auth->id,
                 ]);
             }
+
+            return $deduction;
         });
+
+        $message = sprintf(
+            'Nouvelle déduction de stock (%s) créée en brouillon.',
+            $deduction->reference ?? $deduction->uuid
+        );
+
+        $this->sendStockDeductionNotifications(
+            stockDeductionUuid: $deduction->uuid,
+            userId: $auth->id,
+            status: $status,
+            message: $message,
+            managerIds: [$auth->id],
+            warehouseUuid: $deduction->warehouse_uuid
+        );
 
         return response()->json([
             'success' => true,
-            'message' => 'La déduction de stock a été créée avec succès.'
+            'message' => 'La déduction de stock a été créée avec succès.',
         ], 201);
     }
 
@@ -312,6 +372,8 @@ class StockDeductionController extends Controller
                 'message' => 'Impossible de modifier une déduction déjà validée ou annulée.'
             ], 422);
         }
+
+        $status = StocksDeductionsStatus::DRAFT->value;
 
         $request->validate([
             'warehouse_uuid' => 'nullable|exists:warehouses,uuid',
@@ -346,6 +408,22 @@ class StockDeductionController extends Controller
                 ]);
             }
         });
+
+        $deduction->refresh();
+
+        $message = sprintf(
+            'Déduction de stock (%s) mise à jour en brouillon.',
+            $deduction->reference ?? $deduction->uuid
+        );
+
+        $this->sendStockDeductionNotifications(
+            stockDeductionUuid: $deduction->uuid,
+            userId: $auth->id,
+            status: $status,
+            message: $message,
+            managerIds: [$auth->id],
+            warehouseUuid: $deduction->warehouse_uuid
+        );
 
         return response()->json([
             'success' => true,
@@ -450,30 +528,70 @@ class StockDeductionController extends Controller
      * @code STOCK
      * @permission_desc Annuler une déduction de stocks
      */
-    public function cancel_deductions_stocks(Request $request, string $uuid){
+    public function cancel_deductions_stocks(Request $request, string $uuid)
+    {
         $auth = auth()->user();
+
         $request->validate([
-            'password' => 'required|string'
+            'password' => 'required|string',
+        ], [
+            'password.required' => 'Le mot de passe est obligatoire.',
         ]);
 
         if (!Hash::check($request->password, $auth->password)) {
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Mot de passe incorrect.'
+                'message' => 'Mot de passe incorrect.',
             ], 422);
         }
 
-        $deduction = StockDeduction::findOrFail($uuid);
-        $deduction->update([
-            'status' => 'cancelled',
-            'updated_by' => auth()->id(),
-            'cancelled_by' => auth()->id(),
-            'cancelled_at' => now(),
-        ]);
+        $deduction = StockDeduction::where('uuid', $uuid)->firstOrFail();
+        $cancelledStatus = StocksDeductionsStatus::CANCELLED->value;
+
+        if ($deduction->status === $cancelledStatus) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Cette déduction de stock est déjà annulée.',
+            ], 422);
+        }
+
+        if ($deduction->status === StocksDeductionsStatus::VALIDATED->value) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Impossible d\'annuler une déduction de stock déjà validée.',
+            ], 422);
+        }
+
+        DB::transaction(function () use ($deduction, $auth, $cancelledStatus) {
+            $deduction->update([
+                'status'       => $cancelledStatus,
+                'updated_by'   => $auth->id,
+                'cancelled_by' => $auth->id,
+                'cancelled_at' => now(),
+            ]);
+        });
+
+        $deduction->refresh();
+
+        $message = sprintf(
+            'Déduction de stock (%s) annulée par %s.',
+            $deduction->reference ?? $deduction->uuid,
+            $auth->nom_utilisateur ?? 'Utilisateur'
+        );
+
+        $this->sendStockDeductionNotifications(
+            stockDeductionUuid: $deduction->uuid,
+            userId: $auth->id,
+            status: $cancelledStatus,
+            message: $message,
+            managerIds: [$auth->id],
+            warehouseUuid: $deduction->warehouse_uuid
+        );
 
         return response()->json([
-            'message' => "La déduction de stock a été annulée avec succès.",
-            'deduction' => $deduction
+            'status'    => 'success',
+            'message'   => 'La déduction de stock a été annulée avec succès.',
+            'deduction' => $deduction,
         ]);
     }
 
@@ -489,13 +607,15 @@ class StockDeductionController extends Controller
         $auth = auth()->user();
 
         $request->validate([
-            'password' => 'required|string'
+            'password' => 'required|string',
+        ], [
+            'password.required' => 'Le mot de passe est obligatoire.',
         ]);
 
         if (!Hash::check($request->password, $auth->password)) {
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Mot de passe incorrect.'
+                'message' => 'Mot de passe incorrect.',
             ], 422);
         }
 
@@ -503,26 +623,42 @@ class StockDeductionController extends Controller
             ->where('uuid', $uuid)
             ->firstOrFail();
 
-        if ($deduction->status !== 'draft') {
+        if ($deduction->status !== StocksDeductionsStatus::DRAFT->value) {
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Cette déduction de stocks a déjà été validée ou annulée.'
+                'message' => 'Cette déduction de stocks a déjà été validée ou annulée.',
             ], 403);
         }
+
+        if (empty($deduction->warehouse_uuid)) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Aucun entrepôt n\'est associé à cette déduction de stock.',
+            ], 422);
+        }
+
+        $validatedStatus = StocksDeductionsStatus::VALIDATED->value;
 
         DB::beginTransaction();
 
         try {
             $insufficientProducts = [];
+            $productPoints = [];
 
             foreach ($deduction->items as $item) {
-                $productPoint = ProductPoint::firstOrCreate(
-                    [
+                $productPoint = ProductPoint::where('produit_uuid', $item->product_uuid)
+                    ->where('point_uuid', $deduction->warehouse_uuid)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (!$productPoint) {
+                    $productPoint = ProductPoint::create([
                         'produit_uuid' => $item->product_uuid,
                         'point_uuid'   => $deduction->warehouse_uuid,
-                    ],
-                    ['quantity' => 0]
-                );
+                        'quantity'     => 0,
+                        'created_by'   => $auth->id,
+                    ]);
+                }
 
                 if ($productPoint->quantity < $item->quantity) {
                     $insufficientProducts[] = [
@@ -530,30 +666,31 @@ class StockDeductionController extends Controller
                         'required'  => $item->quantity,
                         'available' => $productPoint->quantity,
                     ];
+                } else {
+                    $productPoints[] = [
+                        'model'    => $productPoint,
+                        'quantity' => $item->quantity,
+                    ];
                 }
             }
 
             if (!empty($insufficientProducts)) {
+                DB::rollBack();
+
                 return response()->json([
                     'status'  => 'error',
                     'message' => 'Stock insuffisant pour certains produits.',
-                    'details' => $insufficientProducts
+                    'details' => $insufficientProducts,
                 ], 422);
             }
 
-            foreach ($deduction->items as $item) {
-                $productPoint = ProductPoint::firstOrCreate(
-                    [
-                        'produit_uuid' => $item->product_uuid,
-                        'point_uuid'   => $deduction->warehouse_uuid,
-                    ],
-                    ['quantity' => 0]
-                );
-                $productPoint->decrement('quantity', $item->quantity);
+            foreach ($productPoints as $entry) {
+                $entry['model']->decrement('quantity', $entry['quantity']);
+                $entry['model']->update(['updated_by' => $auth->id]);
             }
 
             $deduction->update([
-                'status'       => 'validated',
+                'status'       => $validatedStatus,
                 'validated_by' => $auth->id,
                 'updated_by'   => $auth->id,
                 'validated_at' => now(),
@@ -561,12 +698,28 @@ class StockDeductionController extends Controller
 
             DB::commit();
 
+            $deduction->refresh();
+
+            $message = sprintf(
+                'Déduction de stock (%s) validée par %s.',
+                $deduction->reference ?? $deduction->uuid,
+                $auth->name ?? 'Utilisateur'
+            );
+
+            $this->sendStockDeductionNotifications(
+                stockDeductionUuid: $deduction->uuid,
+                userId: $auth->id,
+                status: $validatedStatus,
+                message: $message,
+                managerIds: [$auth->id],
+                warehouseUuid: $deduction->warehouse_uuid
+            );
+
             return response()->json([
                 'status'  => 'success',
                 'message' => 'Déduction de stock validée avec succès.',
                 'data'    => $deduction->load('items.product'),
             ]);
-
         } catch (\Throwable $e) {
             DB::rollBack();
 

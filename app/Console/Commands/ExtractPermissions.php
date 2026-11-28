@@ -18,6 +18,66 @@ class ExtractPermissions extends Command
 
 
     protected array $manualPermissions = [
+        'view_stock_deductions_notification_draft' => [
+            'description' => 'Afficher les notifications de déductions de stocks en brouillon',
+            'category' => 'Notifications fonctionnelles de déductions de stocks',
+            'modules' => ['Gestion des stocks'],
+            'code' => 'STOCK',
+        ],
+        'view_stock_deductions_notification_pending' => [
+            'description' => 'Afficher les notifications de déductions de stocks en attente',
+            'category' => 'Notifications fonctionnelles de déductions de stocks',
+            'modules' => ['Gestion des stocks'],
+            'code' => 'STOCK',
+        ],
+        'view_stock_deductions_notification_validated' => [
+            'description' => 'Afficher les notifications de déductions de stocks validées',
+            'category' => 'Notifications fonctionnelles de déductions de stocks',
+            'modules' => ['Gestion des stocks'],
+            'code' => 'STOCK',
+        ],
+        'view_stock_deductions_notification_rejected' => [
+            'description' => 'Afficher les notifications de déductions de stocks rejetées',
+            'category' => 'Notifications fonctionnelles de déductions de stocks',
+            'modules' => ['Gestion des stocks'],
+            'code' => 'STOCK',
+        ],
+        'view_stock_deductions_notification_cancelled' => [
+            'description' => 'Afficher les notifications de déductions de stocks annulées',
+            'category' => 'Notifications fonctionnelles de déductions de stocks',
+            'modules' => ['Gestion des stocks'],
+            'code' => 'STOCK',
+        ],
+        'view_admin_stock_deductions_notification_draft' => [
+            'description' => 'Afficher les notifications admin de déductions de stocks en brouillon',
+            'category' => 'Notifications décisionnelles de déductions de stocks',
+            'modules' => ['Gestion des stocks'],
+            'code' => 'STOCK',
+        ],
+        'view_admin_stock_deductions_notification_pending' => [
+            'description' => 'Afficher les notifications admin de déductions de stocks en attente',
+            'category' => 'Notifications décisionnelles de déductions de stocks',
+            'modules' => ['Gestion des stocks'],
+            'code' => 'STOCK',
+        ],
+        'view_admin_stock_deductions_notification_validated' => [
+            'description' => 'Afficher les notifications admin de déductions de stocks validées',
+            'category' => 'Notifications décisionnelles de déductions de stocks',
+            'modules' => ['Gestion des stocks'],
+            'code' => 'STOCK',
+        ],
+        'view_admin_stock_deductions_notification_rejected' => [
+            'description' => 'Afficher les notifications admin de déductions de stocks rejetées',
+            'category' => 'Notifications décisionnelles de déductions de stocks',
+            'modules' => ['Gestion des stocks'],
+            'code' => 'STOCK',
+        ],
+        'view_admin_stock_deductions_notification_cancelled' => [
+            'description' => 'Afficher les notifications admin de déductions de stocks annulées',
+            'category' => 'Notifications décisionnelles de déductions de stocks',
+            'modules' => ['Gestion des stocks'],
+            'code' => 'STOCK',
+        ],
         'view_stock_adjustments_notification_pending' => [
             'description' => 'Afficher les notifications de régularisations de stocks en attente',
             'category' => 'Notifications fonctionnel de régularisations de stocks',
